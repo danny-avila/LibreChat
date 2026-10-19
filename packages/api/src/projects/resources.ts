@@ -81,6 +81,7 @@ function canonicalResourceVersion(
         availability,
         embedded: file.embedded ?? null,
         context: file.context ?? null,
+        conversationId: file.conversationId ?? null,
         expiredAt: file.expiredAt?.toISOString() ?? null,
         createdAt: file.createdAt?.toISOString() ?? null,
         updatedAt: contentTimestamp,
@@ -154,6 +155,11 @@ type RuntimeFileSource = {
   tenantId?: string;
   embedded?: boolean;
   context?: string;
+  conversationId?: string;
+  createdAt?: TFile['createdAt'];
+  updatedAt?: TFile['updatedAt'];
+  status?: TFile['status'];
+  previewError?: TFile['previewError'];
   source?: TFile['source'];
   storageKey?: string;
   storageRegion?: string;
@@ -171,6 +177,11 @@ export function toRuntimeFile(file: RuntimeFileSource): TFile {
     usage: file.usage,
     embedded: file.embedded === true,
     context: Object.values(FileContext).find((context) => context === file.context),
+    ...(file.conversationId != null ? { conversationId: file.conversationId } : {}),
+    ...(file.createdAt != null ? { createdAt: file.createdAt } : {}),
+    ...(file.updatedAt != null ? { updatedAt: file.updatedAt } : {}),
+    ...(file.status != null ? { status: file.status } : {}),
+    ...(file.previewError != null ? { previewError: file.previewError } : {}),
     user: typeof file.user === 'string' ? file.user : file.user.toString(),
     ...(file.tenantId != null ? { tenantId: file.tenantId } : {}),
     ...(file.source != null ? { source: file.source } : {}),

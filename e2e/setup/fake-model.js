@@ -3409,6 +3409,19 @@ function provisioningToolResponses({ text, toolNames }) {
   }
 
   const codeLabel = getMarkerValue(text, EXECUTE_CODE_MARKER);
+  const projectCollision = text.match(/E2E_PROJECT_COLLISION:([A-Za-z0-9-]+):(first|second)/);
+  if (projectCollision) {
+    const [, label, origin] = projectCollision;
+    return codeExecResponses(
+      {
+        filename: 'results.csv',
+        toolCallId: `call_e2e_project_collision_${label}_${origin}`,
+        finalText: `E2E project collision complete: ${origin}`,
+        code: `printf 'origin,count\\n${origin},1\\n' > /mnt/data/results.csv\n# E2E_PROJECT_COLLISION:${label}:${origin}`,
+      },
+      toolNames,
+    );
+  }
   const projectOutputLabel = getMarkerValue(text, 'E2E_PROJECT_OUTPUT:');
   if (projectOutputLabel) {
     return codeExecResponses(

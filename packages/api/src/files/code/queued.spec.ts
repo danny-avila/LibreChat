@@ -101,4 +101,85 @@ describe('queued code-file destinations', () => {
       advertised.get('second'),
     );
   });
+
+  it('keeps expired same-named project files from different chats in the upload plan', () => {
+    const current = agent('parent', [
+      file('own', { conversationId: 'current', createdAt: '2026-09-01' }),
+      file('imported', { conversationId: 'other', createdAt: '2026-10-01' }),
+    ]);
+    current.provisionState!.project = {
+      projectFileIds: new Set(['own', 'imported']),
+      conversationId: 'current',
+    };
+    current.provisionState!.codeEnvRecoveryNames = new Map([
+      ['own', { name: 'data.csv', isTargetScope: true }],
+      ['imported', { name: 'data.csv', isTargetScope: true }],
+    ]);
+    prepareQueuedCodeFileContext(current, [current], 'user-1');
+    const destinations = current.provisionState!.codeEnvDestinations!;
+    expect(destinations.size).toBe(2);
+    expect(destinations.get('own')).toBe('data.csv');
+    expect(destinations.get('imported')).toMatch(/^data-.+\.csv$/);
+    expect(current.provisionState!.temporaryCodeFileIds).toEqual(new Set(['imported']));
+    expect(current.dynamicToolContextMap!.queued_code_files).toContain('(project file)');
+  });
+
+  it('still drops an expired superseded agent file in a project chat', () => {
+    const current = agent('parent', [
+      file('setup', { context: FileContext.agents, createdAt: '2026-09-01' }),
+      file('output', {
+        context: FileContext.execute_code,
+        conversationId: 'current',
+        createdAt: '2026-10-01',
+      }),
+    ]);
+    current.provisionState!.project = {
+      projectFileIds: new Set(['output', 'unrelated']),
+      conversationId: 'current',
+    };
+    current.provisionState!.agentScopedFileIds = new Set(['setup']);
+    current.provisionState!.codeEnvRecoveryNames = new Map([
+      ['setup', { name: 'data.csv', isTargetScope: true }],
+      ['output', { name: 'data.csv', isTargetScope: true }],
+    ]);
+    const uploads = planCodeFileUploads({
+      context: current,
+      contexts: [current],
+      agentId: 'parent',
+      userId: 'user-1',
+    });
+    expect(uploads.map((upload) => upload.file.file_id)).toEqual(['output']);
+    expect(current.provisionState!.temporaryCodeFileIds!.size).toBe(0);
+  });
+
+  it('keeps the originating path when its file expires before a same-named import', () => {
+    const current = agent('parent', [file('own', { conversationId: 'current' })]);
+    const imported = file('imported', {
+      conversationId: 'other',
+      metadata: {
+        codeEnvRefs: {
+          default: {
+            kind: 'user',
+            id: 'user-1',
+            storage_session_id: 'store',
+            file_id: 'remote',
+            sandboxFilename: 'data.csv',
+          },
+        },
+      },
+    });
+    current.tool_resources = { execute_code: { files: [imported] } };
+    current.provisionState!.project = {
+      projectFileIds: new Set(['own', 'imported']),
+      conversationId: 'current',
+    };
+    current.provisionState!.codeEnvRecoveryNames = new Map([
+      ['own', { name: 'data.csv', isTargetScope: true }],
+    ]);
+    prepareQueuedCodeFileContext(current, [current], 'user-1');
+    expect(current.provisionState!.codeEnvDestinations!.get('own')).toBe('data.csv');
+    expect(current.provisionState!.codeEnvDestinations!.get('imported')).toMatch(/^data-.+\.csv$/);
+    expect(current.provisionState!.codeEnvFiles.map((file) => file.file_id)).toContain('imported');
+    expect(current.provisionState!.temporaryCodeFileIds).toEqual(new Set(['imported']));
+  });
 });

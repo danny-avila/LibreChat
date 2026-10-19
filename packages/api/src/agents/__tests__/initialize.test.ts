@@ -482,6 +482,8 @@ describe('initializeAgent: ChatProject context', () => {
     user: 'user-1',
     embedded: true,
     context: FileContext.message_attachment,
+    createdAt: new Date('2020-01-01'),
+    updatedAt: new Date('2020-01-01'),
   };
   const canonicalFile: ProjectFileRecord = {
     ...projectFile,

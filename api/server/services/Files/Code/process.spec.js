@@ -190,6 +190,9 @@ jest.mock('@librechat/api', () => {
     codeServerHttpAgent: jest.requireActual('@librechat/api').codeServerHttpAgent,
     codeServerHttpsAgent: jest.requireActual('@librechat/api').codeServerHttpsAgent,
     selectCodeFiles: jest.requireActual('@librechat/api').selectCodeFiles,
+    getProjectCodeScope: jest.requireActual('@librechat/api').getProjectCodeScope,
+    getTurnCodeEnvRef: jest.requireActual('@librechat/api').getTurnCodeEnvRef,
+    saveCodeFileReference: jest.requireActual('@librechat/api').saveCodeFileReference,
     getCodeFileInfo: jest.requireActual('@librechat/api').getCodeFileInfo,
     getUploadedCodeEnvFilename: jest.requireActual('@librechat/api').getUploadedCodeEnvFilename,
     checkCodeFileActive: jest.requireActual('@librechat/api').checkCodeFileActive,
@@ -4361,6 +4364,7 @@ describe('Code Process', () => {
       const result = await primeFiles({
         req: {
           user: { id: 'user-123', role: 'USER' },
+          config: { projects: { codeExecution: true } },
           chatProjectContext: { file_ids: ['older', 'newer'] },
         },
         tool_resources: { execute_code: { file_ids: ['older', 'newer'] } },
@@ -4377,6 +4381,7 @@ describe('Code Process', () => {
         expect.objectContaining({ id: 'newer-sandbox', name: 'results.csv' }),
       );
       expect(result.toolContext).toContain(`/mnt/data/${alias} (project file)`);
+      expect(require('~/models').updateFile).not.toHaveBeenCalled();
     });
 
     it.each([false, true])('keeps a provisioned alias when expired=%s', async (expired) => {

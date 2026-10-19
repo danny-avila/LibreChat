@@ -314,7 +314,7 @@ describe('ChatProject resource hydration', () => {
   it('hydrates ready runtime files and safe unavailable views from canonical Mongo records', async () => {
     const owner = new mongoose.Types.ObjectId().toString();
     const tenantId = 'tenant-a';
-    await File.create(file('ready', owner, { tenantId }));
+    const ready = await File.create(file('ready', owner, { tenantId, conversationId: 'origin' }));
     await File.create(file('expired', owner, { tenantId, expiredAt: new Date(Date.now() - 1) }));
     await File.create(file('agent-scoped', owner, { tenantId, context: FileContext.agents }));
     await File.create(file('foreign', new mongoose.Types.ObjectId().toString(), { tenantId }));
@@ -332,6 +332,7 @@ describe('ChatProject resource hydration', () => {
     });
     expect(runtimeFiles.map((runtimeFile) => runtimeFile.file_id)).toEqual(['ready']);
     expect(runtimeFiles[0]).not.toHaveProperty('text');
+    expect(runtimeFiles[0]).toMatchObject({ conversationId: 'origin', createdAt: ready.createdAt });
 
     const views = await listChatProjectFileViews({
       project,

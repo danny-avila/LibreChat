@@ -2048,11 +2048,7 @@ export async function initializeAgent(
           consumedBytes: sumUniqueBytes(committedFiles),
         }),
       )
-      .map((file) => ({
-        ...structuredClone(file),
-        // A different project chat needs the path even when this was another chat's output.
-        context: FileContext.message_attachment,
-      }));
+      .map((file) => structuredClone(file));
   }
 
   /**

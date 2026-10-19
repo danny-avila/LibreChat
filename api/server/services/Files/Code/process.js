@@ -33,6 +33,9 @@ const {
   codeExecutionHeaders,
   executeWorkspaceTool,
   selectCodeFiles,
+  getProjectCodeScope,
+  getTurnCodeEnvRef,
+  saveCodeFileReference,
   getCodeFileInfo,
   getCodeFileContextLine,
   appendCodeFileContextLine,
@@ -755,11 +758,13 @@ const primeFiles = async (options) => {
   /** All stale-file reuploads in this prime share one live-turn wait cap. */
   const uploadRateLimitBudget = createCodeApiRateLimitBudget(uploadOptions.retryWaitMs);
   let toolContext = '';
+  const projectCodeScope = getProjectCodeScope(req);
 
   const { selected, skippedNoRef, skippedSuperseded } = await selectCodeFiles({
     files: dbFiles,
     privateFileIds: agentResourceIds,
-    projectFileIds: req.chatProjectContext?.file_ids,
+    project: projectCodeScope,
+    getTurnRef: (file, destination) => getTurnCodeEnvRef(req, executionRouteKey, file, destination),
     routeKey: executionRouteKey,
     getFileInfo: (ref) => getSessionFileInfo(ref, req, codeApiRoute, signal),
     concurrency: uploadOptions.concurrency,
@@ -769,7 +774,15 @@ const primeFiles = async (options) => {
   let requiredCodeFiles = 0;
   const reuploadFailureCategories = new Set();
 
-  for (const { file, ref, sourceRef, sandboxName, isActive, getUploadTime } of selected) {
+  for (const {
+    file,
+    ref,
+    sourceRef,
+    sandboxName,
+    isActive,
+    getUploadTime,
+    temporary,
+  } of selected) {
     requiredCodeFiles += 1;
     const session_id = sourceRef.storage_session_id;
     const id = sourceRef.file_id;
@@ -800,7 +813,7 @@ const primeFiles = async (options) => {
           agentResourceIds,
           destination,
           codeFileLocation,
-          req.chatProjectContext?.file_ids,
+          projectCodeScope,
         ),
         codeFileLocation,
       );
@@ -888,10 +901,18 @@ const primeFiles = async (options) => {
 
         const updatedRefs = mergeCodeEnvRef(file.metadata, newRef);
 
-        await updateFile({
-          file_id: file.file_id,
-          'metadata.codeEnvRef': updatedRefs.codeEnvRef,
-          [`metadata.codeEnvRefs.${executionRouteKey}`]: newRef,
+        await saveCodeFileReference({
+          req,
+          routeKey: executionRouteKey,
+          file,
+          ref: newRef,
+          temporary,
+          save: () =>
+            updateFile({
+              file_id: file.file_id,
+              'metadata.codeEnvRef': updatedRefs.codeEnvRef,
+              [`metadata.codeEnvRefs.${executionRouteKey}`]: newRef,
+            }),
         });
         pushFile(newRef.storage_session_id, newRef.file_id, newRef.sandboxFilename);
         logger.debug(

@@ -3,8 +3,10 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { TChatProject, TChatProjectFile, TFile } from 'librechat-data-provider';
 import { getE2EUser } from '../../setup/user';
+import { login } from '../../setup/authenticate';
 import { withMongo } from './db';
 import { loginAdmin } from './content-filters.helpers';
+
 import {
   CODE_API_BASE,
   MOCK_ENDPOINTS,
@@ -20,6 +22,13 @@ import {
   enableFileSearch,
   sendMessageAndWaitForCompletion,
 } from './helpers';
+
+test.beforeEach(async ({ page }) => {
+  await page.context().clearCookies();
+  await page.goto('/login');
+  await login(page, getE2EUser());
+  await page.waitForURL(/\/c\/new$/);
+});
 
 async function startProjectChat(page: Page, projectId: string): Promise<void> {
   await page.goto(`/projects/${encodeURIComponent(projectId)}`);
@@ -166,6 +175,101 @@ test('project CSV and generated output are shared across chats, without indexing
       await db.collection('files').deleteMany({ file_id: { $in: fileIds } });
       await db.collection('messages').deleteMany({ conversationId: { $in: conversationIds } });
       await db.collection('conversations').deleteMany({ conversationId: { $in: conversationIds } });
+    });
+  }
+});
+
+test('same-named outputs keep their originating chat paths and canonical sandbox references', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(180_000);
+  const adminToken = await loginAdmin(request);
+  const user = await withMongo((db) =>
+    db.collection('users').findOne({ email: getE2EUser().email }),
+  );
+  if (!user) throw new Error('The authenticated project user is unavailable');
+  const overridePath = `/api/admin/config/user/${encodeURIComponent(user._id.toString())}`;
+  const adminHeaders = { Authorization: `Bearer ${adminToken}` };
+  const label = uniqueName('project-collision');
+  const conversationIds: string[] = [];
+  let projectId: string | undefined;
+  try {
+    const override = await request.put(overridePath, {
+      headers: adminHeaders,
+      data: { overrides: { projects: { codeExecution: true } } },
+    });
+    expect(override.ok(), await override.text()).toBe(true);
+    await page.goto('/projects');
+    const token = await getAccessToken(page);
+    const project = await requestJson<TChatProject>(page, {
+      path: '/api/projects',
+      token,
+      method: 'POST',
+      body: { name: 'Project output paths' },
+    });
+    projectId = project._id;
+    await resetProvisioning(page);
+    for (const origin of ['first', 'second']) {
+      await startProjectChat(page, projectId);
+      await sendMessageAndWaitForCompletion(page, `E2E_PROJECT_COLLISION:${label}:${origin}`);
+      conversationIds.push(new URL(page.url()).pathname.split('/c/')[1]);
+      await expect(
+        page.getByText('results.csv was added to the project.', { exact: true }),
+      ).toBeVisible();
+    }
+    const projectFiles = await fetchJson<TChatProjectFile[]>(
+      page,
+      `/api/projects/${projectId}/files`,
+      token,
+    );
+    expect(projectFiles.map((file) => file.filename)).toEqual(['results.csv', 'results.csv']);
+    for (const [index, origin] of ['first', 'second'].entries()) {
+      await page.goto(`/c/${conversationIds[index]}`);
+      await sendMessageAndWaitForCompletion(page, `E2E_EXECUTE_CODE:${label}-${origin}-resume`);
+      const response = await page.request.get(`${CODE_API_BASE}/__debug/uploads`);
+      const body = (await response.json()) as {
+        execs: Array<{ files: Array<{ id: string; name: string }> }>;
+      };
+      const files = body.execs.at(-1)!.files;
+      expect(files).toHaveLength(2);
+      expect(files).toContainEqual(
+        expect.objectContaining({
+          id: `e2e-project-collision-${origin}-${label}`,
+          name: 'results.csv',
+        }),
+      );
+      expect(files.filter((file) => /^results-.+\.csv$/.test(file.name))).toHaveLength(1);
+      const canonical = await withMongo((db) =>
+        db
+          .collection('files')
+          .find({ file_id: { $in: projectFiles.map((file) => file.file_id) } })
+          .toArray(),
+      );
+      expect(canonical).toHaveLength(2);
+      for (const [recordIndex, origin] of ['first', 'second'].entries()) {
+        const file = canonical.find((file) => file.conversationId === conversationIds[recordIndex]);
+        expect(file?.metadata.codeEnvRef.file_id).toBe(`e2e-project-collision-${origin}-${label}`);
+        expect(file?.metadata.codeEnvRef.sandboxFilename ?? file?.filename).toBe('results.csv');
+      }
+    }
+  } finally {
+    const restore = await request.delete(overridePath, { headers: adminHeaders });
+    expect(restore.ok(), await restore.text()).toBe(true);
+    await withMongo(async (db) => {
+      if (projectId)
+        await db
+          .collection('chatprojects')
+          .deleteOne({ _id: new ObjectId(projectId), user: user._id.toString() });
+      await db
+        .collection('files')
+        .deleteMany({ conversationId: { $in: conversationIds }, user: user._id });
+      await db
+        .collection('messages')
+        .deleteMany({ conversationId: { $in: conversationIds }, user: user._id.toString() });
+      await db
+        .collection('conversations')
+        .deleteMany({ conversationId: { $in: conversationIds }, user: user._id.toString() });
     });
   }
 });

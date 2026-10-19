@@ -9,6 +9,7 @@ import { mergeCodeFilesIntoContext } from '~/agents/codeFilesSession';
 import { prepareQueuedCodeFileContext } from '../code/queued';
 import { createSubagentCodeRouting } from '~/code/targets';
 import { createProvisionFilesCallback } from './callback';
+import { getTurnCodeEnvRef } from '../code/references';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), warn: jest.fn(), debug: jest.fn(), info: jest.fn() },
@@ -112,6 +113,66 @@ function buildHarness({
 }
 
 describe('createProvisionFilesCallback', () => {
+  it('keeps a project collision alias local to the turn and reuses it after retry', async () => {
+    const own = makeFile({ file_id: 'own', conversationId: 'current', createdAt: '2026-09-01' });
+    const imported = makeFile({
+      file_id: 'imported',
+      conversationId: 'other',
+      createdAt: '2026-10-01',
+    });
+    const current: CodeFileAgent = {
+      id: 'parent',
+      fileConsumers: { executeCode: true, fileSearch: false },
+      provisionState: {
+        ...state([own, imported], []),
+        project: { projectFileIds: new Set(['own', 'imported']), conversationId: 'current' },
+        codeEnvRecoveryNames: new Map([
+          ['own', { name: 'data.csv', isTargetScope: true }],
+          ['imported', { name: 'data.csv', isTargetScope: true }],
+        ]),
+      },
+    };
+    prepareQueuedCodeFileContext(current, [current], req.user?.id);
+    const destinations = new Map(current.provisionState!.codeEnvDestinations);
+    let ownFailed = false;
+    const codeImpl = jest.fn(
+      async ({ file, sandboxFilename }: { file: TFile; sandboxFilename: string }) => {
+        if (file.file_id === 'own' && !ownFailed) {
+          ownFailed = true;
+          throw new Error('Transient upload failure');
+        }
+        const ref = {
+          kind: 'user' as const,
+          id: 'user-1',
+          storage_session_id: 'store',
+          file_id: `remote-${file.file_id}`,
+          sandboxFilename,
+        };
+        return {
+          referenceSet: { codeEnvRefs: { default: ref } },
+          refUpdate: { file_id: file.file_id, routeKey: 'default', ref },
+          sandboxFilename,
+        };
+      },
+    );
+    const harness = buildHarness({ contexts: [[current.id, current]], codeImpl });
+    await expect(harness.provisionFiles([Constants.EXECUTE_CODE], current.id)).rejects.toThrow(
+      'Failed to provision',
+    );
+    expect(harness.updateCodeEnvRef).not.toHaveBeenCalled();
+    expect(
+      getTurnCodeEnvRef(req, 'default', imported, destinations.get('imported')!),
+    ).toMatchObject({ file_id: 'remote-imported' });
+    expect(current.provisionState!.codeEnvFiles.map((file) => file.file_id)).toEqual(['own']);
+    expect(current.pendingProvisionedCodeFiles).toHaveLength(1);
+    expect(await harness.provisionFiles([Constants.EXECUTE_CODE], current.id)).toHaveLength(2);
+    expect(harness.updateCodeEnvRef).toHaveBeenCalledTimes(1);
+    expect(harness.updateCodeEnvRef).toHaveBeenCalledWith(
+      expect.objectContaining({ file_id: 'own' }),
+    );
+    expect(codeImpl).toHaveBeenCalledTimes(3);
+  });
+
   it.each(['a', 'b'])(
     'keeps distinct queued files reachable at their advertised paths when %s runs first',
     async (firstAgentId) => {

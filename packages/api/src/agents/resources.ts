@@ -18,9 +18,9 @@ import type {
 } from 'librechat-data-provider';
 import type { IMongoFile, AppConfig, IUser } from '@librechat/data-schemas';
 import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
+import type { CodeFileProjectScope } from '~/files/code/destinations';
 import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
-
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { TOOL_RESOURCE_KEYS } from './orphans';
 
@@ -121,6 +121,10 @@ export type ProvisionState = {
   codeEnvRecoveryNames?: Map<string, { name: string; isTargetScope: boolean }>;
   /** Destination names advertised to the model before lazy code-file provisioning. */
   codeEnvDestinations?: Map<string, string>;
+  /** Authorized project identity used by deferred destination selection. */
+  project?: CodeFileProjectScope;
+  /** Collision aliases kept in this turn rather than written over canonical refs. */
+  temporaryCodeFileIds?: ReadonlySet<string>;
   /** Files that need embedding into the vector DB for file_search */
   vectorDBFiles: TFile[];
   /** Set of file_ids confirmed alive in code env (from staleness check) */
@@ -769,6 +773,14 @@ const computeProvisionState = async ({
   return {
     codeEnvFiles,
     codeEnvRecoveryNames,
+    ...(projectCodeFileIds != null && projectCodeFileIds.size > 0
+      ? {
+          project: {
+            projectFileIds: projectCodeFileIds,
+            conversationId: req?.resolvedConversation?.conversationId ?? req?.body?.conversationId,
+          },
+        }
+      : {}),
     vectorDBFiles,
     aliveFileIds: aliveFileIds ?? new Set(),
     agentScopedFileIds: new Set(
@@ -874,6 +886,7 @@ export const primeResources = async ({
      */
     const processedResourceFiles = new Set<string>();
     const projectCodeFileIds = new Set(projectCodeFiles.map((file) => file.file_id));
+    if (projectCodeFileIds.size > 0 && req) req.codeFileReferences ??= new Map();
     /**
      * The agent's tool resources object that will be updated with categorized files
      * Create a shallow copy first to avoid mutating the original

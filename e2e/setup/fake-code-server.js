@@ -199,8 +199,29 @@ async function handleExec(req, res) {
     lang: body.lang || '',
     codeLength: typeof body.code === 'string' ? body.code.length : 0,
     fileCount: Array.isArray(body.files) ? body.files.length : 0,
-    files: Array.isArray(body.files) ? body.files.map(({ name }) => ({ name })) : [],
+    files: Array.isArray(body.files)
+      ? body.files.map(({ name, id, storage_session_id }) => ({ name, id, storage_session_id }))
+      : [],
   });
+  const collision = body.code?.match(/E2E_PROJECT_COLLISION:([A-Za-z0-9-]+):(first|second)/);
+  if (collision) {
+    const [, label, origin] = collision;
+    const sessionId = `e2e-project-collision-${label}-${origin}`;
+    const fileId = `e2e-project-collision-${origin}-${label}`;
+    const name = 'results.csv';
+    generated.set(`${sessionId}/${fileId}`, {
+      name,
+      content: Buffer.from(`origin,count\n${origin},1\n`),
+    });
+    sessions.set(sessionId, [{ fileId, filename: name }]);
+    sendJson(res, 200, {
+      session_id: sessionId,
+      stdout: `Created ${name}\n`,
+      stderr: '',
+      files: [{ id: fileId, name }],
+    });
+    return;
+  }
   const versionMarker = body.code?.match(
     /E2E_RUN_FILE_VERSION:([A-Za-z0-9-]+):(write-v1|inspect|write-v2)/,
   );
@@ -264,6 +285,22 @@ const server = http.createServer((req, res) => {
 
     if (pathname === '/v1/exec' && req.method === 'POST') {
       await handleExec(req, res);
+      return;
+    }
+
+    const objectMatch = pathname.match(/^\/v1\/sessions\/([^/]+)\/objects\/([^/]+)$/);
+    if (objectMatch && req.method === 'GET') {
+      const sessionId = decodeURIComponent(objectMatch[1]);
+      const fileId = decodeURIComponent(objectMatch[2]);
+      const file = sessions.get(sessionId)?.find((file) => file.fileId === fileId);
+      if (!file) {
+        sendJson(res, 404, { message: 'file not found' });
+        return;
+      }
+      sendJson(res, 200, {
+        lastModified: new Date().toISOString(),
+        originalFilename: file.filename,
+      });
       return;
     }
 

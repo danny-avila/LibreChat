@@ -8,6 +8,8 @@ import {
   claimCodeDestination,
   createCodeDestinationSet,
   reserveCodeDestination,
+  isImportedProjectFile,
+  getCodeFileDestinationScope,
   sortCodeFilesByDestinationPriority,
 } from './destinations';
 import { appendCodeFileContextLine, getCodeFileContextLine, getCodeFileLocation } from './priming';
@@ -43,6 +45,38 @@ function routeKey(context: ProvisionToolContext): string {
   );
 }
 
+/** Live imports are replaceable mounts; this chat's paths survive partial expiry. */
+function stageProjectImports(context: ProvisionToolContext, route: string): void {
+  const state = context.provisionState;
+  if (!state?.project || state.codeEnvFiles.length === 0) return;
+  const queuedIds = new Set(state.codeEnvFiles.map((file) => file.file_id));
+  const liveFiles = context.tool_resources?.execute_code?.files ?? [];
+  const destinations = createCodeDestinationSet();
+  for (const file of [...state.codeEnvFiles, ...liveFiles]) {
+    if (isImportedProjectFile(file, state.project)) continue;
+    const name =
+      state.codeEnvDestinations?.get(file.file_id) ??
+      getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
+      state.codeEnvRecoveryNames?.get(file.file_id)?.name ??
+      resolveSandboxFilename(file.filename, file.type);
+    reserveCodeDestination(destinations, name);
+  }
+  for (const file of sortCodeFilesByDestinationPriority(
+    liveFiles,
+    state.agentScopedFileIds,
+    state.project,
+  )) {
+    if (!file || queuedIds.has(file.file_id) || !isImportedProjectFile(file, state.project))
+      continue;
+    const name =
+      getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
+      resolveSandboxFilename(file.filename, file.type);
+    if (reserveCodeDestination(destinations, name)) continue;
+    state.codeEnvFiles.push(file);
+    queuedIds.add(file.file_id);
+  }
+}
+
 /** Uses the same destination plan before inference and when files are uploaded lazily. */
 export function planCodeFileUploads({
   context,
@@ -60,6 +94,7 @@ export function planCodeFileUploads({
   const state = context.provisionState;
   if (!state?.codeEnvFiles.length) return [];
   const route = routeKey(context);
+  stageProjectImports(context, route);
   const routeContexts = [...contexts].filter((candidate) => routeKey(candidate) === route);
   if (!routeContexts.includes(context)) routeContexts.push(context);
   const queuedIds = new Set(state.codeEnvFiles.map((file) => file.file_id));
@@ -82,6 +117,7 @@ export function planCodeFileUploads({
   const files = sortCodeFilesByDestinationPriority(
     [...state.codeEnvFiles, ...liveFiles.filter((file) => !queuedIds.has(file.file_id))],
     privateIds,
+    state.project,
   ).filter((file): file is TFile => {
     if (!file) return false;
     const ref = getCodeEnvRefForProfile(file.metadata, route);
@@ -93,8 +129,12 @@ export function planCodeFileUploads({
     if (isTargetScope) storedName = ref?.sandboxFilename;
     // Equal stored paths identify superseded content; prefix conflicts remain separate inputs.
     if (storedName == null) return true;
-    if (confirmedNames.has(storedName)) return false;
-    confirmedNames.add(storedName);
+    const destination = JSON.stringify([
+      getCodeFileDestinationScope(file, state.project),
+      storedName,
+    ]);
+    if (confirmedNames.has(destination)) return false;
+    confirmedNames.add(destination);
     return true;
   });
 
@@ -144,10 +184,12 @@ export function planCodeFileUploads({
     }
   }
   const uploads: CodeFileUpload[] = [];
+  const temporaryCodeFileIds = new Set<string>();
   // Assign across the route's queued inputs, but expose only this agent's selected files.
   for (const file of sortCodeFilesByDestinationPriority(
     [...queued.values()].map((candidate) => candidate.file),
     privateIds,
+    state.project,
   )) {
     if (!file) continue;
     const candidate = queued.get(file.file_id);
@@ -167,8 +209,25 @@ export function planCodeFileUploads({
         file.file_id,
       );
     const selectedFile = selected.get(file.file_id);
-    if (selectedFile) uploads.push({ file: selectedFile, destination });
+    if (selectedFile) {
+      uploads.push({ file: selectedFile, destination });
+      const canonicalName = getCodeEnvUploadFilename(
+        resolveSandboxFilename(
+          getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
+            candidate?.recoveryName ??
+            file.filename,
+          file.type,
+        ),
+      );
+      if (
+        isImportedProjectFile(file, state.project) &&
+        (state.temporaryCodeFileIds?.has(file.file_id) === true || destination !== canonicalName)
+      ) {
+        temporaryCodeFileIds.add(file.file_id);
+      }
+    }
   }
+  state.temporaryCodeFileIds = temporaryCodeFileIds;
   return uploads;
 }
 
@@ -197,7 +256,13 @@ export function prepareQueuedCodeFileContext(
   for (const { file, destination } of uploads) {
     context = appendCodeFileContextLine(
       context,
-      getCodeFileContextLine(file, agent.provisionState.agentScopedFileIds, destination, location),
+      getCodeFileContextLine(
+        file,
+        agent.provisionState.agentScopedFileIds,
+        destination,
+        location,
+        agent.provisionState.project,
+      ),
       location,
     );
   }

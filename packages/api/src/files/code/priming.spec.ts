@@ -88,7 +88,7 @@ describe('selectCodeFiles', () => {
       };
       const result = await selectCodeFiles({
         files: [first, second],
-        projectFileIds: ['first', 'second'],
+        project: { projectFileIds: new Set(['first', 'second']) },
         privateFileIds: new Set(['first', 'second']),
         routeKey: 'default',
         getFileInfo: async () => (expired ? null : fresh),
@@ -114,7 +114,7 @@ describe('selectCodeFiles', () => {
         file('first', 'results.csv', { sandboxFilename: 'results.csv' }),
         file('second', 'results.csv', { sandboxFilename: 'results.csv' }, 2),
       ],
-      projectFileIds: ['first', 'second'],
+      project: { projectFileIds: new Set(['first', 'second']) },
       routeKey: 'default',
       getFileInfo: async () => fresh,
     });
@@ -134,7 +134,7 @@ describe('selectCodeFiles', () => {
           conversationId: 'chat-a',
         },
       ],
-      projectFileIds: ['first', 'second'],
+      project: { projectFileIds: new Set(['first', 'second']) },
       routeKey: 'default',
       getFileInfo: async () => fresh,
     });
@@ -152,6 +152,135 @@ describe('selectCodeFiles', () => {
       getFileInfo: async () => fresh,
     });
     expect(result.selected.map((f) => f.file.file_id)).toEqual(['output']);
+  });
+
+  it.each(['agent', 'chat upload'])(
+    'keeps the superseded rule for a %s in a project chat',
+    async (kind) => {
+      const original = file('original', 'data.csv', { sandboxFilename: 'data.csv' });
+      const output = {
+        ...file('output', 'data.csv', { sandboxFilename: 'data.csv' }, 2),
+        context: FileContext.execute_code,
+        conversationId: 'current',
+      };
+      const result = await selectCodeFiles({
+        files: [original, output],
+        privateFileIds: kind === 'agent' ? new Set(['original']) : undefined,
+        project: { projectFileIds: new Set(['output', 'unrelated']), conversationId: 'current' },
+        routeKey: 'default',
+        getFileInfo: async () => fresh,
+      });
+      expect(result.selected.map((entry) => entry.file.file_id)).toEqual(['output']);
+      expect(result.skippedSuperseded).toBe(1);
+    },
+  );
+
+  it.each([false, true])(
+    'preserves the originating chat path despite a newer project output (expired=%s)',
+    async (expired) => {
+      const own = {
+        ...file('own', 'results.csv', { sandboxFilename: 'results.csv' }),
+        context: FileContext.execute_code,
+        conversationId: 'current',
+      };
+      const imported = {
+        ...file('imported', 'results.csv', { sandboxFilename: 'results.csv' }, 2),
+        context: FileContext.execute_code,
+        conversationId: 'other',
+      };
+      const result = await selectCodeFiles({
+        files: [imported, own],
+        project: { projectFileIds: new Set(['own', 'imported']), conversationId: 'current' },
+        routeKey: 'default',
+        getFileInfo: async () => (expired ? null : fresh),
+      });
+      expect(result.selected.map((entry) => entry.file.file_id)).toEqual(['own', 'imported']);
+      expect(result.selected[0].sandboxName).toBe('results.csv');
+      expect(result.selected[0].temporary).toBe(false);
+      expect(result.selected[1].sandboxName).toMatch(/^results-.+\.csv$/);
+      expect(result.selected[1].temporary).toBe(true);
+    },
+  );
+
+  it('reuses a collision alias already uploaded in this turn', async () => {
+    const originals = [
+      {
+        ...file('own', 'results.csv', { sandboxFilename: 'results.csv' }),
+        conversationId: 'current',
+      },
+      {
+        ...file('imported', 'results.csv', { sandboxFilename: 'results.csv' }, 2),
+        conversationId: 'other',
+      },
+    ];
+    const options = {
+      files: originals,
+      project: { projectFileIds: new Set(['own', 'imported']), conversationId: 'current' },
+      routeKey: 'default',
+      getFileInfo: async () => fresh,
+    };
+    const first = await selectCodeFiles(options);
+    const alias = first.selected[1].sandboxName;
+    const ref: CodeEnvRef = {
+      kind: 'user',
+      id: 'user',
+      file_id: 'fresh-imported',
+      storage_session_id: 'fresh-store',
+      sandboxFilename: alias,
+    };
+    const second = await selectCodeFiles({
+      ...options,
+      getTurnRef: (file, destination) =>
+        file.file_id === 'imported' && destination === alias ? ref : undefined,
+    });
+    expect(second.selected[1]).toMatchObject({ sourceRef: ref, isActive: true, temporary: true });
+    expect(originals[1].metadata?.codeEnvRef?.sandboxFilename).toBe('results.csv');
+  });
+
+  it('primes a temporarily uploaded project document before it has a canonical sandbox ref', async () => {
+    const own = {
+      ...file('own', 'data.csv', { sandboxFilename: 'data.csv' }),
+      conversationId: 'current',
+    };
+    const imported = {
+      ...file('imported', 'data.csv'),
+      conversationId: 'other',
+      metadata: undefined,
+    };
+    const project = { projectFileIds: new Set(['own', 'imported']), conversationId: 'current' };
+    const plan = await selectCodeFiles({
+      files: [
+        own,
+        {
+          ...imported,
+          metadata: file('imported', 'data.csv', { sandboxFilename: 'data.csv' }).metadata,
+        },
+      ],
+      project,
+      routeKey: 'default',
+      getFileInfo: async () => fresh,
+    });
+    const ref: CodeEnvRef = {
+      kind: 'user',
+      id: 'user',
+      storage_session_id: 'fresh',
+      file_id: 'fresh',
+      sandboxFilename: plan.selected[1].sandboxName,
+    };
+    const result = await selectCodeFiles({
+      files: [own, imported],
+      project,
+      routeKey: 'default',
+      getFileInfo: async () => fresh,
+      getTurnRef: (file, destination) =>
+        file.file_id === 'imported' && (destination == null || destination === ref.sandboxFilename)
+          ? ref
+          : undefined,
+    });
+    expect(result.selected).toHaveLength(2);
+    expect(result.skippedNoRef).toBe(0);
+    expect(result.selected[1]).toMatchObject({ sourceRef: ref, isActive: true, temporary: true });
+    expect(imported.metadata).toBeUndefined();
   });
 
   it('keeps shared content ahead of private resources and rejects ancestor conflicts', async () => {
@@ -430,10 +559,27 @@ describe('code file context', () => {
     const output = { file_id: 'out', filename: 'chart.png', context: FileContext.execute_code };
     expect(getCodeFileContextLine(output, new Set(), 'chart.png', 'programmatic')).toBe('');
     expect(
-      getCodeFileContextLine(output, new Set(), 'chart.png', 'sandbox', [output.file_id]),
+      getCodeFileContextLine(output, new Set(), 'chart.png', 'sandbox', {
+        projectFileIds: new Set([output.file_id]),
+      }),
     ).toBe('\n\t- /mnt/data/chart.png (project file)');
     expect(getCodeFileContextLine(output, new Set(), 'chart-1.png', 'programmatic')).toBe(
       '\n\t- $LIBRECHAT_CODE_DATA_DIR/chart-1.png (written earlier as chart.png)',
     );
+  });
+
+  it('retains the origin of a generated project file from the current chat', () => {
+    const output = {
+      file_id: 'out',
+      filename: 'chart.png',
+      context: FileContext.execute_code,
+      conversationId: 'current',
+    };
+    expect(
+      getCodeFileContextLine(output, new Set(), 'chart-other.png', 'sandbox', {
+        projectFileIds: new Set(['out']),
+        conversationId: 'current',
+      }),
+    ).toBe('\n\t- /mnt/data/chart-other.png (project file) (written earlier as chart.png)');
   });
 });

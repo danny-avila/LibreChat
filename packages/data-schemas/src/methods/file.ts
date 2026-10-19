@@ -110,6 +110,7 @@ export type ProjectFileRecord = {
   usage: number;
   embedded?: boolean;
   context?: string;
+  conversationId?: string;
   expiredAt?: Date | null;
   user: string;
   tenantId?: string;
@@ -137,6 +138,7 @@ type ProjectFileRecordSource = Pick<
   | 'usage'
   | 'embedded'
   | 'context'
+  | 'conversationId'
   | 'expiredAt'
   | 'user'
   | 'tenantId'
@@ -164,6 +166,7 @@ export function normalizeProjectFileRecord(file: ProjectFileRecordSource): Proje
     usage: file.usage,
     ...(file.embedded !== undefined ? { embedded: file.embedded } : {}),
     ...(file.context !== undefined ? { context: file.context } : {}),
+    ...(file.conversationId !== undefined ? { conversationId: file.conversationId } : {}),
     ...(file.expiredAt !== undefined ? { expiredAt: file.expiredAt } : {}),
     user: file.user.toString(),
     ...(file.tenantId !== undefined ? { tenantId: file.tenantId } : {}),
@@ -614,6 +617,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         usage: 1,
         embedded: 1,
         context: 1,
+        conversationId: 1,
         expiredAt: 1,
         user: 1,
         tenantId: 1,

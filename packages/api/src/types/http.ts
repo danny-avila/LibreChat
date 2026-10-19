@@ -10,6 +10,7 @@ import type {
 import type { IUser, AppConfig, IConversation } from '@librechat/data-schemas';
 import type { Request } from 'express';
 import type { ResolvedChatProjectContext } from '../projects/context';
+import type { CodeFileReferences } from '~/files/code/references';
 
 /**
  * LibreChat-specific request body type that extends Express Request body
@@ -55,6 +56,8 @@ export type ServerRequest = Request<unknown, unknown, RequestBody> & {
   chatProjectFilesPromise?: Promise<TFile[]>;
   /** Internal opt-in marker for conversation graph agent initialization. */
   chatProjectContextEnabled?: boolean;
+  /** Turn-scoped sandbox aliases, kept separate from canonical file references. */
+  codeFileReferences?: CodeFileReferences;
   /** Subagents that run on their parent's attached machine this turn, keyed by saved agent ID.
    *  Derived per request from the sealed decision and never persisted. */
   codeWorkspaceInheritance?: ReadonlyMap<string, string>;

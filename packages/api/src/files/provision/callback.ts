@@ -1,12 +1,13 @@
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
-import { EToolResources } from 'librechat-data-provider';
+import { EToolResources, mergeCodeEnvRef } from 'librechat-data-provider';
 import type { CodeEnvFile, SubagentExecutionContext } from '@librechat/agents';
 import type { TFile } from 'librechat-data-provider';
 import type { CodeEnvRefUpdate, ProvisionService } from './service';
 import type { ProvisionToolContext } from '../code/queued';
 import type { ServerRequest } from '~/types';
 import { createCodeApiRateLimitBudget, isCodeApiRateLimitError } from '~/utils';
+import { getTurnCodeEnvRef, saveCodeFileReference } from '../code/references';
 import { planCodeFileUploads } from '../code/queued';
 import { isCodeFileToolName } from '~/agents/tools';
 
@@ -274,6 +275,16 @@ export function createProvisionFilesCallback({
           const provisioned = await shareProvisioning(
             shareKey(`code:${codeRouteKey}`, file, sandboxFilename),
             async () => {
+              const temporary = provisionState.temporaryCodeFileIds?.has(file.file_id) === true;
+              const existingRef = temporary
+                ? getTurnCodeEnvRef(req, codeRouteKey, file, sandboxFilename)
+                : undefined;
+              if (existingRef) {
+                return {
+                  refs: mergeCodeEnvRef(file.metadata, existingRef),
+                  sandboxFilename,
+                };
+              }
               const {
                 referenceSet: refs,
                 refUpdate,
@@ -291,19 +302,28 @@ export function createProvisionFilesCallback({
               /* primeCodeFiles re-reads the database and skips files without a stored
                * reference, so a tool loaded after an unpersisted upload would run against
                * an attachment it cannot see. Fail instead of answering from missing input. */
-              const persisted = await persistWithRetry(
-                () => updateCodeEnvRef(refUpdate),
-                (error) =>
-                  logger.error(
-                    `[provisionFiles] Failed to persist code environment reference for file ${refUpdate.file_id}`,
-                    error,
-                  ),
-              );
-              if (!persisted) {
-                throw new Error(
-                  `Failed to persist the code environment reference for file ${refUpdate.file_id}`,
-                );
-              }
+              await saveCodeFileReference({
+                req,
+                routeKey: codeRouteKey,
+                file,
+                ref: refUpdate.ref,
+                temporary,
+                save: async () => {
+                  const persisted = await persistWithRetry(
+                    () => updateCodeEnvRef(refUpdate),
+                    (error) =>
+                      logger.error(
+                        `[provisionFiles] Failed to persist code environment reference for file ${refUpdate.file_id}`,
+                        error,
+                      ),
+                  );
+                  if (!persisted) {
+                    throw new Error(
+                      `Failed to persist the code environment reference for file ${refUpdate.file_id}`,
+                    );
+                  }
+                },
+              });
               return { refs, sandboxFilename: storedSandboxFilename };
             },
           );

@@ -157,12 +157,38 @@ export function reserveCodeDestination(set: CodeDestinationSet, name: string): b
 
 interface CodeDestinationCandidate {
   file_id?: string;
+  conversationId?: string;
   createdAt?: Date | string | number;
   /** Last content write for a reused code-output record. `processCodeOutput`
    *  claims one row per `(filename, conversationId)` and rewrites it in
    *  place, so `createdAt` marks when the name was first produced, not when
    *  the bytes behind it last changed. */
   metadata?: { sourceDispatchedAt?: number } | null;
+}
+
+export interface CodeFileProjectScope {
+  projectFileIds: ReadonlySet<string>;
+  conversationId?: string | null;
+}
+
+/** Imports from other project chats must not displace this chat's established paths. */
+export function isImportedProjectFile(
+  file: CodeDestinationCandidate,
+  project?: CodeFileProjectScope,
+): boolean {
+  return (
+    file.file_id != null &&
+    project?.projectFileIds.has(file.file_id) === true &&
+    (file.conversationId == null || file.conversationId !== project.conversationId)
+  );
+}
+
+/** A rewrite supersedes a stored path only within the originating chat. */
+export function getCodeFileDestinationScope(
+  file: CodeDestinationCandidate,
+  project?: CodeFileProjectScope,
+): string {
+  return isImportedProjectFile(file, project) ? (file.conversationId ?? file.file_id ?? '') : '';
 }
 
 function toTime(value: Date | string | number | undefined): number {
@@ -205,11 +231,19 @@ function contentTime(file: CodeDestinationCandidate | null | undefined): number 
 export function sortCodeFilesByDestinationPriority<T extends CodeDestinationCandidate>(
   files: Array<T | null | undefined>,
   privateFileIds?: ReadonlySet<string>,
+  project?: CodeFileProjectScope,
 ): Array<T | null | undefined> {
-  const isPrivate = (file: T | null | undefined): number =>
-    privateFileIds != null && file?.file_id != null && privateFileIds.has(file.file_id) ? 1 : 0;
+  const priority = (file: T | null | undefined): number => {
+    if (file == null) return 0;
+    if (isImportedProjectFile(file, project)) return 2;
+    return file.file_id != null &&
+      project?.projectFileIds.has(file.file_id) !== true &&
+      privateFileIds?.has(file.file_id) === true
+      ? 1
+      : 0;
+  };
   return [...files].sort((a, b) => {
-    const scope = isPrivate(a) - isPrivate(b);
+    const scope = priority(a) - priority(b);
     if (scope !== 0) {
       return scope;
     }

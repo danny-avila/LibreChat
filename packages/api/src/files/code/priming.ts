@@ -9,11 +9,14 @@ import type { CodeEnvRef, TFile } from 'librechat-data-provider';
 import type { AxiosInstance } from 'axios';
 import type { CodeExecutionRoute } from '../provision/service';
 import type { CodeExecutionContext } from '~/agents/execution';
+import type { CodeFileProjectScope } from './destinations';
 import type { ServerRequest } from '~/types';
 import {
   claimCodeDestination,
   createCodeDestinationSet,
   reserveCodeDestination,
+  isImportedProjectFile,
+  getCodeFileDestinationScope,
   sortCodeFilesByDestinationPriority,
 } from './destinations';
 import {
@@ -95,14 +98,27 @@ interface PrimedCodeFile {
   sourceRef: CodeEnvRef;
   sandboxName: string;
   isActive: boolean;
+  temporary: boolean;
   getUploadTime: () => Promise<string | undefined>;
+}
+
+export function getProjectCodeScope(req: ServerRequest): CodeFileProjectScope | undefined {
+  if (req.config?.projects?.codeExecution !== true || req.chatProjectContext == null) {
+    return undefined;
+  }
+  req.codeFileReferences ??= new Map();
+  return {
+    projectFileIds: new Set(req.chatProjectContext.file_ids),
+    conversationId: req.resolvedConversation?.conversationId ?? req.body?.conversationId,
+  };
 }
 
 /** Reserve actual storage destinations before recovery so a failed winner never revives stale content. */
 export async function selectCodeFiles({
   files,
   privateFileIds,
-  projectFileIds = [],
+  project,
+  getTurnRef,
   routeKey,
   getFileInfo,
   concurrency,
@@ -110,7 +126,8 @@ export async function selectCodeFiles({
 }: {
   files: Array<TFile | null | undefined>;
   privateFileIds?: ReadonlySet<string>;
-  projectFileIds?: readonly string[];
+  project?: CodeFileProjectScope;
+  getTurnRef?: (file: TFile, destination?: string) => CodeEnvRef | undefined;
   routeKey: string;
   getFileInfo: (ref: CodeEnvRef) => Promise<CodeFileInfo | null>;
   concurrency?: number;
@@ -118,15 +135,15 @@ export async function selectCodeFiles({
 }): Promise<{ selected: PrimedCodeFile[]; skippedNoRef: number; skippedSuperseded: number }> {
   let skippedNoRef = 0;
   let skippedSuperseded = 0;
-  const projectIds = new Set(projectFileIds);
   const candidates = [];
   const registry = createCodeApiUploadRegistry();
-  for (const file of sortCodeFilesByDestinationPriority(files, privateFileIds)) {
+  for (const file of sortCodeFilesByDestinationPriority(files, privateFileIds, project)) {
     if (!file) {
       continue;
     }
     const ref = getCodeEnvRefForProfile(file.metadata, routeKey);
-    const sourceRef = ref ?? getCodeEnvRefs(file.metadata)[0]?.[1];
+    const canonicalRef = ref ?? getCodeEnvRefs(file.metadata)[0]?.[1];
+    const sourceRef = canonicalRef ?? getTurnRef?.(file);
     if (!sourceRef) {
       skippedNoRef++;
       continue;
@@ -140,30 +157,42 @@ export async function selectCodeFiles({
         signal,
         task: () => getFileInfo(sourceRef),
       }));
-    candidates.push({ file, ref, sourceRef, getInfo });
+    candidates.push({ file, ref, sourceRef, getInfo, temporary: canonicalRef == null });
   }
   const resolved = await Promise.all(
     candidates.map(async (candidate) => {
-      const { file, ref, sourceRef, getInfo } = candidate;
+      const { file, ref, sourceRef, getInfo, temporary } = candidate;
       const info = ref ? await getInfo() : null;
       signal?.throwIfAborted();
       const recovering = !ref || !checkCodeFileActive(info?.lastModified);
-      const storedName = sourceRef.sandboxFilename ?? info?.originalFilename;
+      const storedName = temporary
+        ? undefined
+        : (sourceRef.sandboxFilename ?? info?.originalFilename);
       const sandboxName = storedName ?? resolveSandboxFilename(file.filename, file.type);
       const destination = recovering
         ? getCodeEnvUploadFilename(resolveSandboxFilename(sandboxName, file.type))
         : sandboxName;
       const assignRecoveryName = !ref || recovering;
+      let scopePriority = 0;
+      if (isImportedProjectFile(file, project)) {
+        scopePriority = 4;
+      } else if (
+        privateFileIds?.has(file.file_id) &&
+        project?.projectFileIds.has(file.file_id) !== true
+      ) {
+        scopePriority = 2;
+      }
       return {
         file,
         ref,
         sourceRef,
         isActive: !recovering,
+        temporary,
         sandboxName: destination,
         storedName: ref ? storedName : undefined,
         assignRecoveryName,
         selectionPriority:
-          (privateFileIds?.has(file.file_id) ? 2 : 0) +
+          scopePriority +
           Number(!ref || (recovering && (!storedName || destination !== storedName))),
         getUploadTime: async () => info?.lastModified,
       };
@@ -173,11 +202,7 @@ export async function selectCodeFiles({
    * from other chats (or uploads without a chat) remain independent inputs. */
   const storedDestinations = new Set<string>();
   const surviving = resolved.filter((candidate) => {
-    const scope =
-      projectIds.size === 0
-        ? ''
-        : (candidate.file.conversationId ??
-          (projectIds.has(candidate.file.file_id) ? candidate.file.file_id : ''));
+    const scope = getCodeFileDestinationScope(candidate.file, project);
     const storedDestination = JSON.stringify([scope, candidate.storedName]);
     if (candidate.storedName && storedDestinations.has(storedDestination)) {
       skippedSuperseded++;
@@ -193,22 +218,27 @@ export async function selectCodeFiles({
   const selected: PrimedCodeFile[] = [];
   for (const candidate of surviving) {
     if (candidate.assignRecoveryName) {
+      const sandboxName = claimCodeDestination(
+        destinations,
+        candidate.sandboxName,
+        candidate.file.file_id,
+      );
       selected.push({
         ...candidate,
-        sandboxName: claimCodeDestination(
-          destinations,
-          candidate.sandboxName,
-          candidate.file.file_id,
-        ),
+        sandboxName,
+        temporary:
+          candidate.temporary ||
+          (isImportedProjectFile(candidate.file, project) && sandboxName !== candidate.sandboxName),
       });
       continue;
     }
     if (!reserveCodeDestination(destinations, candidate.sandboxName)) {
-      if (projectIds.size > 0) {
+      if (isImportedProjectFile(candidate.file, project)) {
         // Live objects mount at their stored path, so a displaced input needs a new upload.
         selected.push({
           ...candidate,
           isActive: false,
+          temporary: true,
           sandboxName: claimCodeDestination(
             destinations,
             getCodeEnvUploadFilename(
@@ -224,13 +254,35 @@ export async function selectCodeFiles({
     }
     selected.push(candidate);
   }
+  await Promise.all(
+    selected.map(async (candidate) => {
+      if (!candidate.temporary) return;
+      const ref = getTurnRef?.(candidate.file, candidate.sandboxName);
+      if (!ref) return;
+      const info = await withCodeApiUploadSlot({
+        registry,
+        scope: routeKey,
+        concurrency,
+        signal,
+        task: () => getFileInfo(ref),
+      });
+      signal?.throwIfAborted();
+      candidate.sourceRef = ref;
+      candidate.ref = ref;
+      candidate.isActive = checkCodeFileActive(info?.lastModified);
+      candidate.getUploadTime = async () => info?.lastModified;
+    }),
+  );
   return { selected, skippedNoRef, skippedSuperseded };
 }
 
 /** Where the model can open primed code files on the selected execution route. */
 export type CodeFileLocation = 'sandbox' | 'programmatic';
 
-type CodeContextFile = Pick<TFile, 'file_id' | 'filename' | 'context' | 'status' | 'previewError'>;
+type CodeContextFile = Pick<
+  TFile,
+  'file_id' | 'filename' | 'context' | 'conversationId' | 'status' | 'previewError'
+>;
 
 const CODE_FILE_CONTEXT_ROOTS: Record<CodeFileLocation, string> = {
   sandbox: '/mnt/data',
@@ -281,10 +333,10 @@ export function getCodeFileContextLine(
   agentResourceIds: ReadonlySet<string>,
   destination: string,
   location: CodeFileLocation = 'sandbox',
-  projectFileIds: readonly string[] = [],
+  project?: CodeFileProjectScope,
 ): string {
   const displaced = destination !== file.filename;
-  const isProjectFile = projectFileIds.includes(file.file_id);
+  const isProjectFile = project?.projectFileIds.has(file.file_id) === true;
   if (file.context === FileContext.execute_code && !displaced && !isProjectFile) {
     return '';
   }
@@ -293,6 +345,11 @@ export function getCodeFileContextLine(
   }`;
   if (isProjectFile) {
     origin = ' (project file)';
+    if (file.context === FileContext.execute_code && !isImportedProjectFile(file, project)) {
+      origin += ` (written earlier as ${file.filename})`;
+    } else if (displaced) {
+      origin += ` (uploaded as ${file.filename})`;
+    }
   } else if (file.context === FileContext.execute_code) {
     origin = ` (written earlier as ${file.filename})`;
   }
