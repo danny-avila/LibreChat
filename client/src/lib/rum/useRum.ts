@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import type { TRumConfig, TUser } from 'librechat-data-provider';
 import type { HyperDXActionClient } from './diagnostics';
+import type { BrowserConfig } from './browser';
 import {
   discardEarlyRumQueue,
   queueSpaRouteChange,
@@ -12,6 +13,7 @@ import {
 import { startClientLogs, stopClientLogs } from './logs';
 import { useGetStartupConfig } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { isReplayRouteAllowed } from './privacy';
 import { normalizeRumPath } from './routes';
 import { getClientBuildId } from './build';
 
@@ -21,17 +23,7 @@ let rumProxyToken: string | undefined;
 let rumProxyFetchPatched = false;
 
 type HyperDXBrowser = HyperDXActionClient & {
-  init: (config: {
-    advancedNetworkCapture: boolean;
-    apiKey: string;
-    consoleCapture: boolean;
-    disableReplay: boolean;
-    maskAllInputs: boolean;
-    maskAllText: boolean;
-    service: string;
-    tracePropagationTargets?: string[];
-    url: string;
-  }) => void;
+  init: (config: BrowserConfig) => void;
   setGlobalAttributes: (attributes: Record<string, string>) => void;
   getSessionId?: () => string | undefined;
   stopSessionRecorder: () => void;
@@ -160,7 +152,7 @@ function buildGlobalAttributes(
 }
 
 async function loadHyperDX(): Promise<HyperDXBrowser> {
-  const module = await import('@hyperdx/browser');
+  const module = await import('./browser');
   return module.default;
 }
 
@@ -173,7 +165,9 @@ export default function useRum(): void {
   const sampledInRef = useRef<boolean>(true);
   const hyperDxRef = useRef<HyperDXBrowser | undefined>(undefined);
   const rumConfig = startupConfig?.rum;
-  const replayEnabled = rumConfig?.sessionReplay?.enabled ?? rumConfig?.disableReplay === false;
+  const replayEnabled =
+    (rumConfig?.sessionReplay?.enabled ?? rumConfig?.disableReplay === false) &&
+    isReplayRouteAllowed(location.pathname);
   const shouldBufferRoutes = !startupConfigFetched || !!rumConfig;
   const route = useMemo(() => normalizeRumPath(location.pathname), [location.pathname]);
   const routeRef = useRef<string>(route);
@@ -187,7 +181,7 @@ export default function useRum(): void {
     routeRef.current = route;
   }, [route, shouldBufferRoutes]);
 
-  /** Leaving the authenticated layout (e.g. for a share link) ends this session's log export. */
+  /** Leaving the RUM layout (e.g. for a share link) ends this session's recording and log export. */
   useEffect(
     () => () => {
       stopClientLogs();

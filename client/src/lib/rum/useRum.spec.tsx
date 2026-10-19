@@ -11,7 +11,7 @@ const mockUseGetStartupConfig = jest.fn();
 const mockUseAuthContext = jest.fn();
 const mockUseLocation = jest.fn();
 
-jest.mock('@hyperdx/browser', () => ({
+jest.mock('./browser', () => ({
   __esModule: true,
   default: {
     addAction: (...args: unknown[]) => mockAddAction(...args),
@@ -187,6 +187,64 @@ describe('useRum', () => {
     await waitFor(() => expect(mockInit).toHaveBeenCalled());
     expect(mockInit).toHaveBeenCalledWith(expect.objectContaining({ disableReplay: true }));
     expect(mockResumeSessionRecorder).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '/login',
+    '/login/2fa',
+    '/login/2fa/setup',
+    '/register',
+    '/reset-password',
+    '/verify',
+    '/oauth/success',
+  ])('does not start replay on %s even in public-token mode', async (pathname) => {
+    mockUseAuthContext.mockReturnValue({ token: undefined, user: undefined });
+    mockUseLocation.mockReturnValue({ pathname, search: '?tempToken=fake-login-token' });
+    mockUseGetStartupConfig.mockReturnValue({
+      isFetched: true,
+      data: {
+        rum: {
+          provider: 'hyperdx',
+          enabled: true,
+          url: 'https://collector.example',
+          serviceName: 'librechat-web',
+          authMode: 'publicToken',
+          publicToken: 'public-test-key',
+          sessionReplay: { enabled: true },
+        },
+      },
+    });
+    renderHook(() => useRum());
+    await waitFor(() => expect(mockInit).toHaveBeenCalled());
+    expect(mockInit).toHaveBeenCalledWith(expect.objectContaining({ disableReplay: true }));
+    expect(mockResumeSessionRecorder).not.toHaveBeenCalled();
+  });
+
+  it('stops recording on an auth-route transition even while a session token remains present', async () => {
+    mockUseGetStartupConfig.mockReturnValue({
+      isFetched: true,
+      data: {
+        rum: {
+          provider: 'hyperdx',
+          enabled: true,
+          url: '/api/rum',
+          serviceName: 'librechat-web',
+          authMode: 'proxy',
+          sessionReplay: { enabled: true },
+        },
+      },
+    });
+    const { rerender } = renderHook(() => useRum());
+    await waitFor(() => expect(mockResumeSessionRecorder).toHaveBeenCalledTimes(1));
+    mockUseLocation.mockReturnValue({
+      pathname: '/login/2fa',
+      search: '?tempToken=fake-login-token',
+    });
+    rerender();
+    await waitFor(() => expect(mockInit).toHaveBeenCalledTimes(2));
+    expect(mockStopSessionRecorder).toHaveBeenCalledTimes(1);
+    expect(mockInit).toHaveBeenLastCalledWith(expect.objectContaining({ disableReplay: true }));
+    expect(mockResumeSessionRecorder).toHaveBeenCalledTimes(1);
   });
 
   it('stops recording when proxy authentication is lost', async () => {

@@ -30,7 +30,7 @@ jest.mock('~/data-provider', () => ({
 jest.mock('~/hooks/AuthContext', () => ({
   useAuthContext: () => ({ token: 'session-jwt', user: { id: 'user-1' } }),
 }));
-jest.mock('@hyperdx/browser', () => ({
+jest.mock('~/lib/rum/browser', () => ({
   __esModule: true,
   default: {
     init: jest.fn(),

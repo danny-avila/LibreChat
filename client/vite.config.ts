@@ -243,6 +243,11 @@ export default defineConfig(({ command }) => ({
               priority: 1,
             },
             {
+              name: 'utilities',
+              test: /node_modules[\\/]lodash(?:\.[^\\/]+)?[\\/]/,
+              priority: 1,
+            },
+            {
               name(id: string) {
                 const normalizedId = id.replace(/\\/g, '/');
                 if (normalizedId.includes('node_modules')) {
@@ -250,7 +255,13 @@ export default defineConfig(({ command }) => ({
                     return 'polyfills';
                   }
 
-                  if (normalizedId.includes('@hyperdx/')) {
+                  if (
+                    normalizedId.includes('@hyperdx/') ||
+                    normalizedId.includes('@opentelemetry/') ||
+                    /\/node_modules\/(?:rrweb(?:-snapshot)?|@rrweb\/[^/]+|fflate|protobufjs|long)\//.test(
+                      normalizedId,
+                    )
+                  ) {
                     return 'rum';
                   }
 
