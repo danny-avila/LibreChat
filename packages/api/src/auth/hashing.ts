@@ -89,10 +89,17 @@ export function createHashPool(
 }
 
 let pool: HashPool | undefined;
+let configuredSize: number | undefined;
+
+/** Applies `librechat.yaml` `passwordHashing` at startup, before the pool first starts. */
+export function configureHashPool(config?: { maxWorkers?: number }): void {
+  configuredSize = config?.maxWorkers;
+}
 
 function getHashPool(): HashPool {
   pool ??= createHashPool(
     path.join(path.dirname(require.resolve('@librechat/api')), 'auth/hash-worker.cjs'),
+    configuredSize,
   );
   return pool;
 }

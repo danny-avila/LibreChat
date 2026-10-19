@@ -4314,6 +4314,13 @@ export const configSchema = z.object({
     })
     .optional(),
   rateLimits: rateLimitSchema.optional(),
+  /** Worker threads that hash and verify passwords and auth tokens off the event loop. */
+  passwordHashing: z
+    .object({
+      /** Defaults to one less than the CPU count, at most 4. */
+      maxWorkers: z.number().int().min(1).max(32).optional(),
+    })
+    .optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
   filters: filtersConfigSchema.optional(),
