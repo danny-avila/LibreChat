@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import remarkGfm from 'remark-gfm';
 import ReactMarkdown from 'react-markdown';
 import { useTranslation } from 'react-i18next';
@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom';
 import type { MeoConsent } from './MeoConsentDialog';
 import MeoConsentDialog from './MeoConsentDialog';
 import { useMeoSession } from './session';
+import { appendAssistantChunk, visibleTranscript } from './streamingMessages.mjs';
 
 type Connection = {
   id: string;
@@ -97,6 +98,10 @@ export default function MeoChat() {
   const [models, setModels] = useState<Model[]>([]);
   const [modelDiscovery, setModelDiscovery] = useState<'idle' | 'unsupported' | 'ready'>('idle');
   const [messages, setMessages] = useState<Message[]>([]);
+  const [visibleCount, setVisibleCount] = useState(48);
+  const transcriptStart = visibleTranscript(messages.length, visibleCount);
+  const streamRef = useRef<HTMLElement | null>(null);
+  const olderScrollRef = useRef<{ top: number; height: number } | null>(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -117,6 +122,16 @@ export default function MeoChat() {
     },
     [user?.id],
   );
+
+  useEffect(() => { setVisibleCount(48); olderScrollRef.current = null; }, [activeConversationId]);
+
+  useLayoutEffect(() => {
+    const anchor = olderScrollRef.current;
+    const element = streamRef.current;
+    if (!anchor || !element) return;
+    olderScrollRef.current = null;
+    element.scrollTop = anchor.top + element.scrollHeight - anchor.height;
+  }, [visibleCount]);
 
   const requestConsent = (consent: MeoConsent) =>
     new Promise<boolean>((resolve) => {
@@ -390,6 +405,7 @@ export default function MeoChat() {
       while (true) {
         const { value, done } = await reader.read();
         buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+        let pendingText = '';
         let boundary = buffer.indexOf('\n\n');
         while (boundary >= 0) {
           const block = buffer.slice(0, boundary);
@@ -399,21 +415,19 @@ export default function MeoChat() {
           if (eventName === 'delta' && data) {
             const chunk = JSON.parse(data).text as string;
             assistantText += chunk;
-            setMessages((current) =>
-              current.map((message, index) =>
-                index === current.length - 1 && message.role === 'assistant'
-                  ? { ...message, content: message.content + chunk }
-                  : message,
-              ),
-            );
+            pendingText += chunk;
           } else if (eventName === 'error' && data) {
             const failure = JSON.parse(data) as { message?: string };
+            if (pendingText) setMessages((current) => appendAssistantChunk(current, pendingText));
             throw new Error(failure.message ?? t('meo_web_stream_failed'));
           } else if (eventName === 'done') {
             completed = true;
           }
           boundary = buffer.indexOf('\n\n');
         }
+        // One React state update per network read, not per token, and copy
+        // only the assistant tail instead of mapping every stored message.
+        if (pendingText) setMessages((current) => appendAssistantChunk(current, pendingText));
         if (done) break;
       }
       if (!completed) throw new Error(t('meo_web_stream_incomplete'));
@@ -532,14 +546,25 @@ export default function MeoChat() {
         </nav>
       )}
       <section
+        ref={streamRef}
         aria-label={t('meo_web_conversation')}
         className="bg-surface-primary min-h-0 flex-1 space-y-5 overflow-y-auto rounded-xl border p-4 md:p-6"
       >
         {(loading || historyLoading) && <p>{t('meo_web_loading')}</p>}
         {!loading && connections.length === 0 && <p>{t('meo_web_no_connections')}</p>}
-        {messages.map((message, index) => (
+        {transcriptStart > 0 && (
+          <button type="button" className="rounded-lg border px-3 py-2 text-sm"
+            onClick={() => {
+              const element = streamRef.current;
+              if (element) olderScrollRef.current = { top: element.scrollTop, height: element.scrollHeight };
+              setVisibleCount((current) => current + 48);
+            }}>
+            {t('meo_web_load_more')} · {transcriptStart} earlier messages
+          </button>
+        )}
+        {messages.slice(transcriptStart).map((message, index) => (
           <article
-            key={`${index}-${message.role}`}
+            key={`${transcriptStart + index}-${message.role}`}
             className={
               message.role === 'user'
                 ? 'bg-surface-secondary ml-auto max-w-[85%] rounded-2xl p-4'
