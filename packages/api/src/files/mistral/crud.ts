@@ -20,7 +20,11 @@ import type {
   OCRResult,
   OCRImage,
 } from '~/types';
-import { getOutboundTimeoutMs, DEFAULT_OUTBOUND_TIMEOUTS_MS } from '~/utils/timeouts';
+import {
+  outboundRequestBudget,
+  getOutboundTimeoutMs,
+  DEFAULT_OUTBOUND_TIMEOUTS_MS,
+} from '~/utils/timeouts';
 import { decryptConfigSecret, isEncryptedSecretPayload } from '~/admin/secrets';
 import { logAxiosError, createAxiosInstance } from '~/utils/axios';
 import { applySSRFSafeAgentIfDirect } from '~/auth/agent';
@@ -99,7 +103,7 @@ export async function uploadDocumentToMistral({
   const actualFileName = fileName || path.basename(filePath);
 
   const config: AxiosRequestConfig = {
-    timeout,
+    ...outboundRequestBudget(timeout),
     headers: {
       Authorization: `Bearer ${apiKey}`,
       ...form.getHeaders(),
@@ -140,7 +144,7 @@ export async function getSignedUrl({
   contentProtected?: boolean;
 }): Promise<MistralSignedUrlResponse> {
   const config: AxiosRequestConfig = {
-    timeout,
+    ...outboundRequestBudget(timeout),
     headers: {
       Authorization: `Bearer ${apiKey}`,
     },
@@ -198,7 +202,7 @@ export async function performOCR({
   const documentKey = documentType === 'image_url' ? 'image_url' : 'document_url';
 
   const config: AxiosRequestConfig = {
-    timeout,
+    ...outboundRequestBudget(timeout),
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
@@ -262,7 +266,7 @@ export async function deleteMistralFile({
   contentProtected?: boolean;
 }): Promise<void> {
   const config: AxiosRequestConfig = {
-    timeout,
+    ...outboundRequestBudget(timeout),
     headers: {
       Authorization: `Bearer ${apiKey}`,
     },
@@ -681,7 +685,7 @@ async function createJWT(serviceKey: GoogleServiceAccount): Promise<string> {
  */
 async function exchangeJWTForAccessToken(jwt: string, timeout: number): Promise<string> {
   const config: AxiosRequestConfig = {
-    timeout,
+    ...outboundRequestBudget(timeout),
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
@@ -755,7 +759,7 @@ async function performGoogleVertexOCR({
   });
 
   const config: AxiosRequestConfig = {
-    timeout,
+    ...outboundRequestBudget(timeout),
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,

@@ -18,3 +18,16 @@ export function getOutboundTimeoutMs(
 ): number {
   return appConfig?.timeouts?.[key] ?? DEFAULT_OUTBOUND_TIMEOUTS_MS[key];
 }
+
+/**
+ * Axios options bounding one request by `timeoutMs` of wall-clock time. Axios's own `timeout`
+ * only fires on an idle socket, so a response that keeps trickling bytes would never end;
+ * the abort signal caps the whole exchange and also follows `signal` when given.
+ */
+export function outboundRequestBudget(
+  timeoutMs: number,
+  signal?: AbortSignal,
+): { timeout: number; signal: AbortSignal } {
+  const deadline = AbortSignal.timeout(timeoutMs);
+  return { timeout: timeoutMs, signal: signal ? AbortSignal.any([signal, deadline]) : deadline };
+}

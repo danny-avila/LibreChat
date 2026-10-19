@@ -10,6 +10,7 @@ jest.mock('@librechat/api', () => ({
   getBoundedAskUserAnswerValues: jest.fn(() => []),
   serializeAskUserAnswerVariants: jest.fn(() => []),
   getOutboundTimeoutMs: (config, key) => config?.timeouts?.[key] ?? 10_000,
+  outboundRequestBudget: (timeout) => ({ timeout, signal: AbortSignal.timeout(timeout) }),
 }));
 jest.mock('@librechat/data-schemas', () => ({ logger: { error: jest.fn() } }));
 jest.mock('librechat-data-provider', () => ({ ErrorTypes: { MODERATION: 'moderation' } }));

@@ -2,7 +2,7 @@ import type { AxiosResponse } from 'axios';
 import type axios from 'axios';
 import type { logAxiosError } from '~/utils/axios';
 import type { isEnabled } from '~/utils/common';
-import { getOutboundTimeoutMs } from '~/utils/timeouts';
+import { getOutboundTimeoutMs, outboundRequestBudget } from '~/utils/timeouts';
 
 interface ContextFile {
   embedded?: boolean;
@@ -73,7 +73,7 @@ export function createRagContextHandlers({
         headers: {
           Authorization: `Bearer ${jwtToken}`,
         },
-        timeout,
+        ...outboundRequestBudget(timeout),
       });
     }
 
@@ -89,7 +89,7 @@ export function createRagContextHandlers({
           Authorization: `Bearer ${jwtToken}`,
           'Content-Type': 'application/json',
         },
-        timeout,
+        ...outboundRequestBudget(timeout),
       },
     );
   };

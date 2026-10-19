@@ -167,6 +167,20 @@ class RequestConfig {
   ) {}
 }
 
+/**
+ * The abort signal for one action call: `timeout` alone only fires on an idle socket, so a
+ * deadline signal caps the whole exchange, combined with the caller's own `signal`.
+ */
+function requestSignal(timeout?: number, signal?: AbortSignal): { signal?: AbortSignal } {
+  const signals = [signal, timeout != null ? AbortSignal.timeout(timeout) : undefined].filter(
+    (value): value is AbortSignal => value != null,
+  );
+  if (signals.length === 0) {
+    return {};
+  }
+  return { signal: signals.length === 1 ? signals[0] : AbortSignal.any(signals) };
+}
+
 class RequestExecutor {
   path: string;
   params?: Record<string, unknown>;
@@ -317,7 +331,7 @@ class RequestExecutor {
       ...(options?.httpAgent != null ? { httpAgent: options.httpAgent } : {}),
       ...(options?.httpsAgent != null ? { httpsAgent: options.httpsAgent } : {}),
       ...(options?.timeout != null ? { timeout: options.timeout } : {}),
-      ...(options?.signal != null ? { signal: options.signal } : {}),
+      ...requestSignal(options?.timeout, options?.signal),
     });
 
     // Initialize separate containers for query and body parameters.

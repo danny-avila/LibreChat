@@ -3,7 +3,7 @@ import type { logger } from '@librechat/data-schemas';
 import type axios from 'axios';
 import type { FileCitationSelectionConfig, selectFileCitationSources } from '../citations';
 import type { logAxiosError } from '~/utils/axios';
-import { getOutboundTimeoutMs } from '~/utils/timeouts';
+import { getOutboundTimeoutMs, outboundRequestBudget } from '~/utils/timeouts';
 
 type SearchFile = { file_id: string; fromAgent?: boolean };
 type FileSearchResult = [
@@ -95,7 +95,7 @@ export async function executeFileSearchQuery({
           Authorization: `Bearer ${jwtToken}`,
           'Content-Type': 'application/json',
         },
-        timeout,
+        ...outboundRequestBudget(timeout),
       })
       .then((result) => ({ data: result.data, file_id: file.file_id }))
       .catch((error) => {

@@ -11,8 +11,8 @@ import type { IMongoFile } from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
 import type { AxiosInstance } from 'axios';
 import type { ServerRequest, StrategyFunctions } from '~/types';
+import { getOutboundTimeoutMs, outboundRequestBudget } from '~/utils/timeouts';
 import { getFileStream, isAttachmentObjectNotFoundError } from './utils';
-import { getOutboundTimeoutMs } from '~/utils/timeouts';
 import { validateImage } from '~/files/validation';
 import { runGuardedEncode } from './memoryGuard';
 import { logAxiosError } from '~/utils/axios';
@@ -142,9 +142,7 @@ export async function encodeAndFormatImages(
         try {
           const response = await httpClient.get<ArrayBuffer>(imageURL, {
             responseType: 'arraybuffer',
-            timeout: fetchTimeoutMs,
-            /** `timeout` only fires on an idle socket; this bounds a slow, steady trickle too. */
-            signal: AbortSignal.timeout(fetchTimeoutMs),
+            ...outboundRequestBudget(fetchTimeoutMs),
           });
           return [preparedFile, Buffer.from(response.data).toString('base64')];
         } catch (error) {

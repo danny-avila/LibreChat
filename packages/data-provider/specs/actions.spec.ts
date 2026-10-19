@@ -85,13 +85,19 @@ describe('ActionRequest', () => {
       'application/json',
     );
     const executor = actionRequest.setParams({});
-    const { signal } = new AbortController();
+    const controller = new AbortController();
 
-    await executor.execute({ timeout: 5_000, signal });
+    await executor.execute({ timeout: 5_000, signal: controller.signal });
 
     expect(mockedAxios.create).toHaveBeenLastCalledWith(
-      expect.objectContaining({ timeout: 5_000, signal, maxRedirects: 0 }),
+      expect.objectContaining({ timeout: 5_000, maxRedirects: 0 }),
     );
+    /* One signal follows both the caller and a wall-clock deadline. */
+    const { signal: combined } = mockedAxios.create.mock.lastCall?.[0] as { signal: AbortSignal };
+    expect(combined).toBeInstanceOf(AbortSignal);
+    expect(combined.aborted).toBe(false);
+    controller.abort();
+    expect(combined.aborted).toBe(true);
   });
 
   describe('ActionRequest', () => {

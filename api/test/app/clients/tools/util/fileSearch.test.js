@@ -178,6 +178,7 @@ describe('fileSearch.js - tuple return validation', () => {
             'Content-Type': 'application/json',
           },
           timeout: 30_000,
+          signal: expect.any(AbortSignal),
         },
       );
     });

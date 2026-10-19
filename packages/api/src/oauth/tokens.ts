@@ -3,8 +3,8 @@ import { logger, encryptV2 } from '@librechat/data-schemas';
 import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 import type { IToken, TokenMethods } from '@librechat/data-schemas';
 import type { AxiosError } from 'axios';
+import { logAxiosError, outboundRequestBudget, DEFAULT_OUTBOUND_TIMEOUTS_MS } from '~/utils';
 import { DEFAULT_OAUTH_TOKEN_TTL_SECONDS, normalizeExpiresIn } from './expiry';
-import { logAxiosError, DEFAULT_OUTBOUND_TIMEOUTS_MS } from '~/utils';
 import { validateActionOAuthEndpoint } from './validation';
 import { decryptSensitiveValue } from '~/actions/crypto';
 import { createSSRFSafeAgents } from '~/auth';
@@ -221,7 +221,7 @@ export async function refreshAccessToken(
       maxRedirects: 0,
       httpsAgent: getActionOAuthAgents(allowedAddresses).httpsAgent,
       data: params.toString(),
-      timeout,
+      ...outboundRequestBudget(timeout),
     });
     await processAccessTokens(
       response.data,
