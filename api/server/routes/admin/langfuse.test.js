@@ -235,6 +235,7 @@ describe('admin Langfuse routes', () => {
     expect(handlerDepsAtLoad).not.toHaveProperty('findLangfusePromptGroup');
     expect(handlerDepsAtLoad).not.toHaveProperty('createLangfusePromptGroup');
     expect(handlerDepsAtLoad).not.toHaveProperty('deletePromptGroup');
+    expect(handlerDepsAtLoad).not.toHaveProperty('promptService');
   });
 
   it('requires manage:prompts access, in addition to Langfuse manage access, for POST /prompts/sync', async () => {

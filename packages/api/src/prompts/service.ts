@@ -12,10 +12,12 @@ import type {
   PromptServiceError,
   PromptSourceAdapter,
   PromptServiceResult,
+  ImportSourceGroupInput,
   PromptCreationResult,
   CreatePromptGroupInput,
   PromptServiceAdapters,
   MakePromptProductionResult,
+  PromptSourceImportOutcome,
 } from './types';
 import type { ProjectedStoredPrompt, ProjectedStoredPromptGroup } from './protection';
 import type { CreateLangfuseSourceResolverDeps } from '../langfuse/promptSync';
@@ -40,6 +42,7 @@ import { createLangfuseSourceResolver } from '../langfuse/promptSync';
 import { createLangfusePromptAdapter } from './langfuse';
 import { getSafeErrorMetadata } from '~/utils';
 import { withPromptStage } from './errors';
+import { CONSTANTS } from '~/mcp/enum';
 
 type WithPromptFilters<T> = T & { readonly filters?: FiltersConfig };
 type ProjectedGroup = ProjectedStoredPromptGroup<PromptGroupRecord>;
@@ -118,6 +121,13 @@ export interface PromptService {
   }): Promise<
     PromptServiceResult<{ readonly message: string; readonly promptIds?: readonly string[] }>
   >;
+  /**
+   * Finds-or-creates one source-pointer group by its source identity, granting a
+   * PUBLIC viewer entry only when it was just created. A match is left as is: no
+   * ACL write and no update statement run against an existing group. A failed
+   * grant rolls the new group back and rethrows.
+   */
+  importSourceGroup(input: ImportSourceGroupInput): Promise<PromptSourceImportOutcome>;
 }
 
 function invalidInput<T>(message: string, details?: unknown): PromptServiceResult<T> {
@@ -150,7 +160,7 @@ function inspect(
 /** Builds the prompt service from a native adapter, a Langfuse adapter, a catalog
  *  store and an ownership grant. */
 export function createPromptServiceFromAdapters(adapters: PromptServiceAdapters): PromptService {
-  const { native, langfuse, catalog, grantCreatorOwnership, logger } = adapters;
+  const { native, langfuse, catalog, grantCreatorOwnership, grantPublicViewer, logger } = adapters;
   const adaptersBySource: Record<PromptGroupRecord['source'], PromptSourceAdapter> = {
     native,
     langfuse,
@@ -395,6 +405,49 @@ export function createPromptServiceFromAdapters(adapters: PromptServiceAdapters)
       const value = await catalog.deletePromptGroup(groupId);
       return { ok: true, value: promptIds == null ? value : { ...value, promptIds } };
     },
+
+    async importSourceGroup({ identity, name, author, authorName }) {
+      // Insertion and the initial PUBLIC grant are separate writes. If a run stops between
+      // them, a later import leaves the existing group unchanged and does not retry the grant.
+      const existing = await catalog.findSourceGroup(identity);
+      if (existing) {
+        return 'unchanged';
+      }
+
+      const created = await catalog.createSourceGroup({ identity, name, author, authorName });
+      if (!created.ok) {
+        if (created.error.code === 'duplicate') {
+          return 'unchanged';
+        }
+        logger.warn('[importSourceGroup] Skipped a source group that failed validation', {
+          name,
+          code: 'invalid',
+          ...getSafeErrorMetadata(created.error.cause),
+        });
+        return 'skipped';
+      }
+
+      const groupId = created.value._id;
+      try {
+        await grantPublicViewer({ groupId });
+      } catch (error) {
+        logger.error(
+          '[importSourceGroup] Could not grant public access to an imported source group',
+          { groupId, ...getSafeErrorMetadata(error) },
+        );
+        try {
+          await catalog.deletePromptGroup(groupId);
+        } catch (deleteError) {
+          logger.error('[importSourceGroup] Could not roll back an ungranted source group', {
+            groupId,
+            ...getSafeErrorMetadata(deleteError),
+          });
+        }
+        throw error;
+      }
+
+      return 'created';
+    },
   };
 }
 
@@ -402,7 +455,7 @@ export interface PromptServiceDependencies {
   readonly db: PromptDatabase;
   readonly grantPermission: (input: {
     principalType: PrincipalType;
-    principalId: string;
+    principalId: string | null;
     resourceType: ResourceType;
     resourceId: string;
     accessRoleId: AccessRoleIds;
@@ -451,6 +504,16 @@ export function createPromptService({
       logger.debug(
         `[createPromptGroup] Granted owner permissions to user ${userId} for promptGroup ${groupId}`,
       );
+    },
+    grantPublicViewer: async ({ groupId }) => {
+      await grantPermission({
+        principalType: PrincipalType.PUBLIC,
+        principalId: null,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: groupId,
+        accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
+        grantedBy: CONSTANTS.SYSTEM_USER_ID,
+      });
     },
     logger,
   });

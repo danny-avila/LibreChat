@@ -22,12 +22,7 @@ function listResult(
 function createDeps(overrides: Partial<PromptCatalogSyncDeps> = {}): PromptCatalogSyncDeps {
   return {
     listPrompts: jest.fn().mockResolvedValue(listResult([], 0)),
-    findPromptGroup: jest.fn().mockResolvedValue(null),
-    createPromptGroup: jest.fn().mockResolvedValue({ _id: 'group-1' }),
-    isDuplicateKeyError: jest.fn().mockReturnValue(false),
-    isValidationError: jest.fn().mockReturnValue(false),
-    grantPublicViewer: jest.fn().mockResolvedValue(undefined),
-    deletePromptGroup: jest.fn().mockResolvedValue(undefined),
+    promptService: { importSourceGroup: jest.fn().mockResolvedValue('created') },
     lock: {
       acquire: jest.fn().mockResolvedValue('token'),
       extend: jest.fn().mockResolvedValue(true),
@@ -194,11 +189,11 @@ describe('syncLangfusePromptCatalog', () => {
     expect(listPrompts).toHaveBeenCalledWith({ type: 'text', limit: 25, page: 1 });
   });
 
-  it('counts a found match as unchanged without creating or granting', async () => {
-    const findPromptGroup = jest.fn().mockResolvedValue({ _id: 'existing' });
+  it('counts an unchanged outcome without affecting other counters', async () => {
+    const importSourceGroup = jest.fn().mockResolvedValue('unchanged');
     const deps = createDeps({
       listPrompts: jest.fn().mockResolvedValue(listResult([textItem('a')], 1)),
-      findPromptGroup,
+      promptService: { importSourceGroup },
     });
 
     const result = await syncLangfusePromptCatalog(source, deps);
@@ -207,13 +202,13 @@ describe('syncLangfusePromptCatalog', () => {
       ok: true,
       value: { created: 0, unchanged: 1, skipped: 0, complete: true },
     });
-    expect(deps.createPromptGroup).not.toHaveBeenCalled();
-    expect(deps.grantPublicViewer).not.toHaveBeenCalled();
   });
 
-  it('creates and grants a new group on a miss', async () => {
+  it('counts a created outcome and passes the identity, author and author name', async () => {
+    const importSourceGroup = jest.fn().mockResolvedValue('created');
     const deps = createDeps({
       listPrompts: jest.fn().mockResolvedValue(listResult([textItem('a')], 1)),
+      promptService: { importSourceGroup },
     });
 
     const result = await syncLangfusePromptCatalog(source, deps);
@@ -222,56 +217,26 @@ describe('syncLangfusePromptCatalog', () => {
       ok: true,
       value: { created: 1, unchanged: 0, skipped: 0, complete: true },
     });
-    expect(deps.createPromptGroup).toHaveBeenCalledWith({
-      sourceDestination: 'us',
-      sourceProjectId: 'project-1',
-      sourcePromptName: 'a',
+    expect(importSourceGroup).toHaveBeenCalledWith({
+      identity: {
+        sourceDestination: 'us',
+        sourceProjectId: 'project-1',
+        sourcePromptName: 'a',
+      },
       name: 'a',
       author: makeSourceAuthorId('langfuse', 'project-1', undefined),
       authorName: 'Langfuse Sync',
     });
-    expect(deps.grantPublicViewer).toHaveBeenCalledWith('group-1');
   });
 
-  it('counts a duplicate-key create as unchanged without granting', async () => {
-    const createPromptGroup = jest.fn().mockRejectedValue(new Error('E11000'));
-    const isDuplicateKeyError = jest.fn().mockReturnValue(true);
-    const deps = createDeps({
-      listPrompts: jest.fn().mockResolvedValue(listResult([textItem('a')], 1)),
-      createPromptGroup,
-      isDuplicateKeyError,
-    });
-
-    const result = await syncLangfusePromptCatalog(source, deps);
-
-    expect(result).toEqual({
-      ok: true,
-      value: { created: 0, unchanged: 1, skipped: 0, complete: true },
-    });
-    expect(deps.grantPublicViewer).not.toHaveBeenCalled();
-  });
-
-  it('rejects when create fails with an unexpected error, releasing the lock once', async () => {
-    const createPromptGroup = jest.fn().mockRejectedValueOnce(new Error('boom'));
-    const deps = createDeps({
-      listPrompts: jest.fn().mockResolvedValue(listResult([textItem('a')], 1)),
-      createPromptGroup,
-    });
-
-    await expect(syncLangfusePromptCatalog(source, deps)).rejects.toThrow('boom');
-    expect(deps.lock.release).toHaveBeenCalledTimes(1);
-  });
-
-  it('counts a validation error on create as skipped and continues the loop', async () => {
-    const createPromptGroup = jest
+  it('counts a skipped outcome from importSourceGroup and continues the loop', async () => {
+    const importSourceGroup = jest
       .fn()
-      .mockRejectedValueOnce(new Error('invalid'))
-      .mockResolvedValueOnce({ _id: 'group-2' });
-    const isValidationError = jest.fn().mockReturnValue(true);
+      .mockResolvedValueOnce('skipped')
+      .mockResolvedValueOnce('created');
     const deps = createDeps({
       listPrompts: jest.fn().mockResolvedValue(listResult([textItem('a'), textItem('b')], 1)),
-      createPromptGroup,
-      isValidationError,
+      promptService: { importSourceGroup },
     });
 
     const result = await syncLangfusePromptCatalog(source, deps);
@@ -280,36 +245,19 @@ describe('syncLangfusePromptCatalog', () => {
       ok: true,
       value: { created: 1, unchanged: 0, skipped: 1, complete: true },
     });
-    expect(deps.logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('validation'),
-      'a',
-      expect.any(Error),
-    );
   });
 
-  it('rolls back and rejects with the original grant error when the grant throws', async () => {
-    const grantPublicViewer = jest.fn().mockRejectedValue(new Error('grant failed'));
-    const deps = createDeps({
-      listPrompts: jest.fn().mockResolvedValue(listResult([textItem('a')], 1)),
-      grantPublicViewer,
-    });
+  it('rejects when importSourceGroup rejects, stops paging and releases the lock once', async () => {
+    const listPrompts = jest
+      .fn()
+      .mockResolvedValueOnce(listResult([textItem('a')], 2, 1))
+      .mockResolvedValueOnce(listResult([textItem('b')], 2, 2));
+    const importSourceGroup = jest.fn().mockRejectedValue(new Error('boom'));
+    const deps = createDeps({ listPrompts, promptService: { importSourceGroup } });
 
-    await expect(syncLangfusePromptCatalog(source, deps)).rejects.toThrow('grant failed');
-    expect(deps.deletePromptGroup).toHaveBeenCalledWith('group-1');
+    await expect(syncLangfusePromptCatalog(source, deps)).rejects.toThrow('boom');
+    expect(listPrompts).toHaveBeenCalledTimes(1);
     expect(deps.lock.release).toHaveBeenCalledTimes(1);
-  });
-
-  it('still rejects with the original grant error and error-logs when the rollback delete also throws', async () => {
-    const grantPublicViewer = jest.fn().mockRejectedValue(new Error('grant failed'));
-    const deletePromptGroup = jest.fn().mockRejectedValue(new Error('delete failed'));
-    const deps = createDeps({
-      listPrompts: jest.fn().mockResolvedValue(listResult([textItem('a')], 1)),
-      grantPublicViewer,
-      deletePromptGroup,
-    });
-
-    await expect(syncLangfusePromptCatalog(source, deps)).rejects.toThrow('grant failed');
-    expect(deps.logger.error).toHaveBeenCalledTimes(2);
   });
 
   it('warns and counts a non-text item as skipped', async () => {
@@ -324,15 +272,16 @@ describe('syncLangfusePromptCatalog', () => {
       value: { created: 0, unchanged: 0, skipped: 1, complete: true },
     });
     expect(deps.logger.warn).toHaveBeenCalledWith(expect.stringContaining('chat-1'));
-    expect(deps.findPromptGroup).not.toHaveBeenCalled();
+    expect(deps.promptService.importSourceGroup).not.toHaveBeenCalled();
   });
 
   it('counts a name repeated across pages only once', async () => {
+    const importSourceGroup = jest.fn().mockResolvedValue('created');
     const listPrompts = jest
       .fn()
       .mockResolvedValueOnce(listResult([textItem('dup')], 2, 1))
       .mockResolvedValueOnce(listResult([textItem('dup')], 2, 2));
-    const deps = createDeps({ listPrompts });
+    const deps = createDeps({ listPrompts, promptService: { importSourceGroup } });
 
     const result = await syncLangfusePromptCatalog(source, deps);
 
@@ -340,7 +289,7 @@ describe('syncLangfusePromptCatalog', () => {
       ok: true,
       value: { created: 1, unchanged: 0, skipped: 0, complete: true },
     });
-    expect(deps.findPromptGroup).toHaveBeenCalledTimes(1);
+    expect(importSourceGroup).toHaveBeenCalledTimes(1);
   });
 
   it('releases the lock when listPrompts throws, and the error still propagates', async () => {
@@ -374,20 +323,24 @@ describe('syncLangfusePromptCatalog', () => {
   });
 
   it('seeds the author id from the project id alone when no tenant is given', async () => {
+    const importSourceGroup = jest.fn().mockResolvedValue('created');
     const deps = createDeps({
       listPrompts: jest.fn().mockResolvedValue(listResult([textItem('a')], 1)),
+      promptService: { importSourceGroup },
     });
 
     await syncLangfusePromptCatalog({ destination: 'us', projectId: 'project-1' }, deps);
 
-    expect(deps.createPromptGroup).toHaveBeenCalledWith(
+    expect(importSourceGroup).toHaveBeenCalledWith(
       expect.objectContaining({ author: makeSourceAuthorId('langfuse', 'project-1', undefined) }),
     );
   });
 
   it('seeds a different author id per tenant for the same project', async () => {
+    const importSourceGroup = jest.fn().mockResolvedValue('created');
     const deps = createDeps({
       listPrompts: jest.fn().mockResolvedValue(listResult([textItem('a')], 1)),
+      promptService: { importSourceGroup },
     });
 
     await syncLangfusePromptCatalog(
@@ -395,12 +348,12 @@ describe('syncLangfusePromptCatalog', () => {
       deps,
     );
 
-    expect(deps.createPromptGroup).toHaveBeenCalledWith(
+    expect(importSourceGroup).toHaveBeenCalledWith(
       expect.objectContaining({
         author: makeSourceAuthorId('langfuse', 'project-1', 'tenant-a'),
       }),
     );
-    expect(deps.createPromptGroup).not.toHaveBeenCalledWith(
+    expect(importSourceGroup).not.toHaveBeenCalledWith(
       expect.objectContaining({ author: makeSourceAuthorId('langfuse', 'project-1', undefined) }),
     );
   });
@@ -423,13 +376,15 @@ describe('syncLangfusePromptCatalog', () => {
   });
 
   it('always passes the Langfuse Sync author name', async () => {
+    const importSourceGroup = jest.fn().mockResolvedValue('created');
     const deps = createDeps({
       listPrompts: jest.fn().mockResolvedValue(listResult([textItem('a')], 1)),
+      promptService: { importSourceGroup },
     });
 
     await syncLangfusePromptCatalog(source, deps);
 
-    expect(deps.createPromptGroup).toHaveBeenCalledWith(
+    expect(importSourceGroup).toHaveBeenCalledWith(
       expect.objectContaining({ authorName: 'Langfuse Sync' }),
     );
   });
