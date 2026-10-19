@@ -1,7 +1,55 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { combine } from './mutation-reports.mjs';
+import { publicProgress } from './mutation-progress.mjs';
 import { partition, createPlan, selectShard, includeUnrelatedTests } from './mutation-shards.mjs';
+
+test('public progress shows counts but never forwards raw test details', () => {
+  assert.equal(
+    publicProgress(
+      'Mutation testing 42% (elapsed: ~1m, remaining: ~2m) 42/100 tested (3 survived, 1 timed out)',
+    ).text,
+    '42%: 42/100 tested; 3 survived; 1 timed out.',
+  );
+  assert.equal(
+    publicProgress(
+      '\u001b[32m06:12:00 (123) INFO Instrumenter\u001b[39m Instrumented 57 source file(s) with 12000 mutant(s)',
+    ).text,
+    'Prepared 57 source files; 12000 mutants.',
+  );
+  assert.equal(
+    publicProgress(
+      '06:12:00 (123) INFO DryRunExecutor Initial test run succeeded. Ran 300 tests in 10 seconds (net 1 ms, overhead 9999 ms).',
+    ).text,
+    'Baseline passed: 300 tests.',
+  );
+  assert.equal(
+    publicProgress(
+      '06:12:00 (123) INFO DryRunExecutor Starting initial test run (jest test runner with "perTest" coverage analysis).',
+    ).phase,
+    'baseline tests',
+  );
+  assert.equal(
+    publicProgress(
+      '06:12:00 (123) WARN ChildProcessProxy Child process [pid 321] ran out of memory.',
+    ).phase,
+    'test runner restart',
+  );
+  assert.equal(
+    publicProgress(
+      '06:12:00 (123) ERROR DryRunExecutor One or more tests failed in the initial test run:',
+    ).phase,
+    'baseline failure',
+  );
+  for (const line of [
+    'secret test failure details',
+    'Error: token=private',
+    'Mutation testing 42% (elapsed: 1m) 42/100 tested (3 survived, 1 timed out) secret',
+    '06:12:00 (123) ERROR Stryker private exception',
+  ]) {
+    assert.equal(publicProgress(line), null);
+  }
+});
 
 test('test selection retains cross-folder tests and tests with no import-graph edge', () => {
   assert.deepEqual(

@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: mutation-experiment-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   api:
@@ -93,9 +93,13 @@ jobs:
           set +e
           timeout --foreground --signal=INT --kill-after=60s 45m \
             node node_modules/@stryker-mutator/core/bin/stryker.js run \
-            stryker.api.config.mjs --concurrency 1 \
-            > "$MUTATION_DIRECTORY/run.log" 2>&1
-          result=$?
+            stryker.api.config.mjs --concurrency 1 2>&1 \
+            | node .github/scripts/mutation-progress.mjs "$MUTATION_DIRECTORY/run.log"
+          statuses=("${PIPESTATUS[@]}")
+          result=${statuses[0]}
+          if [ "${statuses[1]}" -ne 0 ] && [ "$result" -eq 0 ]; then
+            result=${statuses[1]}
+          fi
           printf '%s\n' "$result" > "$MUTATION_DIRECTORY/exit-code.txt"
           if [ "$result" -eq 124 ] || [ "$result" -eq 137 ]; then
             echo 'Time limit reached or process killed. Any saved results are partial, not a complete API score.' >> "$GITHUB_STEP_SUMMARY"

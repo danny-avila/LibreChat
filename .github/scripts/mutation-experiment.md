@@ -36,6 +36,10 @@ experiment remains available.
 
 The experiment branch runs up to four shard jobs at once. Each job uses one test
 process with an 8 GB Node heap limit. A failed shard does not cancel the others.
+Pushing a new experiment commit cancels the previous workflow run.
+The job log shows preparation, baseline status, and mutation counts. During quiet
+periods, a message every 30 seconds shows the last known phase and elapsed time.
+That message confirms the output monitor is alive; it does not prove tests are advancing.
 Each shard has a 45-minute Stryker limit. Four waves can take roughly three hours,
 plus installation, builds, and queue time.
 
