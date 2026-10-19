@@ -23,6 +23,7 @@ export const providerHosts: ReadonlyArray<readonly [string, ProviderId]> = [
   ['helicone.ai', ProviderId.helicone],
   ['ai-gateway.vercel.sh', ProviderId.vercel],
   ['dashscope.aliyuncs.com', ProviderId.qwen],
+  ['api.mizumi.co', ProviderId.mizumi],
   ['openai.azure.com', ProviderId.azure],
   ['cognitiveservices.azure.com', ProviderId.azure],
   ['generativelanguage.googleapis.com', ProviderId.google],

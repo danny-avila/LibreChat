@@ -101,6 +101,7 @@ export const providerIcons: Record<ProviderId, ProviderIconDef> = {
   [ProviderId.helicone]: { art: mark('helicone'), label: 'Helicone', mono: true },
   [ProviderId.huggingface]: { art: mark('huggingface'), label: 'Hugging Face', mono: true },
   [ProviderId.mistral]: { art: mark('mistral'), label: 'Mistral', mono: true },
+  [ProviderId.mizumi]: { art: mark('mizumi'), label: 'Mizumi', mono: true },
   [ProviderId.ollama]: { art: mark('ollama'), label: 'Ollama', mono: true },
   [ProviderId.openrouter]: { art: mark('openrouter'), label: 'OpenRouter', mono: true },
   [ProviderId.perplexity]: { art: mark('perplexity'), label: 'Perplexity', mono: true },

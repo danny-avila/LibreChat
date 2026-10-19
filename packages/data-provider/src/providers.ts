@@ -19,6 +19,7 @@ export enum ProviderId {
   huggingface = 'huggingface',
   lemonade = 'lemonade',
   mistral = 'mistral',
+  mizumi = 'mizumi',
   mlx = 'mlx',
   ollama = 'ollama',
   openrouter = 'openrouter',
