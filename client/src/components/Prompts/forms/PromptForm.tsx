@@ -517,7 +517,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
                             onClick={() => setShowSidePanel(true)}
                             aria-label={localize('com_ui_versions')}
                           >
-                            <Menu className="size-4 sm:mr-1.5" aria-hidden="true" />
+                            <Menu className="size-4 sm:me-1.5" aria-hidden="true" />
                             <span className="hidden sm:inline">{localize('com_ui_versions')}</span>
                           </Button>
                         )}
@@ -564,7 +564,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
 
               {/* Versions Sidebar - Advanced Mode Only */}
               {editorMode === PromptsEditorMode.ADVANCED && (
-                <div className="border-border-medium hidden w-72 shrink-0 border-l lg:block xl:w-80">
+                <div className="border-border-medium hidden w-72 shrink-0 border-s lg:block xl:w-80">
                   <VersionsPanel
                     group={group}
                     prompts={prompts}
@@ -601,8 +601,8 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
           <div
             ref={sidePanelRef}
             className={cn(
-              'border-border-medium bg-surface-primary-alt fixed top-0 right-0 z-[110] flex h-full flex-col border-l shadow-xl lg:hidden',
-              showSidePanel ? 'translate-x-0' : 'translate-x-full',
+              'border-border-medium bg-surface-primary-alt fixed inset-e-0 top-0 z-[110] flex h-full flex-col border-s shadow-xl lg:hidden',
+              showSidePanel ? 'translate-x-0' : 'translate-x-full rtl:-translate-x-full',
             )}
             style={{
               width: 'min(85vw, 380px)',

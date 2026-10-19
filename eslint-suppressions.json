@@ -1325,11 +1325,6 @@
       "count": 5
     }
   },
-  "client/src/components/Skills/lists/SkillListItem.tsx": {
-    "shadcn/no-inline-styles": {
-      "count": 1
-    }
-  },
   "client/src/components/Skills/tree/SkillFileEditor.tsx": {
     "shadcn/no-arbitrary-values": {
       "count": 1
