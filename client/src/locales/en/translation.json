@@ -832,7 +832,6 @@
   "com_nav_center_chat_input": "Center Chat Input on Welcome Screen",
   "com_nav_change_picture": "Change picture",
   "com_nav_chat_direction": "Chat direction",
-  "com_nav_chat_direction_selected": "Chat direction: {{direction}}",
   "com_nav_chat_title_in_tab": "Display chat title in tab",
   "com_nav_clear_all_chats": "Delete all chats",
   "com_nav_clear_cache_confirm_message": "Are you sure you want to clear the cache?",
