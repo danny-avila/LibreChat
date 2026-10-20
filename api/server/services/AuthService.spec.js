@@ -26,6 +26,9 @@ jest.mock(
     const shouldUseSecureCookie = jest.fn(() => false);
     return {
       isEnabled: jest.fn((val) => val === 'true' || val === true),
+      /** Real bcrypt on the test thread; the worker pool has its own spec in packages/api. */
+      hashSecret: jest.fn((plain) => require('bcryptjs').hash(plain, 4)),
+      compareSecret: jest.fn((plain, hash) => require('bcryptjs').compare(plain, hash)),
       checkEmailConfig: jest.fn(),
       isEmailDomainAllowed: jest.fn(),
       getSafeErrorMetadata: jest.fn((error) => ({ type: error?.name ?? 'UnknownError' })),
