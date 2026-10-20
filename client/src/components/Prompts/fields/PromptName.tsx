@@ -107,7 +107,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
           setIsEditing(true);
         }
       }}
-      className="text-text-primary hover:text-text-secondary h-8 min-w-0 flex-1 cursor-text truncate pl-2 text-start text-base font-semibold transition-colors focus:outline-hidden"
+      className="text-text-primary hover:text-text-secondary h-8 min-w-0 flex-1 cursor-text truncate ps-2 text-start text-base font-semibold transition-colors focus:outline-hidden"
       aria-label={localize('com_ui_edit') + ': ' + (newName ?? '')}
     >
       {newName}
