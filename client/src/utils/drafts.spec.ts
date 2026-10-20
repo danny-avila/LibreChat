@@ -14,6 +14,7 @@ import {
   getFilesDraft,
   getNewConversationDraftId,
   getNewConversationDraftToken,
+  getNewConversationDraftRevision,
   getPendingDraftId,
   isFilesDraftOwnedByThisTab,
   isNewConversationDraftId,
@@ -1486,6 +1487,77 @@ describe('logical composer lifetime', () => {
     expect(captured()).toBe(false);
     expect(captured.retainsFile('old-project-file')).toBe(false);
     clearFilesDraft('new:27');
+  });
+
+  it.each(['url-first', 'props-first'])(
+    'retires the source URL after both parts of the handoff arrive (%s)',
+    (order) => {
+      window.history.replaceState({}, '', '/c/new?projectId=history-project');
+      const host = {};
+      const release = registerComposerDraft(30, Constants.NEW_CONVO, 'pending:30', host);
+      const owner = captureComposerDraft(30, Constants.NEW_CONVO);
+      const launch = { conversationId: Constants.NEW_CONVO };
+      bindComposerLaunch(launch, 30);
+      expect(adoptComposerConversation(launch, 'saved-terminal-route', 30)).toBe(true);
+      if (order === 'url-first') {
+        window.history.replaceState({}, '', '/c/saved-terminal-route?projectId=history-project');
+        expect(owner()).toBe(true);
+      }
+      release();
+      const releaseSaved = registerComposerDraft(
+        30,
+        'saved-terminal-route',
+        'saved-terminal-route',
+        host,
+      );
+      expect(owner()).toBe(true);
+      window.history.replaceState({}, '', '/c/saved-terminal-route?projectId=history-project');
+      expect(owner()).toBe(true);
+      window.history.pushState({}, '', '/c/new?projectId=history-project');
+      expect(owner()).toBe(false);
+      expect(adoptComposerConversation(launch, 'saved-terminal-route', 30)).toBe(false);
+      releaseSaved();
+      window.history.replaceState({}, '', '/');
+    },
+  );
+
+  it('keeps reset revisions pane-local and stable until an explicit reset', () => {
+    const first = getNewConversationDraftRevision(31);
+    expect(getNewConversationDraftRevision(31)).toBe(first);
+    const sibling = getNewConversationDraftRevision(32);
+    renewNewConversationDraftToken(31);
+    expect(getNewConversationDraftRevision(31)).not.toBe(first);
+    expect(getNewConversationDraftRevision(32)).toBe(sibling);
+  });
+
+  it('does not trust an old reset revision when session storage is read-only on reload', () => {
+    const revision = getNewConversationDraftRevision(33);
+    const setItem = Storage.prototype.setItem;
+    const blocked = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (key === 'librechat-new-composer:33') throw new Error('Session revision unavailable');
+      setItem.call(this, key, value);
+    });
+    const navigation = Object.getOwnPropertyDescriptor(performance, 'getEntriesByType');
+    Object.defineProperty(performance, 'getEntriesByType', {
+      configurable: true,
+      value: () => [{ type: 'reload' }],
+    });
+    try {
+      renewNewConversationDraftToken(33);
+      expect(getNewConversationDraftRevision(33)).not.toBe(revision);
+      jest.isolateModules(() => {
+        const reloaded = jest.requireActual<typeof import('./drafts')>('./drafts');
+        expect(reloaded.getNewConversationDraftRevision(33)).not.toBe(revision);
+      });
+    } finally {
+      blocked.mockRestore();
+      if (navigation) Object.defineProperty(performance, 'getEntriesByType', navigation);
+      else Reflect.deleteProperty(performance, 'getEntriesByType');
+    }
   });
 
   it('rejects an acknowledgement from a launch superseded by New Chat', () => {

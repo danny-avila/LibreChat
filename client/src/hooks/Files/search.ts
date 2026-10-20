@@ -2,6 +2,7 @@ import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import type { CapturedComposerDraft } from '~/utils/drafts';
 import { getTimestampedValue, isTimestampExpired, setTimestamp } from '~/utils/timestamps';
 import { getFileSearchChoice, transferFileSearchChoice } from '~/utils/choices';
+import { getNewConversationDraftRevision } from '~/utils/drafts';
 import { FILE_SEARCH_UPLOAD_PREFIX } from '~/utils/localStorage';
 
 const keyFor = (fileId: string) => `${FILE_SEARCH_UPLOAD_PREFIX}${fileId}`;
@@ -11,6 +12,7 @@ export type FileSearchUploadContext = Readonly<{
   choiceRevision: string | null;
   createdAt: number;
   projectId?: string | null;
+  newChatGeneration?: Readonly<{ index: number; revision: string }>;
 }>;
 type Intent = FileSearchUploadContext;
 const owners = new WeakMap<FileSearchUploadContext, CapturedComposerDraft>();
@@ -50,6 +52,10 @@ export function captureFileSearchUpload(
     choiceRevision: getFileSearchChoice(conversationId)?.revision ?? null,
     createdAt: Date.now(),
     projectId: new URLSearchParams(window.location.search).get('projectId'),
+    newChatGeneration:
+      conversationId === Constants.NEW_CONVO
+        ? (owner?.newChatGeneration ?? { index: 0, revision: getNewConversationDraftRevision(0) })
+        : undefined,
   };
   if (owner) owners.set(context, owner);
   return context;
@@ -106,6 +112,17 @@ function readIntent(fileId: string): Intent | null {
       Number.isFinite(value.createdAt) &&
       !isTimestampExpired(value.createdAt)
     ) {
+      if (value.conversationId === Constants.NEW_CONVO) {
+        const generation = value.newChatGeneration;
+        if (
+          !generation ||
+          !Number.isInteger(generation.index) ||
+          generation.index < 0 ||
+          generation.revision !== getNewConversationDraftRevision(generation.index)
+        ) {
+          return null;
+        }
+      }
       intent = value;
     }
   } catch {

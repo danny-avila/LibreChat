@@ -46,6 +46,25 @@ type StoredFilesDraft = {
 };
 
 const newConversationDraftTokens = new Map<number, symbol>();
+const newConversationDraftRevisions = new Map<number, string>();
+const newConversationRevisionKey = (index: number): string => `librechat-new-composer:${index}`;
+
+/** Reload preserves the revision; an explicit reset replaces it before any new work starts. */
+export const getNewConversationDraftRevision = (index = 0): string => {
+  const current = newConversationDraftRevisions.get(index);
+  if (current) return current;
+  let revision: string;
+  try {
+    revision = sessionStorage.getItem(newConversationRevisionKey(index)) || mintTabId();
+    // Verify persistence is writable; a blocked reload must not trust an old reset revision.
+    sessionStorage.setItem(newConversationRevisionKey(index), revision);
+  } catch {
+    revision = mintTabId();
+  }
+  const scopedRevision = `${getBrowserTabId()}:${revision}`;
+  newConversationDraftRevisions.set(index, scopedRevision);
+  return scopedRevision;
+};
 
 /** Per-composer identity so a side-by-side new-chat reset cannot discard another pane's paste recovery. */
 export const getNewConversationDraftToken = (index = 0): symbol => {
@@ -61,6 +80,13 @@ export const getNewConversationDraftToken = (index = 0): symbol => {
 export const renewNewConversationDraftToken = (index = 0): void => {
   const generation = Symbol('new-conversation-draft');
   newConversationDraftTokens.set(index, generation);
+  const revision = mintTabId();
+  newConversationDraftRevisions.set(index, `${getBrowserTabId()}:${revision}`);
+  try {
+    sessionStorage.setItem(newConversationRevisionKey(index), revision);
+  } catch {
+    // The live revision still fences this document; blocked reloads start a fresh revision.
+  }
   const scope = composerDraftScopes.get(index);
   if (scope?.active && scope.conversationId === Constants.NEW_CONVO) {
     composerDraftScopes.set(index, {
@@ -335,6 +361,14 @@ const composerDraftScopes = new Map<number, ComposerDraftScope>();
 const composerLaunches = new WeakMap<object, { index: number; scope: ComposerDraftScope }>();
 const composerRoute = () => window.location.pathname + window.location.search;
 
+const matchesComposerRoute = (scope: ComposerDraftScope): boolean => {
+  const route = composerRoute();
+  if (!scope.sourcePropPending && scope.assignedRoute === route) {
+    scope.route = route;
+  }
+  return route === scope.route || route === scope.assignedRoute;
+};
+
 export const registerComposerDraft = (
   index: number,
   conversationId: string,
@@ -366,12 +400,19 @@ export const registerComposerDraft = (
           route,
           assignments: new Set<(sourceId: string, targetId: string) => void>(),
         };
+  if (previous && scope !== previous && conversationId === Constants.NEW_CONVO) {
+    renewNewConversationDraftToken(index);
+    scope.generation = getNewConversationDraftToken(index);
+  }
   const registration = {};
   scope.registration = registration;
   scope.host = host;
   scope.active = true;
   scope.draftId = draftId;
-  if (scope.conversationId === conversationId) scope.sourcePropPending = false;
+  if (scope.conversationId === conversationId) {
+    scope.sourcePropPending = false;
+    if (scope.assignedRoute === route) scope.route = route;
+  }
   composerDraftScopes.set(index, scope);
   return () => {
     const current = composerDraftScopes.get(index);
@@ -379,6 +420,9 @@ export const registerComposerDraft = (
     current.active = false;
     void Promise.resolve().then(() => {
       if (composerDraftScopes.get(index) === current && !current.active) {
+        if (current.conversationId === Constants.NEW_CONVO) {
+          renewNewConversationDraftToken(index);
+        }
         composerDraftScopes.delete(index);
       }
     });
@@ -460,7 +504,7 @@ export const adoptComposerConversation = (
   )
     return false;
   if (scope.sourceId === Constants.NEW_CONVO && scope.conversationId === targetId) {
-    return composerRoute() === scope.route || composerRoute() === scope.assignedRoute;
+    return matchesComposerRoute(scope);
   }
   if (scope.conversationId !== Constants.NEW_CONVO || composerRoute() !== scope.route) return false;
   const sourceId = scope.conversationId;
@@ -491,6 +535,7 @@ export const resolveComposerConversationId = (conversationId: string): string =>
 
 export type CapturedComposerDraft = (() => boolean) & {
   registered: boolean;
+  newChatGeneration?: Readonly<{ index: number; revision: string }>;
   conversationId: () => string;
   retainsFile: (fileId: string) => boolean;
   onAssignment: (listener: (sourceId: string, targetId: string) => void) => () => void;
@@ -510,10 +555,13 @@ export const captureComposerDraft = (
           (scope.conversationId === conversationId || scope.sourceId === conversationId))) &&
       composerDraftScopes.get(index) === scope &&
       getNewConversationDraftToken(index) === generation &&
-      (composerRoute() === (scope?.route ?? route) ||
-        (scope?.assignedRoute != null && composerRoute() === scope.assignedRoute)),
+      (scope ? matchesComposerRoute(scope) : composerRoute() === route),
     {
       registered: scope != null,
+      newChatGeneration:
+        conversationId === Constants.NEW_CONVO
+          ? { index, revision: getNewConversationDraftRevision(index) }
+          : undefined,
       conversationId: () => scope?.conversationId ?? conversationId,
       retainsFile: (fileId: string) => {
         if (!scope || scope.conversationId === Constants.NEW_CONVO) return false;

@@ -669,6 +669,204 @@ describe('useNewConvo reset cleanup', () => {
     },
   );
 
+  it('rejects a late upload after browser history returns to its acknowledged source URL', async () => {
+    const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
+    mockSaveDrafts = false;
+    mockFiles.clear();
+    mockConfigPending = false;
+    window.history.replaceState({}, '', '/c/new');
+    global.URL.createObjectURL = jest.fn(() => 'blob:history-source');
+    global.URL.revokeObjectURL = jest.fn();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, cacheTime: Infinity } },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client }, children);
+    const { result, rerender, unmount } = renderHook(
+      ({ conversationId }) => {
+        const [files, setFiles] = useAtom(filesFamily(2));
+        useAutoSave({ index: 2, conversationId, files, setFiles });
+        return {
+          files,
+          handler: useFileHandlingNoChatContext(undefined, {
+            index: 2,
+            files,
+            setFiles,
+            conversation: { conversationId, endpoint: EModelEndpoint.openAI } as TConversation,
+          }),
+        };
+      },
+      { wrapper, initialProps: { conversationId: 'new' } },
+    );
+    const launch = { conversationId: 'new' };
+    bindComposerLaunch(launch, 2);
+    const owner = captureComposerDraft(2, 'new');
+    await act(async () => {
+      await result.current.handler.handleFiles(
+        [new File(['search'], 'history.txt', { type: 'text/plain' })],
+        'file_search',
+      );
+    });
+    const body = mockUploadFile.mock.calls[0][0] as FormData;
+    const options = mockUploadOptions;
+    expect(adoptComposerConversation(launch, 'saved-history', 2)).toBe(true);
+    act(() => {
+      window.history.replaceState({}, '', '/c/saved-history');
+      rerender({ conversationId: 'saved-history' });
+    });
+    expect(owner()).toBe(true);
+    // Browser history changes before React reconciles the old conversation prop.
+    window.history.pushState({}, '', '/c/new');
+    expect(owner()).toBe(false);
+    expect(owner.retainsFile(body.get('file_id') as string)).toBe(false);
+    expect(adoptComposerConversation(launch, 'saved-history', 2)).toBe(false);
+    mockSetEphemeralAgent.mockClear();
+    await act(async () => {
+      options.onSuccess?.(
+        {
+          file_id: 'history-persisted',
+          temp_file_id: body.get('file_id'),
+          filepath: '/files/history',
+          embedded: true,
+        },
+        body,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 320));
+    });
+    expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+    expect(result.current.files.get(body.get('file_id') as string)?.progress).toBeLessThan(1);
+    unmount();
+    client.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it.each(['project', 'answer', 'teardown', 'saved'])(
+    'keeps logical ownership retirement across reload (%s)',
+    async (boundary) => {
+      const saved = boundary === 'saved';
+      const conversationId = saved ? 'saved-reload-owner' : 'new';
+      window.history.replaceState({}, '', '/c/new?projectId=original');
+      const host = {};
+      const release = registerComposerDraft(
+        34,
+        conversationId,
+        saved ? conversationId : 'new:34',
+        host,
+      );
+      const owner = captureComposerDraft(34, conversationId);
+      beginFileSearchUpload('reload-logical-owner', captureFileSearchUpload(conversationId, owner));
+      release();
+      let releaseReplacement: (() => void) | undefined;
+      if (boundary === 'project') {
+        window.history.replaceState({}, '', '/c/new?projectId=replacement');
+        releaseReplacement = registerComposerDraft(34, 'new', 'new:34', host);
+      } else if (boundary === 'answer') {
+        releaseReplacement = registerComposerDraft(
+          34,
+          'new',
+          getAskAnswerDraftId('reload-answer'),
+          host,
+        );
+      }
+      await Promise.resolve();
+      window.history.replaceState({}, '', '/c/new?projectId=original');
+      const navigation = Object.getOwnPropertyDescriptor(performance, 'getEntriesByType');
+      Object.defineProperty(performance, 'getEntriesByType', {
+        configurable: true,
+        value: () => [{ type: 'reload' }],
+      });
+      try {
+        jest.isolateModules(() => {
+          const reloaded = jest.requireActual<typeof import('../Files/search')>('../Files/search');
+          expect(reloaded.completeFileSearchUpload('reload-logical-owner', conversationId)).toBe(
+            saved,
+          );
+        });
+      } finally {
+        if (navigation) Object.defineProperty(performance, 'getEntriesByType', navigation);
+        else Reflect.deleteProperty(performance, 'getEntriesByType');
+        releaseReplacement?.();
+        window.history.replaceState({}, '', '/');
+      }
+    },
+  );
+
+  it.each([false, true])(
+    'keeps new-chat reset invalidation after module reload (%s)',
+    async (reset) => {
+      const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
+      mockSaveDrafts = true;
+      mockFiles.clear();
+      mockConfigPending = false;
+      mockPreviousConversation = { conversationId: 'new', endpoint: EModelEndpoint.openAI };
+      window.history.replaceState({}, '', '/c/new?projectId=reload-project');
+      global.URL.createObjectURL = jest.fn(() => 'blob:reset-reload');
+      global.URL.revokeObjectURL = jest.fn();
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false, cacheTime: Infinity } },
+      });
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(QueryClientProvider, { client }, children);
+      const composer = renderHook(
+        () => {
+          const [files, setFiles] = useAtom(filesFamily(2));
+          useAutoSave({ index: 2, conversationId: 'new', files, setFiles });
+          return {
+            files,
+            handler: useFileHandlingNoChatContext(undefined, {
+              index: 2,
+              files,
+              setFiles,
+              conversation: {
+                conversationId: 'new',
+                endpoint: EModelEndpoint.openAI,
+                chatProjectId: 'reload-project',
+              } as TConversation,
+            }),
+          };
+        },
+        { wrapper },
+      );
+      await act(async () => {
+        await composer.result.current.handler.handleFiles(
+          [new File(['search'], 'reload.txt', { type: 'text/plain' })],
+          'file_search',
+        );
+      });
+      const body = mockUploadFile.mock.calls[0][0] as FormData;
+      const fileId = body.get('file_id') as string;
+      if (reset) {
+        const next = renderHook(() => useNewConvo(2), { wrapper });
+        act(() =>
+          next.result.current.newConversation({ template: { chatProjectId: 'reload-project' } }),
+        );
+        next.unmount();
+      }
+      composer.unmount();
+      // Re-execute the real intent module with no live assignments map, preserving browser storage.
+      const navigationDescriptor = Object.getOwnPropertyDescriptor(performance, 'getEntriesByType');
+      Object.defineProperty(performance, 'getEntriesByType', {
+        configurable: true,
+        value: () => [{ type: 'reload' }],
+      });
+      try {
+        jest.isolateModules(() => {
+          const reloaded = jest.requireActual<typeof import('../Files/search')>('../Files/search');
+          expect(reloaded.completeFileSearchUpload(fileId, 'new')).toBe(!reset);
+        });
+      } finally {
+        if (navigationDescriptor)
+          Object.defineProperty(performance, 'getEntriesByType', navigationDescriptor);
+        else Reflect.deleteProperty(performance, 'getEntriesByType');
+      }
+      expect(
+        localStorage.getItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}new`) === 'true',
+      ).toBe(!reset);
+      client.clear();
+      window.history.replaceState({}, '', '/');
+    },
+  );
+
   it.each([false, true])(
     'completes the next first-ID upload after a same-route reset (saveDrafts: %s)',
     async (saveDrafts) => {
