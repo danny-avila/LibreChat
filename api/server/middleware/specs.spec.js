@@ -248,7 +248,7 @@ describe.each(['fire', 'binding', 'stored'])('enforced %s spec identity', (mode)
         expect.objectContaining({ resourceId: 'agent_B' }),
       );
       expect(mockGetAgent).not.toHaveBeenCalledWith({ id: 'agent_A' });
-      expect(getConvo).toHaveBeenCalledTimes(mode === 'fire' ? 0 : mode === 'binding' ? 2 : 1);
+      expect(getConvo).toHaveBeenCalledTimes({ fire: 0, binding: 2, stored: 1 }[mode]);
 
       if (allowed || (storedOnly && mode === 'stored')) {
         expect(response.body).toEqual({
