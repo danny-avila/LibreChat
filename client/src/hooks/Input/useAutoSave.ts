@@ -17,6 +17,7 @@ import {
   isAskAnswerDraftId,
   isFilesDraftOwnedByThisTab,
   isNewConversationDraftId,
+  isPendingDraftId,
   mayWriteComposerText,
   migrateFilesDraft,
   migrateTextDraft,
@@ -66,7 +67,11 @@ export const useAutoSave = ({
     _conversationId === Constants.NEW_CONVO ? getNewConversationDraftId(index) : _conversationId;
   const conversationId = draftId ?? (isSubmitting ? pendingDraftId : conversationDraftId);
 
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [currentDraft, setCurrentDraft] = useState<{
+    id: string;
+    conversationId: string;
+  } | null>(null);
+  const currentConversationId = currentDraft?.id ?? null;
   const fileIds = useMemo(() => Array.from(files.keys()), [files]);
   const { data: fileList } = useGetFiles<TFile[]>();
   const filesRef = useRef(files);
@@ -394,6 +399,10 @@ export const useAutoSave = ({
         (pendingDestination == null || pendingDestination === conversationId);
       if (
         pendingStorageActive &&
+        (currentDraft == null ||
+          isNewConversationDraftId(currentDraft.conversationId) ||
+          isPendingDraftId(currentDraft.conversationId) ||
+          currentDraft.conversationId === (_conversationId ?? Constants.NEW_CONVO)) &&
         conversationId !== pendingDraftId &&
         !isAskAnswerDraftId(conversationId) &&
         !isNewConversationDraftId(conversationId) &&
@@ -472,10 +481,15 @@ export const useAutoSave = ({
     }
 
     prevConversationIdRef.current = nextConversationId;
-    setCurrentConversationId(nextConversationId);
+    setCurrentDraft({
+      id: nextConversationId,
+      conversationId: _conversationId ?? Constants.NEW_CONVO,
+    });
   }, [
+    currentDraft,
     currentConversationId,
     conversationId,
+    _conversationId,
     pendingDraftId,
     restoreFiles,
     textAreaRef,
@@ -520,7 +534,10 @@ export const useAutoSave = ({
         (fileId) =>
           !fileIds.includes(fileId) &&
           !pendingFileIds.includes(fileId) &&
-          hasPendingFileSearchUpload(fileId, _conversationId ?? Constants.NEW_CONVO),
+          hasPendingFileSearchUpload(
+            fileId,
+            currentDraft?.conversationId ?? _conversationId ?? Constants.NEW_CONVO,
+          ),
       ),
     ];
     const liveIds = new Set(draftFileIds);
@@ -552,7 +569,15 @@ export const useAutoSave = ({
       pastedTextIds,
       pendingPastes: existingDraft.pendingPastes,
     });
-  }, [conversationId, saveDrafts, currentConversationId, fileIds, files, _conversationId]);
+  }, [
+    conversationId,
+    saveDrafts,
+    currentDraft,
+    currentConversationId,
+    fileIds,
+    files,
+    _conversationId,
+  ]);
 
   return { consumeDraft, preserveText, settleText };
 };

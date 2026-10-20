@@ -7,6 +7,7 @@ import {
   EModelEndpoint,
   getEndpointFileConfig,
 } from 'librechat-data-provider';
+import { setFileSearchChoice, clearFileSearchChoices } from '~/utils/choices';
 
 type MockUploadMutationOptions = {
   onSuccess?: (
@@ -60,6 +61,7 @@ const mockSetEphemeralAgent = jest.fn(
 );
 let mockDownloadedFiles: File[] = [];
 let mockDownloadError: Error | undefined;
+let mockDownloadGate: Promise<void> | undefined;
 const mockProcessFileForUpload = jest.fn(
   async (_file: File, _quality?: number, _onProgress?: (progress: number) => void) => _file,
 );
@@ -149,6 +151,7 @@ jest.mock('../useSharePointDownload', () => ({
   __esModule: true,
   default: (options: { onFilesDownloaded?: (files: File[]) => void | Promise<void> }) => ({
     downloadSharePointFiles: async () => {
+      await mockDownloadGate;
       if (mockDownloadError) {
         throw mockDownloadError;
       }
@@ -252,6 +255,8 @@ describe('useFileHandling', () => {
     mockEphemeralAgent = {};
     mockDownloadedFiles = [];
     mockDownloadError = undefined;
+    mockDownloadGate = undefined;
+    clearFileSearchChoices();
   });
 
   const loadHook = async () => (await import('../useFileHandling')).default;
@@ -1570,6 +1575,101 @@ describe('useFileHandling', () => {
         body,
       );
     };
+
+    it.each(['config', 'resize', 'queue'])(
+      'preserves a disable made after initiation but before %s finishes',
+      async (boundary) => {
+        const conversationId = Constants.NEW_CONVO as string;
+        setFileSearchChoice(conversationId, true);
+        mockEphemeralAgent = { file_search: true };
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        if (boundary !== 'resize') {
+          mockIsConfigPending = true;
+          mockWaitForConfig.mockImplementation(() => gate);
+        } else {
+          mockImageDecodes = false;
+          mockResizeImageIfNeeded.mockImplementationOnce(async (file: File) => {
+            await gate;
+            return { file, resized: false };
+          });
+        }
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+        let first: Promise<boolean> | undefined;
+        let pending: Promise<boolean> = Promise.resolve(false);
+        act(() => {
+          if (boundary === 'queue') {
+            first = result.current.handleFiles([
+              new File(['one'], 'first.txt', { type: 'text/plain' }),
+            ]);
+          }
+          pending = result.current.handleFiles(
+            boundary === 'resize'
+              ? [document(), new File(['image'], 'companion.png', { type: 'image/png' })]
+              : [document()],
+            EToolResources.file_search,
+          );
+        });
+        await act(async () => {
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        expect(mockMutate).not.toHaveBeenCalled();
+        setFileSearchChoice(conversationId, false);
+        mockEphemeralAgent = { file_search: false };
+        await act(async () => {
+          release();
+          await first;
+          await pending;
+        });
+        const body = mockMutate.mock.calls.find(
+          ([form]) => form.get('tool_resource') === EToolResources.file_search,
+        )?.[0] as FormData;
+        expect(body).toBeDefined();
+        act(() => succeed(body));
+        expect(mockEphemeralAgent.file_search).toBe(false);
+        if (boundary === 'resize') expect(mockDeleteFileById).toHaveBeenCalled();
+      },
+    );
+
+    it.each(['context', 'no-context'])(
+      'captures ordering before the SharePoint download await (%s)',
+      async (variant) => {
+        const conversationId = Constants.NEW_CONVO as string;
+        setFileSearchChoice(conversationId, true);
+        mockEphemeralAgent = { file_search: true };
+        mockDownloadedFiles = [document()];
+        let release: () => void = () => undefined;
+        mockDownloadGate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const sharePoint = await import('../useSharePointFileHandling');
+        const props = { toolResource: EToolResources.file_search };
+        const state = { files: new Map(), setFiles: jest.fn(), conversation: null };
+        const useSharePoint =
+          variant === 'context'
+            ? () => sharePoint.default(props)
+            : () => sharePoint.useSharePointFileHandlingNoChatContext(props, state);
+        const { result } = renderHook(() => useSharePoint());
+        let pending: Promise<void> = Promise.resolve();
+        act(() => {
+          pending = result.current.handleSharePointFiles([]);
+        });
+        expect(mockMutate).not.toHaveBeenCalled();
+        setFileSearchChoice(conversationId, false);
+        mockEphemeralAgent = { file_search: false };
+        await act(async () => {
+          release();
+          await pending;
+        });
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+        act(() => succeed(mockMutate.mock.calls[0][0]));
+        expect(mockEphemeralAgent.file_search).toBe(false);
+      },
+    );
 
     it('activates after persistence and before the attachment is submit-ready', async () => {
       const useFileHandling = await loadHook();

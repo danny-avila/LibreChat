@@ -5,18 +5,29 @@ import { getFileSearchChoice } from '~/utils/choices';
 
 const keyFor = (fileId: string) => `${FILE_SEARCH_UPLOAD_PREFIX}${fileId}`;
 
-type Intent = { conversationId: string; choiceRevision: string | null; createdAt: number };
+export type FileSearchUploadContext = Readonly<{
+  conversationId: string;
+  choiceRevision: string | null;
+  createdAt: number;
+}>;
+type Intent = FileSearchUploadContext;
+
+export function captureFileSearchUpload(conversationId: string): FileSearchUploadContext {
+  return {
+    conversationId,
+    choiceRevision: getFileSearchChoice(conversationId)?.revision ?? null,
+    createdAt: Date.now(),
+  };
+}
 
 export function beginFileSearchUpload(
   fileId: string,
-  conversationId: string,
+  operation: string | FileSearchUploadContext,
 ): { choiceRevision: string | null; persisted: boolean } {
-  const choiceRevision = getFileSearchChoice(conversationId)?.revision ?? null;
+  const context = typeof operation === 'string' ? captureFileSearchUpload(operation) : operation;
+  const { choiceRevision } = context;
   try {
-    localStorage.setItem(
-      keyFor(fileId),
-      JSON.stringify({ conversationId, choiceRevision, createdAt: Date.now() }),
-    );
+    localStorage.setItem(keyFor(fileId), JSON.stringify(context));
     return { choiceRevision, persisted: true };
   } catch {
     // The live recovery callback still owns activation when storage is unavailable.

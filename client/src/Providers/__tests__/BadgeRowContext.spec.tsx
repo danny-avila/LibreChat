@@ -5,6 +5,7 @@ import { render, act } from '@testing-library/react';
 import { LocalStorageKeys } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ExtendedFile, ChatFormValues } from '~/common';
+import { getFilesDraft, getComposerDraftId, getAskAnswerDraftId } from '~/utils/drafts';
 import { beginFileSearchUpload, completeFileSearchUpload } from '~/hooks/Files/search';
 import { getFileSearchChoice, clearFileSearchChoices } from '~/utils/choices';
 import BadgeRowProvider, { useBadgeRowContext } from '../BadgeRowContext';
@@ -54,6 +55,8 @@ jest.mock('~/data-provider', () => ({
   useGetFiles: () => ({ data: mockCachedFiles }),
 }));
 
+type DraftScope = { index?: number; isSubmitting?: boolean; draftId?: string };
+
 function renderProvider(initialId = 'convo-badge-row', restoreDraft = false, initiallyOff = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, cacheTime: 0 } },
@@ -63,13 +66,14 @@ function renderProvider(initialId = 'convo-badge-row', restoreDraft = false, ini
     value = useBadgeRowContext();
     return null;
   };
+  let scope: DraftScope = {};
   let stage: (file: ExtendedFile) => void = () => undefined;
   let restoredFiles = new Map<string, ExtendedFile>();
   function DraftOwner({ id }: { id: string }) {
     const [files, setFiles] = useState(new Map<string, ExtendedFile>());
     stage = (file) => setFiles(new Map([[file.file_id, file]]));
     restoredFiles = files;
-    useAutoSave({ conversationId: id, files, setFiles });
+    useAutoSave({ conversationId: id, files, setFiles, ...scope });
     return null;
   }
   function Form({ id }: { id: string }) {
@@ -102,8 +106,9 @@ function renderProvider(initialId = 'convo-badge-row', restoreDraft = false, ini
     getValue: () => value,
     unmount,
     retype: (marker: number) => rerender(<Tree marker={marker} id={id} />),
-    navigate: (next: string) => {
+    navigate: (next: string, nextScope: DraftScope = {}) => {
       id = next;
+      scope = nextScope;
       rerender(<Tree marker={0} id={id} />);
     },
     stage: (file: ExtendedFile) => stage(file),
@@ -193,6 +198,32 @@ describe('File Search deferred upload effects', () => {
       clock.mockRestore();
     },
   );
+
+  it.each<{ owner: string; scope: DraftScope }>([
+    { owner: 'origin', scope: {} },
+    { owner: 'origin', scope: { isSubmitting: true } },
+    { owner: 'new', scope: { index: 1 } },
+    { owner: 'origin', scope: { draftId: getAskAnswerDraftId('question') } },
+  ])('keeps draft ownership across repeated navigation (%j)', ({ owner, scope }) => {
+    const view = renderProvider(owner, true, true);
+    act(() => view.navigate(owner, scope));
+    const draftId =
+      scope.draftId ?? getComposerDraftId(scope.index ?? 0, owner, scope.isSubmitting ?? false);
+    act(() => view.stage(file()));
+    beginFileSearchUpload('pending-search', owner);
+    for (let visit = 0; visit < 3; visit++) {
+      act(() => view.navigate('away'));
+      expect(getFilesDraft(draftId).fileIds).toContain('pending-search');
+      expect(getFilesDraft('away').fileIds).not.toContain('pending-search');
+      act(() => view.navigate(owner, scope));
+      expect(getFilesDraft(draftId).fileIds).toContain('pending-search');
+    }
+    mockCachedFiles = [persisted];
+    act(() => view.retype(1));
+    expect(view.files().get('pending-search')?.file_id).toBe('server-search');
+    expect(view.getValue()?.fileSearch.isToolEnabled).toBe(true);
+    view.unmount();
+  });
 
   it('honors an explicit disable when intent storage is unavailable', () => {
     const view = renderProvider('origin', false, true);

@@ -24,6 +24,7 @@ import type {
 import type { TConversation } from 'librechat-data-provider';
 import type { SkippedUpload, UploadPartition } from '~/utils';
 import type { ExtendedFile, FileSetter } from '~/common';
+import type { FileSearchUploadContext } from './search';
 import {
   logger,
   validateFiles,
@@ -35,7 +36,12 @@ import {
   removePreviewEntry,
   validateFileDuplicates,
 } from '~/utils';
-import { beginFileSearchUpload, cancelFileSearchUpload, completeFileSearchUpload } from './search';
+import {
+  beginFileSearchUpload,
+  captureFileSearchUpload,
+  cancelFileSearchUpload,
+  completeFileSearchUpload,
+} from './search';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useAgentUploadTarget from '~/hooks/Agents/useAgentUploadTarget';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
@@ -75,6 +81,8 @@ type ProcessedUpload = {
 };
 
 export type UploadLifecycleCallbacks = {
+  /** Immutable operation intent, captured before queue/config/preparation/download waits. */
+  fileSearch?: Readonly<{ context: FileSearchUploadContext; activate: () => void }>;
   /** Preassigned id so callers can persist recovery before the shared upload queue waits. */
   fileId?: string;
   /** An attachment being replaced remains in state until the replacement succeeds, but should not
@@ -362,6 +370,29 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     abortControllerRef.current?.signal,
   );
 
+  const captureUploadLifecycle = (
+    toolResource?: string,
+    lifecycle?: UploadLifecycleCallbacks,
+  ): UploadLifecycleCallbacks | undefined => {
+    if (
+      lifecycle?.fileSearch ||
+      !isConversationUpload ||
+      isAssistantsEndpoint(endpointType ?? endpoint) ||
+      toolResource !== EToolResources.file_search ||
+      !isEphemeralAgentId(conversation?.agent_id)
+    ) {
+      return lifecycle;
+    }
+    return {
+      ...lifecycle,
+      fileSearch: {
+        context: captureFileSearchUpload(conversation?.conversationId ?? Constants.NEW_CONVO),
+        activate: () =>
+          setEphemeralAgent((previous) => ({ ...previous, [EToolResources.file_search]: true })),
+      },
+    };
+  };
+
   const uploadWithRecovery = (
     formData: FormData,
     file_id: string,
@@ -370,25 +401,20 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     /* Capture the originating conversation's setter, not the mutation observer's
      * current conversation. Removal clears this callback before any late success. */
     let callbacks: UploadRecovery | undefined = uploadLifecycle;
-    if (
-      isConversationUpload &&
-      !isAssistantsEndpoint(endpointType ?? endpoint) &&
-      formData.get('tool_resource') === EToolResources.file_search &&
-      isEphemeralAgentId(formData.get('agent_id') as string | null)
-    ) {
-      const conversationId = conversation?.conversationId ?? Constants.NEW_CONVO;
-      const intent = beginFileSearchUpload(file_id, conversationId);
+    const operation = uploadLifecycle?.fileSearch;
+    if (operation && formData.get('tool_resource') === EToolResources.file_search) {
+      const intent = beginFileSearchUpload(file_id, operation.context);
       callbacks = {
         ...uploadLifecycle,
         onFileSearchSuccess: () => {
           if (
             completeFileSearchUpload(
               file_id,
-              conversationId,
+              operation.context.conversationId,
               intent.persisted ? undefined : intent.choiceRevision,
             )
           ) {
-            setEphemeralAgent((prev) => ({ ...prev, [EToolResources.file_search]: true }));
+            operation.activate();
           }
         },
       };
@@ -851,11 +877,12 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     _toolResource?: string,
     uploadLifecycle?: UploadLifecycleCallbacks,
   ): Promise<boolean> => {
+    const lifecycle = captureUploadLifecycle(_toolResource, uploadLifecycle);
     /** `FileList` is live: copy it before yielding, as callers reset the input synchronously */
     const fileList = Array.from(_files);
-    const assignedFileId = uploadLifecycle?.fileId;
-    if (assignedFileId) {
-      uploadErrorCallbacks.set(assignedFileId, uploadLifecycle);
+    const assignedFileId = lifecycle?.fileId;
+    if (assignedFileId && lifecycle) {
+      uploadErrorCallbacks.set(assignedFileId, lifecycle);
     }
     /** Started before queueing so every waiting batch shares one bounded config window */
     const configReady = isConfigPending ? waitForConfig() : undefined;
@@ -868,14 +895,14 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     try {
       await previousProcessing;
       await configReady;
-      if (uploadLifecycle?.shouldCommit?.() === false) {
+      if (lifecycle?.shouldCommit?.() === false) {
         if (assignedFileId) {
           takeUploadRecovery(assignedFileId);
         }
         setFilesLoading(false);
         return false;
       }
-      const accepted = await processFiles(fileList, _toolResource, uploadLifecycle);
+      const accepted = await processFiles(fileList, _toolResource, lifecycle);
       if (!accepted && assignedFileId) {
         takeUploadRecovery(assignedFileId);
       }
@@ -918,6 +945,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   return {
     handleFileChange,
     handleFiles,
+    captureUploadLifecycle,
     abortUpload,
     setFiles,
     files,
