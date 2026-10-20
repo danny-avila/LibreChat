@@ -1323,7 +1323,7 @@ const ListModelsController = async (req, res) => {
     // Get the accessible agents
     let agents = [];
     if (accessibleAgentIds.length > 0) {
-      agents = await db.getAgents({ _id: { $in: accessibleAgentIds } });
+      agents = await db.getAgentModelSummaries(accessibleAgentIds);
     }
 
     const models = agents.map((agent) => ({

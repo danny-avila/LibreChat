@@ -352,7 +352,7 @@ describe('GET /api/config', () => {
       const response = await request(app).get('/api/config');
 
       expect(response.statusCode).toBe(500);
-      expect(response.body).toHaveProperty('error');
+      expect(response.body).toEqual({ error: 'Failed to load startup config' });
     });
 
     it('should not expose endpointsDropParamsMap to unauthenticated callers', async () => {

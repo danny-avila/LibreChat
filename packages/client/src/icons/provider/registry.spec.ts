@@ -1,9 +1,5 @@
-import fs from 'fs';
-import path from 'path';
 import { ProviderId } from 'librechat-data-provider';
 import { getProviderIconDef, providerIcons } from './registry';
-
-const packageAssets = path.join(__dirname, 'assets');
 
 describe('providerIcons', () => {
   it('has an entry for every ProviderId', () => {
@@ -13,23 +9,10 @@ describe('providerIcons', () => {
     }
   });
 
-  it('points every asset entry at a file shipped with the package', () => {
+  it('draws every provider as a mark that follows the theme', () => {
     for (const def of Object.values(providerIcons)) {
-      if (def.art.kind === 'asset') {
-        const assetPath = path.resolve(__dirname, def.art.src);
-        const relativePath = path.relative(packageAssets, assetPath);
-        expect(path.isAbsolute(def.art.src)).toBe(false);
-        expect(relativePath.split(path.sep)).not.toContain('..');
-        expect(fs.statSync(assetPath).isFile()).toBe(true);
-      }
-    }
-  });
-
-  it('marks raster art as not monochrome', () => {
-    for (const def of Object.values(providerIcons)) {
-      if (def.art.kind === 'asset') {
-        expect(def.mono).not.toBe(true);
-      }
+      expect(def.art.kind).toBe('component');
+      expect(def.mono).toBe(true);
     }
   });
 
@@ -64,6 +47,16 @@ describe('providerIcons', () => {
     [ProviderId.together, 'deepseek-ai/DeepSeek-R1-Distill-Llama-70B', 'DeepSeek'],
     [ProviderId.openrouter, 'nvidia/llama-3.1-nemotron-70b-instruct', 'NVIDIA'],
     [ProviderId.openrouter, 'minimax/minimax-m3', 'MiniMax'],
+    [ProviderId.ollama, 'phi4:14b', 'Microsoft'],
+    [ProviderId.ollama, 'phi:2.7b', 'Microsoft'],
+    [ProviderId.ollama, 'phi', 'Microsoft'],
+    [ProviderId.ollama, 'phind-codellama:34b', 'Meta'],
+    [ProviderId.openrouter, 'microsoft/phi-3.5-mini-128k-instruct', 'Microsoft'],
+    [ProviderId.openrouter, 'z-ai/glm-4.6', 'Z.ai'],
+    [ProviderId.ollama, 'chatglm3:6b', 'Z.ai'],
+    [ProviderId.ollama, 'granite3.3:8b', 'IBM'],
+    [ProviderId.bedrock, 'us.amazon.nova-pro-v1:0', 'Amazon Nova'],
+    [ProviderId.openrouter, 'amazon/nova-lite-v1', 'Amazon Nova'],
     [null, 'gpt-4o', 'OpenAI'],
   ])('shows the maker for %s serving %s', (provider, model, label) => {
     expect(getProviderIconDef(provider, model).label).toBe(label);
@@ -71,7 +64,9 @@ describe('providerIcons', () => {
 
   it.each([
     [ProviderId.anthropic, 'claude-opus-5-5', 'Anthropic'],
-    [ProviderId.ollama, 'phi4:14b', 'Ollama'],
+    [ProviderId.ollama, 'starcoder2:15b', 'Ollama'],
+    [ProviderId.ollama, 'sophia:7b', 'Ollama'],
+    [ProviderId.openrouter, 'thudm/supernova-medium', 'OpenRouter'],
     [ProviderId.ollama, 'my-ollama-finetune', 'Ollama'],
     [ProviderId.openrouter, 'openrouter/auto', 'OpenRouter'],
     [ProviderId.groq, 'yolo1-vision', 'Groq'],
