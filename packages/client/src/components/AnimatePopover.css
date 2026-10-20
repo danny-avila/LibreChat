@@ -67,38 +67,27 @@
   }
 }
 
-/* Chrome and Edge before 120 drop the `:dir()` rules; mirror by the `dir` attribute there. */
+/* Chrome and Edge before 120 drop the `:dir()` rules; they read the nearest direction from the
+ * `--dir-fallback` property tokens.css sets on every `dir` attribute. */
 @supports not selector(:dir(rtl)) {
-  .animate-popover-left:is([dir='rtl'], [dir='rtl'] *):not(
-      [dir='rtl'] [dir='ltr'],
-      [dir='rtl'] [dir='ltr'] *
-    ) {
-    transform-origin: right;
-    transform: scale(0.95) translateX(0.5rem);
-  }
+  @container style(--dir-fallback: rtl) {
+    .animate-popover-left:not([dir='ltr']) {
+      transform-origin: right;
+      transform: scale(0.95) translateX(0.5rem);
+    }
 
-  .animate-popover-left:is([dir='rtl'], [dir='rtl'] *):not(
-      [dir='rtl'] [dir='ltr'],
-      [dir='rtl'] [dir='ltr'] *
-    )[data-enter] {
-    transform: scale(1) translateX(0);
-  }
+    .animate-popover-left:not([dir='ltr'])[data-enter] {
+      transform: scale(1) translateX(0);
+    }
 
-  .animate-popover-bottom:is([dir='rtl'], [dir='rtl'] *):not(
-      [dir='rtl'] [dir='ltr'],
-      [dir='rtl'] [dir='ltr'] *
-    ) {
-    transform-origin: bottom right;
-  }
-}
+    .animate-popover-bottom:not([dir='ltr']) {
+      transform-origin: bottom right;
+    }
 
-@media (prefers-reduced-motion: reduce) {
-  @supports not selector(:dir(rtl)) {
-    .animate-popover-bottom:is([dir='rtl'], [dir='rtl'] *):not(
-        [dir='rtl'] [dir='ltr'],
-        [dir='rtl'] [dir='ltr'] *
-      ) {
-      transform: none;
+    @media (prefers-reduced-motion: reduce) {
+      .animate-popover-bottom:not([dir='ltr']) {
+        transform: none;
+      }
     }
   }
 }
