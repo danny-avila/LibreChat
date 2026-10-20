@@ -5,7 +5,7 @@ import {
   resolveSandboxFilename,
 } from 'librechat-data-provider';
 import type { CodeEnvFile, SubagentExecutionContext } from '@librechat/agents';
-import type { Agent, CodeEnvRef, TFile } from 'librechat-data-provider';
+import type { Agent, TFile } from 'librechat-data-provider';
 import type {
   THasEntityEmbeddings,
   TFilterFilesByAgentAccess,
@@ -174,6 +174,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
     string,
     Map<string, Map<string, { id: string; storage_session_id: string }>>
   >();
+  const deliveredCodeFiles = new Map<string, Map<string, CodeEnvFile>>();
   const codeRefKey = (ref: { file_id: string; storage_session_id: string }) =>
     `${ref.storage_session_id}\0${ref.file_id}`;
   const codeFileKey = (ref: { file_id: string; storage_session_id: string }, name: string) =>
@@ -792,7 +793,12 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
       const deliveredFileIds = new Map<string, string>();
       const replacedRefs = codeReplacements.get(key) ?? new Map();
       codeReplacements.set(key, replacedRefs);
-      const rememberRef = (fileId: string, ref: CodeEnvRef | undefined): void => {
+      const previousDeliveries = deliveredCodeFiles.get(key) ?? new Map();
+      deliveredCodeFiles.set(key, previousDeliveries);
+      const rememberRef = (
+        fileId: string,
+        ref: { file_id: string; storage_session_id: string } | undefined,
+      ): void => {
         if (!ref) return;
         const refs = replacedRefs.get(fileId) ?? new Map();
         refs.set(codeRefKey(ref), {
@@ -821,10 +827,11 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
           }
         }
         const { scope: probeScope, concurrency } = getCodeApiUploadOptions(req, route);
+        const selectionFiles = (context.tool_resources?.execute_code?.files ?? []).filter(
+          (file) => !queuedIds.has(file.file_id),
+        );
         const { selected } = await selectCodeFiles({
-          files: (context.tool_resources?.execute_code?.files ?? []).filter(
-            (file) => !queuedIds.has(file.file_id),
-          ),
+          files: selectionFiles,
           privateFileIds: state.agentScopedFileIds,
           project: state.project,
           getTurnRef: (file, destination) => getTurnCodeEnvRef(req, route, file, destination),
@@ -847,9 +854,34 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
           concurrency,
           signal,
         });
+        const selectedIds = new Set(selected.map((candidate) => candidate.file.file_id));
+        const supersededFiles = new Map<string, CodeEnvFile[]>();
+        for (const file of selectionFiles) {
+          if (selectedIds.has(file.file_id)) continue;
+          const name = codeFileName(context, file, route, seeded);
+          const canonicalRef = getCodeEnvRefForProfile(file.metadata, route);
+          const turnRef = getTurnCodeEnvRef(req, route, file, name);
+          for (const previous of [
+            previousDeliveries.get(file.file_id),
+            canonicalRef ? seeded?.get(codeRefKey(canonicalRef)) : undefined,
+            turnRef ? seeded?.get(codeRefKey(turnRef)) : undefined,
+          ]) {
+            if (!previous) continue;
+            const losers = supersededFiles.get(previous.name) ?? [];
+            losers.push(previous);
+            supersededFiles.set(previous.name, losers);
+          }
+        }
         for (const candidate of selected) {
           rememberRef(candidate.file.file_id, candidate.sourceRef);
           rememberRef(candidate.file.file_id, candidate.ref);
+          // Only a selection loser may cede its delivered path to a different record.
+          for (const previous of supersededFiles.get(candidate.sandboxName) ?? []) {
+            rememberRef(candidate.file.file_id, {
+              file_id: previous.id,
+              storage_session_id: previous.storage_session_id,
+            });
+          }
           if (!candidate.isActive || !candidate.ref) {
             state.codeEnvFiles.push(candidate.file);
             state.codeEnvDestinations ??= new Map();
@@ -900,6 +932,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
         const fileId = deliveredFileIds.get(
           codeFileKey({ file_id: file.id, storage_session_id: file.storage_session_id }, file.name),
         );
+        if (fileId) previousDeliveries.set(fileId, file);
         const replaces = [...(fileId ? (replacedRefs.get(fileId)?.values() ?? []) : [])].filter(
           (ref) => ref.id !== file.id || ref.storage_session_id !== file.storage_session_id,
         );

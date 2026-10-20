@@ -162,6 +162,7 @@ function harness(
       filename: sanitizeArtifactPath(artifact.name),
       bytes: options.publicationBytes ?? 12,
       conversationId: scope.conversationId,
+      createdAt: new Date(),
       context: FileContext.run_artifact,
       metadata: {
         destinationChosen: false,
@@ -262,19 +263,19 @@ function harness(
       signal: suppliedSignal,
       resumed: false,
     });
-  const publishOutput = async (context = identity(), id = 'output') => {
+  const publishOutput = async (context = identity(), id = 'output', name = `${id}.csv`) => {
     await host.session.capture(
       'worker',
       context,
       `tool-${id}`,
       {
         session_id: `private-${context.ancestry[0].subagentRunId}`,
-        files: [{ id, name: `${id}.csv` }],
+        files: [{ id, name }],
       },
       host.getContext('worker', context)?.codeExecutionContext,
     );
     const artifact = (await host.session.list('worker', context)).artifacts.find(
-      (entry) => entry.filename === `${id}.csv`,
+      (entry) => entry.filename === name,
     );
     if (!artifact) throw new Error('Expected staged artifact');
     return host.session.publish('worker', context, artifact.artifact_id, [], signal);
@@ -683,6 +684,144 @@ describe('run file execution host', () => {
       await h.host.session.close();
     }
   });
+
+  it.each([
+    { projectCode: false, projectChat: false },
+    { projectCode: true, projectChat: false },
+    { projectCode: true, projectChat: true },
+  ])(
+    'delivers a newer publication over a seeded upload (project code=$projectCode, project chat=$projectChat)',
+    async ({ projectCode, projectChat }) => {
+      const upload = file('upload', {
+        filename: 'results.csv',
+        conversationId: 'conversation',
+        createdAt: new Date(Date.now() - 60_000),
+        metadata: {
+          codeEnvRefs: {
+            'managed-worker': {
+              kind: 'user',
+              id: 'user',
+              file_id: 'upload-remote',
+              storage_session_id: 'upload-store',
+              sandboxFilename: 'results.csv',
+            },
+          },
+        },
+      });
+      const seed: CodeEnvFile[] = [
+        {
+          id: 'upload-remote',
+          resource_id: 'user',
+          kind: 'user',
+          storage_session_id: 'upload-store',
+          name: 'results.csv',
+        },
+      ];
+      const h = harness({ inputs: [], rootFiles: [upload], rootSeed: seed });
+      h.req.config!.projects = configSchema.parse({
+        version: '1.3.9',
+        projects: { codeExecution: projectCode },
+      }).projects;
+      h.req.body = { conversationId: 'conversation' };
+      const root = h.contexts.get('parent')!;
+      if (projectChat) {
+        h.req.chatProjectContext = {
+          projectId: 'project',
+          contextRevision: 0,
+          instructions: '',
+          resources: [],
+          file_ids: [],
+        };
+      }
+      const project = getProjectCodeScope(h.req, root.codeExecutionContext!.codeSessionKey);
+      if (project?.sessionPlan) {
+        project.sessionPlan.mountedNames.set(upload.file_id, 'results.csv');
+        project.sessionPlan.frozen = true;
+      }
+      root.provisionState = {
+        codeEnvFiles: [],
+        vectorDBFiles: [],
+        aliveFileIds: new Set([upload.file_id]),
+        agentScopedFileIds: new Set(),
+        project,
+      };
+      try {
+        await h.prepare();
+        await h.publishOutput(identity(), 'results');
+        await h.host.session.list('parent');
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const delivered = await h.host.provision(['bash_tool'], 'parent', h.signal);
+          const prior = { session_id: 'root', files: seed };
+          const merged = mergeCodeFilesIntoContext(prior, delivered) ?? prior;
+          if (projectChat) {
+            expect(delivered).toHaveLength(1);
+            expect(delivered?.[0]?.name).toMatch(/^results-.+\.csv$/);
+            expect(delivered?.[0]?.replaces).not.toContainEqual({
+              id: 'upload-remote',
+              storage_session_id: 'upload-store',
+            });
+            expect(merged.files.map((file) => file.name)).toEqual([
+              'results.csv',
+              delivered?.[0]?.name,
+            ]);
+          } else {
+            expect(delivered).toEqual([
+              expect.objectContaining({
+                id: 'results',
+                name: 'results.csv',
+                replaces: [{ id: 'upload-remote', storage_session_id: 'upload-store' }],
+              }),
+            ]);
+            expect(merged.files.map((file) => [file.id, file.name])).toEqual([
+              ['results', 'results.csv'],
+            ]);
+          }
+        }
+        if (!projectChat) {
+          const second = identity('second');
+          await h.prepare(second);
+          await h.publishOutput(second, 'next-results', 'results.csv');
+          const secondPublication = h.saved[1]!;
+          secondPublication.createdAt = new Date(Date.now() + 1_000);
+          const firstPublication = h.saved[0]!;
+          const firstRef = firstPublication.metadata!.codeEnvRefs!['managed-worker']!;
+          const secondRef = secondPublication.metadata!.codeEnvRefs!['managed-worker']!;
+          const delivered = await h.host.provision(['bash_tool'], 'parent', h.signal);
+          expect(delivered).toEqual([
+            expect.objectContaining({
+              id: secondRef.file_id,
+              storage_session_id: secondRef.storage_session_id,
+              name: 'results.csv',
+              replaces: expect.arrayContaining([
+                { id: firstRef.file_id, storage_session_id: firstRef.storage_session_id },
+                { id: 'upload-remote', storage_session_id: 'upload-store' },
+              ]),
+            }),
+          ]);
+          const merged = mergeCodeFilesIntoContext(
+            {
+              session_id: 'root',
+              files: [
+                {
+                  id: firstRef.file_id,
+                  storage_session_id: firstRef.storage_session_id,
+                  name: 'results.csv',
+                  kind: 'user',
+                  resource_id: 'user',
+                },
+              ],
+            },
+            delivered,
+          );
+          expect(
+            merged?.files.map((file) => [file.id, file.storage_session_id, file.name]),
+          ).toEqual([[secondRef.file_id, secondRef.storage_session_id, 'results.csv']]);
+        }
+      } finally {
+        await h.host.session.close();
+      }
+    },
+  );
 
   it('mounts every announced path when a child receives a same-named publication and upload', async () => {
     const input = file('input', {
