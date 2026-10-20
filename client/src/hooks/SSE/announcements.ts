@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import type { TSubmission } from 'librechat-data-provider';
 import type { MutableRefObject } from 'react';
-import type { OwedSuccessorState } from './useOwedSuccessor';
+import type { OwedSuccessorState } from './successor';
 import { resumeRequestsAtom } from '~/hooks/Chat/resume';
 import { streamStatusQueryKey } from '~/data-provider';
 

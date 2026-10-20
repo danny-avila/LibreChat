@@ -27,10 +27,10 @@ import type { TMessage, Agents } from 'librechat-data-provider';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { useStreamStatus, useGetStartupConfig } from '~/data-provider';
-import useResumeAnnouncements from './useResumeAnnouncements';
 import { getBranchSiblingIndexesForTarget } from '~/utils';
-import useOwedSuccessor from './useOwedSuccessor';
+import useResumeAnnouncements from './announcements';
 import { settleFinishedRun } from './finished';
+import useOwedSuccessor from './successor';
 import useSteerState from './steer';
 import store from '~/store';
 
