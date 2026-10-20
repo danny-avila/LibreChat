@@ -201,7 +201,10 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const abortControllerRef = useRef<AbortController | null>(null);
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
   const { files, setFiles, conversation, index = 0 } = fileState;
-  const owner = useMemo(() => ({}), [index, params?.fileSetter]);
+  const owner = useMemo(
+    () => ({ index, fileSetter: params?.fileSetter }),
+    [index, params?.fileSetter],
+  );
   const currentConversationRef = useRef(conversation?.conversationId ?? Constants.NEW_CONVO);
   currentConversationRef.current = conversation?.conversationId ?? Constants.NEW_CONVO;
   const ownerRef = useRef<typeof owner | null>(owner);

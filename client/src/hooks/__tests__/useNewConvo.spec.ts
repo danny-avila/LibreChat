@@ -288,6 +288,96 @@ describe('useNewConvo reset cleanup', () => {
     },
   );
 
+  it.each([false, true])(
+    'completes the next first-ID upload after a same-route reset (saveDrafts: %s)',
+    async (saveDrafts) => {
+      const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
+      mockSaveDrafts = saveDrafts;
+      mockFiles.clear();
+      mockPreviousConversation = {
+        conversationId: 'new',
+        endpoint: EModelEndpoint.openAI,
+      };
+      window.history.replaceState({}, '', '/c/new');
+      global.URL.createObjectURL = jest.fn(() => 'blob:reset-generation');
+      global.URL.revokeObjectURL = jest.fn();
+      const queryClient = new QueryClient({
+        defaultOptions: {
+          queries: { retry: false, cacheTime: Infinity },
+          mutations: { retry: false },
+        },
+      });
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(QueryClientProvider, { client: queryClient }, children);
+      const { result, rerender, unmount } = renderHook(
+        ({ conversationId, isSubmitting }) => {
+          const [files, setFiles] = useAtom(filesFamily(2));
+          useAutoSave({ index: 2, conversationId, isSubmitting, files, setFiles });
+          return {
+            files,
+            handler: useFileHandlingNoChatContext(undefined, {
+              index: 2,
+              files,
+              setFiles,
+              conversation: { conversationId, endpoint: EModelEndpoint.openAI } as TConversation,
+            }),
+          };
+        },
+        { wrapper, initialProps: { conversationId: 'new', isSubmitting: false } },
+      );
+      const oldLaunch = { conversationId: 'new' };
+      bindComposerLaunch(oldLaunch, 2);
+      const next = renderHook(() => useNewConvo(2), { wrapper });
+      const launch = { conversationId: 'new' };
+      act(() => {
+        next.result.current.newConversation();
+        bindComposerLaunch(launch, 2);
+      });
+      expect(adoptComposerConversation(oldLaunch, 'stale-generation', 2)).toBe(false);
+      act(() => rerender({ conversationId: 'new', isSubmitting: true }));
+      await act(async () => {
+        expect(
+          await result.current.handler.handleFiles(
+            [new File(['search'], 'reset.txt', { type: 'text/plain' })],
+            'file_search',
+          ),
+        ).toBe(true);
+      });
+      const body = mockUploadFile.mock.calls[0][0] as FormData;
+      const options = mockUploadOptions;
+      expect(adoptComposerConversation(launch, 'saved-after-reset', 2)).toBe(true);
+      act(() => rerender({ conversationId: 'saved-after-reset', isSubmitting: false }));
+      mockSetEphemeralAgent.mockClear();
+      await act(async () => {
+        const persisted = {
+          temp_file_id: body.get('file_id'),
+          file_id: 'persisted-after-reset',
+          filename: 'reset.txt',
+          filepath: '/files/reset.txt',
+          type: 'text/plain',
+          bytes: 6,
+          embedded: true,
+        };
+        mockFileList = [persisted];
+        options.onSuccess?.(persisted, body);
+        rerender({ conversationId: 'saved-after-reset', isSubmitting: false });
+        await new Promise((resolve) => setTimeout(resolve, 320));
+      });
+      expect(result.current.files.get(body.get('file_id') as string)?.progress).toBe(1);
+      expect(mockSetEphemeralAgent).toHaveBeenCalledWith('saved-after-reset', expect.any(Function));
+      expect(localStorage.getItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}new`)).not.toBe(
+        'true',
+      );
+      expect(
+        localStorage.getItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}saved-after-reset`),
+      ).toBe('true');
+      next.unmount();
+      unmount();
+      queryClient.clear();
+      window.history.replaceState({}, '', '/');
+    },
+  );
+
   it.each(['upload', 'composer'])(
     'keeps acknowledged first-ID completion when the %s host remounts',
     async (remount) => {

@@ -1264,6 +1264,42 @@ describe('logical composer lifetime', () => {
     window.history.replaceState({}, '', '/');
   });
 
+  it('binds a new launch immediately after a same-route reset without reviving the old one', () => {
+    const host = {};
+    const release = registerComposerDraft(16, Constants.NEW_CONVO, 'new:16', host);
+    const oldLaunch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(oldLaunch, 16);
+    const oldOwner = captureComposerDraft(16, Constants.NEW_CONVO);
+    renewNewConversationDraftToken(16);
+    const launch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(launch, 16);
+    const owner = captureComposerDraft(16, Constants.NEW_CONVO);
+    expect(oldOwner()).toBe(false);
+    expect(adoptComposerConversation(oldLaunch, 'old-reset-chat', 16)).toBe(false);
+    release();
+    const releasePending = registerComposerDraft(16, Constants.NEW_CONVO, 'pending:16', host);
+    expect(owner()).toBe(true);
+    expect(adoptComposerConversation(launch, 'new-reset-chat', 16)).toBe(true);
+    expect(owner.conversationId()).toBe('new-reset-chat');
+    releasePending();
+  });
+
+  it('retires the refreshed registration on unmount and keeps sibling panes unchanged', async () => {
+    const release = registerComposerDraft(17, Constants.NEW_CONVO, 'new:17', {});
+    const releaseSibling = registerComposerDraft(18, Constants.NEW_CONVO, 'new:18', {});
+    const sibling = captureComposerDraft(18, Constants.NEW_CONVO);
+    renewNewConversationDraftToken(17);
+    const owner = captureComposerDraft(17, Constants.NEW_CONVO);
+    expect(owner()).toBe(true);
+    expect(sibling()).toBe(true);
+    release();
+    expect(owner()).toBe(false);
+    await Promise.resolve();
+    expect(getActiveComposerDraftId(17, Constants.NEW_CONVO)).toBeNull();
+    expect(sibling()).toBe(true);
+    releaseSibling();
+  });
+
   it('rejects an acknowledgement from a launch superseded by New Chat', () => {
     const release = registerComposerDraft(8, Constants.NEW_CONVO, 'pending:8', {});
     const submissionConversation = { conversationId: Constants.NEW_CONVO };

@@ -59,7 +59,19 @@ export const getNewConversationDraftToken = (index = 0): symbol => {
 };
 
 export const renewNewConversationDraftToken = (index = 0): void => {
-  newConversationDraftTokens.set(index, Symbol('new-conversation-draft'));
+  const generation = Symbol('new-conversation-draft');
+  newConversationDraftTokens.set(index, generation);
+  const scope = composerDraftScopes.get(index);
+  if (scope?.active && scope.conversationId === Constants.NEW_CONVO) {
+    composerDraftScopes.set(index, {
+      ...scope,
+      generation,
+      route: composerRoute(),
+      sourceId: undefined,
+      assignedRoute: undefined,
+      assignments: new Set(),
+    });
+  }
 };
 
 /** Draft key used while a run is in flight. Extra panes get a suffix so one run cannot migrate another pane's attachments. */
@@ -356,10 +368,11 @@ export const registerComposerDraft = (
   scope.draftId = draftId;
   composerDraftScopes.set(index, scope);
   return () => {
-    if (composerDraftScopes.get(index) !== scope || scope.registration !== registration) return;
-    scope.active = false;
+    const current = composerDraftScopes.get(index);
+    if (current?.registration !== registration) return;
+    current.active = false;
     void Promise.resolve().then(() => {
-      if (composerDraftScopes.get(index) === scope && !scope.active) {
+      if (composerDraftScopes.get(index) === current && !current.active) {
         composerDraftScopes.delete(index);
       }
     });
