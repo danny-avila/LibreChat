@@ -146,7 +146,10 @@ export function ShareArtifactsContainer({
     >
       {mainContent}
     </ResizablePanel>,
-    showDockedPanel && <ResizableHandleAlt key="handle" withHandle className="text-text-primary" />,
+    /* The separator binds to its neighbours when it mounts, so it remounts with the order. */
+    showDockedPanel && (
+      <ResizableHandleAlt key={`handle-${direction}`} withHandle className="text-text-primary" />
+    ),
     showDockedPanel && (
       <ResizablePanel
         key="artifacts"
