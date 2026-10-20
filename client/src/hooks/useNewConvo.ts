@@ -334,6 +334,7 @@ const useNewConvo = (index = 0) => {
     }: NewConversationOptions = {}) {
       const nextConversationId = _template.conversationId ?? '';
       const keepsExistingDraft =
+        modelsData != null ||
         keepComposerState ||
         (nextConversationId !== '' &&
           nextConversationId !== Constants.NEW_CONVO &&

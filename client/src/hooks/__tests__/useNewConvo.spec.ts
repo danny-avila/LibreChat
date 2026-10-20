@@ -740,6 +740,36 @@ describe('useNewConvo reset cleanup', () => {
     window.history.replaceState({}, '', '/');
   });
 
+  it.each(['bootstrap', 'metadata', 'reset'])(
+    'preserves logical composer ownership only for passive initialization (%s)',
+    (action) => {
+      mockFiles.clear();
+      window.history.replaceState({}, '', '/c/new?projectId=bootstrap-project');
+      const release = registerComposerDraft(2, 'new', 'new:2', {});
+      const owner = captureComposerDraft(2, 'new');
+      beginFileSearchUpload('bootstrap-file', captureFileSearchUpload('new', owner));
+      const client = new QueryClient();
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(QueryClientProvider, { client }, children);
+      const initialized = renderHook(() => useNewConvo(2), { wrapper });
+      const options = {
+        template: { chatProjectId: 'bootstrap-project' },
+        ...(action === 'bootstrap' ? { modelsData: {} } : {}),
+        ...(action === 'metadata' ? { keepComposerState: true } : {}),
+      };
+      act(() => {
+        initialized.result.current.newConversation(options);
+        initialized.result.current.newConversation(options);
+      });
+      expect(owner()).toBe(action !== 'reset');
+      expect(completeFileSearchUpload('bootstrap-file', 'new')).toBe(action !== 'reset');
+      initialized.unmount();
+      release();
+      client.clear();
+      window.history.replaceState({}, '', '/');
+    },
+  );
+
   it.each(['project', 'answer', 'teardown', 'saved'])(
     'keeps logical ownership retirement across reload (%s)',
     async (boundary) => {
@@ -791,9 +821,11 @@ describe('useNewConvo reset cleanup', () => {
     },
   );
 
-  it.each([false, true])(
-    'keeps new-chat reset invalidation after module reload (%s)',
-    async (reset) => {
+  it.each(
+    [false, true].flatMap((reset) => [false, true].map((bootstrap) => ({ reset, bootstrap }))),
+  )(
+    'keeps new-chat intent ownership after reload (reset: $reset, bootstrap: $bootstrap)',
+    async ({ reset, bootstrap }) => {
       const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
       mockSaveDrafts = true;
       mockFiles.clear();
@@ -843,6 +875,16 @@ describe('useNewConvo reset cleanup', () => {
         next.unmount();
       }
       composer.unmount();
+      if (bootstrap) {
+        const initialized = renderHook(() => useNewConvo(2), { wrapper });
+        act(() =>
+          initialized.result.current.newConversation({
+            modelsData: {},
+            template: { chatProjectId: 'reload-project' },
+          }),
+        );
+        initialized.unmount();
+      }
       // Re-execute the real intent module with no live assignments map, preserving browser storage.
       const navigationDescriptor = Object.getOwnPropertyDescriptor(performance, 'getEntriesByType');
       Object.defineProperty(performance, 'getEntriesByType', {
