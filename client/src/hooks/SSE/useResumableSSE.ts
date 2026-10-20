@@ -516,7 +516,7 @@ export default function useResumableSSE(
           seedLive(countTrailingOutputChars(content), usageSubmission),
       },
       stream: transport.stream({ token }),
-      start: transport.start,
+      start: (request, options) => transport.start(request, options),
       exposeDebugControls: import.meta.env.DEV
         ? ({ killNetwork, closeClean }) => {
             // Debug hooks for testing reconnection vs clean close behavior (dev only)

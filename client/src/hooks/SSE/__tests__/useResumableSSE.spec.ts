@@ -1,3 +1,4 @@
+import { createElement } from 'react';
 import { getDefaultStore } from 'jotai';
 import { QueryClient } from '@tanstack/react-query';
 import { renderHook, act, waitFor } from '@testing-library/react';
@@ -12,6 +13,7 @@ import {
 } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
 import type { Query, QueryKey } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import {
   activeUsageResponseIdFamily,
   liveTokensFamily,
@@ -315,6 +317,8 @@ import useResumableSSE, {
 } from '~/hooks/SSE/useResumableSSE';
 import useSSE from '~/hooks/SSE/useSSE';
 import type { PendingSteer } from '@librechat/chat';
+import type { Transport } from '~/hooks/Chat/contract';
+import { ChatTransportContext, defaultChatTransport } from '~/Providers/ChatTransportContext';
 import {
   recoveryDispositionsFamily,
   queuedMessagesByConvoId,
@@ -625,6 +629,25 @@ describe('useResumableSSE', () => {
     await act(async () => {
       finishStart({ streamId: 'stream-123', generationCreatedAt: 1000 });
     });
+  });
+
+  it('calls a host transport start on the transport itself', async () => {
+    const receivers: unknown[] = [];
+    const hostTransport: Transport = {
+      ...defaultChatTransport,
+      start(this: Transport, startRequest, options) {
+        receivers.push(this);
+        return defaultChatTransport.start(startRequest, options);
+      },
+    };
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(ChatTransportContext.Provider, { value: hostTransport }, children);
+    const { unmount } = renderHook(() => useResumableSSE(buildSubmission(), buildChatHelpers()), {
+      wrapper,
+    });
+    await waitFor(() => expect(receivers).toHaveLength(1));
+    expect(receivers[0]).toBe(hostTransport);
+    unmount();
   });
 
   it.each([useSSE, useResumableSSE])(
