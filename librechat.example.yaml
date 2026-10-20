@@ -1227,12 +1227,14 @@ endpoints:
       apiKey: '${MINIMAX_API_KEY}'
       baseURL: 'https://api.minimax.io/v1'
       models:
-        default: ['MiniMax-M3', 'MiniMax-M2.7']
-        fetch: true
+        default: ['MiniMax-M3.1-Flash', 'MiniMax-M3']
+        fetch: false
       titleConvo: true
-      titleModel: 'MiniMax-M3'
+      titleModel: 'MiniMax-M3.1-Flash'
       modelDisplayLabel: 'MiniMax'
       dropParams: ['response_format']
+      customParams:
+        includeReasoningHistory: true
 
     # For mainland China, use https://api.minimaxi.com/v1 as baseURL.
 
