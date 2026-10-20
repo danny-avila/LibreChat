@@ -2,26 +2,40 @@ import { strongDirection } from '../direction';
 
 describe('strongDirection', () => {
   it('resolves Arabic and Hebrew letters to rtl', () => {
-    expect(strongDirection('مرحبا hello')).toBe('rtl');
-    expect(strongDirection('שלום hello')).toBe('rtl');
+    expect(strongDirection('\u0645\u0631\u062D\u0628\u0627 hello')).toBe('rtl');
+    expect(strongDirection('\u05E9\u05DC\u05D5\u05DD hello')).toBe('rtl');
   });
 
   it('resolves Latin letters to ltr', () => {
-    expect(strongDirection('hello مرحبا')).toBe('ltr');
+    expect(strongDirection('hello \u0645\u0631\u062D\u0628\u0627')).toBe('ltr');
   });
 
   it('treats Devanagari and Thai letters as strong ltr characters', () => {
-    expect(strongDirection('नाम مرحبا')).toBe('ltr');
-    expect(strongDirection('สวัสดี שלום')).toBe('ltr');
+    expect(strongDirection('\u0928\u093E\u092E \u0645\u0631\u062D\u0628\u0627')).toBe('ltr');
+    expect(strongDirection('\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35 \u05E9\u05DC\u05D5\u05DD')).toBe(
+      'ltr',
+    );
+  });
+
+  it('treats digits of scripts with their own numerals as strong', () => {
+    expect(strongDirection('\u0967 \u0645\u0631\u062D\u0628\u0627')).toBe('ltr');
+    expect(strongDirection('\u0E51 \u05E9\u05DC\u05D5\u05DD')).toBe('ltr');
+    expect(strongDirection('\u07C1 hello')).toBe('rtl');
+  });
+
+  it('honors explicit direction marks', () => {
+    expect(strongDirection('\u200F hello')).toBe('rtl');
+    expect(strongDirection('\u061C hello')).toBe('rtl');
+    expect(strongDirection('\u200E \u0645\u0631\u062D\u0628\u0627')).toBe('ltr');
   });
 
   it('skips digits and punctuation before the first letter', () => {
-    expect(strongDirection('1. ١٢ (مرحبا)')).toBe('rtl');
-    expect(strongDirection('42 - • hello')).toBe('ltr');
+    expect(strongDirection('1. \u0661\u0662 (\u0645\u0631\u062D\u0628\u0627)')).toBe('rtl');
+    expect(strongDirection('42 - \u2022 hello')).toBe('ltr');
   });
 
   it('returns null when the text has only digits and punctuation', () => {
-    expect(strongDirection('123 ١٢ × ...')).toBeNull();
+    expect(strongDirection('123 \u0661\u0662 \u00D7 ...')).toBeNull();
   });
 
   it('returns null for empty input', () => {
