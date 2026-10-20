@@ -12,7 +12,6 @@ import {
 } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
 import type { Query, QueryKey } from '@tanstack/react-query';
-import type { PendingSteer } from '~/hooks/Chat/queue';
 import {
   activeUsageResponseIdFamily,
   liveTokensFamily,
@@ -20,7 +19,6 @@ import {
   pendingUsageFamily,
   removeUsageAtoms,
 } from '~/components/Chat/Input/TokenUsage/store';
-import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
@@ -166,7 +164,7 @@ jest.mock('jotai', () => {
   return {
     ...actual,
     useSetAtom: (atom: unknown) => {
-      const queue = jest.requireActual('~/hooks/Chat/queue');
+      const queue = jest.requireActual('@librechat/chat/react');
       if (atom === queue.runEndByIndex(0)) {
         return mockSetRunEnd;
       }
@@ -225,9 +223,9 @@ jest.mock('~/data-provider', () => ({
   postGenerationRequest: (...args: unknown[]) => mockPostGenerationRequest(...args),
 }));
 
-jest.mock('~/hooks/Chat/useSteerConvert', () => ({
-  __esModule: true,
-  default: () => mockConvertSteersToQueued,
+jest.mock('@librechat/chat/react', () => ({
+  ...jest.requireActual('@librechat/chat/react'),
+  useSteerConvert: () => mockConvertSteersToQueued,
 }));
 
 /** The steer-chip/queue writers are swapped for stable named spies, so these tests
@@ -316,12 +314,14 @@ import useResumableSSE, {
   ABORT_SWEEP_STATUSES,
 } from '~/hooks/SSE/useResumableSSE';
 import useSSE from '~/hooks/SSE/useSSE';
+import type { PendingSteer } from '@librechat/chat';
 import {
+  recoveryDispositionsFamily,
   queuedMessagesByConvoId,
   stopRequestedByConvoId,
   detachedRunByConvoId,
-} from '~/hooks/Chat/queue';
-import { resetQueueFamilies } from '@librechat/chat/react';
+  resetQueueFamilies,
+} from '@librechat/chat/react';
 
 const CONV_ID = 'conv-abc-123';
 

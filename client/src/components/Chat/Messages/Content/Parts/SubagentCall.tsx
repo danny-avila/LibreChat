@@ -26,6 +26,7 @@ import { MessageContext } from '~/Providers/MessageContext';
 import { useShareContext } from '~/Providers/ShareContext';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { parseSubagentBackgroundHandle } from './handle';
+import { MCPAppViews } from '~/components/MCPUIResource';
 import { isError } from '../ToolOutput/OutputRenderer';
 import { useToolPreparation } from '../preparation';
 import { useAgentsMapContext } from '~/Providers';
@@ -525,7 +526,10 @@ export default function SubagentCall({
       </button>
 
       {!hideAttachments && attachments && attachments.length > 0 && (
-        <AttachmentGroup attachments={attachments} />
+        <>
+          <AttachmentGroup attachments={attachments} />
+          <MCPAppViews attachments={attachments} />
+        </>
       )}
     </>
   );
