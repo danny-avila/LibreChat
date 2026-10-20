@@ -1375,11 +1375,17 @@ export class Chat {
 
   /** Applies one event; returns the turn's outcome when the event ends it. */
   private apply(event: ChatEvent): Outcome | undefined {
-    const applyEvent = this.init.applyEvent ?? defaultApplyEvent;
-    applyEvent(event, {
-      messages: this.messages,
-      write: (messages) => this.write(messages),
-    });
+    /** A pause that expired or that this chat already resumed is stale, so no card is drawn for it. */
+    const stale =
+      event.type === 'pending_action' &&
+      (isExpired(event.data) || this.resumed.has(event.data.actionId));
+    if (!stale) {
+      const applyEvent = this.init.applyEvent ?? defaultApplyEvent;
+      applyEvent(event, {
+        messages: this.messages,
+        write: (messages) => this.write(messages),
+      });
+    }
     let outcome: Outcome | undefined;
     if (streamingEvents.has(event.type) && this.status !== 'streaming') {
       this.setStatus('streaming');

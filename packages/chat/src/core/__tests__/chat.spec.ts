@@ -352,6 +352,62 @@ describe('Chat', () => {
     await sent;
   });
 
+  describe('a replayed stale pause', () => {
+    const pause = {
+      actionId: 'action-1',
+      streamId: 'convo-1',
+      conversationId: 'convo-1',
+      createdAt: 1,
+      expiresAt: Date.now() + 60_000,
+      payload: { type: 'ask_user_question', question: { question: 'Which?' }, tool_call_id: 'a' },
+    } as Agents.PendingAction;
+
+    it('stays out of the host reducer when it expired', async () => {
+      const applyEvent = jest.fn();
+      const { chat, transport } = setup({
+        applyEvent,
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      const replay = createStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      transport.reconnectToStream.mockResolvedValueOnce(replay);
+      const attached = chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      await flush();
+
+      replay.push({ type: 'pending_action', data: { ...pause, expiresAt: Date.now() - 1_000 } });
+      await flush();
+
+      expect(applyEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'pending_action' }),
+        expect.anything(),
+      );
+      replay.push(finalEvent());
+      await attached;
+    });
+
+    it('stays out of the host reducer when this chat already resumed it', async () => {
+      const applyEvent = jest.fn();
+      const { chat, transport } = setup({
+        applyEvent,
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      const continuation = createStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      transport.reconnectToStream.mockResolvedValueOnce(continuation);
+      chat.restorePendingAction(pause, 100);
+      await chat.addToolOutput({ toolCallId: 'a', output: 'Yes' });
+      await flush();
+
+      continuation.push({ type: 'pending_action', data: pause });
+      await flush();
+
+      expect(applyEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'pending_action' }),
+        expect.anything(),
+      );
+      continuation.push(finalEvent());
+      await flush();
+    });
+  });
+
   it('streams a turn whose first frame is a pause', async () => {
     const { chat, stream } = setup();
     const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
