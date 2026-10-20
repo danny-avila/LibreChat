@@ -31,6 +31,10 @@ describe('Slider direction', () => {
     expect(renderSlider()).toHaveAttribute('dir', 'rtl');
   });
 
+  it('follows an RTL provider when no element declares a direction', () => {
+    expect(renderSlider()).toHaveAttribute('dir', 'rtl');
+  });
+
   it('keeps an LTR island inside an RTL app left to right', () => {
     document.documentElement.setAttribute('dir', 'rtl');
     expect(renderSlider('ltr')).toHaveAttribute('dir', 'ltr');

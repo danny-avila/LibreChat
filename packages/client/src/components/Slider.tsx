@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useDirection } from '@radix-ui/react-direction';
 import * as SliderPrimitive from '@radix-ui/react-slider';
-import { cn, isRtl, disabledFillClasses } from '~/utils';
+import { cn, disabledFillClasses } from '~/utils';
 
 type SliderProps = React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root> & {
   className?: string;
@@ -43,10 +43,14 @@ const Slider: React.ForwardRefExoticComponent<SliderProps & React.RefAttributes<
         [ref],
       );
       /** Radix reads only the app-wide provider. The root stamps its own `dir`, so the nearest
-       *  `dir` above it decides, and an LTR island inside an RTL app keeps an LTR slider. Any `dir`
-       *  change re-resolves it, since an island can flip while the provider does not. */
+       *  `dir` attribute above it decides when there is one, and an LTR island inside an RTL app
+       *  keeps an LTR slider; without one the provider's direction stands. Any `dir` change
+       *  re-resolves it, since an island can flip while the provider does not. */
       React.useLayoutEffect(() => {
-        const resolve = () => setDirection(isRtl(rootRef.current?.parentElement) ? 'rtl' : 'ltr');
+        const resolve = () => {
+          const declared = rootRef.current?.parentElement?.closest('[dir]')?.getAttribute('dir');
+          setDirection(declared === 'rtl' || declared === 'ltr' ? declared : appDirection);
+        };
         resolve();
         const observer = new MutationObserver(resolve);
         observer.observe(document.documentElement, {
@@ -55,7 +59,7 @@ const Slider: React.ForwardRefExoticComponent<SliderProps & React.RefAttributes<
           subtree: true,
         });
         return () => observer.disconnect();
-      }, []);
+      }, [appDirection]);
       return (
         <SliderPrimitive.Root
           ref={setRootRef}
