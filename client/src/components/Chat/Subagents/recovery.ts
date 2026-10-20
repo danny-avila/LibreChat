@@ -31,9 +31,20 @@ export function reduceRecoveredContent(
   previous: RecoveredContent | null,
   response: SubagentTaskContentResponse,
 ): RecoveredContent | null {
+  return applyRecoveredContent(previous, response);
+}
+
+function applyRecoveredContent(
+  previous: RecoveredContent | null,
+  response: SubagentTaskContentResponse,
+  owned = false,
+  materializeSteps = true,
+): RecoveredContent | null {
   if (
     previous != null &&
-    (previous.snapshot.taskId !== response.taskId ||
+    (previous.snapshot.parentConversationId !== response.parentConversationId ||
+      previous.snapshot.parentMessageId !== response.parentMessageId ||
+      previous.snapshot.taskId !== response.taskId ||
       previous.snapshot.threadId !== response.threadId ||
       previous.snapshot.messageId !== response.messageId)
   ) {
@@ -117,17 +128,21 @@ export function reduceRecoveredContent(
     return previous;
   }
   const source = previous.stream;
-  const stream: StreamState = {
-    ...source,
-    messages: new Map(source.messages),
-    steps: new Map(source.steps),
-    toolCallIds: new Map(source.toolCallIds),
-    firstFragmentByCall: new Map(source.firstFragmentByCall),
-    firstFragmentByStep: new Map(source.firstFragmentByStep),
-    dispatchedByCall: new Map(source.dispatchedByCall),
-    completedByCall: new Map(source.completedByCall),
-    pendingDeltas: new Map([...source.pendingDeltas].map(([key, events]) => [key, events.slice()])),
-  };
+  const stream: StreamState = owned
+    ? source
+    : {
+        ...source,
+        messages: new Map(source.messages),
+        steps: new Map(source.steps),
+        toolCallIds: new Map(source.toolCallIds),
+        firstFragmentByCall: new Map(source.firstFragmentByCall),
+        firstFragmentByStep: new Map(source.firstFragmentByStep),
+        dispatchedByCall: new Map(source.dispatchedByCall),
+        completedByCall: new Map(source.completedByCall),
+        pendingDeltas: new Map(
+          [...source.pendingDeltas].map(([key, events]) => [key, events.slice()]),
+        ),
+      };
   const initialResponse = recoveredMessage(previous.snapshot);
   const userMessage: TMessage = {
     messageId: response.parentMessageId,
@@ -176,7 +191,7 @@ export function reduceRecoveredContent(
       ...identity,
       mode: 'snapshot',
       content: message.content ?? [],
-      runSteps: Array.from(stream.steps.values()),
+      runSteps: materializeSteps ? Array.from(stream.steps.values()) : previous.snapshot.runSteps,
     },
   };
 }
@@ -218,12 +233,27 @@ export type TaskContentLoader = (
 export async function recoverTaskContent(
   previous: RecoveredContent | null,
   load: TaskContentLoader,
+  signal?: AbortSignal,
 ): Promise<RecoveredContent> {
-  let response = await load(previous?.snapshot.throughSequence);
-  let next = reduceRecoveredContent(previous, response);
+  const read: TaskContentLoader = async (afterSequence, cursor) => {
+    if (signal?.aborted) throw new Error('subagent_content_cancelled');
+    const response = cursor == null ? await load(afterSequence) : await load(afterSequence, cursor);
+    if (signal?.aborted) throw new Error('subagent_content_cancelled');
+    return response;
+  };
+  // Only this unpublished catch-up may reuse its mutable maps.
+  const apply = (before: RecoveredContent | null, response: SubagentTaskContentResponse) =>
+    applyRecoveredContent(
+      before,
+      response,
+      before != null && before.stream !== previous?.stream,
+      false,
+    );
+  let response = await read(previous?.snapshot.throughSequence);
+  let next = apply(previous, response);
   if (next == null) {
-    response = await load();
-    next = reduceRecoveredContent(null, response);
+    response = await read();
+    next = apply(null, response);
   }
   let caughtUpTerminal = false;
   const seen = new Set<string>();
@@ -234,11 +264,11 @@ export async function recoverTaskContent(
       if (seen.has(cursor)) throw new Error('subagent_content_cursor_repeated');
       seen.add(cursor);
       const through = response.throughSequence;
-      response = await load(undefined, cursor);
+      response = await read(undefined, cursor);
       if (response.targetThroughSequence !== target || response.throughSequence <= through) {
         throw new Error('subagent_content_cursor_mismatch');
       }
-      next = reduceRecoveredContent(next, response);
+      next = apply(next, response);
       if (next == null) throw new Error('subagent_content_snapshot_required');
     }
     if (next == null || next.snapshot.throughSequence < target) {
@@ -249,13 +279,17 @@ export async function recoverTaskContent(
       isLiveSubagentStatus(next.snapshot.status) ||
       next.snapshot.recovery === 'complete'
     ) {
-      return next;
+      if (next === previous) return next;
+      return {
+        ...next,
+        snapshot: { ...next.snapshot, runSteps: Array.from(next.stream.steps.values()) },
+      };
     }
     // A pinned page can observe terminal status from a newer committed head.
     // Refresh once; a genuinely incomplete capture must remain partial.
     caughtUpTerminal = true;
-    response = await load(next.snapshot.throughSequence);
-    next = reduceRecoveredContent(next, response);
+    response = await read(next.snapshot.throughSequence);
+    next = apply(next, response);
     if (next == null) throw new Error('subagent_content_snapshot_required');
   }
 }

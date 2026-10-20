@@ -208,13 +208,29 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
     throughRevision: number,
     afterSequence = -1,
   ): AsyncGenerator<SubagentContentBatch> {
-    const cursor = contentModel()
-      .find({
+    if (throughRevision < 1) return;
+    const Model = contentModel();
+    let fromRevision = 1;
+    if (afterSequence >= 0) {
+      /** Commit sequences increase with revisions. Seek without a revision predicate so
+       * an exhausted pin cannot scan later commits looking for an older revision. */
+      const first = await Model.findOne({
         ...scopeFilter(scope),
-        revision: { $lte: throughRevision },
+        fragment: -1,
         throughSequence: { $gt: afterSequence },
         ...activeExpirationFilter(),
       })
+        .sort({ throughSequence: 1 })
+        .select('revision -_id')
+        .lean<Pick<SubagentContentHead, 'revision'>>();
+      if (first == null || first.revision > throughRevision) return;
+      fromRevision = first.revision;
+    }
+    const cursor = Model.find({
+      ...scopeFilter(scope),
+      revision: { $gte: fromRevision, $lte: throughRevision },
+      ...activeExpirationFilter(),
+    })
       .sort({ revision: 1, fragment: 1 })
       .lean()
       .cursor();

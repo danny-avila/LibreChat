@@ -4130,6 +4130,9 @@ export function createMessageMethods(
   async function deleteMessages(filter: FilterQuery<IMessage>) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
+      if (typeof filter.messageId === 'string' && !/:(user|assistant)$/.test(filter.messageId)) {
+        return await Message.deleteMany(filter);
+      }
       const wholeScope =
         typeof filter.user === 'string' &&
         Object.keys(filter).every((key) => ['user', 'conversationId', 'tenantId'].includes(key));

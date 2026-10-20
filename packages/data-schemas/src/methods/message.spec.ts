@@ -4060,6 +4060,28 @@ describe('Message Operations', () => {
   });
 
   describe('deleteMessages', () => {
+    it('does not discover journals for an exact ordinary message id', async () => {
+      const messageId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId,
+        conversationId: uuidv4(),
+        user: 'user123',
+        text: 'Ordinary chat',
+      });
+      const find = jest.spyOn(Message, 'find');
+      const journalDelete = jest.spyOn(mongoose.models.SubagentContent, 'deleteMany');
+      try {
+        await expect(deleteMessages({ user: 'user123', messageId })).resolves.toMatchObject({
+          deletedCount: 1,
+        });
+        expect(find).not.toHaveBeenCalled();
+        expect(journalDelete).not.toHaveBeenCalled();
+      } finally {
+        find.mockRestore();
+        journalDelete.mockRestore();
+      }
+    });
+
     it('should delete messages with the correct filter', async () => {
       // Save some messages for different users
       await saveMessage(mockCtx, mockMessageData);

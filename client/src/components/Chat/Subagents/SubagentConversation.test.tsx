@@ -674,3 +674,116 @@ it.each(
     }
   },
 );
+
+it.each(['completed', 'failed', 'cancelled'] as const)(
+  'retains the durable %s outcome beside a nonempty partial prefix without replaying it',
+  (status) => {
+    const content: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'Retained earlier work.' },
+    ];
+    mockRecoveredQuery.mockReturnValue({
+      data: {
+        messageId: 'task-1:assistant',
+        status,
+        recovery: 'partial',
+        content,
+        throughSequence: 0,
+        targetThroughSequence: 0,
+        retryUntil: 0,
+      },
+    });
+    const props = {
+      author,
+      parentAuthor,
+      recovery: {
+        parentConversationId: 'parent',
+        threadId: 'child',
+        selectedTaskId: 'task-1',
+        ready: true,
+      },
+      turns: [
+        {
+          ...turns[0],
+          outcome: {
+            messageId: 'task-1:assistant',
+            parentMessageId: 'task-1:user',
+            role: 'assistant' as const,
+            text: 'Durable final outcome.',
+          },
+          activity: { ...turns[0].activity, status },
+        },
+      ],
+    };
+    const { rerender } = render(
+      <ChatSurfaceHarness>
+        <SubagentConversation {...props} />
+      </ChatSurfaceHarness>,
+    );
+    expect(screen.getByText('Retained earlier work.')).toBeInTheDocument();
+    expect(screen.getAllByText('Durable final outcome.')).toHaveLength(1);
+    expect(mockCopyMessage.mock.calls.at(-1)?.[0].content).toEqual([
+      ...content,
+      { type: ContentTypes.TEXT, text: 'Durable final outcome.', phase: 'final_answer' },
+    ]);
+    expect(content).toHaveLength(1);
+    mockRecoveredQuery.mockReturnValue({
+      data: {
+        messageId: 'task-1:assistant',
+        status,
+        recovery: 'complete',
+        content: [
+          ...content,
+          { type: ContentTypes.TEXT, text: 'Durable final outcome.', phase: 'final_answer' },
+        ],
+        throughSequence: 1,
+        targetThroughSequence: 1,
+      },
+    });
+    rerender(
+      <ChatSurfaceHarness>
+        <SubagentConversation {...props} />
+      </ChatSurfaceHarness>,
+    );
+    expect(screen.getAllByText('Durable final outcome.')).toHaveLength(1);
+  },
+);
+
+it('shows the durable outcome when partial capture and fallback both lack the final answer', () => {
+  mockRecoveredQuery.mockReturnValue({
+    data: {
+      messageId: 'task-1:assistant',
+      status: 'completed',
+      recovery: 'partial',
+      content: [],
+      throughSequence: -1,
+      targetThroughSequence: -1,
+    },
+  });
+  render(
+    <ChatSurfaceHarness>
+      <SubagentConversation
+        author={author}
+        parentAuthor={parentAuthor}
+        recovery={{
+          parentConversationId: 'parent',
+          threadId: 'child',
+          selectedTaskId: 'task-1',
+          ready: true,
+        }}
+        turns={[
+          {
+            ...turns[0],
+            activity: { ...turns[0].activity, items: [] },
+            outcome: {
+              messageId: 'task-1:assistant',
+              parentMessageId: 'task-1:user',
+              role: 'assistant',
+              text: 'Durable outcome survives.',
+            },
+          },
+        ]}
+      />
+    </ChatSurfaceHarness>,
+  );
+  expect(screen.getAllByText('Durable outcome survives.')).toHaveLength(1);
+});

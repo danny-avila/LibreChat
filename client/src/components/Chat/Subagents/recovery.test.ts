@@ -417,3 +417,53 @@ it('seeds an already dispatched timestamp before a later committed argument delt
     },
   });
 });
+
+it('keeps the published stream immutable across many pages and a later page failure', async () => {
+  const before = reduceRecoveredContent(null, snapshot())!;
+  const page = (sequence: number, nextCursor?: string) =>
+    suffix([text(sequence, `${sequence}.`)], {
+      afterSequence: sequence - 1,
+      throughSequence: sequence,
+      targetThroughSequence: 3,
+      nextCursor,
+    });
+  const load = jest
+    .fn()
+    .mockResolvedValueOnce(page(1, 'two'))
+    .mockResolvedValueOnce(page(2, 'three'))
+    .mockResolvedValueOnce(page(3));
+  const result = await recoverTaskContent(before, load);
+  expect(result.snapshot.content[0]).toMatchObject({ text: 'Opening. 1.2.3.' });
+  expect(result.snapshot.runSteps).toEqual(Array.from(result.stream.steps.values()));
+  expect(before.snapshot.content[0]).toMatchObject({ text: 'Opening. ' });
+  expect(before.stream.messages.get('task:assistant')?.content).toBe(before.snapshot.content);
+  expect(result.stream.steps).not.toBe(before.stream.steps);
+  const fail = jest
+    .fn()
+    .mockResolvedValueOnce(page(1, 'two'))
+    .mockRejectedValueOnce(new Error('offline'));
+  await expect(recoverTaskContent(before, fail)).rejects.toThrow('offline');
+  expect(before.snapshot.content[0]).toMatchObject({ text: 'Opening. ' });
+});
+
+it('stops before another cursor page after cancellation without mutating the prior reader', async () => {
+  const controller = new AbortController();
+  const before = reduceRecoveredContent(null, snapshot())!;
+  const load = jest.fn().mockImplementation(async () => {
+    controller.abort();
+    return suffix([text(1, 'Not published.')], { targetThroughSequence: 2, nextCursor: 'two' });
+  });
+  await expect(recoverTaskContent(before, load, controller.signal)).rejects.toThrow(
+    'subagent_content_cancelled',
+  );
+  expect(load).toHaveBeenCalledTimes(1);
+  expect(before.snapshot.content[0]).toMatchObject({ text: 'Opening. ' });
+});
+
+it('rejects parent identity changes as well as child identity changes', () => {
+  const before = reduceRecoveredContent(null, snapshot())!;
+  expect(
+    reduceRecoveredContent(before, suffix([], { parentConversationId: 'other-parent' })),
+  ).toBeNull();
+  expect(reduceRecoveredContent(before, suffix([], { parentMessageId: 'other-user' }))).toBeNull();
+});

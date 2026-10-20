@@ -355,6 +355,19 @@ export async function readSubagentContent(
   if ((afterSequence ?? -1) > head.throughSequence) {
     return { ok: false, error: { code: 'SUBAGENT_CONTENT_AHEAD' } };
   }
+  if (afterSequence != null && afterSequence === head.throughSequence) {
+    return {
+      ok: true,
+      value: {
+        revision: head.revision,
+        throughSequence: afterSequence,
+        targetThroughSequence: head.throughSequence,
+        content: [],
+        runSteps: [],
+        events: [],
+      },
+    };
+  }
   const aggregator = createContentAggregator();
   const timing = createToolTimingAdapter({
     emit: (event) =>

@@ -1,7 +1,7 @@
 import express from 'express';
 import request from 'supertest';
 import mongoose from 'mongoose';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createMethods, createModels } from '@librechat/data-schemas';
 import type { AllMethods, IMessage, SubagentContentScope } from '@librechat/data-schemas';
@@ -386,6 +386,36 @@ it('retains failed-batch bytes for retry and reports a missing committed range i
   await expect(readSubagentContent(methods, scope)).rejects.toThrow('Incomplete committed');
   await journal.close();
   release({ content: 'Done' });
+});
+
+it('returns a typed gap when an indexed suffix seek passes a missing committed revision', async () => {
+  const scope: SubagentContentScope = {
+    user: 'gap-owner',
+    parentConversationId: randomUUID(),
+    conversationId: randomUUID(),
+    taskId: randomUUID(),
+  };
+  const records = [0, 1, 2].flatMap((sequence) => {
+    const payload = JSON.stringify([{ sequence, frame: { event: 'on_message_delta', data: {} } }]);
+    const base = {
+      ...scope,
+      revision: sequence + 1,
+      fromSequence: sequence,
+      throughSequence: sequence,
+      fragments: 1,
+      digest: createHash('sha256').update(payload).digest('hex'),
+    };
+    return [
+      { ...base, _id: randomUUID(), fragment: -1 },
+      { ...base, _id: randomUUID(), fragment: 0, payload },
+    ];
+  });
+  await mongoose.models.SubagentContent.create(records);
+  await mongoose.models.SubagentContent.deleteMany({ ...scope, revision: 2 });
+  expect(await readSubagentContent(methods, scope, 0)).toEqual({
+    ok: false,
+    error: { code: 'SUBAGENT_CONTENT_GAP' },
+  });
 });
 
 it('expires and deletes task journals with the owning messages, without resurrecting deleted work', async () => {

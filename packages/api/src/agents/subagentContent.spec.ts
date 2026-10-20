@@ -684,3 +684,20 @@ it.each(['marker', 'argument delta'] as const)(
     }
   },
 );
+
+it('does not open a payload cursor when the caller already has the committed head', async () => {
+  const stream = jest.fn();
+  const result = await readSubagentContent(
+    {
+      getSubagentContentHead: async () => ({ revision: 5000, throughSequence: 9999 }),
+      streamSubagentContentBatches: stream,
+    },
+    scope,
+    9999,
+  );
+  expect(result).toMatchObject({
+    ok: true,
+    value: { revision: 5000, throughSequence: 9999, events: [] },
+  });
+  expect(stream).not.toHaveBeenCalled();
+});

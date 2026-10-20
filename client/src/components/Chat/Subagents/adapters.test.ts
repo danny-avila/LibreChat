@@ -8,6 +8,7 @@ import type {
 import type { ChildConversationTurn } from './adapters';
 import {
   adaptDurableThreadActivity,
+  adaptDurableThreadConversation,
   adaptLivePersistedActivity,
   MAX_RETAINED_MOVING_WINDOW_TURNS,
   mergeChildConversationTurns,
@@ -864,4 +865,45 @@ it('keeps foreground approval payloads and clean content references intact', () 
   });
   expect(activity.content).toBe(content);
   expect(JSON.stringify(activity.content)).toContain('foreground-approval');
+});
+
+it('keeps the durable terminal outcome independently of the activity projection across pages', () => {
+  const outcome = {
+    messageId: 'task:assistant',
+    parentMessageId: 'task:user',
+    role: 'assistant' as const,
+    text: 'Final result',
+  };
+  const base: ChildConversationTurn = {
+    taskId: 'task',
+    trigger: { kind: 'parent_dispatch', summary: '' },
+    activity: { title: 'Worker', status: 'completed', items: [] },
+  };
+  const view: SubagentThreadView = {
+    threadId: 'thread',
+    parentConversationId: 'parent',
+    parentMessageId: 'message',
+    parentToolCallId: 'call',
+    subagentType: 'worker',
+    subagentKind: 'agent',
+    status: 'completed',
+    activity: [],
+    activityTruncated: false,
+    messages: [],
+    historyTruncated: false,
+    title: 'Worker',
+    turns: [
+      {
+        taskId: 'task',
+        trigger: base.trigger,
+        status: 'completed',
+        activity: [],
+        activityTruncated: false,
+        messages: [outcome],
+      },
+    ],
+  };
+  const [turn] = adaptDurableThreadConversation(view);
+  expect(turn.outcome).toBe(outcome);
+  expect(mergeChildConversationTurns([turn], [base])[0].outcome).toBe(outcome);
 });

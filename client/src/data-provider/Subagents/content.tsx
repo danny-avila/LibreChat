@@ -1,10 +1,9 @@
-import { createContext, useContext, useEffect, useMemo } from 'react';
-import { atom, useStore } from 'jotai';
-import { atomFamily } from 'jotai/utils';
+import { createContext, useContext } from 'react';
+import { atom, createStore } from 'jotai';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, dataService, hasToolCallPreview } from 'librechat-data-provider';
 import type { SubagentTaskContentSnapshot, ToolCallPartResponse } from 'librechat-data-provider';
-import type { UseQueryOptions } from '@tanstack/react-query';
+import type { QueryClient, UseQueryOptions } from '@tanstack/react-query';
 import type { ToolContentQuery } from '~/components/Chat/Messages/Content/disclosure';
 import type { RecoveredContent } from '~/components/Chat/Subagents/recovery';
 import { recoverTaskContent, recoveredToolPart } from '~/components/Chat/Subagents/recovery';
@@ -26,8 +25,101 @@ export const subagentTaskContentKey = (scope: TaskContentScope) =>
     scope.taskId,
   ] as const;
 
-const streams = atomFamily((_key: string) => atom<RecoveredContent | null>(null));
-const streamReaders = new Map<string, number>();
+const streams = new WeakMap<object, ReturnType<typeof createRecoveryState>>();
+const createRecoveryState = () => ({
+  store: createStore(),
+  stream: atom<RecoveredContent | null>(null),
+  partReaders: 0,
+});
+
+function recoveryState(queryClient: QueryClient, scope: TaskContentScope) {
+  const query = queryClient.getQueryCache().build(queryClient, {
+    queryKey: subagentTaskContentKey(scope),
+  });
+  let state = streams.get(query);
+  if (state == null) {
+    state = createRecoveryState();
+    streams.set(query, state);
+  }
+  return state;
+}
+
+async function loadTaskContent(
+  queryClient: QueryClient,
+  scope: TaskContentScope,
+  signal?: AbortSignal,
+  fresh = false,
+): Promise<SubagentTaskContentSnapshot> {
+  const { store, stream } = recoveryState(queryClient, scope);
+  const before = fresh ? null : store.get(stream);
+  const load = async (afterSequence?: number, cursor?: string) => {
+    const response = await dataService.getSubagentTaskContent(
+      scope.parentConversationId,
+      scope.threadId,
+      scope.taskId,
+      afterSequence,
+      cursor,
+    );
+    if (
+      response.taskId !== scope.taskId ||
+      response.threadId !== scope.threadId ||
+      response.parentConversationId !== scope.parentConversationId
+    ) {
+      throw new Error('subagent_content_identity_mismatch');
+    }
+    return response;
+  };
+  let next: RecoveredContent;
+  try {
+    next = await recoverTaskContent(before, load, signal);
+  } catch (error) {
+    const code = responseCode(error);
+    if (code !== 'SUBAGENT_CONTENT_AHEAD' && code !== 'SUBAGENT_CONTENT_GAP') throw error;
+    next = await recoverTaskContent(null, load, signal);
+  }
+  if (signal?.aborted) throw new Error('subagent_content_cancelled');
+  const current = store.get(stream);
+  if (
+    current != null &&
+    (current.snapshot.throughSequence > next.snapshot.throughSequence ||
+      current.snapshot.revision > next.snapshot.revision)
+  )
+    return current.snapshot;
+  store.set(stream, next);
+  return next.snapshot;
+}
+
+async function loadFullTaskContent(
+  queryClient: QueryClient,
+  scope: TaskContentScope,
+  signal?: AbortSignal,
+): Promise<SubagentTaskContentSnapshot> {
+  if (signal?.aborted) throw new Error('subagent_content_cancelled');
+  const state = recoveryState(queryClient, scope);
+  const queryKey = subagentTaskContentKey(scope);
+  const query = queryClient.getQueryCache().find(queryKey, { exact: true });
+  state.partReaders++;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    state.partReaders--;
+    if (signal?.aborted && state.partReaders === 0 && query?.getObserversCount() === 0) {
+      void query.cancel({ revert: true });
+    }
+  };
+  signal?.addEventListener('abort', release, { once: true });
+  try {
+    return await queryClient.fetchQuery<SubagentTaskContentSnapshot>({
+      queryKey,
+      queryFn: ({ signal: taskSignal }) => loadTaskContent(queryClient, scope, taskSignal, true),
+      staleTime: 0,
+    });
+  } finally {
+    signal?.removeEventListener('abort', release);
+    release();
+  }
+}
 
 type ContentError = { response?: { status?: number; data?: { code?: string } } };
 const responseStatus = (error: unknown): number | undefined =>
@@ -54,62 +146,10 @@ export function useSubagentTaskContentQuery(
   scope: TaskContentScope,
   options: UseQueryOptions<SubagentTaskContentSnapshot> = {},
 ) {
-  const store = useStore();
-  const identity = JSON.stringify(subagentTaskContentKey(scope));
-  const stream = useMemo(() => streams(identity), [identity]);
-  useEffect(() => {
-    streamReaders.set(identity, (streamReaders.get(identity) ?? 0) + 1);
-    return () => {
-      const remaining = (streamReaders.get(identity) ?? 1) - 1;
-      if (remaining > 0) {
-        streamReaders.set(identity, remaining);
-        return;
-      }
-      streamReaders.delete(identity);
-      queueMicrotask(() => {
-        if (!streamReaders.has(identity)) streams.remove(identity);
-      });
-    };
-  }, [identity]);
+  const queryClient = useQueryClient();
   const query = useQuery<SubagentTaskContentSnapshot>(
     subagentTaskContentKey(scope),
-    async () => {
-      const before = store.get(stream);
-      const load = async (afterSequence?: number, cursor?: string) => {
-        const response = await dataService.getSubagentTaskContent(
-          scope.parentConversationId,
-          scope.threadId,
-          scope.taskId,
-          afterSequence,
-          cursor,
-        );
-        if (
-          response.taskId !== scope.taskId ||
-          response.threadId !== scope.threadId ||
-          response.parentConversationId !== scope.parentConversationId
-        ) {
-          throw new Error('subagent_content_identity_mismatch');
-        }
-        return response;
-      };
-      let next: RecoveredContent;
-      try {
-        next = await recoverTaskContent(before, load);
-      } catch (error) {
-        const code = responseCode(error);
-        if (code !== 'SUBAGENT_CONTENT_AHEAD' && code !== 'SUBAGENT_CONTENT_GAP') throw error;
-        next = await recoverTaskContent(null, load);
-      }
-      const current = store.get(stream);
-      if (
-        current != null &&
-        (current.snapshot.throughSequence > next.snapshot.throughSequence ||
-          current.snapshot.revision > next.snapshot.revision)
-      )
-        return current.snapshot;
-      store.set(stream, next);
-      return next.snapshot;
-    },
+    ({ signal }) => loadTaskContent(queryClient, scope, signal),
     {
       enabled: scope.parentConversationId !== '' && scope.threadId !== '' && scope.taskId !== '',
       retry: (attempt, error) => !isLegacyContentUnavailable(error) && attempt < 2,
@@ -130,13 +170,15 @@ export const useSubagentToolContentQuery: ToolContentQuery = (params, options, r
     [
       ...subagentTaskContentKey(scope ?? { parentConversationId: '', threadId: '', taskId: '' }),
       'part',
+      params.conversationId,
+      params.messageId,
       params.toolCallId,
       params.stepId,
       params.agentId,
       params.partIndex,
       revision,
     ],
-    async () => {
+    async ({ signal }) => {
       if (scope == null) throw new Error('subagent_content_scope_required');
       const cached = queryClient.getQueryData<SubagentTaskContentSnapshot>(
         subagentTaskContentKey(scope),
@@ -146,18 +188,11 @@ export const useSubagentToolContentQuery: ToolContentQuery = (params, options, r
         throw new Error('subagent_content_identity_mismatch');
       }
       if (part == null || hasToolCallPreview(part.tool_call)) {
-        const full = await recoverTaskContent(null, (afterSequence, cursor) =>
-          dataService.getSubagentTaskContent(
-            scope.parentConversationId,
-            scope.threadId,
-            scope.taskId,
-            afterSequence,
-            cursor,
-          ),
-        );
-        if (full.snapshot.messageId !== params.messageId)
+        const full = await loadFullTaskContent(queryClient, scope, signal);
+        if (signal?.aborted) throw new Error('subagent_content_cancelled');
+        if (full.messageId !== params.messageId)
           throw new Error('subagent_content_identity_mismatch');
-        part = recoveredToolPart(full.snapshot, params);
+        part = recoveredToolPart(full, params);
       }
       if (part == null || hasToolCallPreview(part.tool_call))
         throw new Error('subagent_content_part_unavailable');

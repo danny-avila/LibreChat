@@ -7,6 +7,7 @@ import type {
   SubagentThreadTurn,
   SubagentThreadStatus,
   SubagentThreadView,
+  SubagentThreadMessage,
   TMessageContentParts,
   TAttachment,
   FullToolCall,
@@ -77,6 +78,7 @@ export type ChildActivity = {
 
 export type ChildConversationTurn = {
   taskId: string;
+  outcome?: SubagentThreadMessage;
   contentRecoveryAvailable?: boolean;
   trigger: SubagentThreadTurn['trigger'];
   activity: ChildActivity;
@@ -442,6 +444,7 @@ const adaptDurableTurn = (turn: SubagentThreadTurn, title: string): ChildConvers
   }
   return {
     taskId: turn.taskId,
+    ...(response == null ? {} : { outcome: response }),
     ...(turn.contentRecoveryAvailable == null
       ? {}
       : { contentRecoveryAvailable: turn.contentRecoveryAvailable }),
@@ -500,6 +503,9 @@ export function mergeChildConversationTurns(
       turn.contentRecoveryAvailable ?? older.contentRecoveryAvailable;
     merged[existingIndex] = {
       taskId: turn.taskId,
+      ...(turn.outcome == null && older.outcome == null
+        ? {}
+        : { outcome: turn.outcome ?? older.outcome }),
       ...(contentRecoveryAvailable == null ? {} : { contentRecoveryAvailable }),
       trigger,
       activity: {

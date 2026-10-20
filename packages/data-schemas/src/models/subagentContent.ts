@@ -47,6 +47,17 @@ export function createSubagentContentModel(
     { tenantId: 1, user: 1, conversationId: 1, taskId: 1, revision: 1, fragment: 1 },
     { unique: true },
   );
+  schema.index(
+    {
+      tenantId: 1,
+      user: 1,
+      parentConversationId: 1,
+      conversationId: 1,
+      taskId: 1,
+      throughSequence: 1,
+    },
+    { name: 'subagent_content_sequence', partialFilterExpression: { fragment: -1 } },
+  );
   schema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
   applyTenantIsolation(schema);
   return mongoose.model<ISubagentContentChunk>('SubagentContent', schema);

@@ -227,8 +227,10 @@ function ChildMessage({
   onLoadDetails,
   toolContentQuery,
   notice,
+  outcomeContent,
 }: {
   notice?: ReactNode;
+  outcomeContent?: TMessageContentParts[];
   toolContentQuery?: ToolContentQuery;
   turn: ChildConversationTurn;
   state: 'ready' | 'loading' | 'error';
@@ -249,9 +251,9 @@ function ChildMessage({
       conversationId: conversationId ?? null,
       isCreatedByUser: false,
       text: '',
-      content,
+      content: outcomeContent == null ? content : [...content, ...outcomeContent],
     }),
-    [content, conversationId, activity.messageId, turn.taskId],
+    [content, outcomeContent, conversationId, activity.messageId, turn.taskId],
   );
   const searchResults = useSearchResultsByTurn(activity.attachments);
   const messageAuthor = useMemo(() => ({ icon: author.icon, label: author.name }), [author]);
@@ -313,6 +315,18 @@ function ChildMessage({
             underHeaderIcon
             onCancelControl={onCancelControl}
           />
+          {outcomeContent != null && (
+            <ContentParts
+              content={outcomeContent}
+              messageId={message.messageId}
+              conversationId={conversationId}
+              isCreatedByUser={false}
+              isSubmitting={false}
+              isLast
+              isLatestMessage={false}
+              showThinking={false}
+            />
+          )}
         </ErrorSourceProvider>
       </AuthorContext.Provider>
       {detailsLimited && detailState !== 'loading' && (
@@ -379,6 +393,24 @@ function RecoveredChildMessage({
       },
     };
   }, [recovered.data, props.turn]);
+  const outcomeContent = useMemo<TMessageContentParts[] | undefined>(() => {
+    const snapshot = recovered.data;
+    const outcome = props.turn.outcome;
+    if (
+      snapshot == null ||
+      props.turn.contentRecoveryAvailable === false ||
+      snapshot.recovery !== 'partial' ||
+      isLiveSubagentStatus(snapshot.status) ||
+      !outcome?.text ||
+      getActivityContent(turn.activity).some(
+        (part) =>
+          part?.type === ContentTypes.TEXT &&
+          (typeof part.text === 'string' ? part.text : part.text?.value) === outcome.text,
+      )
+    )
+      return undefined;
+    return [{ type: ContentTypes.TEXT, text: outcome.text, phase: 'final_answer' }];
+  }, [recovered.data, props.turn.contentRecoveryAvailable, props.turn.outcome, turn.activity]);
   const notice =
     props.turn.contentRecoveryAvailable !== false &&
     recovered.isError &&
@@ -403,6 +435,7 @@ function RecoveredChildMessage({
             : 'ready'
         }
         toolContentQuery={useSubagentToolContentQuery}
+        outcomeContent={outcomeContent}
         notice={notice}
       />
     </TaskContentScopeContext.Provider>

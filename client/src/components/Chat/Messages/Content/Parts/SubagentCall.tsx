@@ -17,7 +17,6 @@ import {
 } from '~/components/Chat/Subagents/state';
 import { useParentSubagents } from '~/components/Chat/Subagents/ParentSubagentsProvider';
 import { isSelfSpawn as isSelfSpawnType } from '~/components/Chat/Subagents/author';
-import { adaptLivePersistedActivity } from '~/components/Chat/Subagents/adapters';
 import { resolveSubagentAgentId } from '~/components/Chat/Subagents/identity';
 import { subagentStatusLabelKey } from '~/components/Chat/Subagents/status';
 import { useOpenSubagentPanel } from '~/components/Chat/Subagents/surface';
@@ -302,50 +301,29 @@ export default function SubagentCall({
   const cardLabel = subagentNameLabel ? `${subagentNameLabel}: ${headerText}` : headerText;
 
   const canOpenDetails = useMemo(() => {
-    const fallbackActivity = adaptLivePersistedActivity({
-      title: '',
-      progress: null,
-      persistedContent,
-      legacyOutput: backgroundHandle == null ? output : undefined,
-      initialProgress,
-      isSubmitting: false,
-      runStepStatus,
-      approvalVisibility: 'hidden',
-    });
-    const hasRenderableFallback =
-      fallbackActivity.content?.some((part) => {
+    const hasParentContext = parentConversationId !== '' && parentMessageId !== '';
+    if (openPanel == null || !hasParentContext) return false;
+    if (canOpenDurablePanel || (isSharedConvo !== true && backgroundHandle == null)) return true;
+    return (
+      persistedContent?.some((part) => {
         if (part == null) return false;
         if (part.type === ContentTypes.ACTIVITY_LABEL) return Boolean(part.activity_label?.trim());
         if (part.type === ContentTypes.TEXT) {
           return typeof part.text === 'string' ? part.text.length > 0 : Boolean(part.text?.value);
         }
         return true;
-      }) ||
-      fallbackActivity.items.some(
-        (item) =>
-          (item.type !== 'writing' || item.text.length > 0) &&
-          (item.type !== 'activity_label' || item.label.length > 0),
-      );
-    const hasParentContext = parentConversationId !== '' && parentMessageId !== '';
-    const canOpenLiveForeground =
-      isSharedConvo !== true && backgroundHandle == null && hasParentContext;
-    return (
-      /** No host, no panel to open — a search result renders this same card. */
-      openPanel != null &&
-      hasParentContext &&
-      (canOpenDurablePanel || canOpenLiveForeground || hasRenderableFallback)
+      }) === true ||
+      (backgroundHandle == null && output != null && output !== '')
     );
   }, [
     backgroundHandle,
     openPanel,
     canOpenDurablePanel,
-    initialProgress,
     isSharedConvo,
     output,
     parentConversationId,
     parentMessageId,
     persistedContent,
-    runStepStatus,
   ]);
 
   const panelSelection = useMemo(

@@ -45,7 +45,11 @@ jest.mock('sse.js', () => ({
 }));
 
 const mockInvalidateQueries = jest.fn();
-const mockQueryClient = { invalidateQueries: mockInvalidateQueries };
+const mockGetQueryData = jest.fn();
+const mockQueryClient = {
+  invalidateQueries: mockInvalidateQueries,
+  getQueryData: mockGetQueryData,
+};
 jest.mock('@tanstack/react-query', () => ({
   ...jest.requireActual('@tanstack/react-query'),
   useQueryClient: () => mockQueryClient,
@@ -75,6 +79,7 @@ describe('useSubagentActivityStream', () => {
   beforeEach(() => {
     streams.length = 0;
     mockInvalidateQueries.mockClear();
+    mockGetQueryData.mockReset();
     takeRegisteredSubagentProgressKeys();
   });
 
@@ -821,4 +826,26 @@ it('treats content watermarks as invalidation only after the subscribed ready bo
     }),
   );
   expect(mockInvalidateQueries).not.toHaveBeenCalled();
+});
+
+it('skips already committed content notifications but still refreshes a newer revision or sequence', () => {
+  mockGetQueryData.mockReturnValue({ revision: 3, throughSequence: 118 });
+  const { unmount } = renderHook(() => useSubagentActivityStream(selection), { wrapper });
+  const stream = streams.at(-1)!;
+  mockInvalidateQueries.mockClear();
+  const notify = (revision: number, throughSequence: number) =>
+    act(() =>
+      stream.emit('message', {
+        event: 'subagent_content_available',
+        data: { taskId: 'task?1', revision, throughSequence },
+      }),
+    );
+  notify(3, 118);
+  notify(2, 117);
+  expect(mockInvalidateQueries).not.toHaveBeenCalled();
+  notify(4, 118);
+  notify(3, 119);
+  expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
+  unmount();
+  mockGetQueryData.mockReset();
 });

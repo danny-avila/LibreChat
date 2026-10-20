@@ -4,7 +4,7 @@ import { atomFamily, selectAtom } from 'jotai/utils';
 import { useQueryClient } from '@tanstack/react-query';
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { QueryKeys, StepEvents, apiBaseUrl } from 'librechat-data-provider';
-import type { SubagentUpdateEvent } from 'librechat-data-provider';
+import type { SubagentTaskContentSnapshot, SubagentUpdateEvent } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/components/Chat/Subagents/state';
 import {
   closeParentSubagentProgress,
@@ -183,8 +183,15 @@ export default function useSubagentActivityStream(
             watermark?.taskId === taskId &&
             Number.isSafeInteger(watermark.revision) &&
             Number.isSafeInteger(watermark.throughSequence)
-          )
-            refreshContent();
+          ) {
+            const cached = queryClient.getQueryData<SubagentTaskContentSnapshot>(contentKey);
+            if (
+              cached == null ||
+              cached.revision < watermark.revision! ||
+              cached.throughSequence < watermark.throughSequence!
+            )
+              refreshContent();
+          }
           return;
         }
         if (envelope.final === true && envelope.subagentActivity === true) {
