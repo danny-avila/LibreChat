@@ -1234,7 +1234,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     );
     const result = await File.updateOne(
       query,
-      { $set: { embedded: false }, $unset: { 'metadata.embeddedEntities': '' } },
+      {
+        $set: { embedded: false, 'metadata.searchDestination': true },
+        $unset: { 'metadata.embeddedEntities': '' },
+      },
       { timestamps: false },
     );
     return result.matchedCount === 1;

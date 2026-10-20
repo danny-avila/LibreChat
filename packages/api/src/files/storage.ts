@@ -139,9 +139,8 @@ export function createDeleteFileWithSecondaryStorage<
         throw new Error('File embedding reconciliation failed', { cause: error });
       }
       file.embedded = false;
-      if (file.metadata) {
-        delete file.metadata.embeddedEntities;
-      }
+      file.metadata = { ...file.metadata, searchDestination: true };
+      delete file.metadata.embeddedEntities;
     }
     for (const result of results) {
       if (result.status === 'rejected') {

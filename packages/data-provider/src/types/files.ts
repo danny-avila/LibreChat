@@ -215,6 +215,8 @@ export type TFile = {
     sourceDispatchedAt?: number;
     /** Vector namespaces this file has been embedded into. */
     embeddedEntities?: string[];
+    /** Search remains a destination even after its vectors are cleared. */
+    searchDestination?: boolean;
     /** The user named this destination, so absent ones were declined. */
     destinationChosen?: boolean;
     /** The type the delivery route was resolved against, when conversion changed it. */

@@ -213,7 +213,11 @@ describe('createDeleteFileWithSecondaryStorage', () => {
       embeddedEntities: ['agent-a', 'agent-b'],
     });
     expect(retained.embedded).toBe(false);
-    expect(retained.metadata).toEqual({ codeEnvRef: file.metadata.codeEnvRef, keep: true });
+    expect(retained.metadata).toEqual({
+      codeEnvRef: file.metadata.codeEnvRef,
+      keep: true,
+      searchDestination: true,
+    });
     if (failing === 'code') expect(primary).not.toHaveBeenCalled();
   });
 

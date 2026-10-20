@@ -163,6 +163,11 @@ const file: Schema<IMongoFile> = new Schema(
         type: [String],
         default: undefined,
       },
+      /** Retains the search destination when confirmed deletion clears its vectors. */
+      searchDestination: {
+        type: Boolean,
+        default: undefined,
+      },
       /** The user named this file's destination, through the chooser or by requesting a
        *  tool resource, so the destinations absent from the record were declined rather
        *  than deferred. Unlike the endpoint setting, which the next turn may resolve

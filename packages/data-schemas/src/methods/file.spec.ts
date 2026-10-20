@@ -82,10 +82,45 @@ describe('File Methods', () => {
       expect(stored?.metadata).toEqual({
         codeEnvRef: { file_id: 'still-needed' },
         destinationChosen: true,
+        searchDestination: true,
       });
       expect(stored?.updatedAt).toEqual(updatedAt);
       expect(stored?.expiredAt).toEqual(expiredAt);
       expect(stored?.deletionAttempts).toBe(3);
+    });
+
+    it.each([true, false, undefined])(
+      'retains search intent independently of the chooser marker %s',
+      async (destinationChosen) => {
+        await seed({
+          metadata: {
+            embeddedEntities: snapshot.embeddedEntities,
+            ...(destinationChosen !== undefined ? { destinationChosen } : {}),
+          },
+        });
+        expect(await fileMethods.clearFileEmbeddings(snapshot)).toBe(true);
+        const files = await fileMethods.getFiles({ file_id: snapshot.file_id });
+        expect(files?.[0]?.embedded).toBe(false);
+        expect(files?.[0]?.metadata?.searchDestination).toBe(true);
+        expect(files?.[0]?.metadata?.embeddedEntities).toBeUndefined();
+        expect(files?.[0]?.metadata?.destinationChosen).toBe(destinationChosen);
+      },
+    );
+
+    it('persists the optional intent through the file schema and ordinary reads', async () => {
+      await File.create({
+        file_id: snapshot.file_id,
+        user,
+        filename: 'notes.pdf',
+        filepath: '/uploads/notes.pdf',
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: false,
+        metadata: { searchDestination: true },
+      });
+      const files = await fileMethods.getFiles({ file_id: snapshot.file_id });
+      expect(files?.[0]?.metadata?.searchDestination).toBe(true);
+      expect(files?.[0]?.metadata?.destinationChosen).toBeUndefined();
     });
 
     it('does not change a concurrent embedding or a reused file record', async () => {
@@ -120,6 +155,22 @@ describe('File Methods', () => {
       await seed({ metadata: { destinationChosen: true } });
       const legacy = { ...snapshot, embeddedEntities: undefined };
       expect(await fileMethods.clearFileEmbeddings(legacy)).toBe(true);
+    });
+
+    it('retains search intent on markerless legacy records without metadata', async () => {
+      await File.collection.insertOne({
+        file_id: snapshot.file_id,
+        user,
+        tenantId: snapshot.tenantId,
+        updatedAt,
+        embedded: true,
+      });
+      expect(
+        await fileMethods.clearFileEmbeddings({ ...snapshot, embeddedEntities: undefined }),
+      ).toBe(true);
+      const stored = await File.collection.findOne({ file_id: snapshot.file_id });
+      expect(stored?.embedded).toBe(false);
+      expect(stored?.metadata).toEqual({ searchDestination: true });
     });
 
     it('propagates persistence failures instead of claiming reconciliation', async () => {

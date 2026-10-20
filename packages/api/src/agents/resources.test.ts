@@ -193,6 +193,102 @@ describe('primeResources', () => {
     });
   });
 
+  describe('search destination after confirmed vector cleanup', () => {
+    const chatFile = (destinationChosen?: boolean): TFile => ({
+      user: 'user1',
+      file_id: 'chat-search',
+      filename: 'notes.pdf',
+      filepath: '/uploads/notes.pdf',
+      object: 'file',
+      type: 'application/pdf',
+      bytes: 1024,
+      usage: 0,
+      source: FileSources.local,
+      context: FileContext.message_attachment,
+      llmDeliveryPath: 'none',
+      embedded: true,
+      metadata: {
+        ...(destinationChosen !== undefined ? { destinationChosen } : {}),
+        embeddedEntities: ['user1'],
+      },
+    });
+
+    const primeChat = (file: TFile, enabledToolResources: Set<EToolResources>) =>
+      primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: Promise.resolve([file]),
+        tool_resources: {},
+        agentId: 'agent-a',
+        enabledToolResources,
+      });
+
+    it.each([true, undefined, false])(
+      'requeues search after primary failure with chooser marker %s',
+      async (destinationChosen) => {
+        const file = chatFile(destinationChosen);
+        const failure = new Error('primary unavailable');
+        const remove = createDeleteFileWithSecondaryStorage({
+          source: FileSources.local,
+          deleteFile: async () => {
+            throw failure;
+          },
+          getDeleteFile: () => async () => ({ deleted: true }),
+          clearFileEmbeddings: jest.fn().mockResolvedValue(true),
+          logger: { warn: jest.fn() },
+        });
+        await expect(remove({ user: { id: 'user1' } }, file)).rejects.toBe(failure);
+        expect(file.embedded).toBe(false);
+        expect(file.metadata?.embeddedEntities).toBeUndefined();
+        expect(file.metadata?.searchDestination).toBe(true);
+        expect(file.llmDeliveryPath).toBe('none');
+        const enabled = new Set([EToolResources.file_search, EToolResources.execute_code]);
+        const result = await primeChat(file, enabled);
+        expect(result.provisionState?.vectorDBFiles.map((candidate) => candidate.file_id)).toEqual([
+          file.file_id,
+        ]);
+        expect(result.provisionState?.agentScopedFileIds.has(file.file_id)).toBe(false);
+        expect(file.embedded).toBe(false);
+        if (destinationChosen !== false) {
+          expect(result.provisionState?.codeEnvFiles).toEqual([]);
+        }
+        expect(mockGetFiles).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([true, undefined])(
+      'does not provision a declined search destination (%s)',
+      async (choice) => {
+        const file = chatFile(choice);
+        file.embedded = false;
+        file.metadata = {
+          destinationChosen: choice,
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user1',
+            storage_session_id: 'session',
+            file_id: 'code-copy',
+          },
+        };
+        const result = await primeChat(file, new Set([EToolResources.file_search]));
+        expect(result.provisionState?.vectorDBFiles ?? []).toEqual([]);
+        expect(file.metadata.searchDestination).toBeUndefined();
+      },
+    );
+
+    it('does not enable a tool or provision search when File Search is disabled', async () => {
+      const file = chatFile(true);
+      file.embedded = false;
+      file.metadata = { destinationChosen: true, searchDestination: true };
+      const result = await primeChat(file, new Set([EToolResources.execute_code]));
+      expect(result.provisionState).toBeUndefined();
+      expect(result.tool_resources?.file_search).toBeUndefined();
+    });
+  });
+
   describe('when policy screening rejects a persistent context file', () => {
     it('keeps it out of provisioning and out of attachments', async () => {
       /* These files are read inside primeResources, so the caller never sees them to
