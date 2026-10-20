@@ -199,8 +199,10 @@ function ControlCombobox({
     'flex h-5 w-5 items-center justify-center overflow-hidden rounded-full',
     iconClassName,
   );
+  /** The gap sits between the icon and the label, whichever side of it the icon takes. */
   const optionIconClassName = cn(
-    'me-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full',
+    iconSide === 'right' ? 'ms-2' : 'me-2',
+    'flex h-5 w-5 items-center justify-center overflow-hidden rounded-full',
     iconClassName,
   );
 
