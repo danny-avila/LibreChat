@@ -888,3 +888,53 @@ it.each(['partial', 'complete'] as const)(
     expect(screen.queryByText('Durable terminal outcome.')).not.toBeInTheDocument();
   },
 );
+
+it.each(['partial', 'complete'] as const)(
+  'does not append the locked SDK multi-block result already present in %s recovered content',
+  (recovery) => {
+    const outcome = 'First paragraph.\nAn intrinsic line.\nSecond paragraph.';
+    const content: TMessageContentParts[] = [
+      { type: ContentTypes.TEXT, text: 'First paragraph.\nAn intrinsic line.Second paragraph.' },
+    ];
+    mockRecoveredQuery.mockReturnValue({
+      data: {
+        messageId: 'task-1:assistant',
+        status: 'completed',
+        recovery,
+        content,
+        throughSequence: 1,
+        targetThroughSequence: 1,
+      },
+    });
+    render(
+      <ChatSurfaceHarness>
+        <SubagentConversation
+          author={author}
+          parentAuthor={parentAuthor}
+          recovery={{
+            parentConversationId: 'parent',
+            threadId: 'child',
+            selectedTaskId: 'task-1',
+            ready: true,
+          }}
+          turns={[
+            {
+              ...turns[0],
+              outcome: {
+                messageId: 'task-1:assistant',
+                parentMessageId: 'task-1:user',
+                role: 'assistant',
+                text: outcome,
+              },
+            },
+          ]}
+        />
+      </ChatSurfaceHarness>,
+    );
+    expect(
+      screen.queryByText(outcome, { exact: true, normalizer: (text) => text }),
+    ).not.toBeInTheDocument();
+    expect(mockCopyMessage.mock.calls.at(-1)?.[0].content).toBe(content);
+    expect(content).toHaveLength(1);
+  },
+);

@@ -39,6 +39,7 @@ import { ElapsedTimer } from '~/components/Chat/Messages/Elapsed';
 import { AuthorContext } from '~/Providers/AuthorContext';
 import { ChatContext } from '~/Providers/ChatContext';
 import { isEmptyContentPart } from '~/utils/messages';
+import { hasTerminalOutcome } from './outcome';
 import { standardContent } from './adapters';
 import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
@@ -401,14 +402,7 @@ function RecoveredChildMessage({
       props.turn.contentRecoveryAvailable === false ||
       isLiveSubagentStatus(snapshot.status) ||
       !outcome?.text ||
-      getActivityContent(turn.activity).some((part) => {
-        if (part?.type !== ContentTypes.TEXT) return false;
-        const text = typeof part.text === 'string' ? part.text : part.text?.value;
-        return (
-          text === outcome.text ||
-          (outcome.textTruncated === true && text?.startsWith(outcome.text) === true)
-        );
-      })
+      hasTerminalOutcome(getActivityContent(turn.activity), outcome, snapshot.status)
     )
       return undefined;
     return [{ type: ContentTypes.TEXT, text: outcome.text, phase: 'final_answer' }];
