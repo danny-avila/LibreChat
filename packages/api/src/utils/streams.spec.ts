@@ -1,5 +1,8 @@
+import { logger } from '@librechat/data-schemas';
 import { PassThrough, Readable } from 'node:stream';
-import { pipeSegment, pipeToResponse } from './streams';
+import { pipeSegment, pipeToResponse, isClientDisconnect } from './streams';
+import { isAbortError } from './errors';
+import { logAxiosError } from './axios';
 
 function failingSource(): Readable {
   return new Readable({
@@ -23,15 +26,49 @@ describe('pipeToResponse', () => {
     expect(res.destroyed).toBe(true);
   });
 
-  it('destroys the upstream when the client disconnects', async () => {
+  it('destroys the upstream without reporting a failure when the client disconnects', async () => {
     const source = new PassThrough();
     const res = new PassThrough();
+    const onError = jest.fn();
 
-    pipeToResponse(source, res);
+    pipeToResponse(source, res, onError);
     res.destroy();
     await new Promise((resolve) => source.on('close', resolve));
+    await new Promise((resolve) => setImmediate(resolve));
 
     expect(source.destroyed).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+  });
+});
+
+describe('pipeToResponse after the upstream ended', () => {
+  it('treats a response that closed before piping began as a cancellation', async () => {
+    const source = new PassThrough();
+    const res = new PassThrough();
+    const onError = jest.fn();
+    res.destroy();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    pipeToResponse(source, res, onError);
+    await new Promise((resolve) => source.on('close', resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(source.destroyed).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('treats a client leaving while the response flushes as a cancellation', async () => {
+    const source = Readable.from([Buffer.from('audio')]);
+    const res = new PassThrough({ highWaterMark: 1 });
+    const onError = jest.fn();
+
+    pipeToResponse(source, res, onError);
+    await new Promise((resolve) => source.on('close', resolve));
+    res.destroy();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(source.destroyed).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
   });
 });
 
@@ -59,8 +96,29 @@ describe('pipeSegment', () => {
 
     res.destroy();
 
-    await expect(pending).rejects.toThrow('Client disconnected');
+    const error = await pending.catch((reason: unknown) => reason);
+    expect(isClientDisconnect(error)).toBe(true);
+    expect(isAbortError(error)).toBe(true);
     expect(source.destroyed).toBe(true);
+  });
+
+  it('logs a client disconnect at debug level, not as a failure', async () => {
+    const debug = jest.spyOn(logger, 'debug').mockImplementation(() => logger);
+    const error = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    const res = new PassThrough();
+    res.destroy();
+    try {
+      const reason = await pipeSegment(new PassThrough(), res, { end: false }).catch(
+        (rejected: unknown) => rejected,
+      );
+      logAxiosError({ message: '[TTS] segment:', error: reason });
+
+      expect(debug).toHaveBeenCalledWith('[TTS] segment: Client disconnected');
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      debug.mockRestore();
+      error.mockRestore();
+    }
   });
 
   it('rejects at once when the client left before the segment started', async () => {
