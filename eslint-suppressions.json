@@ -257,7 +257,7 @@
   },
   "client/src/components/Chat/Messages/Content/DialogImage.tsx": {
     "shadcn/no-arbitrary-values": {
-      "count": 2
+      "count": 1
     },
     "shadcn/no-inline-styles": {
       "count": 1
@@ -569,7 +569,7 @@
   },
   "client/src/components/Chat/Trace/Ledger.tsx": {
     "shadcn/no-inline-styles": {
-      "count": 4
+      "count": 2
     }
   },
   "client/src/components/Chat/Trace/Viewer.tsx": {
