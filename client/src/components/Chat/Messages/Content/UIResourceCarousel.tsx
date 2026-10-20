@@ -3,7 +3,7 @@ import { Button } from '@librechat/client';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { UIResource } from 'librechat-data-provider';
 import UIResourceRenderer, { isSupportedUIResource } from '~/components/MCPUIResource/Renderer';
-import { useOptionalMessagesOperations } from '~/Providers';
+import { useMessagePartsHost } from '~/Providers/MessagePartsHostContext';
 import { cn, handleUIAction } from '~/utils';
 import { useLocalize } from '~/hooks';
 
@@ -17,7 +17,7 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
   const [showRightArrow, setShowRightArrow] = useState(true);
   const [isContainerHovered, setIsContainerHovered] = useState(false);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
-  const { ask } = useOptionalMessagesOperations();
+  const ask = useMessagePartsHost().useMessagesAsk();
   const supportedUIResources = React.useMemo(
     () => uiResources.filter(isSupportedUIResource),
     [uiResources],

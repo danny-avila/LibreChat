@@ -97,6 +97,7 @@ jobs:
               # count is measured against, so a change to it has to run against
               # the record — the ESLint step above only ever sees sources.
               - 'scripts/static-checks.mts'
+              - 'scripts/diagnostics*.mts'
               - '.github/workflows/static-checks.yml'
               - '!**.md'
             # Stylesheets are outside the design lint, which reads JSX.

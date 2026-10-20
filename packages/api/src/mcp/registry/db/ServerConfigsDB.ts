@@ -260,7 +260,11 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
    * @param userId - The user ID (optional - if not provided, checks publicly accessible agents)
    * @returns true if user has VIEW access to at least one agent that has this MCP server
    */
-  private async hasAccessViaAgent(serverName: string, userId?: string): Promise<boolean> {
+  private async hasAccessViaAgent(
+    serverName: string,
+    userId?: string,
+    role?: string,
+  ): Promise<boolean> {
     const candidateIds = await this._dbMethods.getAgentIdsByMCPServerName(serverName);
     if (candidateIds.length === 0) {
       return false;
@@ -269,6 +273,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     const accessibleAgentIds = userId
       ? await this._aclService.findAccessibleResources({
           userId,
+          role,
           requiredPermissions: PermissionBits.VIEW,
           resourceType: ResourceType.AGENT,
           resourceIds: candidateIds,
@@ -467,55 +472,63 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
    * @param userId - the user id provide the scope of the request. If the user Id is not provided, only publicly visible servers are returned.
    * @returns The parsed server config or undefined if not found. If accessed via agent, consumeOnly will be true.
    */
-  public async get(serverName: string, userId?: string): Promise<ParsedServerConfig | undefined> {
-    const server = await this._dbMethods.findMCPServerByServerName(serverName);
-    if (!server) return undefined;
+  public async get(
+    serverName: string,
+    userId?: string,
+    role?: string,
+  ): Promise<ParsedServerConfig | undefined> {
+    if (userId) {
+      /** Each lookup is bounded to this server or the agents that reference it. Resolve the
+       *  principal set once so direct and agent ACL checks can start together. */
+      const [server, principalsList, candidateIds] = await Promise.all([
+        this._dbMethods.findMCPServerByServerName(serverName),
+        this._aclService.getUserPrincipals({ userId, role }),
+        this._dbMethods.getAgentIdsByMCPServerName(serverName),
+      ]);
+      if (!server) return undefined;
 
-    if (!userId) {
-      const directlyAccessibleMCPIds = (
-        await this._aclService.findPubliclyAccessibleResources({
+      const [directlyAccessibleIds, accessibleAgentIds] = await Promise.all([
+        this._aclService.findAccessibleResourcesForPrincipals({
+          principalsList,
           resourceType: ResourceType.MCPSERVER,
           requiredPermissions: PermissionBits.VIEW,
-        })
-      ).map((id) => id.toString());
-      if (directlyAccessibleMCPIds.indexOf(server._id.toString()) > -1) {
+          resourceIds: [server._id],
+        }),
+        this.findAccessibleAgentIds(candidateIds, userId, principalsList),
+      ]);
+      if (directlyAccessibleIds.some((id) => id.toString() === server._id.toString())) {
+        logger.debug(
+          `[ServerConfigsDB.get] getting ${serverName} for user with the UserId: ${userId}`,
+        );
         return await this.mapDBServerToParsedConfig(server);
       }
-
-      const hasAgentAccess = await this.hasAccessViaAgent(serverName);
-      if (hasAgentAccess) {
+      if (accessibleAgentIds.length > 0) {
         logger.debug(
-          `[ServerConfigsDB.get] accessing ${serverName} via public agent (consumeOnly)`,
+          `[ServerConfigsDB.get] user ${userId} accessing ${serverName} via agent (consumeOnly)`,
         );
         return {
           ...(await this.mapDBServerToParsedConfig(server)),
           consumeOnly: true,
         };
       }
-
       return undefined;
     }
 
-    const userHasDirectAccess = await this._aclService.checkPermission({
-      userId,
-      resourceType: ResourceType.MCPSERVER,
-      requiredPermission: PermissionBits.VIEW,
-      resourceId: server._id,
-    });
-
-    if (userHasDirectAccess) {
-      logger.debug(
-        `[ServerConfigsDB.get] getting ${serverName} for user with the UserId: ${userId}`,
-      );
+    const server = await this._dbMethods.findMCPServerByServerName(serverName);
+    if (!server) return undefined;
+    const directlyAccessibleMCPIds = (
+      await this._aclService.findPubliclyAccessibleResources({
+        resourceType: ResourceType.MCPSERVER,
+        requiredPermissions: PermissionBits.VIEW,
+      })
+    ).map((id) => id.toString());
+    if (directlyAccessibleMCPIds.indexOf(server._id.toString()) > -1) {
       return await this.mapDBServerToParsedConfig(server);
     }
 
-    /** Check agent access (user can VIEW an agent that has this MCP server) */
-    const hasAgentAccess = await this.hasAccessViaAgent(serverName, userId);
+    const hasAgentAccess = await this.hasAccessViaAgent(serverName);
     if (hasAgentAccess) {
-      logger.debug(
-        `[ServerConfigsDB.get] user ${userId} accessing ${serverName} via agent (consumeOnly)`,
-      );
+      logger.debug(`[ServerConfigsDB.get] accessing ${serverName} via public agent (consumeOnly)`);
       return {
         ...(await this.mapDBServerToParsedConfig(server)),
         consumeOnly: true,

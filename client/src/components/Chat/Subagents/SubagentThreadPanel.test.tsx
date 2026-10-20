@@ -15,6 +15,7 @@ import { activeSubagentPanel, subagentProgressByToolCallId, subagentProgressKey 
 import { initSubagentAggregatorState, initSubagentTickerState } from '~/utils/subagentContent';
 import { ChatSurfaceHarness, testChatSurface } from 'test/harness';
 import SubagentThreadPanel from './SubagentThreadPanel';
+import { useOpenSubagentPanel } from './surface';
 import { getDraft } from '~/utils';
 
 const mockUseSubagentThreadQuery = jest.fn();
@@ -30,6 +31,7 @@ const mockUseSubagentActivityStream = jest.fn();
 const mockForkMutate = jest.fn();
 const mockControlMutate = jest.fn();
 const mockNavigateToConvo = jest.fn();
+const mockNavigate = jest.fn();
 const mockShowToast = jest.fn();
 const mockGetSubagentThread = jest.fn();
 const mockApprovalProviderMounted = jest.fn();
@@ -73,6 +75,11 @@ function Root({
     </QueryClientProvider>
   );
 }
+
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useNavigate: () => mockNavigate,
+}));
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -444,6 +451,7 @@ jest.mock('@librechat/client', () => ({
 
 jest.mock('lucide-react', () => ({
   AlertCircle: () => null,
+  ArrowUpRight: () => null,
   CornerUpLeft: () => null,
   CheckCircle2: () => null,
   Clock: () => null,
@@ -525,6 +533,7 @@ describe('SubagentThreadPanel', () => {
     mockForkMutate.mockClear();
     mockControlMutate.mockClear();
     mockNavigateToConvo.mockClear();
+    mockNavigate.mockClear();
     mockShowToast.mockClear();
     mockGetSubagentThread.mockReset();
     mockRefreshParentChildren.mockClear();
@@ -1205,6 +1214,254 @@ describe('SubagentThreadPanel', () => {
       /** A non-agent type is a readable name of its own, not an agent to look up. */
       expect(screen.getByRole('heading', { name: 'agent-1' })).toBeInTheDocument();
       expect(document.querySelector('img[src="/analyst.png"]')).toBeNull();
+    },
+  );
+
+  it('focuses the panel when the same task is explicitly reopened', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const openTaskLabel = 'Open task';
+    const OpenPanel = () => {
+      const open = useOpenSubagentPanel();
+      return (
+        <button type="button" onClick={() => open?.(selection)}>
+          {openTaskLabel}
+        </button>
+      );
+    };
+    render(
+      <Root>
+        <input aria-label="Main chat draft" />
+        <OpenPanel />
+        <SubagentThreadPanel selection={selection} />
+      </Root>,
+    );
+    screen.getByLabelText('Main chat draft').focus();
+    fireEvent.click(screen.getByRole('button', { name: 'Open task' }));
+    expect(screen.getByRole('region', { name: 'com_ui_subagent_thread_panel' })).toHaveFocus();
+  });
+
+  it.each(['same', 'different'] as const)(
+    'returns focus to the latest opener after explicitly opening the %s task',
+    async (target) => {
+      mockUseSubagentThreadQuery.mockReturnValue({
+        data: completedView,
+        isLoading: false,
+        isError: false,
+        isReadinessPending: false,
+      });
+      const firstOpener = document.createElement('button');
+      const latestOpener = document.createElement('button');
+      firstOpener.id = 'first-opener';
+      latestOpener.id = 'latest-opener';
+      document.body.append(firstOpener, latestOpener);
+      firstOpener.focus();
+      const nextSelection: ActiveSubagentPanel =
+        target === 'same'
+          ? selection
+          : {
+              ...selection,
+              parentMessageId: 'unloaded-message',
+              toolCallId: 'other-call',
+              durable: { threadId: 'other-thread', taskId: 'other-task' },
+            };
+      const openTaskLabel = 'Open task';
+      const PanelHost = () => {
+        const selected = useAtomValue(activeSubagentPanel);
+        const open = useOpenSubagentPanel();
+        return (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                latestOpener.focus();
+                open?.(nextSelection);
+              }}
+            >
+              {openTaskLabel}
+            </button>
+            {selected != null && <SubagentThreadPanel selection={selected} />}
+          </>
+        );
+      };
+      try {
+        render(
+          <Root seed={(store) => store.set(activeSubagentPanel, selection)}>
+            <PanelHost />
+          </Root>,
+        );
+        const panel = screen.getByRole('region', { name: 'com_ui_subagent_thread_panel' });
+        expect(panel).toHaveFocus();
+        fireEvent.click(screen.getByRole('button', { name: openTaskLabel }));
+        expect(screen.getByRole('region', { name: 'com_ui_subagent_thread_panel' })).toBe(panel);
+        expect(panel).toHaveFocus();
+        fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
+        await waitFor(() => expect(latestOpener).toHaveFocus());
+        expect(firstOpener).not.toHaveFocus();
+      } finally {
+        firstOpener.remove();
+        latestOpener.remove();
+      }
+    },
+  );
+
+  describe.each([false, true])('focus return with mobile = %s', (mobile) => {
+    it.each([
+      'available',
+      'hidden',
+      'inert',
+      'aria-hidden',
+      'aria-disabled',
+      'disabled',
+      'removed',
+    ])(
+      'prefers the explicit opener when it is %s, otherwise falls back to the message card',
+      async (openerState) => {
+        mockIsMobile = mobile;
+        mockUseSubagentThreadQuery.mockReturnValue({
+          data: completedView,
+          isLoading: false,
+          isError: false,
+          isReadinessPending: false,
+        });
+        const disclosure = document.createElement('button');
+        const messageCard = document.createElement('button');
+        disclosure.id = 'popup-opener';
+        disclosure.dataset.testid = 'header-background-tasks-button';
+        messageCard.id = 'loaded-message-card';
+        messageCard.dataset.subagentToolCall = selection.toolCallId;
+        messageCard.dataset.subagentParentMessage = selection.parentMessageId;
+        messageCard.dataset.subagentPartIndex = String(selection.partIndex);
+        document.body.append(disclosure, messageCard);
+        disclosure.focus();
+        const PanelHost = () => {
+          const selected = useAtomValue(activeSubagentPanel);
+          return selected == null ? null : <SubagentThreadPanel selection={selected} />;
+        };
+        try {
+          render(
+            <Root seed={(store) => store.set(activeSubagentPanel, selection)}>
+              <PanelHost />
+            </Root>,
+          );
+          if (openerState === 'removed') disclosure.remove();
+          else if (openerState === 'disabled') disclosure.disabled = true;
+          else if (openerState !== 'available') {
+            disclosure.setAttribute(openerState, openerState.startsWith('aria-') ? 'true' : '');
+          }
+          fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
+          const destination = openerState === 'available' ? disclosure : messageCard;
+          await waitFor(() => expect(destination).toHaveFocus());
+        } finally {
+          disclosure.remove();
+          messageCard.remove();
+        }
+      },
+    );
+  });
+
+  it('does not steal main-chat focus when the selected task advances', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const tree = (taskId: string) => (
+      <Root>
+        <input aria-label="Main chat draft" />
+        <SubagentThreadPanel
+          selection={{ ...selection, durable: { threadId: 'child-thread', taskId } }}
+        />
+      </Root>
+    );
+    const view = render(tree('task'));
+    const composer = screen.getByLabelText('Main chat draft');
+    composer.focus();
+    view.rerender(tree('next-task'));
+    expect(composer).toHaveFocus();
+  });
+
+  it('only navigates to the parent chat when explicitly requested', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    render(
+      <Root>
+        <SubagentThreadPanel selection={selection} />
+      </Root>,
+    );
+    expect(screen.getByRole('region', { name: 'com_ui_subagent_thread_panel' })).toHaveFocus();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_go_to_parent' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/c/parent-conversation');
+  });
+
+  it('returns focus to the task disclosure when its originating call is not loaded', async () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const disclosure = document.createElement('button');
+    disclosure.dataset.testid = 'header-background-tasks-button';
+    document.body.append(disclosure);
+    disclosure.focus();
+    try {
+      render(
+        <Root>
+          <SubagentThreadPanel selection={selection} />
+        </Root>,
+      );
+      expect(screen.getByRole('region', { name: 'com_ui_subagent_thread_panel' })).toHaveFocus();
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
+      await waitFor(() => expect(disclosure).toHaveFocus());
+      expect(mockNavigateToConvo).not.toHaveBeenCalled();
+    } finally {
+      disclosure.remove();
+    }
+  });
+
+  it.each(['hidden', 'inert', 'aria-hidden', 'disabled'])(
+    'skips an originating trigger blocked by %s when returning focus',
+    async (blocked) => {
+      mockUseSubagentThreadQuery.mockReturnValue({
+        data: completedView,
+        isLoading: false,
+        isError: false,
+        isReadinessPending: false,
+      });
+      const disclosure = document.createElement('button');
+      const group = document.createElement('section');
+      const trigger = document.createElement('button');
+      trigger.dataset.subagentToolCall = 'tool-call';
+      trigger.dataset.subagentParentMessage = 'parent-message';
+      trigger.dataset.subagentPartIndex = '2';
+      if (blocked === 'disabled') trigger.disabled = true;
+      else group.setAttribute(blocked, blocked === 'aria-hidden' ? 'true' : '');
+      group.append(trigger);
+      document.body.append(disclosure, group);
+      disclosure.focus();
+      try {
+        render(
+          <Root>
+            <SubagentThreadPanel selection={selection} />
+          </Root>,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
+        await waitFor(() => expect(disclosure).toHaveFocus());
+      } finally {
+        disclosure.remove();
+        group.remove();
+      }
     },
   );
 

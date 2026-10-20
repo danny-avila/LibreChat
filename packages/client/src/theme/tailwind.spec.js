@@ -11,7 +11,7 @@ const { compile } = require('tailwindcss');
 const tailwindPreset = require('../../tailwind.preset.cjs');
 const packageConfig = require('../../tailwind.config.js');
 const packageJson = require('../../package.json');
-const { defaultAppearance, themeAppearanceProperties } = require('./registry');
+const { defaultAppearance, themeAppearanceProperties } = require('librechat-data-provider');
 
 const packageRoot = path.resolve(__dirname, '../..');
 
@@ -162,6 +162,11 @@ describe('LibreChat Tailwind preset', () => {
       ['rounded-theme-popover', '--theme-popover-radius', defaultAppearance.popoverRadius],
       ['rounded-theme-checkbox', '--theme-checkbox-radius', defaultAppearance.checkboxRadius],
       ['rounded-theme-menu-panel', '--theme-menu-panel-radius', defaultAppearance.menuPanelRadius],
+      [
+        'rounded-theme-compact-panel',
+        '--theme-compact-panel-radius',
+        defaultAppearance.compactPanelRadius,
+      ],
       [
         'rounded-theme-composer-action',
         '--theme-composer-action-radius',
@@ -330,6 +335,7 @@ describe('LibreChat Tailwind preset', () => {
       menuShadow: 'shadowLg',
       popoverRadius: 'radius2xl',
       menuPanelRadius: 'radiusXl',
+      compactPanelRadius: 'radiusLg',
       composerActionRadius: 'roundControlRadius',
       authControlRadius: 'radius2xl',
       authActionHeight: 'buttonHeight',

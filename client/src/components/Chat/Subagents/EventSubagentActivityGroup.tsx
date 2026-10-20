@@ -130,6 +130,7 @@ function EventSubagentRows({
         if (freshSelection != null) {
           setSelected((current) => {
             if (
+              current?.event?.pinnedTask === true ||
               current?.durable?.threadId !== selection.durable?.threadId ||
               current?.durable?.taskId !== selection.durable?.taskId
             ) {

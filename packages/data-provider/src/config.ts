@@ -2205,6 +2205,8 @@ export const endpointSchema = baseEndpointSchema.merge(
           context: z.number(),
           cacheRead: z.number().optional(),
           cacheWrite: z.number().optional(),
+          /** 1-hour prompt cache writes; defaults to twice `prompt` */
+          cacheWrite1h: z.number().optional(),
         }),
       )
       .optional(),
@@ -2383,6 +2385,8 @@ const ttsLocalaiSchema = z.object({
 
 const ttsSchema = z.object({
   allowedAddresses: allowedAddressesSchema,
+  /** Longest text one request may synthesize; each 1,000 characters is a separate paid call. */
+  maxInputChars: z.number().int().positive().optional(),
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenlabs: ttsElevenLabsSchema.optional(),
@@ -3937,6 +3941,12 @@ export const langfuseTraceConfigSchema = z.object({
   conversationMetadataFields: z
     .array(z.enum(LANGFUSE_TRACE_CONVERSATION_METADATA_FIELDS))
     .optional(),
+  /**
+   * Whether temporary chats, including chats forced temporary by
+   * `interface.retentionMode: "ephemeral"`, are traced and receive feedback
+   * scores. Defaults to false: a temporary chat reaches no Langfuse destination.
+   */
+  temporaryChats: z.boolean().optional(),
 });
 
 export type LangfuseTraceConfig = z.infer<typeof langfuseTraceConfigSchema>;
@@ -4326,6 +4336,13 @@ export const configSchema = z.object({
     })
     .optional(),
   rateLimits: rateLimitSchema.optional(),
+  /** Worker threads that hash and verify passwords and auth tokens off the event loop. */
+  passwordHashing: z
+    .object({
+      /** Defaults to one less than the CPU count, at most 4. */
+      maxWorkers: z.number().int().min(1).max(32).optional(),
+    })
+    .optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
   filters: filtersConfigSchema.optional(),
@@ -4522,6 +4539,7 @@ const sharedAnthropicModels = [
   'claude-opus-4-6',
   'claude-sonnet-4-5',
   'claude-sonnet-4-5-20250929',
+  'claude-haiku-5-5',
   'claude-haiku-4-5',
   'claude-haiku-4-5-20251001',
   'claude-opus-4-1',
@@ -4559,6 +4577,7 @@ export const bedrockModels = [
   'global.anthropic.claude-sonnet-4-6',
   'global.anthropic.claude-opus-4-6-v1',
   'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+  'global.anthropic.claude-haiku-5-5',
   'global.anthropic.claude-haiku-4-5-20251001-v1:0',
   'us.anthropic.claude-opus-4-1-20250805-v1:0',
   // 'cohere.command-text-v14', // no conversation history
@@ -4595,6 +4614,8 @@ export const defaultModels = {
     ...sharedOpenAIModels,
   ],
   [EModelEndpoint.google]: [
+    // Gemini 4 Models
+    'gemini-4-argon',
     // Gemini 3.8 Models
     'gemini-3.8-flash',
     // Gemini 3.7 Models
