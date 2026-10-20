@@ -2,8 +2,8 @@ import axios from 'axios';
 import { Buffer } from 'buffer';
 import { logger } from '@librechat/data-schemas';
 import type { AxiosInstance, AxiosProxyConfig, AxiosError } from 'axios';
-import { isClientDisconnect } from './streams';
 import { getOutboundTimeout } from './timeouts';
+import { isClientDisconnect } from './streams';
 
 /**
  * Render `error.response.data` as a small, log-safe value. Axios surfaces
