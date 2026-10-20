@@ -101,6 +101,40 @@ async function swipe(session: CDPSession, from: { x: number; y: number }, dx: nu
   await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 
+/** Asserts the open artifacts panel's placement and drag in RTL. */
+async function expectArtifactsHandleFollowsPointer(page: Page, panel: Locator) {
+  const handle = page.locator('[role="separator"]:not([aria-label="Resize sidebar"])').first();
+  await expect(handle).toBeVisible();
+  /** The panel opens with a transition; measure once the handle has stopped moving. */
+  await still(handle);
+  const panelBox = await box(panel);
+  const handleBox = await box(handle);
+  const messagesBefore = await box(messagesView(page));
+  /** Inline end is the left in RTL: artifacts, then the handle, then the messages. */
+  expect(panelBox.x + panelBox.width / 2).toBeLessThan(handleBox.x);
+  expect(handleBox.x + handleBox.width).toBeLessThanOrEqual(messagesBefore.x + 2);
+
+  /**
+   * Dragging the handle right by 80px moves it 80px right, widening the artifacts and narrowing
+   * the messages by as much. The drag runs toward the messages so the pointer never crosses the
+   * preview iframe, which takes pointer events for itself in either direction.
+   */
+  const x = handleBox.x + handleBox.width / 2;
+  const y = handleBox.y + handleBox.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 40, y, { steps: 4 });
+  await page.mouse.move(x + 80, y, { steps: 4 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => Math.round((await box(handle)).x - handleBox.x))
+    .toBeGreaterThanOrEqual(70);
+  const moved = await box(handle);
+  expect(moved.x - handleBox.x).toBeLessThanOrEqual(90);
+  const messagesAfter = await box(messagesView(page));
+  expect(messagesBefore.width - messagesAfter.width).toBeGreaterThan(60);
+}
+
 test.describe('phone', () => {
   test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
 
@@ -269,35 +303,45 @@ test.describe('desktop', () => {
     const panel = page.getByRole('region', { name: HTML_ARTIFACT });
     await expect(panel).toBeVisible({ timeout: 30000 });
 
-    const handle = page.locator('[role="separator"]:not([aria-label="Resize sidebar"])').first();
-    await expect(handle).toBeVisible();
-    /** The panel opens with a transition; measure once the handle has stopped moving. */
-    await still(handle);
-    const panelBox = await box(panel);
-    const handleBox = await box(handle);
-    const messagesBefore = await box(messagesView(page));
-    /** Inline end is the left in RTL: artifacts, then the handle, then the messages. */
-    expect(panelBox.x + panelBox.width / 2).toBeLessThan(handleBox.x);
-    expect(handleBox.x + handleBox.width).toBeLessThanOrEqual(messagesBefore.x + 2);
+    await expectArtifactsHandleFollowsPointer(page, panel);
+  });
 
-    /**
-     * Dragging the handle right by 80px moves it 80px right, widening the artifacts and narrowing
-     * the messages by as much. The drag runs toward the messages so the pointer never crosses the
-     * preview iframe, which takes pointer events for itself in either direction.
-     */
-    const x = handleBox.x + handleBox.width / 2;
-    const y = handleBox.y + handleBox.height / 2;
-    await page.mouse.move(x, y);
-    await page.mouse.down();
-    await page.mouse.move(x + 40, y, { steps: 4 });
-    await page.mouse.move(x + 80, y, { steps: 4 });
-    await page.mouse.up();
-    await expect
-      .poll(async () => Math.round((await box(handle)).x - handleBox.x))
-      .toBeGreaterThanOrEqual(70);
-    const moved = await box(handle);
-    expect(moved.x - handleBox.x).toBeLessThanOrEqual(90);
-    const messagesAfter = await box(messagesView(page));
-    expect(messagesBefore.width - messagesAfter.width).toBeGreaterThan(60);
+  test('switching to RTL with the artifacts panel open keeps its handle following the pointer @scenario:rtl-live-language-switch-keeps-artifacts-handle-following-pointer', async ({
+    page,
+  }) => {
+    test.setTimeout(150000);
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 15000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+    await sendMessageAndWaitForCompletion(page, 'E2E_HTML_ARTIFACT_REPLY', { timeout: 60000 });
+    await expect(page).toHaveURL(/\/c\/(?!new)/);
+    await messagesView(page)
+      .getByRole('button', { name: new RegExp(HTML_ARTIFACT) })
+      .click();
+    const panel = page.getByRole('region', { name: HTML_ARTIFACT });
+    await expect(panel).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('html')).not.toHaveAttribute('dir', 'rtl');
+
+    /** The panels mount in LTR order; Arabic is then picked in Settings without a reload. */
+    await page.getByTestId('nav-user').click();
+    await page.getByRole('menuitem', { name: 'Settings' }).click();
+    await page.getByRole('combobox', { name: /^Language/ }).click();
+    await page.getByRole('option', { name: 'العربية' }).click();
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl', { timeout: 30000 });
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    await expect(panel).toBeVisible();
+    await expectArtifactsHandleFollowsPointer(page, panel);
+
+    /** The arrow keys move the handle the way they point, as they did before the switch. */
+    const handle = page.locator('[role="separator"]:not([aria-label="Resize sidebar"])').first();
+    await handle.focus();
+    const before = await box(handle);
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(async () => (await box(handle)).x - before.x).toBeGreaterThan(10);
+    const after = await box(handle);
+    await page.keyboard.press('ArrowLeft');
+    await expect.poll(async () => after.x - (await box(handle)).x).toBeGreaterThan(10);
   });
 });
