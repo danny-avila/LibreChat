@@ -224,7 +224,11 @@ const states: Record<string, (h: Harness) => Promise<void>> = {
   },
   /** The server finished the turn before the chat attached. */
   settled: async (h) => {
-    h.transport.sendMessages.mockResolvedValue({ status: 'settled', conversationId: 'convo-1' });
+    h.transport.sendMessages.mockResolvedValue({
+      status: 'settled',
+      conversationId: 'convo-1',
+      generationProtocolVersion: 2,
+    });
     send(h);
     await flush();
   },
@@ -308,7 +312,11 @@ const events: Record<string, (h: Harness) => Promise<void>> = {
   },
   newTurn: async (h) => {
     const before = h.transport.sendMessages.mock.calls.length;
-    h.transport.sendMessages.mockResolvedValue({ status: 'settled', conversationId: 'convo-1' });
+    h.transport.sendMessages.mockResolvedValue({
+      status: 'settled',
+      conversationId: 'convo-1',
+      generationProtocolVersion: 2,
+    });
     await record(h, h.chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] }));
     h.outcome =
       h.transport.sendMessages.mock.calls.length > before ? `sent:${h.outcome}` : h.outcome;

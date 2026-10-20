@@ -8,6 +8,7 @@ import type {
   TPendingSteer,
   ChatFinalFrame,
   ChatErrorData,
+  TMessageContentParts,
   UIMessageMetadata,
 } from 'librechat-data-provider';
 import type {
@@ -282,6 +283,19 @@ const openUntilAborted = <T>(
   return untilAborted(opening, signal);
 };
 
+/**
+ * Reports a host listener's failure the way the DOM reports a throwing event listener, so one
+ * faulty subscriber neither hides a change from the others nor interrupts the chat's transition.
+ */
+const reportListenerError = (error: unknown): void => {
+  const { reportError } = globalThis as { reportError?: (error: unknown) => void };
+  if (reportError) {
+    reportError(error);
+    return;
+  }
+  console.error(error);
+};
+
 const streamingEvents = new Set<ChatEvent['type']>(['created', 'sync', 'step', 'content', 'text']);
 
 const getErrorMessage = (data: ChatErrorData | null | undefined): string | undefined => {
@@ -408,30 +422,40 @@ const defaultApplyEvent = (event: ChatEvent, context: ChatEventContext) => {
   }
 };
 
-/** Writes `decision` onto every tool call of `actionId` with the given id. */
-const markApproval = (
-  messages: TMessage[],
+/** A tool call that may hold a subagent's own tool calls, where a paused tool can live. */
+type NestedToolCall = Agents.ToolCall & { subagent_content?: TMessageContentParts[] };
+
+/**
+ * Writes `decision` onto the tool calls of `actionId` with the given id in `parts`, descending into
+ * subagent calls the way the pause was tagged. Returns the new parts, or nothing when none matched.
+ */
+const markApprovalIn = (
+  parts: TMessageContentParts[],
   actionId: string,
   toolCallId: string,
   decision: Agents.ToolApprovalResolution,
-): TMessage[] | undefined => {
-  let changed = false;
-  const next = messages.map((message) => {
-    let content: TMessage['content'];
-    message.content?.forEach((part, index) => {
-      if (part?.type !== ContentTypes.TOOL_CALL) {
-        return;
-      }
-      const toolCall = part.tool_call as Agents.ToolCall | undefined;
-      if (
-        !toolCall ||
-        !('approval' in toolCall) ||
-        toolCall.id !== toolCallId ||
-        toolCall.approval?.actionId !== actionId
-      ) {
-        return;
-      }
-      content ??= [...(message.content ?? [])];
+): TMessageContentParts[] | undefined => {
+  let next: TMessageContentParts[] | undefined;
+  parts.forEach((part, index) => {
+    if (part?.type !== ContentTypes.TOOL_CALL) {
+      return;
+    }
+    const toolCall = part.tool_call as NestedToolCall | undefined;
+    if (!toolCall) {
+      return;
+    }
+    let marked = toolCall;
+    const nested = Array.isArray(toolCall.subagent_content)
+      ? markApprovalIn(toolCall.subagent_content, actionId, toolCallId, decision)
+      : undefined;
+    if (nested) {
+      marked = { ...marked, subagent_content: nested };
+    }
+    if (
+      'approval' in toolCall &&
+      toolCall.id === toolCallId &&
+      toolCall.approval?.actionId === actionId
+    ) {
       const approval = {
         ...toolCall.approval,
         decision: decision.decision,
@@ -441,11 +465,29 @@ const markApproval = (
         /** A changed decision shows only its own reason. */
         delete approval.reason;
       }
-      content[index] = {
-        ...part,
-        tool_call: { ...toolCall, approval },
-      } as (typeof content)[number];
-    });
+      marked = { ...marked, approval };
+    }
+    if (marked === toolCall) {
+      return;
+    }
+    next ??= [...parts];
+    next[index] = { ...part, tool_call: marked } as TMessageContentParts;
+  });
+  return next;
+};
+
+/** Writes `decision` onto every tool call of `actionId` with the given id. */
+const markApproval = (
+  messages: TMessage[],
+  actionId: string,
+  toolCallId: string,
+  decision: Agents.ToolApprovalResolution,
+): TMessage[] | undefined => {
+  let changed = false;
+  const next = messages.map((message) => {
+    const content = message.content
+      ? markApprovalIn(message.content, actionId, toolCallId, decision)
+      : undefined;
     if (!content) {
       return message;
     }
@@ -1130,7 +1172,6 @@ export class Chat {
     this.generationCreatedAt = undefined;
     this.resumed.clear();
     try {
-      /** Inside the request's cleanup, so a host listener that throws here cannot strand it. */
       this.init.state.error = undefined;
       this.setStatus('submitted');
       if (active.controller.signal.aborted) {
@@ -1175,6 +1216,10 @@ export class Chat {
       if (result.status === 'replaced' && result.generationProtocolVersion !== 2) {
         /** Only protocol v2 vouches for a replacement; an older server reported a conflict. */
         throw new Error('Another generation is running in this conversation');
+      }
+      if (result.status === 'settled' && result.generationProtocolVersion !== 2) {
+        /** Only protocol v2 vouches for a settled start, which completes the turn without a stream. */
+        throw new Error('The server answered with a settled start it did not negotiate');
       }
       /**
        * The server took the start, so it owns or superseded a generation whose stream dropped.
@@ -1260,7 +1305,6 @@ export class Chat {
     }
     let outcome: Outcome | undefined;
     try {
-      /** Inside the cleanup, so a host listener that throws here still closes the stream. */
       this.setConnection('live');
       for await (const event of stream) {
         if (signal.aborted) {
@@ -1343,7 +1387,11 @@ export class Chat {
       const message = getErrorMessage(event.data) ?? 'The response failed';
       outcome = { kind: 'error', error: new Error(message), disconnect };
     }
-    this.init.onEvent?.(event);
+    try {
+      this.init.onEvent?.(event);
+    } catch (error) {
+      reportListenerError(error);
+    }
     return outcome;
   }
 
@@ -1452,25 +1500,21 @@ export class Chat {
       message = messages[messages.length - 1];
     }
     const { settled } = outcome;
-    try {
-      this.notify();
-    } finally {
-      /** A listener that throws on the terminal state still leaves the host told how it ended. */
-      if (outcome.kind === 'error') {
-        this.init.onError?.(outcome.error);
-      }
-      this.init.onFinish?.({
-        message,
-        messages,
-        isAbort: outcome.kind === 'abort',
-        isDisconnect: outcome.kind === 'error' && outcome.disconnect,
-        isError: outcome.kind === 'error',
-        isSettled: settled !== undefined,
-        isResponseUnknown: responseUnknown,
-        ...(settled?.conversationId !== undefined && { conversationId: settled.conversationId }),
-        ...(settled?.reason !== undefined && { reconcileReason: settled.reason }),
-      });
+    this.notify();
+    if (outcome.kind === 'error') {
+      this.init.onError?.(outcome.error);
     }
+    this.init.onFinish?.({
+      message,
+      messages,
+      isAbort: outcome.kind === 'abort',
+      isDisconnect: outcome.kind === 'error' && outcome.disconnect,
+      isError: outcome.kind === 'error',
+      isSettled: settled !== undefined,
+      isResponseUnknown: responseUnknown,
+      ...(settled?.conversationId !== undefined && { conversationId: settled.conversationId }),
+      ...(settled?.reason !== undefined && { reconcileReason: settled.reason }),
+    });
   }
 
   private release(active: ActiveRequest): void {
@@ -1559,18 +1603,13 @@ export class Chat {
     this.notify();
   }
 
-  /** Tells every listener, so one that throws cannot hide the change from the rest; then rethrows. */
   private notify(): void {
-    let failure: { error: unknown } | undefined;
     for (const listener of this.listeners) {
       try {
         listener();
       } catch (error) {
-        failure ??= { error };
+        reportListenerError(error);
       }
-    }
-    if (failure) {
-      throw failure.error;
     }
   }
 }

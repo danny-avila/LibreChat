@@ -168,80 +168,118 @@ describe('Chat', () => {
     );
   });
 
-  it('releases a turn whose subscriber threw on the submitted state', async () => {
-    const { chat, stream, onFinish } = setup();
-    let thrown = false;
-    chat.subscribe(() => {
-      if (!thrown && chat.status === 'submitted') {
-        thrown = true;
-        throw new Error('listener failed');
-      }
+  describe('a host listener that throws', () => {
+    let reported: jest.SpyInstance;
+    beforeEach(() => {
+      reported = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     });
+
+    it.each([
+      ['the submitted state', (chat: Chat) => chat.status === 'submitted'],
+      ['the live connection', (chat: Chat) => chat.connection === 'live'],
+      ['a streamed frame', (chat: Chat) => chat.status === 'streaming'],
+      ['the terminal state', (chat: Chat) => chat.status === 'ready'],
+    ])('on %s neither ends the turn nor hides it from the others', async (_label, when) => {
+      const { chat, stream, onFinish } = setup();
+      const failure = new Error('listener failed');
+      let thrown = false;
+      chat.subscribe(() => {
+        if (!thrown && when(chat)) {
+          thrown = true;
+          throw failure;
+        }
+      });
+      const statuses: string[] = [];
+      chat.subscribe(() => statuses.push(chat.status));
+
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push(stepEvent);
+      await flush();
+      stream.push(finalEvent());
+      await sent;
+
+      expect(thrown).toBe(true);
+      expect(reported).toHaveBeenCalledWith(failure);
+      expect(statuses).toEqual(expect.arrayContaining(['submitted', 'streaming', 'ready']));
+      expect(onFinish).toHaveBeenCalledWith(
+        expect.objectContaining({ isError: false, isAbort: false, isDisconnect: false }),
+      );
+      expect(chat.status).toBe('ready');
+      expect(chat.connection).toBe('idle');
+    });
+
+    it('on the reconnecting state still attaches the reattachment', async () => {
+      const resumed = createStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      const { chat, transport } = setup();
+      transport.reconnectToStream.mockResolvedValueOnce(resumed);
+      chat.subscribe(() => {
+        if (chat.connection === 'reconnecting') {
+          throw new Error('listener failed');
+        }
+      });
+
+      const attached = chat.resumeStream({ streamId: 'convo-1' });
+      await flush();
+
+      expect(chat.connection).toBe('live');
+      resumed.push(finalEvent());
+      await attached;
+      expect(chat.connection).toBe('idle');
+    });
+
+    it('on dispose still releases the chat from its state', async () => {
+      const { chat, state } = setup();
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      const listener = jest.fn(() => {
+        throw new Error('listener failed');
+      });
+      chat.subscribe(listener);
+
+      chat.dispose();
+      listener.mockClear();
+      state.replaceMessages([userMessage]);
+      await sent;
+
+      expect(chat.connection).toBe('idle');
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('in onEvent still ends the turn by its terminal frame', async () => {
+      const onEvent = jest.fn(() => {
+        throw new Error('callback failed');
+      });
+      const { chat, stream, onFinish } = setup({ onEvent });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push(finalEvent());
+      await sent;
+
+      expect(onEvent).toHaveBeenCalled();
+      expect(onFinish).toHaveBeenCalledWith(
+        expect.objectContaining({ isError: false, isDisconnect: false }),
+      );
+    });
+  });
+
+  it('refuses a settled start the server did not negotiate under protocol v2', async () => {
+    const { chat, onFinish } = setup(
+      {},
+      {
+        sendMessages: jest.fn(async () => ({
+          status: 'settled' as const,
+          conversationId: 'convo-1',
+        })),
+      },
+    );
 
     await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
-    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isError: true }));
-    await expect(chat.stop()).resolves.toEqual({ status: 'idle' });
 
-    const retry = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
-    await flush();
-    stream.push(finalEvent());
-    await retry;
-    expect(chat.status).toBe('ready');
-  });
-
-  it('releases a reattachment whose subscriber threw on the reconnecting state', async () => {
-    const { chat, transport } = setup();
-    let thrown = false;
-    chat.subscribe(() => {
-      if (!thrown && chat.connection === 'reconnecting') {
-        thrown = true;
-        throw new Error('listener failed');
-      }
-    });
-
-    await chat.resumeStream({ streamId: 'convo-1' });
-    await chat.resumeStream({ streamId: 'convo-1' });
-
-    expect(transport.reconnectToStream).toHaveBeenCalledTimes(1);
-    expect(chat.connection).toBe('idle');
-  });
-
-  it('closes the stream when a subscriber throws on the live connection', async () => {
-    const { chat, stream, onFinish } = setup();
-    let thrown = false;
-    chat.subscribe(() => {
-      if (!thrown && chat.connection === 'live') {
-        thrown = true;
-        throw new Error('listener failed');
-      }
-    });
-
-    await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
-
-    expect(stream.closed()).toBe(true);
-    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isError: true }));
-    expect(chat.connection).toBe('idle');
-  });
-
-  it('finishes the turn when a subscriber throws on its terminal state', async () => {
-    const { chat, stream, onFinish } = setup();
-    const after = jest.fn();
-    chat.subscribe(() => {
-      if (chat.status === 'ready') {
-        throw new Error('listener failed');
-      }
-    });
-    chat.subscribe(after);
-
-    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
-    await flush();
-    after.mockClear();
-    stream.push(finalEvent());
-    await sent;
-
-    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isError: false }));
-    expect(after).toHaveBeenCalled();
-    expect(chat.status).toBe('ready');
+    expect(chat.status).toBe('error');
+    expect(onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({ isError: true, isSettled: false }),
+    );
   });
 
   it('notifies subscribers of each change', async () => {
@@ -360,7 +398,11 @@ describe('Chat', () => {
 
     expect(chat.status).toBe('error');
     expect(chat.error).toBe(failure);
-    transport.sendMessages.mockResolvedValueOnce({ status: 'settled', conversationId: 'convo-1' });
+    transport.sendMessages.mockResolvedValueOnce({
+      status: 'settled',
+      conversationId: 'convo-1',
+      generationProtocolVersion: 2,
+    });
     await chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] });
     expect(chat.status).toBe('ready');
     expect(chat.error).toBeUndefined();
@@ -809,6 +851,7 @@ describe('Chat', () => {
         sendMessages: jest.fn(async () => ({
           status: 'settled' as const,
           conversationId: 'convo-1',
+          generationProtocolVersion: 2,
         })),
       },
     );
@@ -1592,7 +1635,11 @@ describe('Chat', () => {
     const { chat, onFinish } = setup(
       {},
       {
-        sendMessages: jest.fn(async () => ({ status: 'settled' as const, conversationId: 'c-9' })),
+        sendMessages: jest.fn(async () => ({
+          status: 'settled' as const,
+          conversationId: 'c-9',
+          generationProtocolVersion: 2,
+        })),
       },
     );
 
@@ -1802,6 +1849,39 @@ describe('Chat', () => {
       await flush();
       return { ...paused, sent };
     };
+
+    it('shows a decision on a paused call nested inside a subagent', async () => {
+      const subagent = {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'subagent-1',
+          name: 'subagent',
+          args: '{}',
+          type: 'tool_call',
+          subagent_content: [toolCall('call-1')],
+        },
+      };
+      const { chat, stream, sent } = await pause(approvalAction, {
+        prepareRequest: () => ({
+          payload,
+          messages: [
+            userMessage,
+            { ...placeholder, content: [subagent, toolCall('call-2')] } as TMessage,
+          ],
+        }),
+      });
+
+      await chat.addToolApprovalResponse({ id: 'call-1', approved: true });
+
+      const [outer] = chat.messages[1].content as unknown as Array<{
+        tool_call: { subagent_content: Array<{ tool_call: Agents.ToolCall }> };
+      }>;
+      expect(outer.tool_call.subagent_content[0].tool_call).toMatchObject({
+        approval: { decision: 'approve' },
+      });
+      stream.push(finalEvent());
+      await sent;
+    });
 
     it('shows each decision and resumes once the whole batch is decided', async () => {
       const { chat, transport, stream, sent } = await pause(approvalAction);
@@ -3091,6 +3171,7 @@ describe('Chat', () => {
       transport.sendMessages.mockResolvedValueOnce({
         status: 'settled',
         conversationId: 'convo-1',
+        generationProtocolVersion: 2,
       });
       await expect(
         chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] }),
@@ -3146,6 +3227,7 @@ describe('Chat', () => {
           transport.sendMessages.mockResolvedValueOnce({
             status: 'settled',
             conversationId: 'convo-1',
+            generationProtocolVersion: 2,
           });
           next.push(chat.sendMessage({ parts: [{ type: 'text', text: 'Next' }] }));
         },
