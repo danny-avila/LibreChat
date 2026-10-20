@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { FileContext } from 'librechat-data-provider';
+import { FileContext, FileSources } from 'librechat-data-provider';
 import type { TChatProject, TChatProjectFile, TFile } from 'librechat-data-provider';
 import type { IChatProject, ProjectFileRecord } from '@librechat/data-schemas';
 export type { ProjectFileRecord } from '@librechat/data-schemas';
@@ -163,7 +163,17 @@ type RuntimeFileSource = {
   storageRegion?: string;
 };
 
+const storageSources = new Set<string>(Object.values(FileSources));
+
+function isStorageSource(value: string): value is FileSources {
+  return storageSources.has(value);
+}
+
 export function toRuntimeFile(file: RuntimeFileSource): TFile {
+  const source = file.source;
+  if (source != null && !isStorageSource(source)) {
+    throw new Error('Invalid project file storage source');
+  }
   return {
     file_id: file.file_id,
     filename: file.filename,
@@ -172,9 +182,9 @@ export function toRuntimeFile(file: RuntimeFileSource): TFile {
     type: file.type,
     bytes: file.bytes,
     usage: file.usage,
-    embedded: file.embedded,
+    embedded: file.embedded === true,
     ...(file.metadata != null ? { metadata: file.metadata } : {}),
-    ...(file.source != null ? { source: file.source } : {}),
+    ...(source != null ? { source } : {}),
     ...(file.storageKey != null ? { storageKey: file.storageKey } : {}),
     ...(file.storageRegion != null ? { storageRegion: file.storageRegion } : {}),
     context: FileContext.message_attachment,

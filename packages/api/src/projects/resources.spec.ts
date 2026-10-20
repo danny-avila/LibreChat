@@ -8,6 +8,7 @@ import {
   listChatProjectFileViews,
   resolveChatProjectFiles,
   toCanonicalProjectResource,
+  toRuntimeFile,
 } from './resources';
 import { getChatProjectContextKey, resolveChatProjectContext } from './context';
 
@@ -74,6 +75,44 @@ const getProjectFiles = async ({
 };
 
 describe('ChatProject resource hydration', () => {
+  it.each([true, false, undefined])(
+    'preserves vector presence without guessing (%s)',
+    (embedded) => {
+      const runtime = toRuntimeFile({
+        file_id: 'retained-project-file',
+        filename: 'notes.pdf',
+        filepath: '/files/notes.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 1024,
+        usage: 0,
+        user: 'owner',
+        embedded,
+        source: 's3',
+        metadata: { searchDestination: true },
+      });
+      expect(runtime.embedded).toBe(embedded === true);
+      expect(runtime.source).toBe('s3');
+      expect(runtime.metadata?.searchDestination).toBe(true);
+    },
+  );
+
+  it('rejects an unrecognized storage source instead of routing it to another store', () => {
+    expect(() =>
+      toRuntimeFile({
+        file_id: 'retained-project-file',
+        filename: 'notes.pdf',
+        filepath: '/files/notes.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 1024,
+        usage: 0,
+        user: 'owner',
+        source: 'unrecognized-store',
+      }),
+    ).toThrow('Invalid project file storage source');
+  });
+
   it('preserves Project compatibility when signed file URLs are refreshed', async () => {
     const owner = new mongoose.Types.ObjectId().toString();
     const methods = { ...createMethods(mongoose), getProjectFiles };
