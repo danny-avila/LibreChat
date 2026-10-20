@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, resolveModelSpecEndpoint } from 'librechat-data-provider';
 import type { TSpecsConfig } from 'librechat-data-provider';
 
 interface AgentTriggerModelSpecRequest {
@@ -35,7 +35,9 @@ export function restoreAgentTriggerModelSpec(req: AgentTriggerModelSpecRequest):
   }
 
   const matchesAgent = (spec: NonNullable<TSpecsConfig['list']>[number]): boolean =>
-    spec.preset.endpoint === EModelEndpoint.agents && spec.preset.agent_id === body.agent_id;
+    resolveModelSpecEndpoint(spec) === body.endpoint && spec.preset.agent_id === body.agent_id;
+
+  let storedSpec: string | null | undefined;
 
   if (body.conversationId != null) {
     // The subagent turn guard resolves this even on the cached authorization path.
@@ -49,17 +51,12 @@ export function restoreAgentTriggerModelSpec(req: AgentTriggerModelSpecRequest):
     ) {
       return;
     }
-    if (conversation.spec != null) {
-      const spec = modelSpecs.list.find((entry) => entry.name === conversation.spec);
-      if (spec != null && matchesAgent(spec)) {
-        body.spec = spec.name;
-      }
-      return;
-    }
+    storedSpec = conversation.spec;
     // Only the guard can establish this binding context after checking its owner and parent.
     if (
-      !req._agentEventBindingId ||
-      conversation.agentEventBinding?.bindingId !== req._agentEventBindingId
+      storedSpec == null &&
+      (!req._agentEventBindingId ||
+        conversation.agentEventBinding?.bindingId !== req._agentEventBindingId)
     ) {
       return;
     }
@@ -75,18 +72,31 @@ export function restoreAgentTriggerModelSpec(req: AgentTriggerModelSpecRequest):
       return;
     }
   }
-  // New fires and spec-less bound actors must have exactly one current preset for this agent.
-  let selected: string | undefined;
+  // A stored name fixes the choice; new turns require exactly one matching agent preset.
+  let selected: NonNullable<TSpecsConfig['list']>[number] | undefined;
   for (const spec of modelSpecs.list) {
-    if (!matchesAgent(spec)) {
+    if (storedSpec != null ? spec.name !== storedSpec : !matchesAgent(spec)) {
       continue;
     }
     if (selected != null) {
       return;
     }
-    selected = spec.name;
+    selected = spec;
   }
-  if (selected != null) {
-    body.spec = selected;
+  if (selected == null || !selected.name || !matchesAgent(selected)) {
+    return;
   }
+
+  // Downstream resolves by name, so a collision must not select a different preset.
+  let foundName = false;
+  for (const spec of modelSpecs.list) {
+    if (spec.name !== selected.name) {
+      continue;
+    }
+    if (foundName) {
+      return;
+    }
+    foundName = true;
+  }
+  body.spec = selected.name;
 }
