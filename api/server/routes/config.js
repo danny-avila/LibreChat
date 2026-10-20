@@ -388,7 +388,7 @@ router.get('/', async function (req, res) {
     return res.status(200).send(payload);
   } catch (err) {
     logger.error('Error in startup config', err);
-    return res.status(500).send({ error: err.message });
+    return res.status(500).send({ error: 'Failed to load startup config' });
   }
 });
 

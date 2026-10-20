@@ -1,9 +1,5 @@
-import fs from 'fs';
-import path from 'path';
 import { ProviderId } from 'librechat-data-provider';
 import { getProviderIconDef, providerIcons } from './registry';
-
-const packageAssets = path.join(__dirname, 'assets');
 
 describe('providerIcons', () => {
   it('has an entry for every ProviderId', () => {
@@ -13,23 +9,10 @@ describe('providerIcons', () => {
     }
   });
 
-  it('points every asset entry at a file shipped with the package', () => {
+  it('draws every provider as a mark that follows the theme', () => {
     for (const def of Object.values(providerIcons)) {
-      if (def.art.kind === 'asset') {
-        const assetPath = path.resolve(__dirname, def.art.src);
-        const relativePath = path.relative(packageAssets, assetPath);
-        expect(path.isAbsolute(def.art.src)).toBe(false);
-        expect(relativePath.split(path.sep)).not.toContain('..');
-        expect(fs.statSync(assetPath).isFile()).toBe(true);
-      }
-    }
-  });
-
-  it('marks raster art as not monochrome', () => {
-    for (const def of Object.values(providerIcons)) {
-      if (def.art.kind === 'asset') {
-        expect(def.mono).not.toBe(true);
-      }
+      expect(def.art.kind).toBe('component');
+      expect(def.mono).toBe(true);
     }
   });
 
