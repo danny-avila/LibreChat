@@ -419,7 +419,9 @@ export default function ProjectWorkspace() {
         </div>
       </div>
     </ResizablePanel>,
-    <ResizableHandleAlt key="handle" withHandle />,
+    /* The separator binds to its neighbours when it mounts, so it remounts with the order;
+     * the panels keep their keys and their content. */
+    <ResizableHandleAlt key={`handle-${direction}`} withHandle />,
     <ResizablePanel
       key="chats"
       id="project-chats"
