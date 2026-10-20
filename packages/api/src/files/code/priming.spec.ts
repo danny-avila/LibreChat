@@ -21,6 +21,48 @@ const file = (id: string, name: string, ref: Partial<CodeEnvRef> = {}, time = 1)
 const fresh = { lastModified: new Date().toISOString() };
 
 describe('selectCodeFiles', () => {
+  it.each([false, true])(
+    'honors a non-import path advertised before a live publication is primed (expired=%s)',
+    async (expired) => {
+      const output = {
+        ...file('publication', 'my_results-081045.csv'),
+        conversationId: 'current',
+      };
+      const imported = {
+        ...file('imported', 'my results.csv', { sandboxFilename: 'my results.csv' }),
+        conversationId: 'other',
+      };
+      const project = {
+        projectFileIds: new Set(['imported']),
+        conversationId: 'current',
+        sessionPlan: {
+          destinations: new Map([['imported', 'my results.csv']]),
+          mountedNames: new Map([['publication', 'my results-announced.csv']]),
+          frozen: true,
+        },
+      };
+      const result = await selectCodeFiles({
+        files: [output, imported],
+        project,
+        routeKey: 'default',
+        getFileInfo: async () => ({
+          lastModified: expired ? '2000-01-01T00:00:00Z' : fresh.lastModified,
+          originalFilename: 'my results.csv',
+        }),
+      });
+      expect(result.selected).toHaveLength(2);
+      expect(result.selected.find((entry) => entry.file.file_id === 'publication')).toMatchObject({
+        sandboxName: 'my results-announced.csv',
+        isActive: false,
+        temporary: true,
+      });
+      expect(result.selected.find((entry) => entry.file.file_id === 'imported')).toMatchObject({
+        sandboxName: 'my results.csv',
+      });
+      expect(output.metadata!.codeEnvRef!.sandboxFilename).toBeUndefined();
+    },
+  );
+
   it('preserves a frozen project path when a lazy agent introduces a colliding private mount', async () => {
     const privateFile = file('private', 'data.csv', { sandboxFilename: 'data.csv' });
     const imported = {

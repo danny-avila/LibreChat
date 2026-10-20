@@ -13,7 +13,9 @@ import type { RunFileSessionDeps } from './session';
 import type { RunFileToolContext } from './host';
 import type { ServerRequest } from '~/types';
 import { createRunFileHost, resolveRunFileCodeExecutionContext } from './host';
-import { getProjectCodeScope } from '~/files/code/priming';
+import { getProjectCodeScope, selectCodeFiles } from '~/files/code/priming';
+import { getTurnCodeEnvRef } from '~/files/code/references';
+import { sanitizeArtifactPath } from '~/utils/files';
 import * as sessionModule from './session';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -133,16 +135,28 @@ function harness(
   const loadFiles = jest.fn(async (_ids: string[]) => structuredClone(setup));
   const filterFiles = jest.fn(async ({ files }: { files: TFile[] }) => files);
   const saved: TFile[] = [];
+  const publicationNames = new Map<string, string>();
   const listPublications = jest.fn(async () => structuredClone(saved));
   const publish = jest.fn<
     ReturnType<RunFileSessionDeps['publish']>,
     Parameters<RunFileSessionDeps['publish']>
   >(async ({ scope, artifact, provenance }) => {
+    const ref: CodeEnvRef = {
+      kind: 'user',
+      id: scope.userId,
+      storage_session_id: artifact.sessionId,
+      file_id: artifact.id,
+    };
+    publicationNames.set(JSON.stringify([ref.storage_session_id, ref.file_id]), artifact.name);
     const published = file(`published-${provenance.sourceFileId}`, {
-      filename: artifact.name,
+      filename: sanitizeArtifactPath(artifact.name),
       conversationId: scope.conversationId,
       context: FileContext.run_artifact,
-      metadata: { destinationChosen: false, runFile: provenance },
+      metadata: {
+        destinationChosen: false,
+        runFile: provenance,
+        codeEnvRefs: { 'managed-worker': ref },
+      },
     });
     saved.push(published);
     return structuredClone(published);
@@ -187,7 +201,9 @@ function harness(
     options.getCodeFileInfo ??
       (async (ref) => ({
         lastModified: new Date().toISOString(),
-        originalFilename: ref.sandboxFilename,
+        originalFilename:
+          ref.sandboxFilename ??
+          publicationNames.get(JSON.stringify([ref.storage_session_id, ref.file_id])),
       })),
   );
   const emit = jest.fn(async () => undefined);
@@ -502,9 +518,14 @@ describe('run file execution host', () => {
     }
   });
 
-  it.each([false, true])(
-    'announces the mounted path when a sibling publication collides with a project import (existing child: %s)',
-    async (existingChild) => {
+  it.each([
+    [false, 'results.csv'],
+    [true, 'results.csv'],
+    [false, 'my results.csv'],
+    [true, 'my results.csv'],
+  ])(
+    'announces the mounted path when a sibling publication collides with a project import (existing child: %s, name: %s)',
+    async (existingChild, rawName) => {
       const h = harness({ inputs: [], setup: [] });
       h.req.config!.projects = configSchema.parse({
         version: '1.3.9',
@@ -520,7 +541,7 @@ describe('run file execution host', () => {
       };
       h.req.body = { conversationId: 'conversation' };
       const canonical = file('project-file', {
-        filename: 'results.csv',
+        filename: rawName,
         conversationId: 'other',
         metadata: {
           codeEnvRefs: {
@@ -529,7 +550,7 @@ describe('run file execution host', () => {
               id: 'user',
               file_id: 'project-remote',
               storage_session_id: 'project-store',
-              sandboxFilename: 'results.csv',
+              sandboxFilename: rawName,
             },
           },
         },
@@ -540,7 +561,7 @@ describe('run file execution host', () => {
         h.req,
         source.codeSessionKey ?? source.codeExecutionContext!.codeSessionKey,
       )!;
-      project.sessionPlan!.destinations.set(canonical.file_id, 'results.csv');
+      project.sessionPlan!.destinations.set(canonical.file_id, rawName);
       project.sessionPlan!.frozen = true;
       source.tool_resources = { execute_code: { files: [] } };
       source.provisionState = {
@@ -548,7 +569,7 @@ describe('run file execution host', () => {
         vectorDBFiles: [],
         aliveFileIds: new Set(),
         agentScopedFileIds: new Set(),
-        codeEnvDestinations: new Map([[canonical.file_id, 'results.csv']]),
+        codeEnvDestinations: new Map([[canonical.file_id, rawName]]),
         project: { ...project, projectFileIds: new Set([canonical.file_id]) },
       };
       const producer = identity('producer');
@@ -561,7 +582,7 @@ describe('run file execution host', () => {
         }
         await h.host.session.capture('worker', producer, 'produce-results', {
           session_id: 'private-producer',
-          files: [{ id: 'results', name: 'results.csv' }],
+          files: [{ id: 'results', name: rawName }],
         });
         const artifact = (await h.host.session.list('worker', producer)).artifacts[0];
         const published = await h.host.session.publish(
@@ -578,14 +599,9 @@ describe('run file execution host', () => {
         }
         const listing = await h.host.session.list('worker', reader, h.signal);
         const entry = listing.files.find((file) => file.file_id === published.file_id)!;
-        expect(entry.filename).toBe('results.csv');
+        expect(entry.filename).toBe(sanitizeArtifactPath(rawName));
         expect(entry.code_path).toBeDefined();
-        const mounted = await h.host.provision(
-          [Constants.EXECUTE_CODE],
-          'worker',
-          h.signal,
-          reader,
-        );
+        await h.host.provision([Constants.EXECUTE_CODE], 'worker', h.signal, reader);
         const context = h.host.getContext('worker', reader)!;
         const publicationPath = context.provisionState!.project!.sessionPlan!.mountedNames.get(
           published.file_id,
@@ -593,25 +609,45 @@ describe('run file execution host', () => {
         const projectPath = context.provisionState!.project!.sessionPlan!.destinations.get(
           canonical.file_id,
         )!;
+        const mounted = await selectCodeFiles({
+          files: context.tool_resources?.execute_code?.files ?? [],
+          privateFileIds: context.provisionState!.agentScopedFileIds,
+          project: context.provisionState!.project,
+          getTurnRef: (file, destination) =>
+            getTurnCodeEnvRef(h.req, 'managed-worker', file, destination),
+          routeKey: 'managed-worker',
+          getFileInfo: (ref) =>
+            h.getCodeFileInfo(ref, context.codeExecutionContext ?? {}, h.signal),
+        });
         expect(entry.code_path).toBe(`/mnt/data/${publicationPath}`);
         expect(publicationPath).not.toBe(projectPath);
-        expect(mounted).toContainEqual(
-          expect.objectContaining({ id: `remote-${published.file_id}`, name: publicationPath }),
+        expect(mounted.selected).toContainEqual(
+          expect.objectContaining({
+            file: expect.objectContaining({ file_id: published.file_id }),
+            sandboxName: publicationPath,
+            sourceRef: expect.objectContaining({ file_id: 'results' }),
+            temporary: existingChild,
+          }),
         );
         expect(listing.code_file_context).toContain(`/mnt/data/${projectPath}`);
         expect(context.dynamicToolContextMap?.queued_code_files).toContain(
           `/mnt/data/${projectPath}`,
         );
         if (existingChild) {
-          expect(projectPath).toBe('results.csv');
+          expect(projectPath).toBe(rawName);
         } else {
-          expect(publicationPath).toBe('results.csv');
+          expect(publicationPath).toBe(rawName);
           expect(initialMessage).toContain(`"code_path":"/mnt/data/${publicationPath}"`);
           expect(initialMessage).toContain(`/mnt/data/${projectPath}`);
+          expect(initialMessage).toContain('replace any earlier file-path notes');
         }
-        expect(canonical.metadata?.codeEnvRefs?.['managed-worker']?.sandboxFilename).toBe(
-          'results.csv',
-        );
+        expect(canonical.metadata?.codeEnvRefs?.['managed-worker']?.sandboxFilename).toBe(rawName);
+        expect(published.metadata?.codeEnvRefs?.['managed-worker']).toEqual({
+          kind: 'user',
+          id: 'user',
+          storage_session_id: 'private-producer',
+          file_id: 'results',
+        });
       } finally {
         await h.host.session.close();
       }
@@ -859,7 +895,7 @@ describe('run file execution host', () => {
     expect(
       before?.tool_resources?.execute_code?.files?.map((entry) => entry.file_id).sort(),
     ).toEqual(['input', published.file_id, 'worker-setup'].sort());
-    expect(h.provisionToCodeEnv).toHaveBeenCalledTimes(3);
+    expect(h.provisionToCodeEnv).toHaveBeenCalledTimes(2);
     expect(h.provisionToVectorDB).toHaveBeenCalledTimes(3);
     expect(h.loadFiles).toHaveBeenCalledTimes(1);
     expect(h.emit).toHaveBeenCalledTimes(1);
@@ -949,7 +985,10 @@ describe('run file execution host', () => {
     );
     expect(h.host.getContext('worker', identity())).toBe(before);
     expect(recovered?.map((entry) => entry.id).sort()).toEqual(
-      ['remote-good', 'remote-retry', `remote-${published.file_id}`].sort(),
+      ['remote-good', 'remote-retry'].sort(),
+    );
+    expect(before?.tool_resources?.execute_code?.files).toContainEqual(
+      expect.objectContaining({ file_id: published.file_id }),
     );
     expect(
       h.provisionToCodeEnv.mock.calls.filter(([params]) => params.file.file_id === 'good'),
@@ -991,7 +1030,7 @@ describe('run file execution host', () => {
       const published = await h.publishOutput();
       await h.host.session.prepareTools('worker', identity(), h.signal);
       const context = h.host.getContext('worker', identity());
-      expect(context?.provisionState?.codeEnvFiles.map((entry) => entry.file_id)).toContain(
+      expect(context?.tool_resources?.execute_code?.files?.map((entry) => entry.file_id)).toContain(
         published.file_id,
       );
       h.saved.splice(0);

@@ -365,7 +365,7 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
       const discovery = preparations.some((preparation) =>
         deps.getCodeFileContext?.(preparation.actor),
       )
-        ? "Use each file's code_path when provided. Use list_run_files before code execution to get your execution's file paths and discover later publications."
+        ? "Use each file's code_path when provided. These paths and the current project code file paths replace any earlier file-path notes. Use list_run_files before code execution to get your execution's file paths and discover later publications; its paths replace any earlier file-path notes."
         : 'Use list_run_files to discover later publications.';
       messages = [
         new HumanMessage({

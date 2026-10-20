@@ -20,6 +20,7 @@ import {
   isImportedProjectFile,
   createCodeDestinationSet,
   claimCodeDestination,
+  reserveCodeDestination,
   sortCodeFilesByDestinationPriority,
 } from '~/files/code/destinations';
 import {
@@ -562,57 +563,68 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
                 for (const [id, name] of project?.sessionPlan?.mountedNames ?? []) {
                   if (admittedIds.has(id)) plan.mountedNames.set(id, name);
                 }
-                const claimed = createCodeDestinationSet();
-                const route =
-                  codeExecutionContext?.executionRouteKey ??
-                  codeExecutionContext?.executionProfile ??
-                  'default';
-                const requiredCodeFiles = sortCodeFilesByDestinationPriority(
-                  [
-                    ...new Map(
-                      [
-                        ...provisionState.codeEnvFiles,
-                        ...(primed.tool_resources?.execute_code?.files ?? []),
-                      ].map((file) => [file.file_id, file]),
-                    ).values(),
-                  ],
-                  provisionState.agentScopedFileIds,
-                  scope,
-                ).filter(
-                  (file): file is TFile => file != null && !isImportedProjectFile(file, scope),
+              }
+              const claimed = createCodeDestinationSet();
+              if (plan.frozen) {
+                for (const name of plan.destinations.values())
+                  reserveCodeDestination(claimed, name);
+                for (const name of plan.mountedNames.values())
+                  reserveCodeDestination(claimed, name);
+              }
+              const route =
+                codeExecutionContext?.executionRouteKey ??
+                codeExecutionContext?.executionProfile ??
+                'default';
+              const requiredCodeFiles = sortCodeFilesByDestinationPriority(
+                [
+                  ...new Map(
+                    [
+                      ...provisionState.codeEnvFiles,
+                      ...(primed.tool_resources?.execute_code?.files ?? []),
+                    ].map((file) => [file.file_id, file]),
+                  ).values(),
+                ],
+                provisionState.agentScopedFileIds,
+                scope,
+              ).filter(
+                (file): file is TFile =>
+                  file != null &&
+                  !isImportedProjectFile(file, scope) &&
+                  (!plan.frozen || !plan.mountedNames.has(file.file_id)),
+              );
+              const storedNames = new Map<string, string>();
+              const getCodeFileInfo = provisioning.getCodeFileInfo;
+              const { scope: probeScope, concurrency } = getCodeApiUploadOptions(req, route);
+              await Promise.all(
+                requiredCodeFiles.map(async (file) => {
+                  const ref = getCodeEnvRefForProfile(file.metadata, route);
+                  if (!ref || ref.sandboxFilename || !getCodeFileInfo) return;
+                  const info = await withCodeApiUploadSlot({
+                    registry: probeRegistry,
+                    scope: probeScope,
+                    concurrency,
+                    signal,
+                    task: () => getCodeFileInfo(ref, codeExecutionContext ?? {}, signal),
+                  });
+                  if (info?.originalFilename && checkCodeFileActive(info.lastModified)) {
+                    storedNames.set(file.file_id, info.originalFilename);
+                  }
+                }),
+              );
+              signal.throwIfAborted();
+              for (const file of requiredCodeFiles) {
+                const name =
+                  storedNames.get(file.file_id) ??
+                  plan.mountedNames.get(file.file_id) ??
+                  getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
+                  destinations.get(file.file_id) ??
+                  getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type));
+                plan.mountedNames.set(
+                  file.file_id,
+                  claimCodeDestination(claimed, name, file.file_id),
                 );
-                const storedNames = new Map<string, string>();
-                const getCodeFileInfo = provisioning.getCodeFileInfo;
-                const { scope: probeScope, concurrency } = getCodeApiUploadOptions(req, route);
-                await Promise.all(
-                  requiredCodeFiles.map(async (file) => {
-                    const ref = getCodeEnvRefForProfile(file.metadata, route);
-                    if (!ref || ref.sandboxFilename || !getCodeFileInfo) return;
-                    const info = await withCodeApiUploadSlot({
-                      registry: probeRegistry,
-                      scope: probeScope,
-                      concurrency,
-                      signal,
-                      task: () => getCodeFileInfo(ref, codeExecutionContext ?? {}, signal),
-                    });
-                    if (info?.originalFilename && checkCodeFileActive(info.lastModified)) {
-                      storedNames.set(file.file_id, info.originalFilename);
-                    }
-                  }),
-                );
-                signal.throwIfAborted();
-                for (const file of requiredCodeFiles) {
-                  const name =
-                    storedNames.get(file.file_id) ??
-                    plan.mountedNames.get(file.file_id) ??
-                    getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
-                    destinations.get(file.file_id) ??
-                    getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type));
-                  plan.mountedNames.set(
-                    file.file_id,
-                    claimCodeDestination(claimed, name, file.file_id),
-                  );
-                }
+              }
+              if (!plan.frozen) {
                 for (const file of projectFiles) {
                   if (!isImportedProjectFile(file, scope)) continue;
                   const name =

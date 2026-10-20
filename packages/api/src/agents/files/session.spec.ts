@@ -206,6 +206,9 @@ it('keeps per-agent code paths out of a shared graph catalog', async () => {
     expect(String(result.messages?.[0].content)).toContain(
       'Use list_run_files before code execution',
     );
+    expect(String(result.messages?.[0].content)).toContain(
+      'its paths replace any earlier file-path notes',
+    );
     expect(String(result.messages?.[0].content)).not.toContain('"code_path"');
     const reader = await session.list('reader', preparation.executionContext);
     const writer = await session.list('writer', preparation.executionContext);

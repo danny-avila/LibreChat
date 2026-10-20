@@ -248,10 +248,22 @@ export async function selectCodeFiles({
     reserveCodeDestination(destinations, name);
     reserveCodeDestination(fixedProjectPaths, name);
   }
+  const plannedMounts = project?.sessionPlan?.frozen
+    ? project.sessionPlan.mountedNames
+    : new Map<string, string>();
+  for (const candidate of surviving) {
+    if (isImportedProjectFile(candidate.file, project)) continue;
+    const name = plannedMounts.get(candidate.file.file_id);
+    if (name == null) continue;
+    reserveCodeDestination(destinations, name);
+    reserveCodeDestination(fixedProjectPaths, name);
+  }
   const selected: PrimedCodeFile[] = [];
   for (const candidate of surviving) {
     const imported = isImportedProjectFile(candidate.file, project);
-    const plannedName = imported ? plannedImports.get(candidate.file.file_id) : undefined;
+    const plannedName = imported
+      ? plannedImports.get(candidate.file.file_id)
+      : plannedMounts.get(candidate.file.file_id);
     if (plannedName != null) {
       const moved = plannedName !== candidate.sandboxName;
       selected.push({

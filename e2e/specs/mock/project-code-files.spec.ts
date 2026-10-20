@@ -179,12 +179,14 @@ for (const mode of ['handoff', 'shared subagent'] as const) {
       );
       conversationIds.push(new URL(page.url()).pathname.split('/c/')[1]);
       await expect(
-        page.getByText(
-          mode === 'handoff'
-            ? `E2E handoff tool complete ${label}: agent=${child.id}`
-            : `E2E project subagent complete ${label}`,
-          { exact: true },
-        ),
+        page
+          .getByTestId('screenshot-target')
+          .getByText(
+            mode === 'handoff'
+              ? `E2E handoff tool complete ${label}: agent=${child.id}`
+              : `E2E project subagent complete ${label}`,
+            { exact: true },
+          ),
       ).toBeVisible();
       const debug = await page.request.get(`${CODE_API_BASE}/__debug/uploads`);
       expect(debug.ok()).toBe(true);
