@@ -132,6 +132,8 @@ const SUBAGENT_ACTIVITY_CHILD_MARKER = 'E2E_SUBAGENT_ACTIVITY_CHILD:';
 const RUN_FILES_MARKER = 'E2E_RUN_FILES:';
 const RUN_FILES_CHILD_MARKER = 'E2E_RUN_FILES_CHILD:';
 const RUN_FILES_FOLLOWUP_MARKER = 'E2E_RUN_FILES_FOLLOWUP:';
+const PROJECT_CODE_SUBAGENT_MARKER = 'E2E_PROJECT_CODE_SUBAGENT:';
+const PROJECT_CODE_CHILD_MARKER = 'E2E_PROJECT_CODE_CHILD:';
 const RUN_FILE_VERSIONS_MARKER = 'E2E_RUN_FILE_VERSIONS:';
 const RUN_FILE_VERSIONS_CHILD_MARKER = 'E2E_RUN_FILE_VERSIONS_CHILD:';
 const SUBAGENT_MODEL_OVERRIDE_ERROR =
@@ -2186,6 +2188,64 @@ function parseRunFileResult(message) {
   }
 }
 
+function projectCodeSubagentResponses(text) {
+  const marker = getMarkerValue(text, PROJECT_CODE_SUBAGENT_MARKER);
+  if (!marker) return null;
+  const [childId, label] = marker.split(':');
+  if (!childId || !/^[A-Za-z0-9-]+$/.test(label ?? '')) {
+    return { responses: ['E2E project subagent failed: malformed scenario marker'] };
+  }
+  const childPrompt = `${PROJECT_CODE_CHILD_MARKER}${label}`;
+  const codeCallId = `call_project_code_${label}`;
+  const delegateCallId = `call_project_delegate_${label}`;
+  const complete = `E2E project subagent complete ${label}`;
+  return {
+    responses: [''],
+    overrideSubagentModel: true,
+    resolveInvocation: (messages) => {
+      const isChild = messages.some(
+        (message) =>
+          ['human', 'user'].includes(messageType(message)) &&
+          getContentText(message.content).includes(childPrompt),
+      );
+      if (isChild) {
+        const result = findLastToolMessage(messages, codeCallId);
+        if (result) {
+          return {
+            response: getContentText(result.content).includes('E2E code exec ok')
+              ? complete
+              : 'E2E project subagent failed: code execution failed',
+          };
+        }
+        return {
+          response: '',
+          toolCalls: [
+            {
+              id: codeCallId,
+              name: 'bash_tool',
+              args: { command: 'ls /mnt/data' },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      const result = findLastToolMessage(messages, delegateCallId);
+      if (result) return { response: getContentText(result.content) };
+      return {
+        response: '',
+        toolCalls: [
+          {
+            id: delegateCallId,
+            name: 'subagent',
+            args: { description: childPrompt, subagent_type: childId },
+            type: 'tool_call',
+          },
+        ],
+      };
+    },
+  };
+}
+
 function runFilesResponses(text) {
   const followup = getMarkerValue(text, RUN_FILES_FOLLOWUP_MARKER);
   if (followup) {
@@ -3516,6 +3576,8 @@ function resolveResponses({ graph, messages, text, toolNames }) {
     return runFileVersions;
   }
 
+  const projectCode = projectCodeSubagentResponses(text);
+  if (projectCode) return projectCode;
   const runFiles = runFilesResponses(text);
   if (runFiles) {
     return runFiles;

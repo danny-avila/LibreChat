@@ -13,6 +13,7 @@ import type { RunFileSessionDeps } from './session';
 import type { RunFileToolContext } from './host';
 import type { ServerRequest } from '~/types';
 import { createRunFileHost, resolveRunFileCodeExecutionContext } from './host';
+import { getProjectCodeScope } from '~/files/code/priming';
 import * as sessionModule from './session';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -178,6 +179,7 @@ function harness(
   }));
   const updateCodeEnvRef = jest.fn(async () => undefined);
   const addEmbeddedEntity = jest.fn(async () => undefined);
+  const getCodeFileInfo = jest.fn(async () => ({ lastModified: new Date().toISOString() }));
   const emit = jest.fn(async () => undefined);
   const encodeMessages = jest.fn(async () => []);
   const spy = jest.spyOn(sessionModule, 'createRunFileSession');
@@ -205,6 +207,7 @@ function harness(
       updateCodeEnvRef,
       updateFile: jest.fn(async () => undefined),
       addEmbeddedEntity,
+      getCodeFileInfo,
       hasEntityEmbeddings: options.hasEntityEmbeddings,
       adoptLegacySearchEmbeddings: options.adoptLegacySearchEmbeddings,
     },
@@ -257,12 +260,150 @@ function harness(
     provisionToVectorDB,
     updateCodeEnvRef,
     addEmbeddedEntity,
+    getCodeFileInfo,
     codeResult,
   };
 }
 
 describe('run file execution host', () => {
   afterEach(() => jest.restoreAllMocks());
+
+  it('keeps authorized project inputs and their advertised paths in isolated child sessions', async () => {
+    const h = harness({ inputs: [], setup: [file('worker-setup', { filename: 'results.csv' })] });
+    h.req.config!.projects = configSchema.parse({
+      version: '1.3.9',
+      projects: { codeExecution: true },
+    }).projects;
+    h.req.chatProjectContext = {
+      projectId: 'project',
+      contextRevision: 0,
+      instructions: '',
+      resources: [],
+      file_ids: ['project-file', 'unadmitted-project'],
+    };
+    h.req.body = { conversationId: 'conversation' };
+    const ref = {
+      kind: 'user' as const,
+      id: 'user',
+      file_id: 'project-remote',
+      storage_session_id: 'project-store',
+      sandboxFilename: 'results.csv',
+    };
+    const canonical = file('project-file', {
+      filename: 'results.csv',
+      conversationId: 'other',
+      metadata: { codeEnvRefs: { 'managed-worker': ref } },
+    });
+    h.req.chatProjectFiles = [canonical, file('unadmitted-project')];
+    const source = h.contexts.get('worker')!;
+    const project = getProjectCodeScope(h.req, source.codeExecutionContext!.codeSessionKey)!;
+    project.sessionPlan!.destinations.set(canonical.file_id, 'results-project.csv');
+    project.sessionPlan!.mountedNames.set('worker-setup', 'results.csv');
+    project.sessionPlan!.mountedNames.set('historical', 'private.csv');
+    project.sessionPlan!.frozen = true;
+    source.tool_resources = {
+      execute_code: {
+        files: [
+          file('historical'),
+          {
+            ...canonical,
+            metadata: {
+              codeEnvRefs: {
+                'managed-worker': {
+                  ...ref,
+                  file_id: 'temporary',
+                  sandboxFilename: 'parent-alias.csv',
+                },
+              },
+            },
+          },
+        ],
+      },
+    };
+    source.provisionState = {
+      codeEnvFiles: [],
+      vectorDBFiles: [],
+      aliveFileIds: new Set([canonical.file_id]),
+      agentScopedFileIds: new Set(['worker-setup']),
+      codeEnvDestinations: new Map([
+        [canonical.file_id, 'results-project.csv'],
+        ['worker-setup', 'results.csv'],
+      ]),
+      project: { ...project, projectFileIds: new Set([canonical.file_id]) },
+    };
+    const executions = [identity('first'), identity('second')];
+    try {
+      await Promise.all(executions.map((execution) => h.prepare(execution)));
+      for (const execution of executions) {
+        const context = h.host.getContext('worker', execution)!;
+        expect(context.provisionState?.codeEnvFiles.map((file) => file.file_id).sort()).toEqual([
+          'project-file',
+          'worker-setup',
+        ]);
+        expect(context.provisionState?.project?.projectFileIds).toEqual(new Set(['project-file']));
+        const plan = context.provisionState?.project?.sessionPlan;
+        expect(plan?.destinations.get(canonical.file_id)).toBe('results-project.csv');
+        expect(plan?.mountedNames.has('historical')).toBe(false);
+        expect(plan).not.toBe(project.sessionPlan);
+        expect(h.req.projectCodeSessions?.get(context.codeSessionKey!)).toBe(plan);
+        const mounted = await h.host.provision(
+          [Constants.EXECUTE_CODE, EToolResources.file_search],
+          'worker',
+          h.signal,
+          execution,
+        );
+        expect(mounted?.map((file) => file.name).sort()).toEqual(
+          ['results-project.csv', 'results.csv'].sort(),
+        );
+      }
+      expect(
+        h.host.getContext('worker', executions[0])?.provisionState?.project?.sessionPlan,
+      ).not.toBe(h.host.getContext('worker', executions[1])?.provisionState?.project?.sessionPlan);
+      expect(
+        h.provisionToCodeEnv.mock.calls.filter(
+          ([input]) => input.file.file_id === canonical.file_id,
+        ),
+      ).toHaveLength(1);
+      expect(
+        h.provisionToCodeEnv.mock.calls
+          .filter(([input]) => input.file.file_id === canonical.file_id)
+          .every(([input]) => input.entity_id == null),
+      ).toBe(true);
+      expect(h.updateCodeEnvRef.mock.calls).toHaveLength(2);
+      expect(h.provisionToVectorDB.mock.calls.map(([input]) => input.file.file_id)).toEqual([
+        'worker-setup',
+        'worker-setup',
+      ]);
+      expect(h.req.chatProjectFiles[0].metadata?.codeEnvRefs?.['managed-worker']).toEqual(ref);
+      expect(source.provisionState.project?.sessionPlan).toBe(project.sessionPlan);
+    } finally {
+      await h.host.session.close();
+    }
+  });
+
+  it('counts project inputs in the shared child endpoint budget', async () => {
+    const h = harness({ inputs: [file('input', { bytes: 600_000 })], setup: [] });
+    h.req.config!.projects = configSchema.parse({
+      version: '1.3.9',
+      projects: { codeExecution: true },
+    }).projects;
+    h.req.config!.fileConfig = { endpoints: { openAI: { totalSizeLimit: 1 } } };
+    const source = h.contexts.get('worker')!;
+    source.provisionState = {
+      codeEnvFiles: [file('project-file', { bytes: 600_000 })],
+      vectorDBFiles: [],
+      aliveFileIds: new Set(),
+      agentScopedFileIds: new Set(),
+      project: { projectFileIds: new Set(['project-file']), conversationId: 'conversation' },
+    };
+    try {
+      await expect(h.prepare()).rejects.toThrow('not supported by the receiving agent');
+      expect(h.host.getContext('worker', identity())).toBeUndefined();
+      expect(h.provisionToCodeEnv).not.toHaveBeenCalled();
+    } finally {
+      await h.host.session.close();
+    }
+  });
 
   it.each([
     ['file_search', { file_search: { citations: ['document'] } }],

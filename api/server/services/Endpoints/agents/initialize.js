@@ -102,6 +102,7 @@ const {
   checkSessionsAlive,
 } = require('~/server/services/Files/provision');
 const { createProvisionFilesCallback } = require('~/server/services/Files/provisionCallback');
+const { getSessionFileInfo } = require('~/server/services/Files/Code/process');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
@@ -1996,6 +1997,7 @@ const initializeClientWithProvider = async ({
       updateFile: db.updateFile,
       updateCodeEnvRef: db.updateFileCodeEnvRef,
       addEmbeddedEntity: db.addFileEmbeddedEntity,
+      getCodeFileInfo: (ref, route, signal) => getSessionFileInfo(ref, req, route, signal),
       hasEntityEmbeddings,
       adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
     },

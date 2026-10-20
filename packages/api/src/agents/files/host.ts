@@ -16,7 +16,9 @@ import { createProvisionFilesCallback } from '~/files/provision/callback';
 import { assertModelBoundContent } from '~/middleware/modelBoundContent';
 import { addFileToResource, primeResources } from '~/agents/resources';
 import { filterFilesByEndpointRuntimeConfig } from '~/files/filter';
+import { isImportedProjectFile } from '~/files/code/destinations';
 import { resolveResendToolResources } from '~/agents/initialize';
+import { getProjectCodeScope } from '~/files/code/priming';
 import { createRunFileSession } from './session';
 
 export interface RunFileToolContext extends ProvisionToolContext {
@@ -112,6 +114,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
     | 'updateFile'
     | 'updateCodeEnvRef'
     | 'addEmbeddedEntity'
+    | 'getCodeFileInfo'
   > & {
     /** Lets setup files whose namespace is unrecorded be confirmed instead of embedded again. */
     hasEntityEmbeddings?: THasEntityEmbeddings;
@@ -127,6 +130,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
       revision: number;
       signature: string;
       files: Map<string, TFile>;
+      projectFiles: Map<string, TFile>;
       setupFiles: Map<string, TFile>;
       loadedSetupIds: Set<string>;
     }
@@ -206,7 +210,31 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
           assertModelBoundContent({ filters: req.config?.filters, files: admitted });
           return admitted;
         };
-        const signature = JSON.stringify(files.map((file) => file.file_id).sort());
+        const project = source.provisionState?.project;
+        const authorizedProjectFiles =
+          !isRoot &&
+          req.config?.projects?.codeExecution === true &&
+          source.codeEnvAvailable === true
+            ? new Map(
+                [
+                  ...(source.provisionState?.codeEnvFiles ?? []),
+                  ...(source.tool_resources?.execute_code?.files ?? []),
+                ]
+                  .filter((file) => project?.projectFileIds.has(file.file_id))
+                  .map((file) => [file.file_id, file]),
+              )
+            : new Map<string, TFile>();
+        // Initialization already applied project ownership and receiving-agent policies.
+        // Reuse its canonical snapshot rather than a parent's temporary sandbox alias.
+        for (const file of req.chatProjectFiles ?? []) {
+          if (authorizedProjectFiles.has(file.file_id)) {
+            authorizedProjectFiles.set(file.file_id, file);
+          }
+        }
+        const signature = JSON.stringify([
+          files.map((file) => file.file_id).sort(),
+          [...authorizedProjectFiles.keys()].sort(),
+        ]);
         const existingContext = executionContexts.get(key);
         if (isRoot) {
           // The root already passed normal conversation authorization and priming.
@@ -310,6 +338,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
             revision,
             signature,
             files: new Map(currentFiles.map((file) => [file.file_id, file])),
+            projectFiles: new Map(),
             setupFiles: new Map(),
             loadedSetupIds: new Set(),
           });
@@ -339,6 +368,17 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
         const currentFiles = files.map(
           (file) => previous?.files.get(file.file_id) ?? structuredClone(file),
         );
+        const projectFiles = [...authorizedProjectFiles.values()].map(
+          (file) => previous?.projectFiles.get(file.file_id) ?? structuredClone(file),
+        );
+        const projectIds = new Set(projectFiles.map((file) => file.file_id));
+        screen(
+          projectFiles,
+          currentFiles.reduce(
+            (total, file) => total + (projectIds.has(file.file_id) ? 0 : file.bytes),
+            0,
+          ),
+        );
         const setupFiles = previous?.setupFiles ?? new Map<string, TFile>();
         const loadedSetupIds = previous?.loadedSetupIds ?? new Set<string>();
         const admittedSetupIds = new Set<string>();
@@ -348,6 +388,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
           appConfig: req.config,
           agentId: actor.agentId,
           attachments: Promise.resolve(currentFiles),
+          projectCodeFiles: projectFiles,
           requestFileSet: new Set(currentFiles.map((file) => file.file_id)),
           tool_resources: source.agent.tool_resources,
           hasEntityEmbeddings: provisioning.hasEntityEmbeddings,
@@ -392,7 +433,10 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
           screenPersistentFiles: (candidates) => {
             try {
               const candidateIds = new Set(candidates.map((file) => file.file_id));
-              const consumedBytes = currentFiles.reduce(
+              const inputFiles = new Map(
+                [...currentFiles, ...projectFiles].map((file) => [file.file_id, file]),
+              );
+              const consumedBytes = [...inputFiles.values()].reduce(
                 (total, file) => total + (candidateIds.has(file.file_id) ? 0 : file.bytes),
                 0,
               );
@@ -411,6 +455,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
         signal.throwIfAborted();
         const admittedIds = new Set([
           ...currentFiles.map((file) => file.file_id),
+          ...projectIds,
           ...admittedSetupIds,
         ]);
         for (const resource of Object.values(primed.tool_resources ?? {})) {
@@ -429,7 +474,9 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
               }
             : undefined);
         if (provisionState) {
-          provisionState.agentScopedFileIds = admittedSetupIds;
+          provisionState.agentScopedFileIds = new Set(
+            [...admittedSetupIds].filter((id) => !projectIds.has(id)),
+          );
           const destinations = new Map<string, string>();
           for (const planned of [
             source.provisionState?.codeEnvDestinations,
@@ -440,6 +487,30 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
             }
           }
           provisionState.codeEnvDestinations = destinations;
+          if (projectFiles.length > 0) {
+            const scope = getProjectCodeScope(req, sessionKey);
+            if (scope?.sessionPlan) {
+              const plan = scope.sessionPlan;
+              if (!plan.frozen) {
+                for (const [id, name] of project?.sessionPlan?.destinations ?? []) {
+                  if (admittedIds.has(id)) plan.destinations.set(id, name);
+                }
+                for (const [id, name] of project?.sessionPlan?.mountedNames ?? []) {
+                  if (admittedIds.has(id)) plan.mountedNames.set(id, name);
+                }
+                for (const [id, name] of destinations) {
+                  const file = authorizedProjectFiles.get(id);
+                  if (file && isImportedProjectFile(file, scope)) {
+                    plan.destinations.set(id, name);
+                  } else {
+                    plan.mountedNames.set(id, name);
+                  }
+                }
+                plan.frozen = true;
+              }
+              provisionState.project = { ...scope, projectFileIds: projectIds };
+            }
+          }
         }
         const context: TContext = existingContext ?? {
           ...source,
@@ -448,10 +519,12 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
         context.tool_resources = primed.tool_resources;
         context.provisionState = provisionState;
         context.codeExecutionContext = codeExecutionContext;
+        context.codeSessionKey = codeExecutionContext?.codeSessionKey;
         if (context.pendingProvisionedCodeFiles) {
           const currentCodeIds = new Set(
             [
               ...currentFiles,
+              ...projectFiles,
               ...[...admittedSetupIds].flatMap((id) => setupFiles.get(id) ?? []),
             ].flatMap((file) => getCodeEnvRefs(file.metadata).map(([, ref]) => ref.file_id)),
           );
@@ -464,6 +537,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
           revision,
           signature,
           files: new Map(currentFiles.map((file) => [file.file_id, file])),
+          projectFiles: new Map(projectFiles.map((file) => [file.file_id, file])),
           setupFiles,
           loadedSetupIds,
         });

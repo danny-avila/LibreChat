@@ -52,6 +52,7 @@ function buildHarness({
   vectorImpl,
   resolveExecutionContext,
   getCodeFileInfo,
+  request = req,
 }: {
   contexts: Array<[string, ProvisionToolContext]>;
   codeImpl?: jest.Mock;
@@ -60,6 +61,7 @@ function buildHarness({
     typeof createProvisionFilesCallback
   >[0]['resolveExecutionContext'];
   getCodeFileInfo?: Parameters<typeof createProvisionFilesCallback>[0]['getCodeFileInfo'];
+  request?: ServerRequest;
 }) {
   const provisionToCodeEnv =
     codeImpl ??
@@ -102,7 +104,7 @@ function buildHarness({
     addEmbeddedEntity,
     agentToolContexts,
     provisionFiles: createProvisionFilesCallback({
-      req,
+      req: request,
       agentToolContexts,
       provisionToCodeEnv: provisionToCodeEnv as never,
       provisionToVectorDB: provisionToVectorDB as never,
@@ -116,6 +118,61 @@ function buildHarness({
 }
 
 describe('createProvisionFilesCallback', () => {
+  it('bounds live project probes across agents by the configured Code API concurrency', async () => {
+    const files = Array.from({ length: 6 }, (_, index) =>
+      makeFile({
+        file_id: `project-${index}`,
+        filename: `data-${index}.csv`,
+        conversationId: 'other',
+        metadata: {
+          codeEnvRefs: {
+            default: {
+              kind: 'user',
+              id: 'user-1',
+              storage_session_id: 'store',
+              file_id: `remote-${index}`,
+              sandboxFilename: `data-${index}.csv`,
+            },
+          },
+        },
+      }),
+    );
+    const request = {
+      ...req,
+      config: { endpoints: { agents: { codeApiUploadConcurrency: 2 } } },
+    } as ServerRequest;
+    const contexts: Array<[string, ProvisionToolContext]> = ['first', 'second'].map((id, index) => [
+      id,
+      {
+        provisionState: {
+          ...state(files.slice(index * 3, index * 3 + 3), []),
+          project: {
+            projectFileIds: new Set(files.map((file) => file.file_id)),
+            conversationId: 'current',
+          },
+        },
+      },
+    ]);
+    let active = 0;
+    let peak = 0;
+    const getCodeFileInfo = jest.fn(async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      active--;
+      return { lastModified: new Date().toISOString() };
+    });
+    const h = buildHarness({ contexts, getCodeFileInfo, request });
+    const results = await Promise.all(
+      contexts.map(([id]) => h.provisionFiles([Constants.EXECUTE_CODE], id)),
+    );
+    expect(peak).toBe(2);
+    expect(getCodeFileInfo).toHaveBeenCalledTimes(files.length);
+    expect(results.flat()).toHaveLength(files.length);
+    expect(h.provisionToCodeEnv).not.toHaveBeenCalled();
+    expect(h.updateCodeEnvRef).not.toHaveBeenCalled();
+  });
+
   it.each([true, false])(
     'reuses a planned project mount only while its stored object is live (%s)',
     async (live) => {
@@ -162,6 +219,43 @@ describe('createProvisionFilesCallback', () => {
       expect(harness.updateCodeEnvRef).toHaveBeenCalledTimes(live ? 0 : 1);
       expect(mounted[0]).toMatchObject({ name: 'data.csv', id: live ? 'existing' : 'replacement' });
       expect(current.provisionState!.codeEnvFiles).toEqual([]);
+    },
+  );
+
+  it.each(['data.csv', 'another.csv'])(
+    'checks the storage receipt before reusing a legacy project reference named %s',
+    async (originalFilename) => {
+      const ref = {
+        kind: 'user' as const,
+        id: 'user-1',
+        storage_session_id: 'store',
+        file_id: 'existing',
+      };
+      const imported = makeFile({
+        file_id: 'legacy-project-input',
+        conversationId: 'other',
+        metadata: { codeEnvRef: ref },
+      });
+      const current: CodeFileAgent = {
+        id: 'parent',
+        fileConsumers: { executeCode: true, fileSearch: false },
+        provisionState: {
+          ...state([imported], []),
+          project: { projectFileIds: new Set([imported.file_id]), conversationId: 'current' },
+        },
+      };
+      prepareQueuedCodeFileContext(current, [current], 'user-1');
+      const getCodeFileInfo = jest.fn(async () => ({
+        lastModified: new Date().toISOString(),
+        originalFilename,
+      }));
+      const h = buildHarness({ contexts: [[current.id, current]], getCodeFileInfo });
+      const mounted = await h.provisionFiles([Constants.EXECUTE_CODE], current.id);
+      const reused = originalFilename === 'data.csv';
+      expect(getCodeFileInfo).toHaveBeenCalledWith(ref, {}, undefined);
+      expect(h.provisionToCodeEnv).toHaveBeenCalledTimes(reused ? 0 : 1);
+      expect(h.updateCodeEnvRef).toHaveBeenCalledTimes(reused ? 0 : 1);
+      expect(mounted[0]).toMatchObject({ name: 'data.csv', id: reused ? 'existing' : 'remote-1' });
     },
   );
 

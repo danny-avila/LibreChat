@@ -7,6 +7,11 @@ import type { CodeExecutionRoute, CodeEnvRefUpdate, ProvisionService } from './s
 import type { ProvisionToolContext } from '../code/queued';
 import type { CodeFileInfo } from '../code/priming';
 import type { ServerRequest } from '~/types';
+import {
+  getCodeApiUploadOptions,
+  withCodeApiUploadSlot,
+  createCodeApiUploadRegistry,
+} from '~/utils/code';
 import { createCodeApiRateLimitBudget, isCodeApiRateLimitError } from '~/utils';
 import { getTurnCodeEnvRef, saveCodeFileReference } from '../code/references';
 import { isImportedProjectFile } from '../code/destinations';
@@ -125,6 +130,7 @@ export function createProvisionFilesCallback({
    * work includes the database write, because the tools loaded right after this callback
    * re-read the stored record and skip files whose reference is not there yet. */
   const inFlight = new Map<string, Promise<unknown>>();
+  const probeRegistry = createCodeApiUploadRegistry();
 
   function shareProvisioning<T>(key: string | undefined, start: () => Promise<T>): Promise<T> {
     if (key == null) {
@@ -297,16 +303,23 @@ export function createProvisionFilesCallback({
               }
               const canonicalRef = getCodeEnvRefForProfile(file.metadata, codeRouteKey);
               if (
-                canonicalRef?.sandboxFilename === sandboxFilename &&
+                canonicalRef != null &&
+                (canonicalRef.sandboxFilename == null ||
+                  canonicalRef.sandboxFilename === sandboxFilename) &&
                 isImportedProjectFile(file, provisionState.project)
               ) {
-                const info = await getCodeFileInfo?.(
-                  canonicalRef,
-                  ctx.codeExecutionContext ?? {},
+                const { scope, concurrency } = getCodeApiUploadOptions(req, codeRouteKey);
+                const info = await withCodeApiUploadSlot({
+                  registry: req.app?.locals?.codeApiUploadRegistry ?? probeRegistry,
+                  scope,
+                  concurrency,
                   signal,
-                );
+                  task: async () =>
+                    getCodeFileInfo?.(canonicalRef, ctx.codeExecutionContext ?? {}, signal),
+                });
                 signal?.throwIfAborted();
-                if (checkCodeFileActive(info?.lastModified)) {
+                const storedName = canonicalRef.sandboxFilename ?? info?.originalFilename;
+                if (storedName === sandboxFilename && checkCodeFileActive(info?.lastModified)) {
                   return {
                     refs: mergeCodeEnvRef(file.metadata, canonicalRef),
                     sandboxFilename,
