@@ -1,13 +1,13 @@
 import { StepEvents } from 'librechat-data-provider';
 import type { Agents, TMessage, TPayload, ChatEvent } from 'librechat-data-provider';
 import type {
-  ChatStream,
-  ChatStatus,
-  ChatTransport,
-  ChatConnection,
-  ChatAbortResult,
-} from '../types';
-import type { ChatInit, ChatState, ChatStopResult, ChatFinishResult } from '../chat';
+  ChatState,
+  ChatStopResult,
+  ChatFinishResult,
+  ChatPrepareRequest,
+  ChatPreparedRequest,
+} from '../chat';
+import type { ChatStream, ChatStatus, ChatTransport, ChatConnection } from '../types';
 import { Chat } from '../chat';
 
 /**
@@ -99,6 +99,7 @@ const flush = async () => {
 
 type Harness = {
   chat: Chat;
+  prepare: jest.Mock<ChatPreparedRequest | Promise<ChatPreparedRequest>, [ChatPrepareRequest]>;
   transport: jest.Mocked<Required<ChatTransport>>;
   finishes: ChatFinishResult[];
   /** The stream the chat is attached to, which a confirmed stop ends with an abort frame. */
@@ -107,7 +108,17 @@ type Harness = {
   open?: () => void;
   /** Fails that pending start or reattachment as a request that never got a response. */
   fail?: () => void;
+  /** Answers that pending start as one the server already finished. */
+  settle?: () => void;
+  /** The transport answers a start after it was cancelled, as a request already sent can. */
+  answersLate?: boolean;
   outcome?: string;
+  /** Whether the turn's own send has settled. */
+  turn?: 'pending' | 'settled';
+  /** What a second stop answers after the event, which shows what the chat still holds. */
+  after?: ChatStopResult['status'];
+  /** Answers the stop the event left waiting on the server. */
+  answerStop?: () => void;
 };
 
 const createHarness = (init: Partial<ChatInit> & { messages?: TMessage[] } = {}): Harness => {
@@ -126,6 +137,11 @@ const createHarness = (init: Partial<ChatInit> & { messages?: TMessage[] } = {})
   };
   const finishes: ChatFinishResult[] = [];
   const harness = { finishes } as Harness;
+  harness.prepare = jest.fn((_request: ChatPrepareRequest) => ({
+    payload,
+    messages: [userMessage, placeholder],
+    responseMessageId: 'response-1',
+  }));
   harness.transport = {
     sendMessages: jest.fn(),
     reconnectToStream: jest.fn(async () => null),
@@ -143,11 +159,7 @@ const createHarness = (init: Partial<ChatInit> & { messages?: TMessage[] } = {})
     id: 'convo-1',
     state,
     transport: harness.transport,
-    prepareRequest: () => ({
-      payload,
-      messages: [userMessage, placeholder],
-      responseMessageId: 'response-1',
-    }),
+    prepareRequest: (...args) => harness.prepare(...args),
     resumeSelection: () => ({ endpoint: 'agents' }),
     onFinish: (result) => finishes.push(result),
     ...overrides,
@@ -161,14 +173,28 @@ const attach = (h: Harness, stream: TestStream) => {
 };
 
 const send = (h: Harness) => {
-  h.chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] }).then(
-    () => undefined,
-    () => undefined,
-  );
+  h.turn = 'pending';
+  const settle = () => {
+    h.turn = 'settled';
+  };
+  h.chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] }).then(settle, settle);
 };
 
 /** Drives a fresh chat into each generation state. */
 const states: Record<string, (h: Harness) => Promise<void>> = {
+  /** The host is still preparing the turn; nothing reached the transport. */
+  preparing: async (h) => {
+    h.prepare.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          h.open = () =>
+            resolve({ payload, messages: [userMessage, placeholder], responseMessageId: 'r-1' });
+        }),
+    );
+    attach(h, createStream({ streamId: 'convo-1', generationCreatedAt: 100 }));
+    send(h);
+    await flush();
+  },
   /** The start request is in flight; no stream yet. */
   starting: async (h) => {
     h.transport.sendMessages.mockImplementation(
@@ -179,7 +205,13 @@ const states: Record<string, (h: Harness) => Promise<void>> = {
             resolve({ status: 'stream', stream: h.stream });
           };
           h.fail = () => reject(networkError());
-          request.abortSignal?.addEventListener('abort', () => reject(new Error('aborted')));
+          h.settle = () =>
+            resolve({ status: 'settled', conversationId: 'convo-1', generationProtocolVersion: 2 });
+          request.abortSignal?.addEventListener('abort', () => {
+            if (!h.answersLate) {
+              reject(new Error('aborted'));
+            }
+          });
         }),
     );
     send(h);
@@ -264,6 +296,14 @@ const states: Record<string, (h: Harness) => Promise<void>> = {
     await flush();
     h.stream = undefined;
   },
+};
+
+const recordAfter = async (h: Harness) => {
+  try {
+    h.after = (await h.chat.stop()).status;
+  } catch {
+    h.after = undefined;
+  }
 };
 
 const record = (h: Harness, settle: Promise<unknown>) =>
@@ -368,6 +408,52 @@ const events: Record<string, (h: Harness) => Promise<void>> = {
     await record(h, h.chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 100 }));
     await flush();
   },
+  dispose: async (h) => {
+    h.chat.dispose();
+    await flush();
+  },
+  /** A stop whose server answer, or the start it raced, arrives after it was asked. */
+  lateAnswer: async (h) => {
+    h.answersLate = true;
+    h.transport.abort.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          h.answerStop = () => {
+            h.stream?.push(finalEvent({ terminalStatus: 'aborted' }));
+            resolve({ success: true });
+          };
+        }),
+    );
+    const stopping = record(h, h.chat.stop());
+    await flush();
+    h.open?.();
+    await flush();
+    h.answerStop?.();
+    await stopping;
+    await flush();
+    h.answerStop?.();
+    await flush();
+    await recordAfter(h);
+  },
+  /** A late answer to a cancelled start that says the server already finished it. */
+  lateSettled: async (h) => {
+    h.answersLate = true;
+    const stopping = record(h, h.chat.stop());
+    await flush();
+    h.settle?.();
+    await stopping;
+    await flush();
+    await recordAfter(h);
+  },
+  /** The chat is disposed while a stop waits on a server that never answers. */
+  disposeDuringStop: async (h) => {
+    h.transport.abort.mockImplementation(() => new Promise(() => undefined));
+    const stopping = record(h, h.chat.stop());
+    await flush();
+    h.chat.dispose();
+    await stopping;
+    await flush();
+  },
   restore: async (h) => {
     try {
       h.chat.restorePendingAction({ ...askAction, actionId: 'action-9' }, 900);
@@ -393,6 +479,10 @@ type Expected = {
   action?: string | null;
   /** The event's own result: `ok`, a rejection message fragment, or `sent:` for a new turn. */
   outcome?: string;
+  turn?: 'pending' | 'settled';
+  after?: ChatStopResult['status'];
+  /** How many starts reached the transport. */
+  starts?: number;
 };
 
 const NONE = null;
@@ -689,6 +779,223 @@ const table: Array<[keyof typeof states, keyof typeof events, Expected]> = [
     },
   ],
 ];
+
+const live = { streamId: 'convo-1', generationCreatedAt: 100 };
+const restoredTarget = { streamId: 'convo-1', generationCreatedAt: 500 };
+
+/**
+ * Dispose, stop and a late server answer, across every phase a turn can be in: before its start is
+ * sent, while the start is pending, live, paused, and restored from a status read. Every awaiter
+ * settles, and nothing the chat no longer holds survives as a stop target.
+ */
+const teardown: Array<[keyof typeof states, keyof typeof events, Expected]> = [
+  [
+    'preparing',
+    'dispose',
+    { status: 'ready', connection: 'idle', finishes: 0, turn: 'settled', abort: NONE, starts: 0 },
+  ],
+  [
+    'preparing',
+    'stop',
+    {
+      status: 'ready',
+      finishes: 1,
+      last: aborted,
+      turn: 'settled',
+      abort: NONE,
+      outcome: 'ok',
+      starts: 0,
+    },
+  ],
+  [
+    'preparing',
+    'lateAnswer',
+    {
+      status: 'ready',
+      finishes: 1,
+      last: aborted,
+      turn: 'settled',
+      abort: NONE,
+      outcome: 'ok',
+      after: 'idle',
+      starts: 0,
+    },
+  ],
+  [
+    'preparing',
+    'disposeDuringStop',
+    { status: 'ready', finishes: 1, turn: 'settled', abort: NONE, outcome: 'ok', starts: 0 },
+  ],
+
+  [
+    'starting',
+    'dispose',
+    { status: 'submitted', connection: 'idle', finishes: 0, turn: 'settled', abort: NONE },
+  ],
+  [
+    'starting',
+    'lateAnswer',
+    {
+      status: 'error',
+      finishes: 1,
+      last: dropped,
+      turn: 'settled',
+      abort: live,
+      outcome: 'unaddressable',
+      after: 'idle',
+    },
+  ],
+  [
+    'starting',
+    'lateSettled',
+    {
+      status: 'error',
+      finishes: 1,
+      last: dropped,
+      turn: 'settled',
+      abort: NONE,
+      outcome: 'unaddressable',
+      after: 'idle',
+    },
+  ],
+  [
+    'starting',
+    'disposeDuringStop',
+    { status: 'error', finishes: 1, turn: 'settled', abort: NONE, outcome: 'unaddressable' },
+  ],
+
+  [
+    'attached',
+    'dispose',
+    { status: 'streaming', connection: 'idle', finishes: 0, turn: 'settled', abort: NONE },
+  ],
+  [
+    'attached',
+    'lateAnswer',
+    {
+      status: 'ready',
+      connection: 'idle',
+      finishes: 1,
+      last: aborted,
+      turn: 'settled',
+      abort: live,
+      outcome: 'ok',
+      after: 'idle',
+    },
+  ],
+  [
+    'attached',
+    'disposeDuringStop',
+    {
+      status: 'streaming',
+      connection: 'idle',
+      finishes: 0,
+      turn: 'settled',
+      abort: live,
+      outcome: 'disposed',
+    },
+  ],
+
+  [
+    'paused',
+    'dispose',
+    { status: 'streaming', connection: 'idle', finishes: 0, turn: 'settled', abort: NONE },
+  ],
+  [
+    'paused',
+    'lateAnswer',
+    {
+      status: 'ready',
+      connection: 'idle',
+      finishes: 1,
+      last: aborted,
+      action: NONE,
+      turn: 'settled',
+      abort: live,
+      outcome: 'ok',
+      after: 'idle',
+    },
+  ],
+  [
+    'paused',
+    'disposeDuringStop',
+    {
+      status: 'streaming',
+      connection: 'idle',
+      finishes: 0,
+      turn: 'settled',
+      abort: live,
+      outcome: 'disposed',
+    },
+  ],
+
+  [
+    'restored',
+    'dispose',
+    { status: 'ready', connection: 'idle', finishes: 0, action: 'action-1', abort: NONE },
+  ],
+  [
+    'restored',
+    'lateAnswer',
+    {
+      status: 'ready',
+      finishes: 0,
+      action: NONE,
+      abort: restoredTarget,
+      outcome: 'ok',
+      after: 'idle',
+    },
+  ],
+  [
+    'restored',
+    'disposeDuringStop',
+    {
+      status: 'ready',
+      connection: 'idle',
+      finishes: 0,
+      abort: restoredTarget,
+      outcome: 'disposed',
+    },
+  ],
+];
+
+describe('Chat teardown', () => {
+  it.each(teardown)('%s + %s', async (state, event, expected) => {
+    const h = createHarness();
+    await states[state](h);
+    await events[event](h);
+
+    expect(h.chat.status).toBe(expected.status);
+    if (expected.connection) {
+      expect(h.chat.connection).toBe(expected.connection);
+    }
+    expect(h.finishes).toHaveLength(expected.finishes);
+    if (expected.last) {
+      expect(h.finishes[h.finishes.length - 1]).toMatchObject(expected.last);
+    }
+    if (expected.abort === null) {
+      expect(h.transport.abort).not.toHaveBeenCalled();
+    } else if (expected.abort) {
+      expect(h.transport.abort).toHaveBeenCalledTimes(1);
+      expect(h.transport.abort).toHaveBeenCalledWith(expect.objectContaining(expected.abort));
+    }
+    if (expected.action !== undefined) {
+      expect(h.chat.pendingAction?.actionId ?? null).toBe(expected.action);
+    }
+    if (expected.outcome !== undefined) {
+      expect(h.outcome).toContain(expected.outcome);
+    }
+    if (expected.turn) {
+      expect(h.turn).toBe(expected.turn);
+    }
+    if (expected.after) {
+      expect(h.after).toBe(expected.after);
+    }
+    if (expected.starts !== undefined) {
+      expect(h.transport.sendMessages).toHaveBeenCalledTimes(expected.starts);
+    }
+  });
+});
 
 describe('Chat lifecycle', () => {
   it.each(table)('%s + %s', async (state, event, expected) => {

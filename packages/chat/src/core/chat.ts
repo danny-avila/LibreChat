@@ -882,6 +882,13 @@ export class Chat {
       sent.stream.close();
     }
     /** A `replaced` result names a newer generation this request does not own, so it is left alone. */
+    if (sent.status === 'settled' && sent.generationProtocolVersion === 2) {
+      /** The server finished the start on its own, so a stop has nothing left to reach. */
+      if (this.unaddressed === active) {
+        this.unaddressed = undefined;
+      }
+      return;
+    }
     const { endpoint } = active.generation;
     if (this.disposed || !endpoint || sent.status !== 'stream') {
       return;
@@ -1071,7 +1078,13 @@ export class Chat {
     }
     this.action = undefined;
     this.decisions.clear();
-    if (this.publishUnframedStop(result, generation)) {
+    /** A pause a status read restored names no response this chat prepared or saw framed. */
+    const unframed = {
+      stoppedConversationId: generation.stoppedConversationId,
+      responseId: generation.responseId,
+      responseUnknown: generation.responseId === undefined,
+    };
+    if (this.publishUnframedStop(result, unframed)) {
       return getStopResult(result, generation.stoppedConversationId);
     }
     if (this.status === 'error') {

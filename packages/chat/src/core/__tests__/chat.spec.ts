@@ -4334,6 +4334,21 @@ describe('Chat', () => {
       );
     });
 
+    it('reports the response of a restored pause a stop found already gone as unknown', async () => {
+      const { chat, state, transport, onFinish } = setup({
+        resumeSelection: () => ({ endpoint: 'assistants' }),
+      });
+      state.replaceMessages([userMessage, { ...placeholder, messageId: 'other-branch' }]);
+      transport.abort.mockResolvedValue(null);
+      chat.restorePendingAction({ ...pausedAction, expiresAt: Date.now() + 60_000 }, 500);
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isSettled: true, isResponseUnknown: true, message: undefined }),
+      );
+    });
+
     it('ignores a late status read for a late start a stop already ended', async () => {
       let deliver: ((result: { status: 'stream'; stream: ChatStream }) => void) | undefined;
       const late = createStream({ streamId: 'convo-1', generationCreatedAt: 300 });
