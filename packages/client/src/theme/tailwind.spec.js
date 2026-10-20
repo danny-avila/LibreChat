@@ -102,13 +102,17 @@ describe('LibreChat Tailwind preset', () => {
   });
 
   it('mirrors the switch thumb by the element direction, not any RTL ancestor', async () => {
-    const candidate = '[&:dir(rtl)]:data-[state=checked]:-translate-x-theme-switch-travel';
+    const candidate = 'dir-rtl:data-[state=checked]:-translate-x-theme-switch-travel';
     const css = await generate([candidate]);
+    const [modern, fallback] = css.split('@supports not selector(:dir(rtl))');
 
     /** Tailwind's `rtl:` also matches `[dir="rtl"] *`, which reaches into an LTR island. */
-    expect(css).toContain(':dir(rtl)');
-    expect(css).toContain('--theme-switch-width');
-    expect(css).not.toContain('[dir="rtl"] *');
+    expect(modern).toContain(':dir(rtl)');
+    expect(modern).toContain('--theme-switch-width');
+    expect(modern).not.toContain("[dir='rtl']");
+    /** Only a browser without `:dir()` falls back to the attribute. */
+    expect(fallback).toContain(":is([dir='rtl'], [dir='rtl'] *)");
+    expect(fallback).toContain('--theme-switch-width');
   });
 
   it('generates every component animation and its keyframes together', async () => {

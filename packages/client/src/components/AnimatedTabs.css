@@ -64,3 +64,15 @@
 .animated-panels:dir(rtl) [data-open] ~ .animated-tab-panel {
   translate: -100%;
 }
+
+/* Chrome and Edge before 120 drop the `:dir()` rules; mirror by the `dir` attribute there. */
+@supports not selector(:dir(rtl)) {
+  .animated-panels:is([dir='rtl'], [dir='rtl'] *):has(> [data-was-open]) > .animated-tab-panel {
+    translate: 100%;
+  }
+
+  .animated-panels:is([dir='rtl'], [dir='rtl'] *) [data-was-open] ~ .animated-tab-panel,
+  .animated-panels:is([dir='rtl'], [dir='rtl'] *) [data-open] ~ .animated-tab-panel {
+    translate: -100%;
+  }
+}

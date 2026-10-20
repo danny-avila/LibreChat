@@ -66,3 +66,27 @@
     transform: none;
   }
 }
+
+/* Chrome and Edge before 120 drop the `:dir()` rules; mirror by the `dir` attribute there. */
+@supports not selector(:dir(rtl)) {
+  .animate-popover-left:is([dir='rtl'], [dir='rtl'] *) {
+    transform-origin: right;
+    transform: scale(0.95) translateX(0.5rem);
+  }
+
+  .animate-popover-left:is([dir='rtl'], [dir='rtl'] *)[data-enter] {
+    transform: scale(1) translateX(0);
+  }
+
+  .animate-popover-bottom:is([dir='rtl'], [dir='rtl'] *) {
+    transform-origin: bottom right;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @supports not selector(:dir(rtl)) {
+    .animate-popover-bottom:is([dir='rtl'], [dir='rtl'] *) {
+      transform: none;
+    }
+  }
+}
