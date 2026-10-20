@@ -1,5 +1,5 @@
 import { Constants } from '@librechat/agents';
-import { EToolResources, FileContext } from 'librechat-data-provider';
+import { FileSources, FileContext, EToolResources } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { ProvisionState } from '~/agents/resources';
 import type { ProvisionToolContext } from './callback';
@@ -1043,7 +1043,11 @@ describe('createProvisionFilesCallback', () => {
   });
 
   it('repairs a retained Project file before search and preserves a failed attempt for retry', async () => {
-    const file = makeFile({ embedded: false, source: 's3', metadata: { searchDestination: true } });
+    const file = makeFile({
+      embedded: false,
+      source: FileSources.s3,
+      metadata: { searchDestination: true },
+    });
     const vectorImpl = jest
       .fn()
       .mockRejectedValueOnce(new Error('temporary vector outage'))
