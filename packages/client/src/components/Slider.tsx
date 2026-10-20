@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useDirection } from '@radix-ui/react-direction';
 import * as SliderPrimitive from '@radix-ui/react-slider';
-import { cn, disabledFillClasses } from '~/utils';
+import { cn, isRtl, disabledFillClasses } from '~/utils';
 
 type SliderProps = React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root> & {
   className?: string;
@@ -42,33 +42,37 @@ const Slider: React.ForwardRefExoticComponent<SliderProps & React.RefAttributes<
         },
         [ref],
       );
-      /** Radix reads only the app-wide provider. The root stamps its own `dir`, so the nearest
-       *  `dir` attribute above it decides when there is one, and an LTR island inside an RTL app
-       *  keeps an LTR slider; without one the provider's direction stands. Any `dir` change
-       *  re-resolves it, since an island can flip while the provider does not. */
+      /** Radix reads only the app-wide provider. The root stamps its own `dir`, so the direction
+       *  the browser resolved above it decides (a `dir` attribute, `dir="auto"` or a CSS override),
+       *  and an LTR island inside an RTL app keeps an LTR slider; with no `dir` anywhere above it
+       *  the provider's direction stands. Any `dir` change re-resolves it, and so does a content
+       *  change under a `dir="auto"` boundary, which flips direction without an attribute. */
       React.useLayoutEffect(() => {
+        const autoContent = new MutationObserver(() => resolve());
         const resolve = () => {
-          const ancestor = rootRef.current?.parentElement?.closest('[dir]');
-          if (!ancestor) {
-            setDirection(appDirection);
+          autoContent.disconnect();
+          const parent = rootRef.current?.parentElement;
+          const boundary = parent?.closest('[dir]');
+          if (boundary?.getAttribute('dir') === 'auto') {
+            autoContent.observe(boundary, { childList: true, characterData: true, subtree: true });
+          }
+          if (isRtl(parent)) {
+            setDirection('rtl');
             return;
           }
-          const declared = ancestor.getAttribute('dir');
-          if (declared === 'rtl' || declared === 'ltr') {
-            setDirection(declared);
-            return;
-          }
-          /** `dir="auto"` resolves from content, which only the computed style reports. */
-          setDirection(window.getComputedStyle(ancestor).direction === 'rtl' ? 'rtl' : 'ltr');
+          setDirection(boundary ? 'ltr' : appDirection);
         };
         resolve();
-        const observer = new MutationObserver(resolve);
-        observer.observe(document.documentElement, {
+        const dirChanges = new MutationObserver(resolve);
+        dirChanges.observe(document.documentElement, {
           attributes: true,
           attributeFilter: ['dir'],
           subtree: true,
         });
-        return () => observer.disconnect();
+        return () => {
+          dirChanges.disconnect();
+          autoContent.disconnect();
+        };
       }, [appDirection]);
       return (
         <SliderPrimitive.Root
