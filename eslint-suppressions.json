@@ -924,12 +924,12 @@
   },
   "client/src/components/Prompts/fields/Command.tsx": {
     "shadcn/no-restyle": {
-      "count": 2
+      "count": 1
     }
   },
   "client/src/components/Prompts/fields/Description.tsx": {
     "shadcn/no-restyle": {
-      "count": 2
+      "count": 1
     }
   },
   "client/src/components/Prompts/fields/PromptName.tsx": {

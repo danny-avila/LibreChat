@@ -55,7 +55,8 @@ const Command = ({
       </label>
       <div className="text-text-secondary relative flex h-10 items-center gap-1 ps-4 pe-2 text-sm">
         <SquareSlash className="icon-sm shrink-0" aria-hidden="true" />
-        <div className="relative min-w-0 flex-1">
+        {/* The wrapper reserves the counter's side so it follows the inline end; <Input> owns its own padding. */}
+        <div className="relative min-w-0 flex-1 pe-11">
           <Input
             type="text"
             id={commandId}
@@ -64,7 +65,7 @@ const Command = ({
             placeholder=" "
             value={command}
             onChange={handleInputChange}
-            className="peer w-full border-none pr-14"
+            className="peer w-full border-none"
             aria-label={localize('com_ui_command_placeholder')}
           />
           <label
