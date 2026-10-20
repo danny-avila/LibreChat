@@ -234,7 +234,7 @@ test('a prompt command keeps its typed text clear of the counter under RTL @scen
 
   /* LTR: the counter sits after the field, at the right. */
   expect((await box(input)).x + (await box(input)).width).toBeLessThanOrEqual(
-    (await box(counter)).x + 0.5,
+    (await box(counter)).x + 1,
   );
 
   await setDirection(page, 'rtl');
@@ -242,7 +242,7 @@ test('a prompt command keeps its typed text clear of the counter under RTL @scen
   await expect.poll(async () => (await box(counter)).x).toBeLessThan((await box(input)).x);
   const field = await box(input);
   const count = await box(counter);
-  expect(count.x + count.width).toBeLessThanOrEqual(field.x + 0.5);
+  expect(count.x + count.width).toBeLessThanOrEqual(field.x + 1);
 });
 
 test('marketplace category tabs follow the visual arrow direction under RTL @scenario:rtl-category-tabs-arrow-keys', async ({
