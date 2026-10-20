@@ -38,6 +38,7 @@ import type {
   SubagentActivityTerminalStatus,
 } from './subagentActivity';
 import type { SubagentTaskControlTransport } from './subagentTaskRouting';
+import type { RequestScopedMCPConnectionStore } from '~/mcp/types';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { HostSubagentTaskConfig } from './subagentDelivery';
 import type { ActivitySnapshot, ActivityTree } from './digest';
@@ -59,6 +60,7 @@ import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createConcurrencyLimiter } from '~/utils/promise';
 import { SubagentContentJournal } from './subagentContent';
+import { retainMCPRequestContext } from '~/mcp/request';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { InMemoryEventTransport } from '~/stream';
 import { aggregateEmittedUsage } from './usage';
@@ -159,6 +161,7 @@ interface PreparedThread {
 }
 
 interface HostSubagentTaskStartRequest extends SubagentTaskStartRequest {
+  requestScopedConnections?: RequestScopedMCPConnectionStore;
   scheduleMCPIdentity?: ScheduledMCPIdentity | null;
   completionDelivery?: typeof SUBAGENT_COMPLETION_DELIVERY;
 }
@@ -1516,11 +1519,19 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     }
 
     let started: SubagentTaskStartResult;
+    let executionStarted = false;
+    let releaseContext: (() => void) | undefined;
     try {
+      const context = (request as HostSubagentTaskStartRequest).requestScopedConnections;
+      if (context) releaseContext = retainMCPRequestContext(context);
       started = super.start({
         ...request,
         threadId,
         run: (runtime: SubagentTaskRuntime) => {
+          executionStarted = true;
+          if (releaseContext) {
+            runtime.signal.addEventListener('abort', releaseContext, { once: true });
+          }
           const execution = this.runWithOwnerContext(scope, async () => {
             lease.taskId = runtime.taskId;
             lease.running = true;
@@ -1727,10 +1738,15 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             () => undefined,
           );
           lease.execution = settlement;
-          return execution;
+          if (!releaseContext) return execution;
+          return execution.finally(() => {
+            if (releaseContext) runtime.signal.removeEventListener('abort', releaseContext);
+            releaseContext?.();
+          });
         },
       });
     } catch (error) {
+      releaseContext?.();
       if (ownsLease && this.activeThreads.get(lockKey) === lease) {
         this.activeThreads.delete(lockKey);
       }
@@ -1739,8 +1755,17 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
 
     if (started.accepted && started.isNew) {
       lease.taskId = started.task.taskId;
-    } else if (ownsLease && this.activeThreads.get(lockKey) === lease) {
-      this.activeThreads.delete(lockKey);
+      if (releaseContext) {
+        // The SDK skips run() if cancellation wins before its launch microtask.
+        queueMicrotask(() => {
+          if (!executionStarted) releaseContext?.();
+        });
+      }
+    } else {
+      releaseContext?.();
+      if (ownsLease && this.activeThreads.get(lockKey) === lease) {
+        this.activeThreads.delete(lockKey);
+      }
     }
     return started;
   }
@@ -3809,9 +3834,12 @@ const completionWakeupStores = new WeakMap<SubagentThreadTaskStore, CompletionWa
 function completionWakeupStore(
   store: SubagentThreadTaskStore,
   identity?: ScheduledMCPIdentity,
+  requestScopedConnections?: RequestScopedMCPConnectionStore,
+  completionWakeups = true,
 ): CompletionWakeupStore {
   const captured = identity && Object.freeze(structuredClone(identity));
-  const existing = captured ? undefined : completionWakeupStores.get(store);
+  const cacheable = !captured && !requestScopedConnections && completionWakeups;
+  const existing = cacheable ? completionWakeupStores.get(store) : undefined;
   if (existing != null) {
     return existing;
   }
@@ -3820,7 +3848,8 @@ function completionWakeupStore(
     start: (request) => {
       const hostRequest: HostSubagentTaskStartRequest = {
         ...request,
-        completionDelivery: SUBAGENT_COMPLETION_DELIVERY,
+        completionDelivery: completionWakeups ? SUBAGENT_COMPLETION_DELIVERY : undefined,
+        requestScopedConnections,
         scheduleMCPIdentity: captured ?? null,
       };
       return store.start(hostRequest);
@@ -3835,18 +3864,27 @@ function completionWakeupStore(
     hasTasks: (scopeId) => store.hasTasks(scopeId),
     listTasks: (scopeId) => store.listTasks(scopeId),
   };
-  if (!captured) completionWakeupStores.set(store, adapter);
+  if (cacheable) completionWakeupStores.set(store, adapter);
   return adapter;
 }
 
 export function buildSubagentThreadTaskConfig(
   store: SubagentThreadTaskStore,
   scope: Omit<SubagentThreadScope, 'version'>,
-  options: { completionWakeups?: boolean; scheduleMCPIdentity?: ScheduledMCPIdentity } = {},
+  options: {
+    completionWakeups?: boolean;
+    scheduleMCPIdentity?: ScheduledMCPIdentity;
+    requestScopedConnections?: RequestScopedMCPConnectionStore;
+  } = {},
 ): HostSubagentTaskConfig {
   const taskStore =
-    options.completionWakeups === true
-      ? completionWakeupStore(store, options.scheduleMCPIdentity)
+    options.completionWakeups === true || options.requestScopedConnections
+      ? completionWakeupStore(
+          store,
+          options.scheduleMCPIdentity,
+          options.requestScopedConnections,
+          options.completionWakeups === true,
+        )
       : store;
   return {
     store: taskStore,
