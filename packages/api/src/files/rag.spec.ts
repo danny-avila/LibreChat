@@ -271,10 +271,8 @@ describe('createVectorFileDeleter receipts', () => {
     new Error('network down'),
     { response: { status: 403 } },
     { response: { status: 500 } },
-  ])(
-    'propagates failed requests without a deletion receipt', async (error) => {
-      mockedAxios.delete.mockRejectedValueOnce(error);
-      await expect(setup()(req, file)).rejects.toBe(error);
-    },
-  );
+  ])('propagates failed requests without a deletion receipt', async (error) => {
+    mockedAxios.delete.mockRejectedValueOnce(error);
+    await expect(setup()(req, file)).rejects.toBe(error);
+  });
 });

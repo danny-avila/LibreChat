@@ -2785,7 +2785,8 @@ describe('processDeleteRequest', () => {
   });
 
   it.each(['primary', 'code', 'persistence'])(
-    'keeps the retry anchor and agent association after %s failure', async (failure) => {
+    'keeps the retry anchor and agent association after %s failure',
+    async (failure) => {
       const primaryDelete = jest.fn().mockResolvedValue(undefined);
       const codeDelete = jest.fn().mockResolvedValue(undefined);
       const vectorDelete = jest.fn().mockResolvedValue({ deleted: true });
