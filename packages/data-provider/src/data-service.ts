@@ -1351,6 +1351,10 @@ export function resolvePromptGroup(
   return request.get(endpoints.resolvePromptGroup(id, version));
 }
 
+export function getPromptGroupRevisions(id: string): Promise<t.TPromptRevisionChoicesResponse> {
+  return request.get(endpoints.getPromptGroupRevisions(id));
+}
+
 export function createPrompt(payload: t.TCreatePrompt): Promise<t.TCreatePromptResponse> {
   return request.post(endpoints.postPrompt(), payload);
 }
