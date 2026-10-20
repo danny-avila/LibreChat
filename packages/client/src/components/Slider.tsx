@@ -1,7 +1,6 @@
 import * as React from 'react';
-import { useDirection } from '@radix-ui/react-direction';
 import * as SliderPrimitive from '@radix-ui/react-slider';
-import { cn, isRtl, disabledFillClasses } from '~/utils';
+import { cn, disabledFillClasses } from '~/utils';
 
 type SliderProps = React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root> & {
   className?: string;
@@ -27,89 +26,39 @@ const Slider: React.ForwardRefExoticComponent<SliderProps & React.RefAttributes<
         ...props
       },
       ref,
-    ) => {
-      const appDirection = useDirection();
-      const [direction, setDirection] = React.useState(appDirection);
-      const rootRef = React.useRef<HTMLSpanElement | null>(null);
-      const setRootRef = React.useCallback(
-        (node: HTMLSpanElement | null) => {
-          rootRef.current = node;
-          if (typeof ref === 'function') {
-            ref(node);
-          } else if (ref) {
-            ref.current = node;
-          }
-        },
-        [ref],
-      );
-      /** Radix reads only the app-wide provider. The root stamps its own `dir`, so the direction
-       *  the browser resolved above it decides (a `dir` attribute, `dir="auto"` or a CSS override),
-       *  and an LTR island inside an RTL app keeps an LTR slider; with no `dir` anywhere above it
-       *  the provider's direction stands. Any `dir` change re-resolves it, and so does a content
-       *  change under a `dir="auto"` boundary, which flips direction without an attribute. */
-      React.useLayoutEffect(() => {
-        const autoContent = new MutationObserver(() => resolve());
-        const resolve = () => {
-          autoContent.disconnect();
-          const parent = rootRef.current?.parentElement;
-          const boundary = parent?.closest('[dir]');
-          if (boundary?.getAttribute('dir') === 'auto') {
-            autoContent.observe(boundary, { childList: true, characterData: true, subtree: true });
-          }
-          if (isRtl(parent)) {
-            setDirection('rtl');
-            return;
-          }
-          setDirection(boundary ? 'ltr' : appDirection);
-        };
-        resolve();
-        const dirChanges = new MutationObserver(resolve);
-        dirChanges.observe(document.documentElement, {
-          attributes: true,
-          attributeFilter: ['dir'],
-          subtree: true,
-        });
-        return () => {
-          dirChanges.disconnect();
-          autoContent.disconnect();
-        };
-      }, [appDirection]);
-      return (
-        <SliderPrimitive.Root
-          ref={setRootRef}
-          dir={direction}
-          {...props}
+    ) => (
+      <SliderPrimitive.Root
+        ref={ref}
+        {...props}
+        {...{
+          className: cn(
+            'relative flex w-full cursor-pointer touch-none select-none items-center',
+            className,
+          ),
+          onDoubleClick,
+        }}
+      >
+        <SliderPrimitive.Track
           {...{
-            className: cn(
-              'relative flex w-full cursor-pointer touch-none select-none items-center',
-              className,
-            ),
-            onDoubleClick,
+            className: 'relative h-2 w-full grow overflow-hidden rounded-full bg-surface-tertiary',
           }}
         >
-          <SliderPrimitive.Track
-            {...{
-              className:
-                'relative h-2 w-full grow overflow-hidden rounded-full bg-surface-tertiary',
-            }}
-          >
-            <SliderPrimitive.Range {...{ className: 'absolute h-full bg-surface-inverted' }} />
-          </SliderPrimitive.Track>
-          <SliderPrimitive.Thumb
-            {...{
-              className: cn(
-                'block h-5 w-5 rounded-full border-2 border-border-xheavy bg-surface-primary ring-offset-surface-primary transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-control focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
-                disabledFillClasses,
-              ),
-              'aria-labelledby': ariaLabelledBy,
-              'aria-label': ariaLabel,
-              'aria-describedby': ariaDescribedBy,
-              'aria-valuetext': ariaValueText,
-            }}
-          />
-        </SliderPrimitive.Root>
-      );
-    },
+          <SliderPrimitive.Range {...{ className: 'absolute h-full bg-surface-inverted' }} />
+        </SliderPrimitive.Track>
+        <SliderPrimitive.Thumb
+          {...{
+            className: cn(
+              'block h-5 w-5 rounded-full border-2 border-border-xheavy bg-surface-primary ring-offset-surface-primary transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-control focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+              disabledFillClasses,
+            ),
+            'aria-labelledby': ariaLabelledBy,
+            'aria-label': ariaLabel,
+            'aria-describedby': ariaDescribedBy,
+            'aria-valuetext': ariaValueText,
+          }}
+        />
+      </SliderPrimitive.Root>
+    ),
   );
 Slider.displayName = SliderPrimitive.Root.displayName;
 
