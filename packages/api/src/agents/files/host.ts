@@ -5,7 +5,7 @@ import {
   resolveSandboxFilename,
 } from 'librechat-data-provider';
 import type { CodeEnvFile, SubagentExecutionContext } from '@librechat/agents';
-import type { Agent, TFile } from 'librechat-data-provider';
+import type { Agent, CodeEnvRef, TFile } from 'librechat-data-provider';
 import type {
   THasEntityEmbeddings,
   TFilterFilesByAgentAccess,
@@ -169,26 +169,40 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
   const provisioningCallbacks = new Map<string, ReturnType<typeof createProvisionFilesCallback>>();
   const operations = new Map<string, Promise<unknown>>();
   const probeRegistry = req.app?.locals?.codeApiUploadRegistry ?? createCodeApiUploadRegistry();
-  const rootCodeFiles = new Map<string, Set<string>>();
+  const rootCodeFiles = new Map<string, Map<string, CodeEnvFile>>();
   const codeReplacements = new Map<
     string,
     Map<string, Map<string, { id: string; storage_session_id: string }>>
   >();
+  const codeRefKey = (ref: { file_id: string; storage_session_id: string }) =>
+    `${ref.storage_session_id}\0${ref.file_id}`;
   const codeFileKey = (ref: { file_id: string; storage_session_id: string }, name: string) =>
-    `${ref.storage_session_id}\0${ref.file_id}\0${name}`;
-  const codeFileName = (context: RunFileToolContext, file: TFile, route: string): string =>
-    context.provisionState?.project?.sessionPlan?.mountedNames.get(file.file_id) ??
-    context.provisionState?.project?.sessionPlan?.destinations.get(file.file_id) ??
-    context.provisionState?.codeEnvDestinations?.get(file.file_id) ??
-    getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
-    getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type));
+    `${codeRefKey(ref)}\0${name}`;
+  const codeFileName = (
+    context: RunFileToolContext,
+    file: TFile,
+    route: string,
+    seeded?: ReadonlyMap<string, CodeEnvFile>,
+  ): string => {
+    const ref = getCodeEnvRefForProfile(file.metadata, route);
+    return (
+      context.provisionState?.project?.sessionPlan?.mountedNames.get(file.file_id) ??
+      context.provisionState?.project?.sessionPlan?.destinations.get(file.file_id) ??
+      context.provisionState?.codeEnvDestinations?.get(file.file_id) ??
+      ref?.sandboxFilename ??
+      (ref ? seeded?.get(codeRefKey(ref))?.name : undefined) ??
+      getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type))
+    );
+  };
+  const seededLastModified = new Date(createdAt).toISOString();
   // Root and handoff partitions already receive these selected inputs in the graph seed.
   // Unselected resources and newly announced aliases still need delivery.
   for (const [agentId, context] of contexts) {
-    const seeded = new Set<string>();
+    const seeded = new Map<string, CodeEnvFile>();
     for (const file of context.primedCodeFiles ?? []) {
-      seeded.add(
-        codeFileKey({ file_id: file.id, storage_session_id: file.storage_session_id }, file.name),
+      seeded.set(
+        codeRefKey({ file_id: file.id, storage_session_id: file.storage_session_id }),
+        file,
       );
     }
     rootCodeFiles.set(agentId, seeded);
@@ -231,6 +245,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
     agentId: string,
     signal: AbortSignal,
     inheritedProject?: CodeFileProjectScope,
+    seeded?: ReadonlyMap<string, CodeEnvFile>,
   ): Promise<void> {
     const state = context.provisionState;
     const scope = state?.project;
@@ -271,7 +286,13 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
     await Promise.all(
       requiredCodeFiles.map(async (file) => {
         const ref = getCodeEnvRefForProfile(file.metadata, route);
-        if (!ref || ref.sandboxFilename || !getCodeFileInfo) return;
+        if (!ref || ref.sandboxFilename) return;
+        const seed = seeded?.get(codeRefKey(ref));
+        if (seed) {
+          storedNames.set(file.file_id, seed.name);
+          return;
+        }
+        if (!getCodeFileInfo) return;
         const info = await withCodeApiUploadSlot({
           registry: probeRegistry,
           scope: probeScope,
@@ -507,7 +528,13 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
             );
             context.provisionState = state;
           }
-          await prepareCodeFileContext(context, actor.agentId, signal);
+          await prepareCodeFileContext(
+            context,
+            actor.agentId,
+            signal,
+            undefined,
+            rootCodeFiles.get(actor.agentId),
+          );
           const removedCodeIds = new Set(
             [...removed].flatMap((id) =>
               getCodeEnvRefs(previous?.files.get(id)?.metadata).map(([, ref]) => ref.file_id),
@@ -761,49 +788,53 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
       const context = executionContexts.get(key);
       const state = context?.provisionState;
       const liveCodeFiles: CodeEnvFile[] = [];
+      const deliverySources = new Map<string, TFile>();
+      const deliveredFileIds = new Map<string, string>();
       const replacedRefs = codeReplacements.get(key) ?? new Map();
       codeReplacements.set(key, replacedRefs);
+      const rememberRef = (fileId: string, ref: CodeEnvRef | undefined): void => {
+        if (!ref) return;
+        const refs = replacedRefs.get(fileId) ?? new Map();
+        refs.set(codeRefKey(ref), {
+          id: ref.file_id,
+          storage_session_id: ref.storage_session_id,
+        });
+        replacedRefs.set(fileId, refs);
+      };
+      const route =
+        context?.codeExecutionContext?.executionRouteKey ??
+        context?.codeExecutionContext?.executionProfile ??
+        'default';
       if (context?.codeEnvAvailable === true && state && toolNames.some(isCodeFileToolName)) {
-        const route =
-          context.codeExecutionContext?.executionRouteKey ??
-          context.codeExecutionContext?.executionProfile ??
-          'default';
         const queuedIds = new Set(state.codeEnvFiles.map((file) => file.file_id));
         for (const file of [
           ...state.codeEnvFiles,
           ...(context.tool_resources?.execute_code?.files ?? []),
         ]) {
-          const name = codeFileName(context, file, route);
-          const refs = replacedRefs.get(name) ?? new Map();
+          if (!deliverySources.has(file.file_id)) deliverySources.set(file.file_id, file);
+          const name = codeFileName(context, file, route, seeded);
           for (const ref of [
             getCodeEnvRefForProfile(file.metadata, route),
             getTurnCodeEnvRef(req, route, file, name),
           ]) {
-            if (ref) {
-              refs.set(`${ref.storage_session_id}\0${ref.file_id}`, {
-                id: ref.file_id,
-                storage_session_id: ref.storage_session_id,
-              });
-            }
+            rememberRef(file.file_id, ref);
           }
-          replacedRefs.set(name, refs);
         }
         const { scope: probeScope, concurrency } = getCodeApiUploadOptions(req, route);
         const { selected } = await selectCodeFiles({
-          files: (context.tool_resources?.execute_code?.files ?? []).filter((file) => {
-            if (queuedIds.has(file.file_id)) return false;
-            const name = codeFileName(context, file, route);
-            const ref =
-              getTurnCodeEnvRef(req, route, file, name) ??
-              getCodeEnvRefForProfile(file.metadata, route);
-            return !ref || !seeded?.has(codeFileKey(ref, name));
-          }),
+          files: (context.tool_resources?.execute_code?.files ?? []).filter(
+            (file) => !queuedIds.has(file.file_id),
+          ),
           privateFileIds: state.agentScopedFileIds,
           project: state.project,
           getTurnRef: (file, destination) => getTurnCodeEnvRef(req, route, file, destination),
           routeKey: route,
-          getFileInfo: (ref) =>
-            withCodeApiUploadSlot({
+          getFileInfo: async (ref) => {
+            const seed = seeded?.get(codeRefKey(ref));
+            if (seed) {
+              return { lastModified: seededLastModified, originalFilename: seed.name };
+            }
+            return withCodeApiUploadSlot({
               registry: probeRegistry,
               scope: probeScope,
               concurrency,
@@ -811,11 +842,14 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
               task: async () =>
                 provisioning.getCodeFileInfo?.(ref, context.codeExecutionContext ?? {}, signal) ??
                 null,
-            }),
+            });
+          },
           concurrency,
           signal,
         });
         for (const candidate of selected) {
+          rememberRef(candidate.file.file_id, candidate.sourceRef);
+          rememberRef(candidate.file.file_id, candidate.ref);
           if (!candidate.isActive || !candidate.ref) {
             state.codeEnvFiles.push(candidate.file);
             state.codeEnvDestinations ??= new Map();
@@ -829,6 +863,8 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
             continue;
           }
           const ref = candidate.ref;
+          if (seeded?.get(codeRefKey(ref))?.name === candidate.sandboxName) continue;
+          deliveredFileIds.set(codeFileKey(ref, candidate.sandboxName), candidate.file.file_id);
           const codeFile = {
             id: ref.file_id,
             resource_id: ref.id,
@@ -843,6 +879,17 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
         }
       }
       const provisioned = await provisioningCallbacks.get(key)?.(toolNames, agentId, signal);
+      if (context && provisioned?.length) {
+        for (const file of deliverySources.values()) {
+          const name = codeFileName(context, file, route, seeded);
+          const ref =
+            getTurnCodeEnvRef(req, route, file, name) ??
+            getCodeEnvRefForProfile(file.metadata, route);
+          if (ref) {
+            deliveredFileIds.set(codeFileKey(ref, ref.sandboxFilename ?? name), file.file_id);
+          }
+        }
+      }
       // An isolated child has no entry under its new SDK session key. Live setup files
       // must travel with uploads instead of relying on the original graph's seed.
       const delivered = mergeCodeFilesIntoContext(undefined, [
@@ -850,7 +897,10 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
         ...(provisioned ?? []),
       ])?.files;
       return delivered?.map((file) => {
-        const replaces = [...(replacedRefs.get(file.name)?.values() ?? [])].filter(
+        const fileId = deliveredFileIds.get(
+          codeFileKey({ file_id: file.id, storage_session_id: file.storage_session_id }, file.name),
+        );
+        const replaces = [...(fileId ? (replacedRefs.get(fileId)?.values() ?? []) : [])].filter(
           (ref) => ref.id !== file.id || ref.storage_session_id !== file.storage_session_id,
         );
         return replaces?.length ? { ...file, replaces } : file;
