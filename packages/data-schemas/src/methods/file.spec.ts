@@ -586,6 +586,51 @@ describe('File Methods', () => {
   });
 
   describe('getProjectFiles', () => {
+    it('hydrates and lists retained search intent without widening owner, tenant or context scope', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const base = {
+        user: userId,
+        tenantId: 'tenant-a',
+        embedded: false,
+        metadata: { searchDestination: true },
+        context: FileContext.message_attachment,
+        filename: 'repair.txt',
+        filepath: '/uploads/repair.txt',
+        type: 'text/plain',
+        bytes: 1,
+        source: 's3',
+        storageKey: 'owner/repair',
+        storageRegion: 'region',
+      };
+      await File.create([
+        { ...base, file_id: 'repair' },
+        { ...base, file_id: 'foreign', user: new mongoose.Types.ObjectId().toString() },
+        { ...base, file_id: 'other-tenant', tenantId: 'tenant-b' },
+        { ...base, file_id: 'agent', context: FileContext.agents },
+        { ...base, file_id: 'declined', metadata: { destinationChosen: true } },
+      ]);
+      const files = await fileMethods.getProjectFiles({
+        fileIds: ['repair', 'foreign', 'other-tenant', 'agent', 'declined'],
+        userId,
+        tenantId: 'tenant-a',
+      });
+      expect(files).toEqual([
+        expect.objectContaining({
+          file_id: 'repair',
+          embedded: false,
+          metadata: { searchDestination: true },
+          source: 's3',
+          storageKey: 'owner/repair',
+          storageRegion: 'region',
+        }),
+      ]);
+      const available = await fileMethods.getAvailableProjectFiles({
+        userId,
+        tenantId: 'tenant-a',
+      });
+      expect(available.files.map((file) => file.file_id)).toEqual(['repair']);
+    });
+
     it('enforces owner scope and only includes content when requested', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       await File.create([

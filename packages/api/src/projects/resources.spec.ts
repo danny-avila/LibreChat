@@ -7,6 +7,7 @@ import {
   getChatProjectFileAvailability,
   listChatProjectFileViews,
   resolveChatProjectFiles,
+  toCanonicalProjectResource,
 } from './resources';
 import { getChatProjectContextKey, resolveChatProjectContext } from './context';
 
@@ -69,35 +70,7 @@ const getProjectFiles = async ({
   tenantId?: string | null;
   includeContent?: boolean;
 }): Promise<ProjectFileRecord[]> => {
-  const files = await File.find({
-    file_id: { $in: fileIds },
-    user: userId,
-    embedded: true,
-    context: FileContext.message_attachment,
-    tenantId: tenantId != null && tenantId !== '' ? tenantId : null,
-  })
-    .select(includeContent ? {} : { text: 0 })
-    .lean<IMongoFile[]>();
-  return files.map((file) => ({
-    _id: file._id.toString(),
-    file_id: file.file_id,
-    filename: file.filename,
-    filepath: file.filepath,
-    object: file.object,
-    type: file.type,
-    bytes: file.bytes,
-    usage: file.usage,
-    ...(file.embedded !== undefined ? { embedded: file.embedded } : {}),
-    ...(file.context !== undefined ? { context: file.context } : {}),
-    ...(file.expiredAt !== undefined ? { expiredAt: file.expiredAt } : {}),
-    user: file.user.toString(),
-    ...(file.tenantId !== undefined ? { tenantId: file.tenantId } : {}),
-    ...(file.createdAt !== undefined ? { createdAt: file.createdAt } : {}),
-    ...(file.updatedAt !== undefined ? { updatedAt: file.updatedAt } : {}),
-    ...(file.previewRevision !== undefined ? { previewRevision: file.previewRevision } : {}),
-    ...(file.status !== undefined ? { status: file.status } : {}),
-    ...(file.text !== undefined ? { text: file.text } : {}),
-  }));
+  return createMethods(mongoose).getProjectFiles({ fileIds, userId, tenantId, includeContent });
 };
 
 describe('ChatProject resource hydration', () => {
@@ -155,6 +128,57 @@ describe('ChatProject resource hydration', () => {
 
     expect(after?.resources).toEqual([expect.objectContaining({ availability: 'ready' })]);
     expect(getChatProjectContextKey(after)).toBe(getChatProjectContextKey(before));
+  });
+
+  it('keeps cleared search destinations visible and honestly repairable', async () => {
+    const owner = new mongoose.Types.ObjectId().toString();
+    const methods = createMethods(mongoose);
+    const stored = await File.create(
+      file('repair', owner, {
+        source: 's3',
+        storageKey: 'owner/repair',
+        storageRegion: 'region',
+        metadata: { destinationChosen: true },
+      }),
+    );
+    const options = { fileIds: ['repair'], userId: owner };
+    const [before] = await methods.getProjectFiles(options);
+    const originalVersion = toCanonicalProjectResource(before).version;
+    expect(
+      await methods.clearFileEmbeddings({
+        file_id: 'repair',
+        userId: owner,
+        updatedAt: stored.updatedAt,
+      }),
+    ).toBe(true);
+    const [after] = await methods.getProjectFiles(options);
+    const resource = toCanonicalProjectResource(after);
+    expect(resource.availability).toBe('ready');
+    expect(resource.version).not.toBe(originalVersion);
+    const runtime = await resolveChatProjectFiles({
+      project: { file_ids: ['repair'] },
+      userId: owner,
+      getProjectFiles: methods.getProjectFiles,
+    });
+    expect(runtime).toEqual([
+      expect.objectContaining({
+        embedded: false,
+        metadata: { searchDestination: true },
+        source: 's3',
+        storageKey: 'owner/repair',
+        storageRegion: 'region',
+      }),
+    ]);
+    expect(
+      await listChatProjectFileViews({
+        project: { file_ids: ['repair'] },
+        userId: owner,
+        getProjectFiles: methods.getProjectFiles,
+      }),
+    ).toEqual([expect.objectContaining({ file_id: 'repair', availability: 'ready' })]);
+    const withoutIntent = toCanonicalProjectResource({ ...after, metadata: undefined });
+    expect(withoutIntent.availability).toBe('unavailable');
+    expect(withoutIntent.version).not.toBe(resource.version);
   });
 
   it('only marks canonical unscoped message attachments ready', () => {

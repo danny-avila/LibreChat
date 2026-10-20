@@ -23,13 +23,18 @@ export function getChatProjectFileAvailability(
   file:
     | {
         embedded?: boolean;
+        metadata?: { searchDestination?: boolean };
         context?: string;
         expiredAt?: Date | number | string | null;
       }
     | null
     | undefined,
 ): 'ready' | 'unavailable' {
-  if (!file || file.embedded !== true || file.context !== FileContext.message_attachment) {
+  if (
+    !file ||
+    (file.embedded !== true && file.metadata?.searchDestination !== true) ||
+    file.context !== FileContext.message_attachment
+  ) {
     return 'unavailable';
   }
 
@@ -86,6 +91,7 @@ function canonicalResourceVersion(
         file_id: file.file_id,
         availability,
         embedded: file.embedded ?? null,
+        searchDestination: file.metadata?.searchDestination ?? null,
         context: file.context ?? null,
         expiredAt: file.expiredAt?.toISOString() ?? null,
         createdAt: file.createdAt?.toISOString() ?? null,
@@ -150,6 +156,11 @@ type RuntimeFileSource = {
   usage: number;
   user: string | { toString(): string };
   tenantId?: string;
+  embedded?: boolean;
+  metadata?: { searchDestination?: boolean };
+  source?: string;
+  storageKey?: string;
+  storageRegion?: string;
 };
 
 export function toRuntimeFile(file: RuntimeFileSource): TFile {
@@ -161,7 +172,11 @@ export function toRuntimeFile(file: RuntimeFileSource): TFile {
     type: file.type,
     bytes: file.bytes,
     usage: file.usage,
-    embedded: true,
+    embedded: file.embedded,
+    ...(file.metadata != null ? { metadata: file.metadata } : {}),
+    ...(file.source != null ? { source: file.source } : {}),
+    ...(file.storageKey != null ? { storageKey: file.storageKey } : {}),
+    ...(file.storageRegion != null ? { storageRegion: file.storageRegion } : {}),
     context: FileContext.message_attachment,
     user: typeof file.user === 'string' ? file.user : file.user.toString(),
     ...(file.tenantId != null ? { tenantId: file.tenantId } : {}),

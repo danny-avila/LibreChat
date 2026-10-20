@@ -1042,6 +1042,43 @@ describe('createProvisionFilesCallback', () => {
     expect(codeImpl.mock.calls.filter(([args]) => args.file.file_id === 'first')).toHaveLength(1);
   });
 
+  it('repairs a retained Project file before search and preserves a failed attempt for retry', async () => {
+    const file = makeFile({ embedded: false, source: 's3', metadata: { searchDestination: true } });
+    const vectorImpl = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('temporary vector outage'))
+      .mockImplementationOnce(async () => ({
+        embedded: true,
+        fileUpdate: { file_id: file.file_id, embedded: true },
+      }));
+    const { provisionFiles, agentToolContexts, addEmbeddedEntity } = buildHarness({
+      contexts: [
+        [
+          'agent-a',
+          {
+            provisionState: state([], [file]),
+            tool_resources: {
+              [EToolResources.file_search]: { files: [file] },
+            },
+          },
+        ],
+      ],
+      vectorImpl,
+    });
+    await expect(provisionFiles(['file_search'], 'agent-a')).rejects.toThrow(
+      /aborting tool execution/,
+    );
+    expect(file.embedded).toBe(false);
+    expect(agentToolContexts.get('agent-a')?.provisionState?.vectorDBFiles).toEqual([file]);
+    await expect(provisionFiles(['file_search'], 'agent-a')).resolves.toEqual([]);
+    expect(vectorImpl).toHaveBeenLastCalledWith(
+      expect.objectContaining({ file, entity_id: undefined }),
+    );
+    expect(addEmbeddedEntity).toHaveBeenCalledWith({ file_id: file.file_id, entityId: 'user-1' });
+    expect(file.embedded).toBe(true);
+    expect(agentToolContexts.get('agent-a')?.provisionState?.vectorDBFiles).toEqual([]);
+  });
+
   it('treats a declined embedding as a failure rather than a result', async () => {
     /* The service resolves with embedded false when the vector store declines the file.
      * That means the vectors are absent just as a throw does, so the file has to stay

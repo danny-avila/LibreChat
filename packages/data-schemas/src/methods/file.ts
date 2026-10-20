@@ -47,6 +47,7 @@ export type AvailableProjectFileRecord = {
   bytes: number;
   usage: number;
   embedded?: boolean;
+  metadata?: { searchDestination?: boolean };
   context?: string;
   user: string;
   tenantId?: string;
@@ -63,6 +64,7 @@ type AvailableProjectFileRecordSource = Pick<
   | 'bytes'
   | 'usage'
   | 'embedded'
+  | 'metadata'
   | 'context'
   | 'user'
   | 'tenantId'
@@ -81,6 +83,9 @@ function normalizeAvailableProjectFileRecord(
     bytes: file.bytes,
     usage: file.usage,
     ...(file.embedded !== undefined ? { embedded: file.embedded } : {}),
+    ...(file.metadata?.searchDestination !== undefined
+      ? { metadata: { searchDestination: file.metadata.searchDestination } }
+      : {}),
     ...(file.context !== undefined ? { context: file.context } : {}),
     user: file.user.toString(),
     ...(file.tenantId !== undefined ? { tenantId: file.tenantId } : {}),
@@ -110,6 +115,10 @@ export type ProjectFileRecord = {
   bytes: number;
   usage: number;
   embedded?: boolean;
+  metadata?: { searchDestination?: boolean };
+  source?: string;
+  storageKey?: string;
+  storageRegion?: string;
   context?: string;
   expiredAt?: Date | null;
   user: string;
@@ -132,6 +141,10 @@ type ProjectFileRecordSource = Pick<
   | 'bytes'
   | 'usage'
   | 'embedded'
+  | 'metadata'
+  | 'source'
+  | 'storageKey'
+  | 'storageRegion'
   | 'context'
   | 'expiredAt'
   | 'user'
@@ -154,6 +167,12 @@ function normalizeProjectFileRecord(file: ProjectFileRecordSource): ProjectFileR
     bytes: file.bytes,
     usage: file.usage,
     ...(file.embedded !== undefined ? { embedded: file.embedded } : {}),
+    ...(file.metadata?.searchDestination !== undefined
+      ? { metadata: { searchDestination: file.metadata.searchDestination } }
+      : {}),
+    ...(file.source !== undefined ? { source: file.source } : {}),
+    ...(file.storageKey !== undefined ? { storageKey: file.storageKey } : {}),
+    ...(file.storageRegion !== undefined ? { storageRegion: file.storageRegion } : {}),
     ...(file.context !== undefined ? { context: file.context } : {}),
     ...(file.expiredAt !== undefined ? { expiredAt: file.expiredAt } : {}),
     user: file.user.toString(),
@@ -579,7 +598,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const query = File.find({
       file_id: { $in: fileIds },
       user: userId,
-      embedded: true,
+      $or: [{ embedded: true }, { 'metadata.searchDestination': true }],
       context: FileContext.message_attachment,
       // Mongo's null predicate matches explicit null and legacy missing tenant fields.
       tenantId: tenantId != null && tenantId !== '' ? tenantId : null,
@@ -597,6 +616,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         bytes: 1,
         usage: 1,
         embedded: 1,
+        'metadata.searchDestination': 1,
+        source: 1,
+        storageKey: 1,
+        storageRegion: 1,
         context: 1,
         expiredAt: 1,
         user: 1,
@@ -629,9 +652,9 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       {
         user: userId,
         tenantId: tenantId != null && tenantId !== '' ? tenantId : null,
-        embedded: true,
+        $or: [{ embedded: true }, { 'metadata.searchDestination': true }],
         context: FileContext.message_attachment,
-        $or: [{ expiredAt: null }, { expiredAt: { $gt: now } }],
+        $and: [{ $or: [{ expiredAt: null }, { expiredAt: { $gt: now } }] }],
       },
     ];
     if (excludedFileIds.length > 0) {
@@ -660,6 +683,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         bytes: 1,
         usage: 1,
         embedded: 1,
+        'metadata.searchDestination': 1,
         context: 1,
         user: 1,
         tenantId: 1,

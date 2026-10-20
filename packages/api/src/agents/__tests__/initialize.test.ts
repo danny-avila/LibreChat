@@ -692,6 +692,46 @@ describe('initializeAgent: ChatProject context', () => {
     expect(agent).not.toHaveProperty('tool_resources');
     expect(db.getFiles).not.toHaveBeenCalled();
   });
+  it('queues cleared Project files for the first search in a new conversation', async () => {
+    const { agent, loadTools, db } = createMocks();
+    agent.tools = [Tools.file_search];
+    const repairing = {
+      ...canonicalFile,
+      embedded: false,
+      source: FileSources.s3,
+      metadata: { searchDestination: true },
+    };
+    const runtime = projectRuntime();
+    runtime.chatProjectContext = {
+      ...projectContext,
+      resources: [toCanonicalProjectResource(repairing)],
+    };
+    const result = await initializeAgent(
+      {
+        runtime,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        useChatProjectContext: true,
+      },
+      db,
+    );
+    expect(result.provisionState?.vectorDBFiles).toEqual([
+      expect.objectContaining({
+        file_id: 'project-file',
+        embedded: false,
+        source: FileSources.s3,
+        metadata: { searchDestination: true },
+      }),
+    ]);
+    expect(result.provisionState?.codeEnvFiles).toEqual([]);
+    expect(result.provisionState?.agentScopedFileIds.size).toBe(0);
+    expect(agent.tools).toEqual([Tools.file_search]);
+    expect(db.getFiles).not.toHaveBeenCalled();
+    expect(db.getProjectFiles).not.toHaveBeenCalled();
+  });
+
   it('adds Project files for file_search supplied by a manual Skill', async () => {
     const { agent, req, loadTools, db } = createMocks();
     const { Types } = await import('mongoose');

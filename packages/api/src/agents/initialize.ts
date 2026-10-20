@@ -6,6 +6,7 @@ import {
   ErrorTypes,
   EModelEndpoint,
   EToolResources,
+  canToolResourceConsume,
   paramEndpoints,
   isAgentsEndpoint,
   AgentCapabilities,
@@ -301,32 +302,59 @@ function addProjectFilesToFileSearch(
   effectiveToolNames: readonly string[],
   appConfig: AppConfig | undefined,
   fileSearchAvailable?: boolean,
-): AgentToolResources | undefined {
+  provisionState?: ProvisionState,
+): { resources: AgentToolResources | undefined; provisionState?: ProvisionState } {
   if (files == null || files.length === 0) {
-    return resources;
+    return { resources, provisionState };
   }
   const capabilities = appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? [];
   if (!capabilities.includes(AgentCapabilities.file_search)) {
-    return resources;
+    return { resources, provisionState };
   }
   if (fileSearchAvailable === false) {
-    return resources;
+    return { resources, provisionState };
   }
   if (!effectiveToolNames.includes(Tools.file_search)) {
-    return resources;
+    return { resources, provisionState };
   }
   const current = resources?.[EToolResources.file_search] ?? {};
   const currentFiles = current.files ?? [];
   const seen = new Set(currentFiles.map((file) => file.file_id));
-  const projectFiles = files.filter((file) => !seen.has(file.file_id));
+  const projectFiles: TFile[] = [];
+  const queuedIds = new Set(provisionState?.vectorDBFiles.map((file) => file.file_id));
+  for (const file of files) {
+    if (!seen.has(file.file_id)) {
+      projectFiles.push(file);
+      seen.add(file.file_id);
+    }
+    if (
+      file.embedded === true ||
+      file.metadata?.searchDestination !== true ||
+      !canToolResourceConsume(EToolResources.file_search, file.type) ||
+      queuedIds.has(file.file_id)
+    ) {
+      continue;
+    }
+    provisionState ??= {
+      codeEnvFiles: [],
+      vectorDBFiles: [],
+      aliveFileIds: new Set(),
+      agentScopedFileIds: new Set(),
+    };
+    provisionState.vectorDBFiles.push(file);
+    queuedIds.add(file.file_id);
+  }
   if (projectFiles.length === 0) {
-    return resources;
+    return { resources, provisionState };
   }
   return {
-    ...(resources ?? {}),
-    [EToolResources.file_search]: {
-      ...current,
-      files: currentFiles.concat(projectFiles),
+    provisionState,
+    resources: {
+      ...(resources ?? {}),
+      [EToolResources.file_search]: {
+        ...current,
+        files: currentFiles.concat(projectFiles),
+      },
     },
   };
 }
@@ -2036,7 +2064,7 @@ export async function initializeAgent(
     requestAttachments: primedRequestAttachments,
     agentContextAttachments: primedAgentContextAttachments,
     tool_resources,
-    provisionState,
+    provisionState: primedProvisionState,
     warnings: provisionWarnings,
   } = await primeResources({
     req: params.req,
@@ -2095,13 +2123,16 @@ export async function initializeAgent(
       });
     },
   });
-  runtimeToolResources = addProjectFilesToFileSearch(
+  const projectResources = addProjectFilesToFileSearch(
     tool_resources,
     projectRuntimeFiles,
     effectiveToolNames,
     appConfig,
     params.fileSearchAvailable,
+    primedProvisionState,
   );
+  runtimeToolResources = projectResources.resources;
+  const provisionState = projectResources.provisionState;
   const dropFileSearchResources = (): void => {
     if (runtimeToolResources?.[EToolResources.file_search] == null) {
       return;
