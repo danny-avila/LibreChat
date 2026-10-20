@@ -604,6 +604,7 @@ export type SubagentThreadViewMessageRecord = Pick<
   | 'subagentTriggerProjection'
 > & {
   textProjectionTruncated?: boolean;
+  contentRecoveryAvailable?: boolean;
   subagentTranscriptProjectionTruncated?: boolean;
   /** Storage-bounded visible content; validated into the public activity type by the API. */
   subagentActivity?: unknown[];
@@ -3494,6 +3495,12 @@ export function createMessageMethods(
         createdAt: 1,
         error: 1,
         unfinished: 1,
+        contentRecoveryAvailable: {
+          $and: [
+            { $eq: [{ $ifNull: ['$subagentContent.version', 0] }, 1] },
+            { $ne: [{ $ifNull: ['$subagentContent.deleted', false] }, true] },
+          ],
+        },
         subagentTranscriptProjectionTruncated: {
           $cond: [{ $ne: [{ $type: '$subagentTranscript.messagesJson' }, 'missing'] }, true, null],
         },
@@ -4133,7 +4140,6 @@ export function createMessageMethods(
           })
             .select('user tenantId conversationId messageId')
             .lean<IMessage[]>();
-      const result = await Message.deleteMany(filter);
       const SubagentContent = mongoose.models.SubagentContent as
         | Model<ISubagentContentChunk>
         | undefined;
@@ -4141,11 +4147,8 @@ export function createMessageMethods(
         /** Owner/conversation deletion must remain retryable after the messages
          * have gone, including cleanup retries following a storage outage. */
         if (wholeScope) {
-          await SubagentContent.deleteMany({
-            user: filter.user,
-            ...(filter.conversationId == null ? {} : { conversationId: filter.conversationId }),
-            ...(filter.tenantId == null ? {} : { tenantId: filter.tenantId }),
-          });
+          const result = await Message.deleteMany(filter);
+          await SubagentContent.deleteMany(filter);
           return result;
         }
         const scopes = new Map<
@@ -4167,9 +4170,23 @@ export function createMessageMethods(
             tenantId: source.tenantId ?? { $exists: false },
           });
         }
-        if (scopes.size > 0) await SubagentContent.deleteMany({ $or: [...scopes.values()] });
+        if (scopes.size > 0) {
+          const contentScopes = [...scopes.values()];
+          /** Revoke the task before cleanup, including appends already admitted.
+           * Retain both markers until payload deletion succeeds so retries rediscover them. */
+          await Message.updateMany(
+            {
+              $or: contentScopes.map(({ taskId, ...scope }) => ({
+                ...scope,
+                messageId: { $in: [`${taskId}:user`, `${taskId}:assistant`] },
+              })),
+            },
+            { $set: { 'subagentContent.deleted': true } },
+          );
+          await SubagentContent.deleteMany({ $or: contentScopes });
+        }
       }
-      return result;
+      return await Message.deleteMany(filter);
     } catch (err) {
       logger.error('Error deleting messages:', err);
       throw err;

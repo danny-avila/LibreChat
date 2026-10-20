@@ -148,6 +148,8 @@ export type SubagentExternalEventDetails = {
  */
 export type SubagentThreadTurn = {
   taskId: string;
+  /** Absent on older servers; false when this task has no captured content. */
+  contentRecoveryAvailable?: boolean;
   trigger: {
     kind: SubagentThreadTriggerKind;
     summary: string;

@@ -108,6 +108,7 @@ export class SubagentContentJournal {
   private timer?: ReturnType<typeof setTimeout>;
   private writing?: Promise<SubagentContentJournalResult>;
   private closing?: Promise<SubagentContentJournalResult>;
+  private terminalResult?: SubagentContentJournalResult;
   private abandoned = false;
   private closed = false;
   private revision = 0;
@@ -181,6 +182,7 @@ export class SubagentContentJournal {
   }
 
   flush(): Promise<SubagentContentJournalResult> {
+    if (this.terminalResult != null) return Promise.resolve(this.terminalResult);
     if (this.writing != null) return this.writing;
     const operation = this.drain();
     this.writing = operation;
@@ -223,6 +225,7 @@ export class SubagentContentJournal {
       }
       if (!result.ok) {
         this.closed = true;
+        this.terminalResult = result;
         return result;
       }
       this.pending.splice(0, count);
@@ -269,25 +272,47 @@ export class SubagentContentJournal {
 
   private async closeWithinBudget(): Promise<SubagentContentJournalResult> {
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     const timeoutMs =
       this.options.settlementTimeoutMs ??
       subagentActivityConfigSchema.parse({}).contentSettlementTimeoutMs;
+    const timeoutResult: SubagentContentJournalResult = {
+      ok: false,
+      error: { code: 'SUBAGENT_CONTENT_SETTLEMENT_TIMEOUT' },
+    };
+    const deadline = new Promise<SubagentContentJournalResult>((resolve) => {
+      timeout = setTimeout(() => {
+        this.abandoned = true;
+        this.terminalResult = timeoutResult;
+        this.pending.length = 0;
+        this.pendingBytes = 0;
+        this.staged = undefined;
+        this.pendingNotification = undefined;
+        resolve(timeoutResult);
+      }, timeoutMs);
+    });
     try {
-      return await Promise.race([
-        this.flush(),
-        new Promise<SubagentContentJournalResult>((resolve) => {
-          timeout = setTimeout(() => {
-            this.abandoned = true;
-            this.pending.length = 0;
-            this.pendingBytes = 0;
-            this.staged = undefined;
-            this.pendingNotification = undefined;
-            resolve({ ok: false, error: { code: 'SUBAGENT_CONTENT_SETTLEMENT_TIMEOUT' } });
-          }, timeoutMs);
-        }),
-      ]);
+      while (!this.abandoned) {
+        try {
+          return await Promise.race([this.flush(), deadline]);
+        } catch (error) {
+          this.options.onError(error);
+          /** Yield between attempts without letting a long flush cadence consume the whole budget. */
+          await Promise.race([
+            new Promise<void>((resolve) => {
+              retry = setTimeout(
+                resolve,
+                Math.max(1, Math.min(this.options.flushMs, timeoutMs / 2)),
+              );
+            }),
+            deadline,
+          ]);
+        }
+      }
+      return timeoutResult;
     } finally {
       if (timeout != null) clearTimeout(timeout);
+      if (retry != null) clearTimeout(retry);
     }
   }
 }
@@ -565,7 +590,7 @@ export function createSubagentTaskContentHandler(
         res.status(404).json({ error: 'Conversation not found' });
         return;
       }
-      if (seed.subagentContent?.version !== 1) {
+      if (seed.subagentContent?.version !== 1 || seed.subagentContent.deleted === true) {
         res
           .status(409)
           .json({ error: 'Subagent content unavailable', code: 'SUBAGENT_CONTENT_UNAVAILABLE' });

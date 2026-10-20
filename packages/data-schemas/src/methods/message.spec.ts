@@ -3257,6 +3257,51 @@ describe('Message Operations', () => {
   });
 
   describe('getMessagesForSubagentThreadView', () => {
+    it('projects recovery enrollment without exposing private journal metadata', async () => {
+      const conversationId = uuidv4();
+      for (const captured of [false, true, 'deleted'] as const) {
+        await saveMessage(mockCtx, {
+          messageId: `captured-${captured}:user`,
+          conversationId,
+          user: 'user123',
+          text: 'Input',
+          ...(captured
+            ? {
+                subagentContent: {
+                  version: 1 as const,
+                  throughSequence: 12,
+                  ...(captured === 'deleted' ? { deleted: true } : {}),
+                },
+              }
+            : {}),
+        });
+      }
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 3,
+        textCodePointLimit: 100,
+      });
+      expect(messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            messageId: 'captured-true:user',
+            contentRecoveryAvailable: true,
+          }),
+          expect.objectContaining({
+            messageId: 'captured-false:user',
+            contentRecoveryAvailable: false,
+          }),
+          expect.objectContaining({
+            messageId: 'captured-deleted:user',
+            contentRecoveryAvailable: false,
+          }),
+        ]),
+      );
+      expect(JSON.stringify(messages)).not.toContain('subagentContent');
+      expect(JSON.stringify(messages)).not.toContain('throughSequence');
+    });
+
     it('bounds text in MongoDB before returning the public projection', async () => {
       const conversationId = uuidv4();
       await saveMessage(mockCtx, {

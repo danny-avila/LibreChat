@@ -1,4 +1,5 @@
 import type {
+  SubagentContentAppendResult,
   SubagentContentMethods,
   SubagentContentBatch,
   SubagentContentScope,
@@ -253,6 +254,298 @@ it('retries the exact frozen batch before admitting later events into a new revi
   expect(attempts).toHaveLength(3);
   expect(attempts[1]).toEqual(attempts[0]);
   expect(attempts[2].revision).toBe(2);
+});
+
+describe('journal close retries', () => {
+  const timeoutResult = {
+    ok: false,
+    error: { code: 'SUBAGENT_CONTENT_SETTLEMENT_TIMEOUT' },
+  };
+  const unhandled = jest.fn();
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    unhandled.mockClear();
+    process.on('unhandledRejection', unhandled);
+  });
+
+  afterEach(() => {
+    process.off('unhandledRejection', unhandled);
+    jest.useRealTimers();
+  });
+
+  it.each([
+    { trigger: 'threshold', lostAck: false },
+    { trigger: 'timer', lostAck: false },
+    { trigger: 'threshold', lostAck: true },
+  ])(
+    'retries an active $trigger flush after close begins (lost ack: $lostAck)',
+    async ({ trigger, lostAck }) => {
+      const { methods, batches } = memoryStorage();
+      let rejectFirst: (error: Error) => void = () => undefined;
+      const blocked = new Promise<SubagentContentAppendResult>((_resolve, reject) => {
+        rejectFirst = reject;
+      });
+      const append = jest.fn(methods.appendSubagentContentBatch).mockImplementationOnce((input) => {
+        if (lostAck) void methods.appendSubagentContentBatch(input);
+        return blocked;
+      });
+      if (lostAck) {
+        append.mockImplementation(async (input) =>
+          batches.some((batch) => batch.revision === input.revision)
+            ? { ok: true }
+            : methods.appendSubagentContentBatch(input),
+        );
+      }
+      const notify = jest.fn(async () => undefined);
+      const journal = new SubagentContentJournal({
+        scope,
+        leaseToken: 'lease',
+        flushMs: 10,
+        batchBytes: trigger === 'threshold' ? 1 : 1_000_000,
+        settlementTimeoutMs: 100,
+        append,
+        notify,
+        onError: () => undefined,
+      });
+      const first = { id: 's', delta: { content: [{ type: 'text', text: 'first' }] } };
+      journal.record(update('message_delta', first), 0);
+      if (trigger === 'timer') await jest.advanceTimersByTimeAsync(10);
+      expect(append).toHaveBeenCalledTimes(1);
+      first.delta.content[0].text = 'mutated first';
+      const suffix = { id: 's', delta: { content: [{ type: 'text', text: 'suffix' }] } };
+      journal.record(update('message_delta', suffix), 1);
+      suffix.delta.content[0].text = 'mutated suffix';
+      const closing = journal.close();
+      void closing.catch(() => undefined);
+      expect(journal.close()).toBe(closing);
+      rejectFirst(new Error('Transient append failure'));
+      await jest.advanceTimersByTimeAsync(10);
+
+      await expect(closing).resolves.toEqual({ ok: true });
+      expect(append).toHaveBeenCalledTimes(3);
+      expect(append.mock.calls[1][0]).toEqual(append.mock.calls[0][0]);
+      expect(append.mock.calls[1][0]).toMatchObject({
+        ...scope,
+        leaseToken: 'lease',
+        revision: 1,
+        fromSequence: 0,
+        throughSequence: 0,
+      });
+      expect(append.mock.calls[2][0]).toMatchObject({
+        revision: 2,
+        fromSequence: 1,
+        throughSequence: 1,
+      });
+      expect(JSON.parse(append.mock.calls[0][0].eventsJson)[0].frame.data).toEqual({
+        id: 's',
+        delta: { content: [{ type: 'text', text: 'first' }] },
+      });
+      expect(JSON.parse(append.mock.calls[2][0].eventsJson)[0].frame.data).toEqual({
+        id: 's',
+        delta: { content: [{ type: 'text', text: 'suffix' }] },
+      });
+      expect(batches).toHaveLength(2);
+      expect(notify.mock.calls).toEqual([
+        [{ taskId: scope.taskId, revision: 1, throughSequence: 0 }],
+        [{ taskId: scope.taskId, revision: 2, throughSequence: 1 }],
+      ]);
+      expect(journal.throughSequence).toBe(1);
+      expect(jest.getTimerCount()).toBe(0);
+      expect(unhandled).not.toHaveBeenCalled();
+    },
+  );
+
+  it('retries a fresh close flush even when the normal flush cadence exceeds its budget', async () => {
+    const { methods } = memoryStorage();
+    const append = jest
+      .fn(methods.appendSubagentContentBatch)
+      .mockRejectedValueOnce(new Error('Transient append failure'));
+    const journal = new SubagentContentJournal({
+      scope,
+      flushMs: 60_000,
+      batchBytes: 1_000_000,
+      settlementTimeoutMs: 100,
+      append,
+      notify: async () => undefined,
+      onError: () => undefined,
+    });
+    journal.record(update('message_delta', { id: 's', delta: { content: [] } }), 0);
+    const closing = journal.close();
+    void closing.catch(() => undefined);
+    await jest.advanceTimersByTimeAsync(99);
+    await expect(closing).resolves.toEqual({ ok: true });
+    expect(append).toHaveBeenCalledTimes(2);
+    expect(append.mock.calls[1][0]).toEqual(append.mock.calls[0][0]);
+    expect(jest.getTimerCount()).toBe(0);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it.each(['active', 'fresh'])(
+    'bounds persistent %s failures by the original close deadline',
+    async (trigger) => {
+      const { methods } = memoryStorage();
+      const startedAt = Date.now();
+      const attempts: number[] = [];
+      const append = jest.fn(async () => {
+        attempts.push(Date.now() - startedAt);
+        throw new Error('Storage unavailable');
+      });
+      const notify = jest.fn(async () => undefined);
+      const journal = new SubagentContentJournal({
+        scope,
+        flushMs: 10,
+        batchBytes: trigger === 'active' ? 1 : 1_000_000,
+        settlementTimeoutMs: 100,
+        append,
+        notify,
+        onError: () => undefined,
+      });
+      journal.record(update('message_delta', { id: 's', delta: { content: [] } }), 0);
+      journal.record(update('message_delta', { id: 's', delta: { content: [] } }), 1);
+      const closing = journal.close();
+      let outcome: SubagentContentAppendResult | typeof timeoutResult | undefined;
+      void closing.then(
+        (result) => {
+          outcome = result;
+        },
+        () => undefined,
+      );
+      await jest.advanceTimersByTimeAsync(99);
+      expect(outcome).toBeUndefined();
+      expect(attempts).toEqual([0, 10, 20, 30, 40, 50, 60, 70, 80, 90]);
+      await jest.advanceTimersByTimeAsync(1);
+      await expect(closing).resolves.toEqual(timeoutResult);
+      expect(journal.close()).toBe(closing);
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(append).toHaveBeenCalledTimes(10);
+      expect(notify).not.toHaveBeenCalled();
+      expect(journal.throughSequence).toBe(1);
+      expect(await methods.getSubagentContentHead(scope)).toBeNull();
+      expect(jest.getTimerCount()).toBe(0);
+      expect(unhandled).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['active', 'fresh', 'prior'])(
+    'keeps a typed %s append denial terminal',
+    async (trigger) => {
+      const { methods } = memoryStorage();
+      const denied = { ok: false, error: { code: 'SUBAGENT_CONTENT_GONE' } } as const;
+      const append = jest.fn(methods.appendSubagentContentBatch).mockResolvedValueOnce(denied);
+      const notify = jest.fn(async () => undefined);
+      const journal = new SubagentContentJournal({
+        scope,
+        flushMs: 10,
+        batchBytes: trigger === 'fresh' ? 1_000_000 : 1,
+        settlementTimeoutMs: 100,
+        append,
+        notify,
+        onError: () => undefined,
+      });
+      journal.record(update('message_delta', { id: 's', delta: { content: [] } }), 0);
+      if (trigger === 'prior') await jest.advanceTimersByTimeAsync(0);
+      const closing = journal.close();
+      await expect(closing).resolves.toEqual(denied);
+      expect(journal.close()).toBe(closing);
+      await expect(journal.flush()).resolves.toEqual(denied);
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(append).toHaveBeenCalledTimes(1);
+      expect(notify).not.toHaveBeenCalled();
+      expect(jest.getTimerCount()).toBe(0);
+      expect(unhandled).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps failed staged bytes charged against the capture backlog', async () => {
+    const { methods, batches } = memoryStorage();
+    const append = jest
+      .fn(methods.appendSubagentContentBatch)
+      .mockRejectedValueOnce(new Error('Transient append failure'));
+    const errors: unknown[] = [];
+    const journal = new SubagentContentJournal({
+      scope,
+      flushMs: 10,
+      batchBytes: 1,
+      maxPendingBytes: 1024,
+      settlementTimeoutMs: 100,
+      append,
+      notify: async () => undefined,
+      onError: (error) => errors.push(error),
+    });
+    const frame = update('message_delta', {
+      id: 's',
+      delta: { content: [{ type: 'text', text: 'x'.repeat(600) }] },
+    });
+    journal.record(frame, 0);
+    await jest.advanceTimersByTimeAsync(0);
+    journal.record(frame, 1);
+    journal.record(update('message_delta', { id: 's', delta: { content: [] } }), 2);
+    await expect(journal.close()).resolves.toEqual({ ok: true });
+    expect(append).toHaveBeenCalledTimes(2);
+    expect(append.mock.calls[1][0]).toEqual(append.mock.calls[0][0]);
+    expect(errors).toContainEqual(
+      new Error('Subagent content persistence backlog exceeded its byte limit'),
+    );
+    expect(batches).toHaveLength(1);
+    expect(batches[0].throughSequence).toBe(0);
+    expect(journal.throughSequence).toBe(2);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it.each(['resolve', 'reject'])(
+    'does not retry or notify after a timed-out append later %ss',
+    async (settlement) => {
+      const { methods } = memoryStorage();
+      let release: () => void = () => undefined;
+      const append = jest
+        .fn(methods.appendSubagentContentBatch)
+        .mockImplementationOnce(methods.appendSubagentContentBatch)
+        .mockImplementationOnce(
+          (input) =>
+            new Promise<SubagentContentAppendResult>((resolve, reject) => {
+              release = () => {
+                if (settlement === 'reject') reject(new Error('Late append failure'));
+                else resolve(methods.appendSubagentContentBatch(input));
+              };
+            }),
+        );
+      const notify = jest.fn(async () => undefined);
+      const journal = new SubagentContentJournal({
+        scope,
+        flushMs: 10,
+        batchBytes: 1,
+        settlementTimeoutMs: 100,
+        append,
+        notify,
+        onError: () => undefined,
+      });
+      journal.record(update('message_delta', { id: 's', delta: { content: [] } }), 0);
+      await journal.flush();
+      journal.record(update('message_delta', { id: 's', delta: { content: [] } }), 1);
+      journal.record(update('message_delta', { id: 's', delta: { content: [] } }), 2);
+      const closing = journal.close();
+      await jest.advanceTimersByTimeAsync(100);
+      await expect(closing).resolves.toEqual(timeoutResult);
+      release();
+      await jest.advanceTimersByTimeAsync(1000);
+      await expect(journal.flush()).resolves.toEqual(timeoutResult);
+      expect(append).toHaveBeenCalledTimes(2);
+      expect(notify).toHaveBeenCalledTimes(1);
+      expect(notify).toHaveBeenCalledWith({
+        taskId: scope.taskId,
+        revision: 1,
+        throughSequence: 0,
+      });
+      expect(journal.throughSequence).toBe(2);
+      expect(await methods.getSubagentContentHead(scope)).toEqual({
+        revision: settlement === 'resolve' ? 2 : 1,
+        throughSequence: settlement === 'resolve' ? 1 : 0,
+      });
+      expect(jest.getTimerCount()).toBe(0);
+      expect(unhandled).not.toHaveBeenCalled();
+    },
+  );
 });
 
 it('bounds final settlement and never starts another batch after a timed-out append', async () => {

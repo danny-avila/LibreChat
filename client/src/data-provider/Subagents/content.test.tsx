@@ -247,3 +247,21 @@ it('stops retrying genuinely partial terminal capture when its fixed deadline ex
     jest.useRealTimers();
   }
 });
+
+it('does not probe unsupported retained tasks even after query invalidation', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  clients.push(client);
+  const DisabledWrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={client}>
+      <Provider>{children}</Provider>
+    </QueryClientProvider>
+  );
+  const { result } = renderHook(() => useSubagentTaskContentQuery(scope, { enabled: false }), {
+    wrapper: DisabledWrapper,
+  });
+  await act(async () => {
+    await client.invalidateQueries();
+  });
+  expect(result.current.fetchStatus).toBe('idle');
+  expect(getContent).not.toHaveBeenCalled();
+});

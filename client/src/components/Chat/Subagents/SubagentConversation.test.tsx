@@ -428,3 +428,89 @@ it.each(['failed', 'cancelled', 'interrupted', 'completed'] as const)(
     expect(screen.getByText('Safe durable outcome.')).toBeInTheDocument();
   },
 );
+
+it.each(['running', 'completed'] as const)(
+  'keeps visible activity until the %s recovery snapshot has renderable content',
+  (status) => {
+    mockRecoveredQuery.mockReturnValue({
+      data: {
+        messageId: 'task-1:assistant',
+        status,
+        recovery: 'partial',
+        content: [],
+        throughSequence: -1,
+        targetThroughSequence: -1,
+      },
+    });
+    const props = {
+      author,
+      parentAuthor,
+      recovery: {
+        parentConversationId: 'parent',
+        threadId: 'child',
+        selectedTaskId: 'task-1',
+        ready: true,
+      },
+      turns: [
+        {
+          ...turns[0],
+          activity: {
+            ...turns[0].activity,
+            status,
+            items: [{ type: 'writing' as const, text: 'Visible live activity.' }],
+          },
+        },
+      ],
+    };
+    const { rerender } = render(
+      <ChatSurfaceHarness>
+        <SubagentConversation {...props} />
+      </ChatSurfaceHarness>,
+    );
+    expect(screen.getByText('Visible live activity.')).toBeInTheDocument();
+    mockRecoveredQuery.mockReturnValue({
+      data: {
+        messageId: 'task-1:assistant',
+        status,
+        recovery: 'partial',
+        content: [{ type: 'text', text: 'Committed history.' }],
+        throughSequence: 0,
+        targetThroughSequence: 0,
+      },
+    });
+    rerender(
+      <ChatSurfaceHarness>
+        <SubagentConversation {...props} />
+      </ChatSurfaceHarness>,
+    );
+    expect(screen.getByText('Committed history.')).toBeInTheDocument();
+    expect(screen.queryByText('Visible live activity.')).not.toBeInTheDocument();
+  },
+);
+
+it.each([false, true, undefined])(
+  'gates historical recovery with loaded task capability %s',
+  (contentRecoveryAvailable) => {
+    mockRecoveredQuery.mockReset();
+    mockRecoveredQuery.mockReturnValue({});
+    render(
+      <ChatSurfaceHarness>
+        <SubagentConversation
+          author={author}
+          parentAuthor={parentAuthor}
+          recovery={{
+            parentConversationId: 'parent',
+            threadId: 'child',
+            selectedTaskId: 'other',
+            ready: true,
+          }}
+          turns={[{ ...turns[0], contentRecoveryAvailable }]}
+        />
+      </ChatSurfaceHarness>,
+    );
+    expect(mockRecoveredQuery).toHaveBeenLastCalledWith(
+      { parentConversationId: 'parent', threadId: 'child', taskId: 'task-1' },
+      { enabled: contentRecoveryAvailable !== false },
+    );
+  },
+);

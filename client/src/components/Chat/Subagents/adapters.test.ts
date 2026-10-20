@@ -796,3 +796,24 @@ it('keeps sparse public content positions while removing nested approval data', 
   expect(activity.content?.[0]).toBeNull();
   expect(activity.content?.[1]).toMatchObject({ text: 'Retained text' });
 });
+
+it.each([false, true, undefined])('preserves split-page recovery enrollment %s', (available) => {
+  const base: ChildConversationTurn = {
+    taskId: 'split',
+    trigger: { kind: 'parent_dispatch', summary: '' },
+    activity: { title: 'Child', status: 'running', items: [] },
+  };
+  const enrolled = { ...base, contentRecoveryAvailable: available };
+  for (const pages of [
+    [[enrolled], [base]],
+    [[base], [enrolled]],
+  ]) {
+    expect(mergeChildConversationTurns(...pages)[0].contentRecoveryAvailable).toBe(available);
+  }
+  expect(
+    mergeChildConversationTurns(
+      [{ ...base, contentRecoveryAvailable: true }],
+      [{ ...base, contentRecoveryAvailable: false }],
+    )[0].contentRecoveryAvailable,
+  ).toBe(true);
+});

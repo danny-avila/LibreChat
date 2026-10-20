@@ -342,6 +342,7 @@ function RecoveredChildMessage({
   const recovered = useSubagentTaskContentQuery(scope, {
     enabled:
       recovery != null &&
+      props.turn.contentRecoveryAvailable !== false &&
       (props.turn.taskId !== recovery.selectedTaskId ||
         recovery.ready ||
         !isLiveSubagentStatus(props.turn.activity.status)),
@@ -349,19 +350,20 @@ function RecoveredChildMessage({
   const turn = useMemo(() => {
     const snapshot = recovered.data;
     if (snapshot == null) return props.turn;
-    const preserveTerminal =
-      !isLiveSubagentStatus(snapshot.status) &&
-      !snapshot.content.some((part) => part != null && !isEmptyContentPart(part));
+    const preserveActivity = !snapshot.content.some(
+      (part) => part != null && !isEmptyContentPart(part),
+    );
     return {
       ...props.turn,
       activity: {
         ...props.turn.activity,
         messageId: snapshot.messageId,
-        content: preserveTerminal ? getActivityContent(props.turn.activity) : snapshot.content,
+        content: preserveActivity ? getActivityContent(props.turn.activity) : snapshot.content,
         status: snapshot.status,
-        activityTruncated:
-          snapshot.throughSequence < snapshot.targetThroughSequence ||
-          (!isLiveSubagentStatus(snapshot.status) && snapshot.recovery === 'partial'),
+        activityTruncated: preserveActivity
+          ? props.turn.activity.activityTruncated
+          : snapshot.throughSequence < snapshot.targetThroughSequence ||
+            (!isLiveSubagentStatus(snapshot.status) && snapshot.recovery === 'partial'),
       },
     };
   }, [recovered.data, props.turn]);

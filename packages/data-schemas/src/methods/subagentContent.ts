@@ -93,6 +93,7 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
       ...owner,
       conversationId: scope.conversationId,
       messageId: `${scope.taskId}:user`,
+      'subagentContent.deleted': { $ne: true },
       ...activeExpirationFilter<IMessage>(),
     };
     const [seed, parent, child] = await Promise.all([
@@ -113,6 +114,8 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
       }),
     ]);
     if (seed == null || parent == null || child == null) {
+      /** Retry a failed post-write cleanup even after the source has gone. */
+      if (seed == null || parent == null) await contentModel().deleteMany(scopeFilter(scope));
       return { ok: false, error: { code: 'SUBAGENT_CONTENT_GONE' } };
     }
     const Model = contentModel();

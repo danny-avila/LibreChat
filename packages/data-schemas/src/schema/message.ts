@@ -156,6 +156,7 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: {
         version: { type: Number, enum: [1], required: true },
         throughSequence: Number,
+        deleted: { type: Boolean, default: undefined },
       },
       _id: false,
       select: false,

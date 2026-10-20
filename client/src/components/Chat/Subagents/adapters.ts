@@ -77,6 +77,7 @@ export type ChildActivity = {
 
 export type ChildConversationTurn = {
   taskId: string;
+  contentRecoveryAvailable?: boolean;
   trigger: SubagentThreadTurn['trigger'];
   activity: ChildActivity;
 };
@@ -441,6 +442,9 @@ const adaptDurableTurn = (turn: SubagentThreadTurn, title: string): ChildConvers
   }
   return {
     taskId: turn.taskId,
+    ...(turn.contentRecoveryAvailable == null
+      ? {}
+      : { contentRecoveryAvailable: turn.contentRecoveryAvailable }),
     trigger: turn.trigger,
     activity: {
       title,
@@ -492,8 +496,13 @@ export function mergeChildConversationTurns(
     const trigger =
       triggerDetailScore(turn) > triggerDetailScore(older) ? turn.trigger : older.trigger;
     const controls = mergeTurnControls(older.activity.controls, turn.activity.controls);
+    const contentRecoveryAvailable =
+      older.contentRecoveryAvailable === true || turn.contentRecoveryAvailable === true
+        ? true
+        : (turn.contentRecoveryAvailable ?? older.contentRecoveryAvailable);
     merged[existingIndex] = {
       taskId: turn.taskId,
+      ...(contentRecoveryAvailable == null ? {} : { contentRecoveryAvailable }),
       trigger,
       activity: {
         ...older.activity,

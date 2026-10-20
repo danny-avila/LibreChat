@@ -4,8 +4,8 @@ import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createMethods, createModels } from '@librechat/data-schemas';
+import type { AllMethods, IMessage, SubagentContentScope } from '@librechat/data-schemas';
 import type { SubagentTaskRuntime, SubagentUpdateEvent } from '@librechat/agents';
-import type { AllMethods, SubagentContentScope } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
 import {
   SubagentContentJournal,
@@ -677,3 +677,315 @@ it.each(['deleted', 'expired'] as const)(
     }
   },
 );
+
+describe('selective task content deletion', () => {
+  const batch = { revision: 1, fromSequence: 0, throughSequence: 0, eventsJson: '[]' };
+  const nextBatch = { ...batch, revision: 2, fromSequence: 1, throughSequence: 1 };
+  const gone = { ok: false, error: { code: 'SUBAGENT_CONTENT_GONE' } };
+  type Selection = 'user' | 'assistant' | 'both';
+
+  const owner = (scope: SubagentContentScope) => ({
+    user: scope.user,
+    tenantId: scope.tenantId ?? { $exists: false },
+  });
+  const sourceFilter = (scope: SubagentContentScope, selection: Selection) => ({
+    ...owner(scope),
+    conversationId: scope.conversationId,
+    messageId:
+      selection === 'both'
+        ? { $in: [`${scope.taskId}:user`, `${scope.taskId}:assistant`] }
+        : `${scope.taskId}:${selection}`,
+  });
+  const journalFilter = (scope: SubagentContentScope) => ({
+    ...owner(scope),
+    conversationId: scope.conversationId,
+    taskId: scope.taskId,
+  });
+
+  async function seedTask(tenantId?: string): Promise<SubagentContentScope> {
+    const scope: SubagentContentScope = {
+      user: 'deletion-owner',
+      parentConversationId: randomUUID(),
+      conversationId: randomUUID(),
+      taskId: randomUUID(),
+      ...(tenantId == null ? {} : { tenantId }),
+    };
+    await mongoose.models.Conversation.create([
+      {
+        user: scope.user,
+        tenantId,
+        conversationId: scope.parentConversationId,
+        endpoint: 'agents',
+      },
+      {
+        user: scope.user,
+        tenantId,
+        conversationId: scope.conversationId,
+        endpoint: 'agents',
+        subagentThread: {
+          rootConversationId: scope.parentConversationId,
+          parentConversationId: scope.parentConversationId,
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'dispatch',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+        subagentThreadLease: {
+          taskId: scope.taskId,
+          token: 'lease',
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      },
+    ]);
+    await mongoose.models.Message.create(
+      (['user', 'assistant'] as const).map((role) => ({
+        user: scope.user,
+        tenantId,
+        conversationId: scope.conversationId,
+        messageId: `${scope.taskId}:${role}`,
+        isCreatedByUser: role === 'user',
+        subagentContent: { version: 1 },
+      })),
+    );
+    expect(await methods.appendSubagentContentBatch({ ...scope, ...batch })).toEqual({ ok: true });
+    return scope;
+  }
+
+  describe.each(['journal', 'source'] as const)('%s deletion failure', (failure) => {
+    it.each(['user', 'assistant', 'both'] as const)(
+      'keeps the %s source discoverable and revoked until retry succeeds',
+      async (selection) => {
+        const scope = await seedTask();
+        const filter = sourceFilter(scope, selection);
+        const collection =
+          failure === 'journal'
+            ? mongoose.models.SubagentContent.collection
+            : mongoose.models.Message.collection;
+        const outage = new Error('deletion storage unavailable');
+        const failed = jest.spyOn(collection, 'deleteMany').mockRejectedValueOnce(outage);
+        try {
+          await expect(methods.deleteMessages(filter)).rejects.toThrow(outage);
+          expect(await mongoose.models.Message.countDocuments(filter)).toBe(
+            selection === 'both' ? 2 : 1,
+          );
+          const sources = await mongoose.models.Message.find(sourceFilter(scope, 'both'))
+            .select('+subagentContent')
+            .lean<Array<Pick<IMessage, 'subagentContent'>>>();
+          expect(sources).toHaveLength(2);
+          expect(sources.every((source) => source.subagentContent?.deleted === true)).toBe(true);
+          const read = jest.spyOn(methods, 'getSubagentContentHead');
+          const revoked = appFor(scope);
+          const response = await request(revoked.app).get(revoked.url).expect(409);
+          expect(response.body.code).toBe('SUBAGENT_CONTENT_UNAVAILABLE');
+          expect(read).not.toHaveBeenCalled();
+          read.mockRestore();
+          expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(
+            failure === 'journal' ? 2 : 0,
+          );
+          await expect(methods.deleteMessages(filter)).resolves.toMatchObject({
+            acknowledged: true,
+            deletedCount: selection === 'both' ? 2 : 1,
+          });
+          expect(await mongoose.models.Message.countDocuments(filter)).toBe(0);
+          expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(
+            0,
+          );
+          expect(await methods.appendSubagentContentBatch({ ...scope, ...nextBatch })).toEqual(
+            gone,
+          );
+        } finally {
+          failed.mockRestore();
+        }
+      },
+    );
+  });
+
+  it('retries an ambiguously committed source deletion without retaining payloads', async () => {
+    const scope = await seedTask();
+    const collection = mongoose.models.Message.collection;
+    const deleteMany = collection.deleteMany.bind(collection);
+    const failed = jest.spyOn(collection, 'deleteMany').mockImplementationOnce(async (...args) => {
+      await deleteMany(...args);
+      throw new Error('source acknowledgement lost');
+    });
+    try {
+      const filter = sourceFilter(scope, 'both');
+      await expect(methods.deleteMessages(filter)).rejects.toThrow('source acknowledgement lost');
+      expect(await mongoose.models.Message.countDocuments(filter)).toBe(0);
+      expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(0);
+      await expect(methods.deleteMessages(filter)).resolves.toMatchObject({ deletedCount: 0 });
+    } finally {
+      failed.mockRestore();
+    }
+  });
+
+  it('does not remove sources or payloads when revocation fails', async () => {
+    const scope = await seedTask();
+    const failed = jest
+      .spyOn(mongoose.models.Message.collection, 'updateMany')
+      .mockRejectedValueOnce(new Error('revocation unavailable'));
+    try {
+      const filter = sourceFilter(scope, 'assistant');
+      await expect(methods.deleteMessages(filter)).rejects.toThrow('revocation unavailable');
+      expect(await mongoose.models.Message.countDocuments(sourceFilter(scope, 'both'))).toBe(2);
+      expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(2);
+      await expect(methods.deleteMessages(filter)).resolves.toMatchObject({ deletedCount: 1 });
+    } finally {
+      failed.mockRestore();
+    }
+  });
+
+  it.each([undefined, 'tenant-a'])(
+    'preserves adjacent task, owner, child and tenant scopes (%s)',
+    async (tenantId) => {
+      const scope = await seedTask(tenantId);
+      const neighbors = [
+        { ...scope, taskId: randomUUID() },
+        { ...scope, conversationId: randomUUID() },
+        { ...scope, user: 'another-owner' },
+        { ...scope, tenantId: 'tenant-b' },
+      ];
+      for (const neighbor of neighbors) {
+        await mongoose.models.Message.create({
+          user: neighbor.user,
+          tenantId: neighbor.tenantId,
+          conversationId: neighbor.conversationId,
+          messageId: `${neighbor.taskId}:assistant`,
+          subagentContent: { version: 1 },
+        });
+        await mongoose.models.SubagentContent.create({
+          ...neighbor,
+          ...batch,
+          _id: randomUUID(),
+          fragment: 0,
+          fragments: 1,
+          digest: 'unrelated',
+          payload: 'retained',
+        });
+      }
+      const missing = { ...sourceFilter(scope, 'assistant'), messageId: 'missing:assistant' };
+      await expect(methods.deleteMessages(missing)).resolves.toMatchObject({ deletedCount: 0 });
+      expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(2);
+      await methods.deleteMessages(sourceFilter(scope, 'assistant'));
+      expect(await mongoose.models.Message.countDocuments(sourceFilter(scope, 'user'))).toBe(1);
+      expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(0);
+      for (const neighbor of neighbors) {
+        const source = await mongoose.models.Message.findOne(sourceFilter(neighbor, 'assistant'))
+          .select('+subagentContent')
+          .lean<Pick<IMessage, 'subagentContent'> | null>();
+        expect(source?.subagentContent).toMatchObject({ version: 1 });
+        expect(source?.subagentContent).not.toHaveProperty('deleted');
+        expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(neighbor))).toBe(
+          1,
+        );
+      }
+    },
+  );
+
+  it.each(['owner', 'conversation'] as const)(
+    'keeps whole-%s journal cleanup retryable after sources are gone',
+    async (selection) => {
+      const scope = await seedTask();
+      const filter = {
+        ...owner(scope),
+        ...(selection === 'conversation' ? { conversationId: scope.conversationId } : {}),
+      };
+      const failed = jest
+        .spyOn(mongoose.models.SubagentContent.collection, 'deleteMany')
+        .mockRejectedValueOnce(new Error('journal unavailable'));
+      try {
+        await expect(methods.deleteMessages(filter)).rejects.toThrow('journal unavailable');
+        expect(await mongoose.models.Message.countDocuments(sourceFilter(scope, 'both'))).toBe(0);
+        expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(2);
+        await expect(methods.deleteMessages(filter)).resolves.toMatchObject({ deletedCount: 0 });
+        expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(0);
+      } finally {
+        failed.mockRestore();
+      }
+    },
+  );
+
+  it.each(['user', 'assistant', 'both'] as const)(
+    'cleans an admitted append after deleting %s sources',
+    async (selection) => {
+      const scope = await seedTask();
+      const collection = mongoose.models.SubagentContent.collection;
+      const bulkWrite = collection.bulkWrite.bind(collection);
+      let release: () => void = () => undefined;
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let started: () => void = () => undefined;
+      const entering = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const pending = jest
+        .spyOn(collection, 'bulkWrite')
+        .mockImplementationOnce(async (...args) => {
+          started();
+          await released;
+          return bulkWrite(...args);
+        });
+      const late = methods.appendSubagentContentBatch({ ...scope, ...nextBatch });
+      try {
+        await entering;
+        await methods.deleteMessages(sourceFilter(scope, selection));
+        expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(0);
+        if (selection === 'assistant') {
+          const revoked = appFor(scope);
+          const response = await request(revoked.app).get(revoked.url).expect(409);
+          expect(response.body.code).toBe('SUBAGENT_CONTENT_UNAVAILABLE');
+        }
+        release();
+        expect(await late).toEqual(gone);
+        expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(0);
+        expect(await methods.appendSubagentContentBatch({ ...scope, ...nextBatch })).toEqual(gone);
+      } finally {
+        release();
+        await late;
+        pending.mockRestore();
+      }
+    },
+  );
+
+  it('retries a failed post-write cleanup after selective source erasure', async () => {
+    const scope = await seedTask();
+    const collection = mongoose.models.SubagentContent.collection;
+    const bulkWrite = collection.bulkWrite.bind(collection);
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started: () => void = () => undefined;
+    const entering = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const pending = jest.spyOn(collection, 'bulkWrite').mockImplementationOnce(async (...args) => {
+      started();
+      await released;
+      return bulkWrite(...args);
+    });
+    const late = methods.appendSubagentContentBatch({ ...scope, ...nextBatch });
+    try {
+      await entering;
+      await methods.deleteMessages(sourceFilter(scope, 'both'));
+      const failed = jest
+        .spyOn(collection, 'deleteMany')
+        .mockRejectedValueOnce(new Error('late cleanup unavailable'));
+      try {
+        release();
+        await expect(late).rejects.toThrow('late cleanup unavailable');
+        expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(2);
+        expect(await methods.appendSubagentContentBatch({ ...scope, ...nextBatch })).toEqual(gone);
+        expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(0);
+      } finally {
+        failed.mockRestore();
+      }
+    } finally {
+      release();
+      await late.catch(() => undefined);
+      pending.mockRestore();
+    }
+  });
+});
