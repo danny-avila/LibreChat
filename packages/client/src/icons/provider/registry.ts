@@ -15,9 +15,7 @@ import { createMark } from './Mark';
 
 type ProviderArtComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
 
-export type ProviderArt =
-  | { kind: 'component'; Component: ProviderArtComponent }
-  | { kind: 'asset'; src: string };
+export type ProviderArt = { kind: 'component'; Component: ProviderArtComponent };
 
 export interface ProviderIconDef {
   art: ProviderArt;
@@ -31,8 +29,6 @@ export interface ProviderIconDef {
   /** Model level refinement merged over the base definition. */
   byModel?: (model: string) => Partial<ProviderIconDef> | undefined;
 }
-
-const asset = (src: string): ProviderArt => ({ kind: 'asset', src });
 
 const component = (Component: ProviderArtComponent): ProviderArt => ({
   kind: 'component',
@@ -111,10 +107,10 @@ export const providerIcons: Record<ProviderId, ProviderIconDef> = {
   [ProviderId.qwen]: { art: mark('qwen'), label: 'Qwen', mono: true },
   [ProviderId.together]: { art: mark('together'), label: 'Together AI', mono: true },
   [ProviderId.vercel]: { art: mark('vercel'), label: 'Vercel', mono: true },
-  [ProviderId.lemonade]: { art: asset('assets/lemonade.png'), label: 'AMD Lemonade' },
-  [ProviderId.mlx]: { art: asset('assets/mlx.png'), label: 'MLX' },
-  [ProviderId.shuttleai]: { art: asset('assets/shuttleai.png'), label: 'ShuttleAI' },
-  [ProviderId.unify]: { art: asset('assets/unify.webp'), label: 'Unify' },
+  [ProviderId.lemonade]: { art: mark('lemonade'), label: 'AMD Lemonade', mono: true },
+  [ProviderId.mlx]: { art: mark('mlx'), label: 'MLX', mono: true },
+  [ProviderId.shuttleai]: { art: mark('shuttleai'), label: 'ShuttleAI', mono: true },
+  [ProviderId.unify]: { art: mark('unify'), label: 'Unify', mono: true },
 };
 
 /**
@@ -138,6 +134,10 @@ const modelMakers: [RegExp, ProviderId | ProviderIconDef][] = [
   [/sonar/, ProviderId.perplexity],
   [/nemotron/, { art: mark('nvidia'), label: 'NVIDIA', mono: true }],
   [/minimax|abab/, { art: mark('minimax'), label: 'MiniMax', mono: true }],
+  [/(^|[^a-z])phi(-?[0-9]|:|$)/, { art: mark('microsoft'), label: 'Microsoft', mono: true }],
+  [/(^|[^a-z])(chat)?glm|codegeex/, { art: mark('zhipu'), label: 'Z.ai', mono: true }],
+  [/granite/, { art: mark('ibm'), label: 'IBM', mono: true }],
+  [/(^|[^a-z])nova-/, { art: mark('amazon'), label: 'Amazon Nova', mono: true }],
   [/(?<!o)llama/, { art: mark('meta'), label: 'Meta', mono: true }],
 ];
 

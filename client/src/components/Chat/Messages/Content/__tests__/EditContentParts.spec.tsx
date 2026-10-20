@@ -7,7 +7,7 @@ import EditContentParts from '../EditContentParts';
 const mockMutateAsync = jest.fn();
 const mockSetMessages = jest.fn();
 const mockAsk = jest.fn();
-let mockChatDirection = 'LTR';
+let mockChatDirection = 'auto';
 
 jest.mock('recoil', () => ({
   useRecoilValue: () => mockChatDirection,
@@ -77,7 +77,7 @@ describe('EditContentParts', () => {
     mockMutateAsync.mockReset();
     mockAsk.mockReset();
     mockMutateAsync.mockResolvedValue({});
-    mockChatDirection = 'LTR';
+    mockChatDirection = 'auto';
     message.content = undefined;
     mockThread = [parentMessage, message];
   });
@@ -653,7 +653,7 @@ describe('EditContentParts', () => {
   });
 
   it('turns the editor around for a right-to-left chat direction', () => {
-    mockChatDirection = 'RTL';
+    mockChatDirection = 'rtl';
     render(
       <EditContentParts
         content={content}
@@ -668,10 +668,10 @@ describe('EditContentParts', () => {
 
     const editor = screen.getByRole('textbox');
     expect(editor).toHaveAttribute('dir', 'rtl');
-    expect(editor).toHaveClass('text-right');
+    expect(editor).toHaveClass('text-start');
   });
 
-  it('leaves the editor left-to-right by default', () => {
+  it('lets the editor resolve its direction from the text by default', () => {
     render(
       <EditContentParts
         content={content}
@@ -685,8 +685,8 @@ describe('EditContentParts', () => {
     );
 
     const editor = screen.getByRole('textbox');
-    expect(editor).toHaveAttribute('dir', 'ltr');
-    expect(editor).toHaveClass('text-left');
+    expect(editor).toHaveAttribute('dir', 'auto');
+    expect(editor).toHaveClass('text-start');
   });
 
   it('sizes the editor from the configured message font rather than pinning it', () => {
