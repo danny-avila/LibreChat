@@ -160,3 +160,54 @@ it('will not hydrate a repeated provider id from an ambiguous moved occurrence',
   expect(recoveredToolPart(source, { partIndex: 9, toolCallId: 'reused' })).toBeNull();
   expect(recoveredToolPart(source, { partIndex: 1, toolCallId: 'reused' })?.partIndex).toBe(1);
 });
+
+it('catches up beyond a pinned target when completion arrives during pagination', async () => {
+  const load = jest
+    .fn()
+    .mockResolvedValueOnce(snapshot({ targetThroughSequence: 1, nextCursor: 'pinned' }))
+    .mockResolvedValueOnce(
+      suffix([text(1, 'Earlier. ')], {
+        revision: 1,
+        throughSequence: 1,
+        targetThroughSequence: 1,
+        status: 'completed',
+        recovery: 'partial',
+      }),
+    )
+    .mockResolvedValueOnce(
+      suffix([text(2, 'Final.')], {
+        afterSequence: 1,
+        revision: 2,
+        throughSequence: 2,
+        targetThroughSequence: 2,
+        status: 'completed',
+        recovery: 'complete',
+      }),
+    );
+  const recovered = await recoverTaskContent(null, load);
+  expect(load.mock.calls).toEqual([[undefined], [undefined, 'pinned'], [1]]);
+  expect(recovered.snapshot).toMatchObject({
+    throughSequence: 2,
+    status: 'completed',
+    recovery: 'complete',
+  });
+  expect(recovered.snapshot.content[0]).toMatchObject({ text: 'Opening. Earlier. Final.' });
+});
+
+it('keeps a genuinely partial terminal capture honest without an endless catch-up loop', async () => {
+  const load = jest
+    .fn()
+    .mockResolvedValueOnce(snapshot({ status: 'failed', recovery: 'partial' }))
+    .mockResolvedValueOnce(
+      suffix([], {
+        revision: 1,
+        throughSequence: 0,
+        targetThroughSequence: 0,
+        status: 'failed',
+        recovery: 'partial',
+      }),
+    );
+  const recovered = await recoverTaskContent(null, load);
+  expect(load.mock.calls).toEqual([[undefined], [0]]);
+  expect(recovered.snapshot).toMatchObject({ throughSequence: 0, recovery: 'partial' });
+});

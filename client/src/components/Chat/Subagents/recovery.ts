@@ -8,6 +8,7 @@ import type {
   FullToolCall,
 } from 'librechat-data-provider';
 import type { StreamState, StepContext } from '@librechat/chat';
+import { isLiveSubagentStatus } from './status';
 
 export type RecoveredContent = {
   snapshot: SubagentTaskContentSnapshot;
@@ -67,14 +68,18 @@ export function reduceRecoveredContent(
     previous != null &&
     response.throughSequence <= previous.snapshot.throughSequence &&
     response.revision <= previous.snapshot.revision &&
-    response.status === previous.snapshot.status
+    response.status === previous.snapshot.status &&
+    response.recovery === previous.snapshot.recovery &&
+    response.targetThroughSequence === previous.snapshot.targetThroughSequence
   )
     return previous;
   if (previous == null || response.afterSequence !== previous.snapshot.throughSequence) return null;
   if (
     response.revision === previous.snapshot.revision &&
     response.throughSequence === previous.snapshot.throughSequence &&
-    response.status === previous.snapshot.status
+    response.status === previous.snapshot.status &&
+    response.recovery === previous.snapshot.recovery &&
+    response.targetThroughSequence === previous.snapshot.targetThroughSequence
   ) {
     return previous;
   }
@@ -187,22 +192,37 @@ export async function recoverTaskContent(
     response = await load();
     next = reduceRecoveredContent(null, response);
   }
-  const target = response.targetThroughSequence;
+  let caughtUpTerminal = false;
   const seen = new Set<string>();
-  while (response.nextCursor != null) {
-    const cursor = response.nextCursor;
-    if (seen.has(cursor)) throw new Error('subagent_content_cursor_repeated');
-    seen.add(cursor);
-    const through = response.throughSequence;
-    response = await load(undefined, cursor);
-    if (response.targetThroughSequence !== target || response.throughSequence <= through) {
-      throw new Error('subagent_content_cursor_mismatch');
+  while (true) {
+    const target = response.targetThroughSequence;
+    while (response.nextCursor != null) {
+      const cursor = response.nextCursor;
+      if (seen.has(cursor)) throw new Error('subagent_content_cursor_repeated');
+      seen.add(cursor);
+      const through = response.throughSequence;
+      response = await load(undefined, cursor);
+      if (response.targetThroughSequence !== target || response.throughSequence <= through) {
+        throw new Error('subagent_content_cursor_mismatch');
+      }
+      next = reduceRecoveredContent(next, response);
+      if (next == null) throw new Error('subagent_content_snapshot_required');
     }
+    if (next == null || next.snapshot.throughSequence < target) {
+      throw new Error('subagent_content_snapshot_incomplete');
+    }
+    if (
+      caughtUpTerminal ||
+      isLiveSubagentStatus(next.snapshot.status) ||
+      next.snapshot.recovery === 'complete'
+    ) {
+      return next;
+    }
+    // A pinned page can observe terminal status from a newer committed head.
+    // Refresh once; a genuinely incomplete capture must remain partial.
+    caughtUpTerminal = true;
+    response = await load(next.snapshot.throughSequence);
     next = reduceRecoveredContent(next, response);
     if (next == null) throw new Error('subagent_content_snapshot_required');
   }
-  if (next == null || next.snapshot.throughSequence < target) {
-    throw new Error('subagent_content_snapshot_incomplete');
-  }
-  return next;
 }

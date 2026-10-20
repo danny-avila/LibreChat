@@ -188,3 +188,17 @@ test('fake-model hook routes the history marker without changing ordinary replie
   hook({ Graph: graph }, { messages: [human('E2E_REPLY:ordinary')] });
   assert.equal(graph.overrideModel.responses[0], 'E2E reply ordinary');
 });
+
+test('browser history worker uses an isolated endpoint with enough retained output budget', async () => {
+  const config = await fs.readFile(path.resolve(__dirname, '../config/librechat.e2e.yaml'), 'utf8');
+  const endpoint = config.match(/- name: 'Mock Retained History'\n(?:(?!    - name:).|\n)*/)?.[0];
+  assert.ok(endpoint, 'history endpoint must remain available');
+  const retainedChars = Number(endpoint.match(/maxToolResultChars: (\d+)/)?.[1]);
+  assert.ok(retainedChars > history.output('retention-budget', 0).length);
+  assert.match(endpoint, /mock-retained-history/);
+  const browser = await fs.readFile(
+    path.resolve(__dirname, '../specs/mock/subagent-activity.spec.ts'),
+    'utf8',
+  );
+  assert.match(browser, /provider: tools\?\.length \? 'Mock Retained History'/);
+});
