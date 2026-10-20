@@ -87,6 +87,32 @@ const createRequest = (
   }) as ServerRequest;
 
 describe('subagent thread parent-scoped view', () => {
+  it.each([
+    [false, true, false],
+    [true, false, true],
+    [undefined, true, true],
+    [undefined, false, false],
+  ])(
+    'uses the seed recovery capability %s over assistant capability %s',
+    async (seed, assistant, expected) => {
+      const handler = createSubagentThreadViewHandler({
+        getConvoOwnership: jest.fn().mockResolvedValue(parent),
+        getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+        getMessagesForSubagentThreadView: jest
+          .fn()
+          .mockResolvedValue([
+            { ...message('task-1:assistant', 'completed'), contentRecoveryAvailable: assistant },
+            ...(seed == null
+              ? []
+              : [{ ...message('task-1:user', 'running', true), contentRecoveryAvailable: seed }]),
+          ]),
+      });
+      const { response, json } = createResponse();
+      await handler(createRequest({}, { taskId: 'task-1' }), response);
+      expect(json.mock.calls[0][0].turns[0].contentRecoveryAvailable).toBe(expected);
+    },
+  );
+
   it.each([false, true])(
     'returns task recovery enrollment %s from its loaded seed',
     async (available) => {

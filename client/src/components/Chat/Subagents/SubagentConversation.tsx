@@ -39,6 +39,7 @@ import { ElapsedTimer } from '~/components/Chat/Messages/Elapsed';
 import { AuthorContext } from '~/Providers/AuthorContext';
 import { ChatContext } from '~/Providers/ChatContext';
 import { isEmptyContentPart } from '~/utils/messages';
+import { standardContent } from './adapters';
 import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -358,7 +359,10 @@ function RecoveredChildMessage({
       activity: {
         ...props.turn.activity,
         messageId: snapshot.messageId,
-        content: preserveActivity ? getActivityContent(props.turn.activity) : snapshot.content,
+        content: standardContent(
+          preserveActivity ? getActivityContent(props.turn.activity) : snapshot.content,
+          'hidden',
+        ),
         status: snapshot.status,
         activityTruncated: preserveActivity
           ? props.turn.activity.activityTruncated
@@ -385,7 +389,11 @@ function RecoveredChildMessage({
       <ChildMessage
         {...props}
         turn={turn}
-        state={recovered.data == null ? props.state : 'ready'}
+        state={
+          recovered.data == null || props.turn.contentRecoveryAvailable === false
+            ? props.state
+            : 'ready'
+        }
         toolContentQuery={useSubagentToolContentQuery}
         notice={notice}
       />

@@ -1,10 +1,12 @@
 import React from 'react';
+import { ContentTypes } from 'librechat-data-provider';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type { FullToolCall, TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { ChatContract } from '~/hooks/Chat/contract';
 import type { ChildConversationTurn } from './adapters';
 import type { TurnAuthor } from './author';
 import SubagentConversation from './SubagentConversation';
+import { mergeChildConversationTurns } from './adapters';
 import { ChatContext } from '~/Providers/ChatContext';
 import { ChatSurfaceHarness } from 'test/harness';
 
@@ -15,6 +17,7 @@ jest.mock('~/data-provider/Subagents/content', () => ({
 }));
 
 const mockCopyMessage = jest.fn();
+const mockRenderedContent = jest.fn();
 const mockPartScope = jest.fn();
 const mockParentAsk = jest.fn();
 
@@ -66,13 +69,14 @@ jest.mock('~/components/Chat/Messages/Content/ContentParts', () => ({
     const { ChatContext } = jest.requireActual('~/Providers/ChatContext');
     const { useMessagePartsHost } = jest.requireMock('~/Providers/MessagePartsHostContext');
     mockPartScope(React.useContext(ChatContext), useMessagePartsHost().useMessagesAsk());
+    mockRenderedContent(content);
     return (
       <div data-testid="shared-content-parts" data-message-id={messageId}>
         {content.map((part, index) => (
           <span key={index}>
-            {(part.text as string | undefined) ??
-              (part.think as string | undefined) ??
-              (part.tool_call as { name?: string } | undefined)?.name ??
+            {(part?.text as string | undefined) ??
+              (part?.think as string | undefined) ??
+              (part?.tool_call as { name?: string } | undefined)?.name ??
               ''}
           </span>
         ))}
@@ -515,7 +519,7 @@ it.each([false, true, undefined])(
   },
 );
 
-it('does not render cached recovery after the loaded task capability is revoked', () => {
+it('does not render cached recovery after refreshed history revokes the retained task', () => {
   mockRecoveredQuery.mockReturnValue({
     data: {
       messageId: 'task-1:assistant',
@@ -556,7 +560,9 @@ it('does not render cached recovery after the loaded task capability is revoked'
     <ChatSurfaceHarness>
       <SubagentConversation
         {...props}
-        turns={[{ ...props.turns[0], contentRecoveryAvailable: false }]}
+        turns={mergeChildConversationTurns(props.turns, [
+          { ...props.turns[0], contentRecoveryAvailable: false },
+        ])}
       />
     </ChatSurfaceHarness>,
   );
@@ -564,3 +570,89 @@ it('does not render cached recovery after the loaded task capability is revoked'
   expect(screen.getByText('Current durable activity.')).toBeInTheDocument();
   expect(mockRecoveredQuery).toHaveBeenLastCalledWith(expect.any(Object), { enabled: false });
 });
+
+it.each(['running', 'completed'] as const)(
+  'strips root and nested approval payloads from %s recovered content without changing the cache',
+  (status) => {
+    const nested: FullToolCall = {
+      id: 'nested',
+      name: 'nested_tool',
+      args: '{}',
+      output: '',
+      progress: 0,
+      approval: { actionId: 'nested-approval', allowed_decisions: ['approve'] },
+    };
+    const tool: FullToolCall = {
+      id: 'root',
+      name: 'protected_tool',
+      args: '{}',
+      output: '',
+      progress: 0,
+      stepId: 'root-step',
+      toolPreparationDurationMs: 12,
+      approval: { actionId: 'root-approval', allowed_decisions: ['approve', 'reject'] },
+      subagent_content: [
+        { type: ContentTypes.TOOL_CALL, agentId: 'nested-worker', tool_call: nested },
+      ],
+    };
+    const content: TMessageContentParts[] = [
+      {
+        type: ContentTypes.TEXT,
+        text: 'Recovered answer.',
+        phase: 'commentary',
+        agentId: 'worker',
+      },
+      { type: ContentTypes.TOOL_CALL, agentId: 'worker', tool_call: tool },
+    ];
+    const cached = JSON.parse(JSON.stringify(content));
+    mockRecoveredQuery.mockReturnValue({
+      data: {
+        messageId: 'task-1:assistant',
+        status,
+        recovery: 'complete',
+        content,
+        throughSequence: 1,
+        targetThroughSequence: 1,
+      },
+    });
+    render(
+      <ChatSurfaceHarness>
+        <SubagentConversation
+          author={author}
+          parentAuthor={parentAuthor}
+          recovery={{
+            parentConversationId: 'parent',
+            threadId: 'child',
+            selectedTaskId: 'task-1',
+            ready: true,
+          }}
+          turns={[{ ...turns[0], contentRecoveryAvailable: true }]}
+        />
+      </ChatSurfaceHarness>,
+    );
+    const rendered = mockRenderedContent.mock.calls.findLast(([parts]) =>
+      parts.some(
+        (part: TMessageContentParts) => part?.type === 'tool_call' && part.tool_call.id === 'root',
+      ),
+    )?.[0];
+    expect(rendered).toBeDefined();
+    expect(JSON.stringify(rendered)).not.toContain('approval');
+    expect(rendered[0]).toEqual(content[0]);
+    expect(rendered[1]).toMatchObject({
+      agentId: 'worker',
+      tool_call: {
+        id: 'root',
+        stepId: 'root-step',
+        toolPreparationDurationMs: 12,
+        subagent_content: [
+          { agentId: 'nested-worker', tool_call: { id: 'nested', name: 'nested_tool' } },
+        ],
+      },
+    });
+    expect(content).toEqual(cached);
+    expect(mockPartScope.mock.calls.at(-1)?.[0]).toBeNull();
+    if (status === 'completed') {
+      expect(mockCopyMessage.mock.calls.at(-1)?.[0].content).toEqual(rendered);
+    }
+  },
+);

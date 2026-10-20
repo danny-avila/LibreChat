@@ -340,8 +340,9 @@ const publicThreadTurns = (
       {
         taskId,
         contentRecoveryAvailable:
-          record.input?.contentRecoveryAvailable === true ||
-          record.assistant?.contentRecoveryAvailable === true,
+          record.input?.contentRecoveryAvailable ??
+          record.assistant?.contentRecoveryAvailable ??
+          false,
         trigger: {
           kind: triggerKind,
           summary: eventThread ? '' : (input?.text ?? ''),

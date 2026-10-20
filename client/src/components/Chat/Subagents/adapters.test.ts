@@ -810,10 +810,58 @@ it.each([false, true, undefined])('preserves split-page recovery enrollment %s',
   ]) {
     expect(mergeChildConversationTurns(...pages)[0].contentRecoveryAvailable).toBe(available);
   }
-  expect(
-    mergeChildConversationTurns(
-      [{ ...base, contentRecoveryAvailable: true }],
-      [{ ...base, contentRecoveryAvailable: false }],
-    )[0].contentRecoveryAvailable,
-  ).toBe(true);
+});
+
+it.each([
+  [true, false],
+  [false, true],
+  [true, true],
+  [false, false],
+  [undefined, false],
+  [undefined, true],
+  [true, undefined],
+  [false, undefined],
+  [undefined, undefined],
+])(
+  'prefers explicit refreshed recovery capability over retained %s -> %s',
+  (retained, refreshed) => {
+    const base: ChildConversationTurn = {
+      taskId: 'task',
+      trigger: { kind: 'parent_dispatch', summary: 'Investigate' },
+      activity: { title: 'Child', status: 'completed', items: [] },
+    };
+    const history = { ...base, contentRecoveryAvailable: retained };
+    const latest = { ...base, contentRecoveryAvailable: refreshed };
+    expect(
+      mergeChildConversationTurns([history], [latest], [base])[0].contentRecoveryAvailable,
+    ).toBe(refreshed ?? retained);
+    expect(history.contentRecoveryAvailable).toBe(retained);
+    expect(latest.contentRecoveryAvailable).toBe(refreshed);
+  },
+);
+
+it('keeps foreground approval payloads and clean content references intact', () => {
+  const content: TMessageContentParts[] = [
+    {
+      type: ContentTypes.TOOL_CALL,
+      tool_call: {
+        id: 'foreground',
+        name: 'protected_tool',
+        args: '{}',
+        output: '',
+        progress: 0,
+        approval: { actionId: 'foreground-approval', allowed_decisions: ['approve', 'reject'] },
+      },
+    },
+  ];
+  const activity = adaptLivePersistedActivity({
+    title: 'Foreground',
+    progress: null,
+    persistedContent: content,
+    initialProgress: 0,
+    isSubmitting: true,
+    approvalVisibility: 'visible',
+  });
+  expect(activity.content).toBe(content);
+  expect(JSON.stringify(activity.content)).toContain('foreground-approval');
 });

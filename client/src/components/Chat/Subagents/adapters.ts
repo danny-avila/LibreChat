@@ -297,7 +297,7 @@ const liveStatus = ({
 };
 
 /** Keep standard metadata and sharing; public nested transcripts must not expose approvals. */
-const standardContent = (
+export const standardContent = (
   content: TMessageContentParts[],
   approvalVisibility: 'visible' | 'hidden',
 ): TMessageContentParts[] => {
@@ -497,9 +497,7 @@ export function mergeChildConversationTurns(
       triggerDetailScore(turn) > triggerDetailScore(older) ? turn.trigger : older.trigger;
     const controls = mergeTurnControls(older.activity.controls, turn.activity.controls);
     const contentRecoveryAvailable =
-      older.contentRecoveryAvailable === true || turn.contentRecoveryAvailable === true
-        ? true
-        : (turn.contentRecoveryAvailable ?? older.contentRecoveryAvailable);
+      turn.contentRecoveryAvailable ?? older.contentRecoveryAvailable;
     merged[existingIndex] = {
       taskId: turn.taskId,
       ...(contentRecoveryAvailable == null ? {} : { contentRecoveryAvailable }),
