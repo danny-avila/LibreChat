@@ -73,6 +73,7 @@ export type FileHandlingState = {
 type ProcessedUpload = {
   extendedFile: ExtendedFile;
   preview: string;
+  recovery: UploadRecovery;
   resizeDetails?: {
     originalSize: number;
     newSize: number;
@@ -99,28 +100,54 @@ export type UploadLifecycleCallbacks = {
 };
 
 const noop = () => {};
-type UploadRecovery = UploadLifecycleCallbacks & { onFileSearchSuccess?: () => void };
+type UploadRecovery = UploadLifecycleCallbacks & {
+  status: 'staged' | 'uploading' | 'settled' | 'canceled';
+  dispose?: () => void;
+  body?: FormData;
+  onFileSearchSuccess?: () => void;
+};
 const uploadErrorCallbacks = new Map<string, UploadRecovery>();
 
-const takeUploadRecovery = (fileId: string): UploadRecovery | undefined => {
+const takeUploadRecovery = (fileId: string, body?: FormData): UploadRecovery | undefined => {
   const callbacks = uploadErrorCallbacks.get(fileId);
+  if (body && callbacks?.body !== body) {
+    return undefined;
+  }
   uploadErrorCallbacks.delete(fileId);
+  if (callbacks) {
+    callbacks.status = 'settled';
+  }
   return callbacks;
 };
 
 export const clearUploadRecovery = (fileId: string, retainFileSearch = false) => {
-  const recovery = takeUploadRecovery(fileId);
-  if (retainFileSearch) {
-    if (recovery?.onFileSearchSuccess) {
-      uploadErrorCallbacks.set(fileId, { onFileSearchSuccess: recovery.onFileSearchSuccess });
-    }
+  const recovery = uploadErrorCallbacks.get(fileId);
+  const onAbort = recovery?.onAbort;
+  if (retainFileSearch && recovery?.fileSearch && recovery.status !== 'canceled') {
+    recovery.onStart = undefined;
+    recovery.onSuccess = undefined;
+    recovery.onError = undefined;
+    recovery.onAbort = undefined;
   } else {
+    uploadErrorCallbacks.delete(fileId);
+    if (recovery) {
+      recovery.status = 'canceled';
+      recovery.dispose?.();
+    }
+  }
+  if (!retainFileSearch) {
     cancelFileSearchUpload(fileId);
   }
-  recovery?.onAbort?.(fileId);
+  onAbort?.(fileId);
 };
 
-export const hasInFlightUpload = (fileId: string): boolean => uploadErrorCallbacks.has(fileId);
+export const hasInFlightUpload = (fileId: string, conversationId?: string): boolean => {
+  const recovery = uploadErrorCallbacks.get(fileId);
+  return (
+    recovery != null &&
+    (conversationId == null || recovery.fileSearch?.context.conversationId === conversationId)
+  );
+};
 
 type UploadScope = {
   queue: Promise<void>;
@@ -293,8 +320,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
          * the attachment stays below `progress: 1` and the send button never
          * re-enables. Reconcile against the id we own. */
         const fileId = (body.get('file_id') as string | null) ?? data.temp_file_id;
-        const recovery = takeUploadRecovery(fileId);
-        recovery?.onFileSearchSuccess?.();
+        const recovery = takeUploadRecovery(fileId, body);
+        if (!recovery) {
+          return;
+        }
+        recovery.onFileSearchSuccess?.();
         recovery?.onSuccess?.(fileId);
         clearUploadTimer(fileId);
         if (agent_id) {
@@ -342,9 +372,13 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       },
       onError: (_error, body) => {
         const error = _error as TError | undefined;
-        console.log('upload error', error);
         const file_id = body.get('file_id') as string;
-        const uploadLifecycle = takeUploadRecovery(file_id);
+        const uploadLifecycle = takeUploadRecovery(file_id, body);
+        if (!uploadLifecycle) {
+          return;
+        }
+        console.log('upload error', error);
+        uploadLifecycle.dispose?.();
         cancelFileSearchUpload(file_id);
         const tool_resource = body.get('tool_resource');
         if (tool_resource === EToolResources.execute_code) {
@@ -354,7 +388,6 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           }));
         }
         clearUploadTimer(file_id);
-        deleteFileById(file_id);
 
         let errorMessage = 'com_error_files_upload';
 
@@ -396,40 +429,42 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const uploadWithRecovery = (
     formData: FormData,
     file_id: string,
-    uploadLifecycle?: UploadLifecycleCallbacks,
+    uploadLifecycle: UploadRecovery,
   ) => {
     /* Capture the originating conversation's setter, not the mutation observer's
      * current conversation. Removal clears this callback before any late success. */
-    let callbacks: UploadRecovery | undefined = uploadLifecycle;
+    if (uploadLifecycle.status !== 'staged') {
+      return;
+    }
+    const callbacks = uploadLifecycle;
+    callbacks.status = 'uploading';
+    callbacks.body = formData;
     const operation = uploadLifecycle?.fileSearch;
     if (operation && formData.get('tool_resource') === EToolResources.file_search) {
       const intent = beginFileSearchUpload(file_id, operation.context);
-      callbacks = {
-        ...uploadLifecycle,
-        onFileSearchSuccess: () => {
-          if (
-            completeFileSearchUpload(
-              file_id,
-              operation.context.conversationId,
-              intent.persisted ? undefined : intent.choiceRevision,
-            )
-          ) {
-            operation.activate();
-          }
-        },
+      callbacks.onFileSearchSuccess = () => {
+        if (
+          completeFileSearchUpload(
+            file_id,
+            operation.context.conversationId,
+            intent.persisted ? undefined : intent.choiceRevision,
+          )
+        ) {
+          operation.activate();
+        }
       };
     }
-    if (callbacks) {
-      uploadErrorCallbacks.set(file_id, callbacks);
-      callbacks.onStart?.(file_id);
+    uploadErrorCallbacks.set(file_id, callbacks);
+    callbacks.onStart?.(file_id);
+    if (callbacks.status === 'uploading') {
+      uploadFile.mutate(formData);
     }
-    uploadFile.mutate(formData);
   };
 
-  const startUpload = async (
-    extendedFile: ExtendedFile,
-    uploadLifecycle?: UploadLifecycleCallbacks,
-  ) => {
+  const startUpload = async (extendedFile: ExtendedFile, uploadLifecycle: UploadRecovery) => {
+    if (uploadLifecycle.status !== 'staged') {
+      return;
+    }
     const filename = extendedFile.file?.name ?? 'File';
     startUploadTimer(extendedFile.file_id, filename, extendedFile.size);
 
@@ -522,10 +557,13 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const loadImage = (
     extendedFile: ExtendedFile,
     preview: string,
-    uploadLifecycle?: UploadLifecycleCallbacks,
+    uploadLifecycle: UploadRecovery,
   ) => {
     const img = new Image();
     img.onload = async () => {
+      if (uploadLifecycle.status !== 'staged') {
+        return;
+      }
       const measuredFile: ExtendedFile = {
         ...extendedFile,
         width: img.width,
@@ -543,17 +581,12 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
      * session, with nothing to click and no error to explain it. Drop the file and
      * say so instead. */
     img.onerror = () => {
-      clearUploadTimer(extendedFile.file_id);
-      takeUploadRecovery(extendedFile.file_id)?.onError?.(extendedFile.file_id);
-      deleteFileById(extendedFile.file_id);
-      /** Reservations are released by the render that observes the file in the
-       * shared state, which a decode failing before that render never reaches —
-       * and once the file is gone no later render can either. A leaked one is
-       * merged into every subsequent batch's validation, so re-picking the same
-       * file reads as a duplicate and its size keeps counting against the limit. */
-      uploadScope.recent.delete(extendedFile.file_id);
-      removePreviewEntry(extendedFile.file_id);
-      URL.revokeObjectURL(preview);
+      if (uploadLifecycle.status !== 'staged') {
+        return;
+      }
+      const recovery = takeUploadRecovery(extendedFile.file_id);
+      recovery?.dispose?.();
+      recovery?.onError?.(extendedFile.file_id);
       setError('com_error_files_process');
     };
     img.src = preview;
@@ -561,10 +594,17 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
 
   /** Resolves to whether the files passed validation and were accepted for upload. */
   const processFiles = async (
-    fileList: File[],
+    originalFileList: File[],
     _toolResource?: string,
     uploadLifecycle?: UploadLifecycleCallbacks,
+    assignedRecovery?: UploadRecovery,
   ): Promise<boolean> => {
+    const fileList =
+      assignedRecovery?.status === 'canceled' ? originalFileList.slice(1) : originalFileList;
+    if (assignedRecovery?.status === 'canceled' && fileList.length === 0) {
+      setFilesLoading(false);
+      return false;
+    }
     abortControllerRef.current = new AbortController();
 
     const existingFiles = tracksReservations
@@ -638,16 +678,46 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       return false;
     }
 
+    const includesAssignedFile =
+      assignedRecovery?.status === 'staged' &&
+      (selection.keptIndices.length === 0 || selection.keptIndices[0] === 0);
+    if (assignedRecovery && !includesAssignedFile) {
+      if (uploadErrorCallbacks.get(uploadLifecycle?.fileId ?? '') === assignedRecovery) {
+        takeUploadRecovery(uploadLifecycle?.fileId ?? '');
+      }
+    }
+
     /* Process files */
     const processedUploads: ProcessedUpload[] = [];
     for (const [fileIndex, originalFile] of acceptedFileList.entries()) {
-      const file_id =
-        fileIndex === 0 && uploadLifecycle?.fileId != null && uploadLifecycle.fileId !== ''
-          ? uploadLifecycle.fileId
-          : v4();
+      const usesAssignedId = fileIndex === 0 && includesAssignedFile;
+      const file_id = usesAssignedId && uploadLifecycle?.fileId ? uploadLifecycle.fileId : v4();
+      const recovery: UploadRecovery =
+        usesAssignedId && assignedRecovery
+          ? assignedRecovery
+          : { ...uploadLifecycle, status: 'staged' };
+      uploadErrorCallbacks.set(file_id, recovery);
+      let currentPreview: string | undefined;
+      recovery.dispose = () => {
+        recovery.dispose = undefined;
+        const owner = uploadErrorCallbacks.get(file_id);
+        if (owner == null || owner === recovery) {
+          deleteFileById(file_id);
+          removePreviewEntry(file_id);
+          uploadScope.recent.delete(file_id);
+          if (filesRef.current.has(file_id)) {
+            const remaining = new Map(filesRef.current);
+            remaining.delete(file_id);
+            filesRef.current = remaining;
+          }
+        }
+        clearUploadTimer(file_id);
+        if (currentPreview) URL.revokeObjectURL(currentPreview);
+      };
       try {
         // Create initial preview with original file
         const initialPreview = URL.createObjectURL(originalFile);
+        currentPreview = initialPreview;
         cachePreview(file_id, initialPreview);
 
         // Create initial ExtendedFile to show immediately
@@ -687,6 +757,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           ? await importWithRecovery(() => import('~/utils/heicConverter')).then(
               ({ processFileForUpload }) =>
                 processFileForUpload(originalFile, 0.9, (conversionProgress) => {
+                  if (recovery.status !== 'staged') return;
                   const adjustedProgress = 0.1 + conversionProgress * 0.4;
                   replaceFile({
                     ...initialExtendedFile,
@@ -696,6 +767,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
             )
           : originalFile;
 
+        if (recovery.status !== 'staged') continue;
         let finalProcessedFile = heicProcessedFile;
         let resizeDetails: ProcessedUpload['resizeDetails'];
 
@@ -710,15 +782,18 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
               resizeDetails = { originalSize, newSize, compressionRatio };
             }
           } catch (resizeError) {
+            if (recovery.status !== 'staged') continue;
             console.warn('Image resize failed, using original:', resizeError);
             // Continue with HEIC processed file if resizing fails
           }
         }
 
+        if (recovery.status !== 'staged') continue;
         // If file was processed (HEIC converted or resized), update with new file and preview
         if (finalProcessedFile !== originalFile) {
           URL.revokeObjectURL(initialPreview); // Clean up original preview
           const newPreview = URL.createObjectURL(finalProcessedFile);
+          currentPreview = newPreview;
           cachePreview(file_id, newPreview);
 
           const updatedExtendedFile: ExtendedFile = {
@@ -733,6 +808,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           replaceFile(updatedExtendedFile);
           processedUploads.push({
             extendedFile: updatedExtendedFile,
+            recovery,
             preview: newPreview,
             resizeDetails,
           });
@@ -745,12 +821,14 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           replaceFile(readyExtendedFile);
           processedUploads.push({
             extendedFile: readyExtendedFile,
+            recovery,
             preview: initialPreview,
             resizeDetails,
           });
         }
       } catch (error) {
-        deleteFileById(file_id);
+        if (recovery.status === 'canceled') continue;
+        takeUploadRecovery(file_id)?.dispose?.();
         console.log('file handling error', error);
         if (error instanceof Error && error.message.includes('HEIC')) {
           setError('com_error_heic_conversion');
@@ -760,20 +838,21 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       }
     }
 
-    const discardProcessedUpload = ({ extendedFile, preview }: ProcessedUpload) => {
-      deleteFileById(extendedFile.file_id);
-      removePreviewEntry(extendedFile.file_id);
-      URL.revokeObjectURL(preview);
+    const discardProcessedUpload = ({ extendedFile, recovery }: ProcessedUpload) => {
+      if (uploadErrorCallbacks.get(extendedFile.file_id) === recovery) {
+        takeUploadRecovery(extendedFile.file_id);
+      }
+      recovery.dispose?.();
     };
 
     const discardProcessedUploads = () => {
       for (const upload of processedUploads) {
         discardProcessedUpload(upload);
       }
-      filesRef.current = existingFiles;
     };
 
-    const processedFileList = processedUploads.map(({ extendedFile }) => extendedFile.file as File);
+    const eligibleUploads = processedUploads.filter(({ recovery }) => recovery.status === 'staged');
+    const processedFileList = eligibleUploads.map(({ extendedFile }) => extendedFile.file as File);
 
     let batch: UploadPartition;
     let acceptedUploads: ProcessedUpload[];
@@ -783,7 +862,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         fileList: processedFileList,
         endpointFileConfig,
       });
-      acceptedUploads = batch.keptIndices.map((index) => processedUploads[index]);
+      acceptedUploads = batch.keptIndices.map((index) => eligibleUploads[index]);
       const acceptedFiles = acceptedUploads.map(({ extendedFile }) => extendedFile.file as File);
       /** `fileLimit` and `totalSizeLimit` describe the batch rather than any one file, so both are
        * applied to whatever survived the per-file partition above. */
@@ -832,7 +911,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     }
 
     for (const { index } of batch.skipped) {
-      discardProcessedUpload(processedUploads[index]);
+      discardProcessedUpload(eligibleUploads[index]);
     }
     /** Held until the batch is known to be uploading: a selection that is rejected in full reports
      * itself through the batch-level errors alone, never alongside a partial-success notice. */
@@ -847,7 +926,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     }
     filesRef.current = filesWithProcessedUploads;
 
-    for (const { extendedFile, preview, resizeDetails } of acceptedUploads) {
+    for (const { extendedFile, preview, resizeDetails, recovery } of acceptedUploads) {
       if (resizeDetails) {
         const { originalSize, newSize, compressionRatio } = resizeDetails;
         showToast({
@@ -862,11 +941,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       }
 
       if (extendedFile.file?.type.startsWith('image/') === true) {
-        loadImage(extendedFile, preview, uploadLifecycle);
+        loadImage(extendedFile, preview, recovery);
         continue;
       }
 
-      await startUpload(extendedFile, uploadLifecycle);
+      await startUpload(extendedFile, recovery);
     }
 
     return acceptedUploads.length > 0;
@@ -881,9 +960,19 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     /** `FileList` is live: copy it before yielding, as callers reset the input synchronously */
     const fileList = Array.from(_files);
     const assignedFileId = lifecycle?.fileId;
-    if (assignedFileId && lifecycle) {
-      uploadErrorCallbacks.set(assignedFileId, lifecycle);
+    const assignedRecovery: UploadRecovery | undefined =
+      assignedFileId && lifecycle ? { ...lifecycle, status: 'staged' } : undefined;
+    if (assignedFileId && assignedRecovery) {
+      if (uploadErrorCallbacks.has(assignedFileId)) {
+        clearUploadRecovery(assignedFileId);
+      }
+      uploadErrorCallbacks.set(assignedFileId, assignedRecovery);
     }
+    const releaseAssignedRecovery = () => {
+      if (assignedFileId && uploadErrorCallbacks.get(assignedFileId) === assignedRecovery) {
+        takeUploadRecovery(assignedFileId)?.dispose?.();
+      }
+    };
     /** Started before queueing so every waiting batch shares one bounded config window */
     const configReady = isConfigPending ? waitForConfig() : undefined;
     const previousProcessing = uploadScope.queue;
@@ -896,21 +985,17 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       await previousProcessing;
       await configReady;
       if (lifecycle?.shouldCommit?.() === false) {
-        if (assignedFileId) {
-          takeUploadRecovery(assignedFileId);
-        }
+        releaseAssignedRecovery();
         setFilesLoading(false);
         return false;
       }
-      const accepted = await processFiles(fileList, _toolResource, lifecycle);
-      if (!accepted && assignedFileId) {
-        takeUploadRecovery(assignedFileId);
+      const accepted = await processFiles(fileList, _toolResource, lifecycle, assignedRecovery);
+      if (!accepted) {
+        releaseAssignedRecovery();
       }
       return accepted;
     } catch (error) {
-      if (assignedFileId) {
-        takeUploadRecovery(assignedFileId);
-      }
+      releaseAssignedRecovery();
       throw error;
     } finally {
       releaseProcessing();

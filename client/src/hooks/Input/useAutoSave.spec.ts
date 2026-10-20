@@ -51,6 +51,7 @@ import {
 } from '~/utils';
 import { markPastedTextFile } from '~/utils/files';
 import { useAutoSave } from '~/hooks';
+import type { ExtendedFile } from '~/common';
 
 const mockSetValue = jest.fn();
 const mockGetDraft = getDraft as jest.Mock;
@@ -1087,6 +1088,71 @@ describe('useAutoSave — file cache updates', () => {
     unmount();
     (clearAllDrafts as jest.Mock).mockReset();
   });
+
+  it.each([false, true])(
+    'bounds blocked destination renders and recovers after ownership release (unstable setter: %s)',
+    (unstable) => {
+      markTabLive('blocking-owner');
+      const textAreaRef = makeTextAreaRef('');
+      const cachedFile = { file_id: 'queued-file', bytes: 3, filename: 'queued.txt' };
+      (useGetFiles as jest.Mock).mockReturnValue({ data: [cachedFile] });
+      let renders = 0;
+      let writes = 0;
+      const { result, rerender, unmount } = renderHook(
+        ({ isSubmitting }: { isSubmitting: boolean }) => {
+          if (++renders > 40) throw new Error('unbounded draft recovery');
+          const [files, updateFiles] = React.useState<Map<string, ExtendedFile>>(new Map());
+          const stableSetter = React.useCallback(
+            (update: React.SetStateAction<Map<string, ExtendedFile>>) => {
+              writes++;
+              updateFiles(update);
+            },
+            [],
+          );
+          const setFiles = unstable
+            ? (update: React.SetStateAction<Map<string, ExtendedFile>>) => stableSetter(update)
+            : stableSetter;
+          useAutoSave({
+            conversationId: 'blocked-destination',
+            isSubmitting,
+            textAreaRef,
+            files,
+            setFiles,
+          });
+          return files;
+        },
+        { initialProps: { isSubmitting: true } },
+      );
+      setFilesDraft(Constants.PENDING_CONVO, { fileIds: ['queued-file'], pendingPastes: {} });
+      setFilesDraft('blocked-destination', {
+        fileIds: ['foreign-file'],
+        pendingPastes: {},
+        tabId: 'blocking-owner',
+      });
+      const foreign = getFilesDraft('blocked-destination');
+      act(() => rerender({ isSubmitting: false }));
+      expect(result.current.has('queued-file')).toBe(true);
+      const writesAfterBlock = writes;
+      for (let i = 0; i < 3; i++) act(() => rerender({ isSubmitting: false }));
+      expect(writes - writesAfterBlock).toBeLessThan(8);
+      expect(getFilesDraft('blocked-destination')).toEqual(foreign);
+      expect(getFilesDraft(Constants.PENDING_CONVO).fileIds).toEqual(['queued-file']);
+      markTabGone('blocking-owner');
+      act(() =>
+        window.dispatchEvent(
+          new StorageEvent('storage', { key: 'librechat-live-tab:blocking-owner' }),
+        ),
+      );
+      expect(getFilesDraft(Constants.PENDING_CONVO).fileIds).toEqual([]);
+      expect(getFilesDraft('blocked-destination').fileIds).toEqual(['queued-file']);
+      const writesAfterMigration = writes;
+      (useGetFiles as jest.Mock).mockReturnValue({ data: [{ ...cachedFile }] });
+      act(() => rerender({ isSubmitting: false }));
+      expect(writes - writesAfterMigration).toBeLessThan(5);
+      expect(renders).toBeLessThan(35);
+      unmount();
+    },
+  );
 
   it('keeps autosaving to the pending key while the destination is owned by another live tab', () => {
     jest.useFakeTimers();

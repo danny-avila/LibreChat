@@ -171,7 +171,6 @@ export const useAutoSave = ({
           }
           delete pendingPastes[fileId];
           setFiles((currentFiles) => {
-            const updatedFiles = new Map(currentFiles);
             /** The same entry may still be live in the composer — this path also
              * runs when the upload that created it writes the file cache. Layer
              * the persisted record over it instead of replacing it: the local
@@ -179,15 +178,29 @@ export const useAutoSave = ({
              * resource the upload was staged under exist nowhere on the server
              * record, and `attached` decides whether removing the chip also
              * deletes the file, which a composer-owned upload still needs. */
-            const live = updatedFiles.get(fileIdToRecover);
-            updatedFiles.set(fileIdToRecover, {
+            const live = currentFiles.get(fileIdToRecover);
+            const restored = {
               ...live,
               ...fileToRecover,
               preview: live?.preview ?? fileToRecover.preview,
               progress: 1,
               attached: live ? (live.attached ?? false) : true,
               size: fileToRecover.bytes,
-            });
+            };
+            let unchanged = live != null;
+            if (live) {
+              for (const key in restored) {
+                if (!Object.is(Reflect.get(live, key), Reflect.get(restored, key))) {
+                  unchanged = false;
+                  break;
+                }
+              }
+            }
+            if (unchanged) {
+              return currentFiles;
+            }
+            const updatedFiles = new Map(currentFiles);
+            updatedFiles.set(fileIdToRecover, restored);
             return updatedFiles;
           });
           return;
@@ -351,6 +364,7 @@ export const useAutoSave = ({
 
   const prevConversationIdRef = useRef<string | null>(null);
   const pendingDestinationRef = useRef<string | null>(null);
+  const [ownershipVersion, setOwnershipVersion] = useState(0);
 
   useEffect(() => {
     // This useEffect is responsible for saving the current conversation's draft and
@@ -365,8 +379,18 @@ export const useAutoSave = ({
       return;
     }
 
+    const awaitingDestination = pendingDestinationRef.current;
+    if (
+      currentConversationId === pendingDraftId &&
+      awaitingDestination === conversationId &&
+      (!isFilesDraftOwnedByThisTab(getFilesDraft(conversationId)) ||
+        !mayWriteComposerText(conversationId))
+    ) {
+      return;
+    }
+
     // clear attachment files when switching conversation
-    setFiles(new Map());
+    setFiles((current) => (current.size === 0 ? current : new Map()));
 
     /** The key the attachments live under once the pending draft has been moved. A move that
      * storage refuses leaves them behind, and recovery has to read them where they still are. */
@@ -481,11 +505,14 @@ export const useAutoSave = ({
     }
 
     prevConversationIdRef.current = nextConversationId;
-    setCurrentDraft({
-      id: nextConversationId,
-      conversationId: _conversationId ?? Constants.NEW_CONVO,
-    });
+    const owner = _conversationId ?? Constants.NEW_CONVO;
+    setCurrentDraft((previous) =>
+      previous?.id === nextConversationId && previous.conversationId === owner
+        ? previous
+        : { id: nextConversationId, conversationId: owner },
+    );
   }, [
+    ownershipVersion,
     currentDraft,
     currentConversationId,
     conversationId,
@@ -498,6 +525,23 @@ export const useAutoSave = ({
     saveText,
     setFiles,
   ]);
+
+  useEffect(() => {
+    const destination = pendingDestinationRef.current;
+    if (!destination || destination !== conversationId) {
+      return;
+    }
+    const retry = () => {
+      if (
+        isFilesDraftOwnedByThisTab(getFilesDraft(destination)) &&
+        mayWriteComposerText(destination)
+      ) {
+        setOwnershipVersion((version) => version + 1);
+      }
+    };
+    window.addEventListener('storage', retry);
+    return () => window.removeEventListener('storage', retry);
+  }, [conversationId, currentDraft]);
 
   useEffect(() => {
     const draftStorageId = activeStorageId;
@@ -534,10 +578,14 @@ export const useAutoSave = ({
         (fileId) =>
           !fileIds.includes(fileId) &&
           !pendingFileIds.includes(fileId) &&
-          hasPendingFileSearchUpload(
+          (hasPendingFileSearchUpload(
             fileId,
             currentDraft?.conversationId ?? _conversationId ?? Constants.NEW_CONVO,
-          ),
+          ) ||
+            hasInFlightUpload(
+              fileId,
+              currentDraft?.conversationId ?? _conversationId ?? Constants.NEW_CONVO,
+            )),
       ),
     ];
     const liveIds = new Set(draftFileIds);
