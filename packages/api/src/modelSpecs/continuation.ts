@@ -1,9 +1,9 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TSpecsConfig } from 'librechat-data-provider';
-import { readScheduleFireContext } from '~/schedules/trigger';
 
 interface AgentTriggerModelSpecRequest {
   _isAgentTrigger?: boolean;
+  _agentEventBindingId?: string;
   user?: { id?: string; tenantId?: string };
   config?: { modelSpecs?: Pick<TSpecsConfig, 'enforce' | 'list'> | null };
   body?: Record<string, unknown>;
@@ -13,6 +13,7 @@ interface AgentTriggerModelSpecRequest {
     conversationId: string;
     agent_id?: string;
     spec?: string | null;
+    agentEventBinding?: { bindingId: string };
   } | null;
 }
 
@@ -48,17 +49,33 @@ export function restoreAgentTriggerModelSpec(req: AgentTriggerModelSpecRequest):
     ) {
       return;
     }
-    const spec = modelSpecs.list.find((entry) => entry.name === conversation.spec);
-    if (spec != null && matchesAgent(spec)) {
-      body.spec = spec.name;
+    if (conversation.spec != null) {
+      const spec = modelSpecs.list.find((entry) => entry.name === conversation.spec);
+      if (spec != null && matchesAgent(spec)) {
+        body.spec = spec.name;
+      }
+      return;
     }
-    return;
+    // Only the guard can establish this binding context after checking its owner and parent.
+    if (
+      !req._agentEventBindingId ||
+      conversation.agentEventBinding?.bindingId !== req._agentEventBindingId
+    ) {
+      return;
+    }
+  } else {
+    const trigger = body.agentTrigger;
+    if (
+      trigger == null ||
+      typeof trigger !== 'object' ||
+      Array.isArray(trigger) ||
+      !('version' in trigger) ||
+      trigger.version !== 1
+    ) {
+      return;
+    }
   }
-
-  if (readScheduleFireContext(req) == null) {
-    return;
-  }
-  // A schedule has no conversation yet. Never guess between different presets for one agent.
+  // New fires and spec-less bound actors must have exactly one current preset for this agent.
   let selected: string | undefined;
   for (const spec of modelSpecs.list) {
     if (!matchesAgent(spec)) {

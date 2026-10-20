@@ -123,6 +123,88 @@ describe('trusted continuation model specs', () => {
     expect(req.body).not.toHaveProperty('spec');
   });
 
+  it.each(['api', 'webhook', 'queue', 'custom'])(
+    'restores a signed source-neutral %s fire',
+    (source) => {
+      const req = scheduleRequest();
+      req.body.agentTrigger = { version: 1, event: { source: { type: source } } };
+      restoreAgentTriggerModelSpec(req);
+      expect(req.body.spec).toBe('saved-agent');
+    },
+  );
+
+  it.each(['unsigned', 'ambiguous', 'invalid', 'retargeted'])(
+    'refuses a source-neutral fire that is %s',
+    (failure) => {
+      const req = scheduleRequest();
+      req.body.agentTrigger = { version: 1, event: { source: { type: 'webhook' } } };
+      if (failure === 'unsigned') req._isAgentTrigger = false;
+      if (failure === 'ambiguous') req.config.modelSpecs.list.push({ ...spec, name: 'other' });
+      if (failure === 'invalid') req.body.spec = 'invalid';
+      if (failure === 'retargeted') req.body.agent_id = 'other-agent';
+      restoreAgentTriggerModelSpec(req);
+      expect(req.body.spec).toBe(failure === 'invalid' ? 'invalid' : undefined);
+    },
+  );
+
+  function bindingRequest() {
+    const req = request();
+    const { spec: _spec, ...conversation } = req.resolvedConversation;
+    return {
+      ...req,
+      _agentEventBindingId: 'binding-1',
+      resolvedConversation: { ...conversation, agentEventBinding: { bindingId: 'binding-1' } },
+    };
+  }
+
+  it('restores only a guard-authorized spec-less binding target', () => {
+    const req = bindingRequest();
+    restoreAgentTriggerModelSpec(req);
+    expect(req.body.spec).toBe('saved-agent');
+  });
+
+  it.each(['user', 'tenantId', 'conversationId', 'agent_id'] as const)(
+    'refuses a binding with a mismatched %s',
+    (field) => {
+      const req = bindingRequest();
+      req.resolvedConversation[field] = 'different';
+      restoreAgentTriggerModelSpec(req);
+      expect(req.body).not.toHaveProperty('spec');
+    },
+  );
+
+  it.each(['unverified', 'unsigned', 'ambiguous', 'explicit', 'ordinary'])(
+    'does not widen fallback for an %s binding request',
+    (failure) => {
+      const req = bindingRequest();
+      if (failure === 'unverified') req._agentEventBindingId = 'different';
+      if (failure === 'unsigned') req._isAgentTrigger = false;
+      if (failure === 'ambiguous') req.config.modelSpecs.list.push({ ...spec, name: 'other' });
+      if (failure === 'explicit') req.body.spec = 'invalid';
+      if (failure === 'ordinary') {
+        req._agentEventBindingId = '';
+        req.body._agentEventBindingId = 'binding-1';
+      }
+      restoreAgentTriggerModelSpec(req);
+      expect(req.body.spec).toBe(failure === 'explicit' ? 'invalid' : undefined);
+    },
+  );
+
+  it.each(['removed', 'retargeted'])(
+    'never reselects an ordinary conversation’s %s spec',
+    (failure) => {
+      const req = request();
+      if (failure === 'removed') req.resolvedConversation.spec = 'removed';
+      else
+        req.config.modelSpecs.list = [
+          { ...spec, preset: { ...spec.preset, agent_id: 'other-agent' } },
+        ];
+      req.config.modelSpecs.list.push({ ...spec, name: 'replacement' });
+      restoreAgentTriggerModelSpec(req);
+      expect(req.body).not.toHaveProperty('spec');
+    },
+  );
+
   it('leaves non-enforced requests unchanged', () => {
     const req = request();
     req.config.modelSpecs.enforce = false;

@@ -822,6 +822,9 @@ describe('buildEndpointOption - enforced server continuations', () => {
     ['subagent-completion', 'subagent.completion'],
     ['background-tool-completion', 'background-tool.completion'],
     ['schedule', 'schedule.occurrence'],
+    ['api', 'remote.event'],
+    ['webhook', 'resource.ready'],
+    ['queue', 'message.ready'],
   ])(
     'admits a signed %s through the normal enforced endpoint builder',
     async (source, eventType) => {
@@ -830,7 +833,7 @@ describe('buildEndpointOption - enforced server continuations', () => {
         getConvo,
         store: { isThreadActiveForOwner: () => false },
       });
-      const scheduled = source === 'schedule';
+      const scheduled = ['schedule', 'api', 'webhook', 'queue'].includes(source);
       let admitted;
       const host = createAgentTriggerExecutionHost({
         getBaseUrl: () => 'http://localhost:3080',
@@ -882,7 +885,7 @@ describe('buildEndpointOption - enforced server continuations', () => {
           id: 'event-1',
           type: eventType,
           occurredAt: 1_000,
-          source: { id: source, type: scheduled ? 'schedule' : 'internal' },
+          source: { id: source, type: scheduled ? source : 'internal' },
           payload: { spec: 'forged-spec' },
         },
         input: 'Continue the turn',
@@ -891,6 +894,108 @@ describe('buildEndpointOption - enforced server continuations', () => {
       await expect(host.dispatch(envelope)).resolves.toMatchObject({ status: 'started' });
       expect(admitted).toMatchObject({ spec: savedSpec.name, agent_id: 'agent-1' });
       expect(getConvo).toHaveBeenCalledTimes(scheduled ? 0 : 1);
+    },
+  );
+
+  it.each([undefined, 'saved-agent', 'removed-spec'])(
+    'runs the real guard for a signed binding with persisted spec %s',
+    async (storedSpec) => {
+      const bindingId = 'evtbind_test';
+      const lineage = { parentConversationId: 'parent-1', parentAgentId: 'parent-agent' };
+      const child = {
+        user: 'user-1',
+        tenantId: 'tenant-1',
+        conversationId: 'actor-1',
+        agent_id: 'agent-1',
+        agentEventBinding: { bindingId, sourceKeyId: 'key-1', actorId: 'actor' },
+        subagentThread: lineage,
+        ...(storedSpec != null && { spec: storedSpec }),
+      };
+      const getConvo = jest.fn(async (_user, id) =>
+        id === 'parent-1'
+          ? { user: 'user-1', tenantId: 'tenant-1', conversationId: id, agent_id: 'parent-agent' }
+          : child,
+      );
+      const getEventBinding = jest.fn(async () => ({
+        conversationId: 'actor-1',
+        agentId: 'agent-1',
+        tenantId: 'tenant-1',
+        binding: child.agentEventBinding,
+        lineage,
+      }));
+      const guard = createSubagentThreadTurnGuard({
+        getConvo,
+        getEventBinding,
+        store: { isThreadActiveForOwner: () => false },
+      });
+      const host = createAgentTriggerExecutionHost({
+        getBaseUrl: () => 'http://localhost:3080',
+        mintToken: () => generateAgentTriggerToken('user-1'),
+        fetch: async (_url, init) => {
+          const req = createReq(JSON.parse(init.body), config);
+          req.baseUrl = '/api/agents/chat';
+          req.user = { id: 'user-1', tenantId: 'tenant-1' };
+          const headers = Object.fromEntries(
+            Object.entries(init.headers).map(([key, value]) => [key.toLowerCase(), value]),
+          );
+          req._isAgentTrigger = isAgentTriggerRequest({ headers });
+          req.get = (name) => headers[name.toLowerCase()];
+          const next = jest.fn();
+          await guard(req, createRes(), next);
+          expect(next).toHaveBeenCalledWith();
+          expect(req._agentEventBindingId).toBe(bindingId);
+          expect(req.resolvedConversation.user).toBe('user-1');
+          expect(req.resolvedConversation.spec).toBe(storedSpec);
+          next.mockClear();
+          await buildEndpointOption(req, createRes(), next);
+          if (storedSpec === 'removed-spec') {
+            expect(next).not.toHaveBeenCalled();
+            expect(handleError).toHaveBeenCalledWith(expect.anything(), {
+              text: 'No model spec selected',
+            });
+          } else {
+            expect(handleError).not.toHaveBeenCalled();
+            expect(next).toHaveBeenCalledWith();
+            expect(req.body.endpointOption).toMatchObject({
+              spec: savedSpec.name,
+              agent_id: 'agent-1',
+            });
+          }
+          expect(getConvo).toHaveBeenCalledTimes(2);
+          expect(getEventBinding).toHaveBeenCalledWith({
+            user: 'user-1',
+            tenantId: 'tenant-1',
+            bindingId,
+            sourceKeyId: 'key-1',
+          });
+          return new Response(
+            JSON.stringify({ status: 'started', streamId: 'actor-1', conversationId: 'actor-1' }),
+          );
+        },
+      });
+      await host.dispatch(
+        createAgentTriggerEnvelope({
+          mode: 'continue',
+          requestId: 'request-1',
+          deliveryId: 'delivery-1',
+          receivedAt: 1_000,
+          principal: { id: 'user-1', tenantId: 'tenant-1' },
+          target: {
+            agentId: 'agent-1',
+            conversationId: 'actor-1',
+            parentMessageId: 'root',
+            bindingId,
+            sourceKeyId: 'key-1',
+          },
+          event: {
+            id: 'event-1',
+            type: 'remote.event',
+            occurredAt: 1_000,
+            source: { id: 'remote', type: 'api' },
+          },
+          input: 'Handle this event',
+        }),
+      );
     },
   );
 
