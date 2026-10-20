@@ -291,7 +291,7 @@ export function createProvisionFilesCallback({
           const provisioned = await shareProvisioning(
             shareKey(`code:${codeRouteKey}`, file, sandboxFilename),
             async () => {
-              const temporary = provisionState.temporaryCodeFileIds?.has(file.file_id) === true;
+              let temporary = provisionState.temporaryCodeFileIds?.has(file.file_id) === true;
               const existingRef = temporary
                 ? getTurnCodeEnvRef(req, codeRouteKey, file, sandboxFilename)
                 : undefined;
@@ -319,11 +319,20 @@ export function createProvisionFilesCallback({
                 });
                 signal?.throwIfAborted();
                 const storedName = canonicalRef.sandboxFilename ?? info?.originalFilename;
-                if (storedName === sandboxFilename && checkCodeFileActive(info?.lastModified)) {
-                  return {
-                    refs: mergeCodeEnvRef(file.metadata, canonicalRef),
-                    sandboxFilename,
-                  };
+                if (checkCodeFileActive(info?.lastModified)) {
+                  if (storedName === sandboxFilename) {
+                    return {
+                      refs: mergeCodeEnvRef(file.metadata, canonicalRef),
+                      sandboxFilename,
+                    };
+                  }
+                  // A live generated output may retain an unsanitized storage name.
+                  // Import aliases must leave its originating chat's reference intact.
+                  temporary = true;
+                  provisionState.temporaryCodeFileIds = new Set([
+                    ...(provisionState.temporaryCodeFileIds ?? []),
+                    file.file_id,
+                  ]);
                 }
               }
               const {

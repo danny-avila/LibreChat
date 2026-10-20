@@ -57,6 +57,23 @@ export interface RunFilePreparation {
   resumed: boolean;
 }
 
+export interface RunCodeFileContext {
+  paths: ReadonlyMap<string, string>;
+  context: string;
+}
+
+type RunCodeFileEntry = RunFileEntry & { code_path?: string };
+
+function describeCodePaths(
+  files: RunFileEntry[],
+  context?: RunCodeFileContext,
+): RunCodeFileEntry[] {
+  return files.map((file) => {
+    const path = context?.paths.get(file.file_id);
+    return path ? { ...file, code_path: path } : file;
+  });
+}
+
 export interface RunFileSessionDeps {
   policy?: TAgentsEndpoint['fileSharing'];
   userId: string;
@@ -81,6 +98,8 @@ export interface RunFileSessionDeps {
     revision: number;
     signal: AbortSignal;
   }) => Promise<void>;
+  /** Actor-local code paths, read after preparation without another storage query. */
+  getCodeFileContext?: (actor: RunFileActor) => RunCodeFileContext | undefined;
   validateMessages: RunFileMessageEncoder['validate'];
   encodeMessages: RunFileMessageEncoder['encode'];
   emit: (
@@ -121,7 +140,8 @@ export interface RunFileSession {
     context?: SubagentExecutionContext,
     signal?: AbortSignal,
   ) => Promise<{
-    files: RunFileEntry[];
+    files: RunCodeFileEntry[];
+    code_file_context?: string;
     artifacts: Array<{ artifact_id: string; filename: string }>;
     private_artifact_recovery?: string;
   }>;
@@ -337,10 +357,19 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
         actor: { agentId },
         files,
       } = preparations[0];
-      const catalog = describeRunFiles(files, scope.runId);
+      // Graph members have separate workspaces. Only a single-member task can
+      // share its paths directly; graph members obtain their own catalog with the tool.
+      const codeContext =
+        preparations.length === 1 ? deps.getCodeFileContext?.(preparations[0].actor) : undefined;
+      const catalog = describeCodePaths(describeRunFiles(files, scope.runId), codeContext);
+      const discovery = preparations.some((preparation) =>
+        deps.getCodeFileContext?.(preparation.actor),
+      )
+        ? "Use each file's code_path when provided. Use list_run_files before code execution to get your execution's file paths and discover later publications."
+        : 'Use list_run_files to discover later publications.';
       messages = [
         new HumanMessage({
-          content: `Files shared for this task (read-only inputs):\n${JSON.stringify(catalog)}\nUse list_run_files to discover later publications. Generated outputs remain private until publish_artifact succeeds.`,
+          content: `Files shared for this task (read-only inputs):\n${JSON.stringify(catalog)}\n${discovery} Generated outputs remain private until publish_artifact succeeds.${codeContext?.context ? `\nCurrent project code files:\n${codeContext.context}` : ''}`,
         }),
         ...(await deps.encodeMessages(files, agentId)),
       ];
@@ -350,9 +379,26 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
 
   async function list(agentId: string, context?: SubagentExecutionContext, signal?: AbortSignal) {
     const actor = actorFor(agentId, context);
-    const files = await manifest!.list(actor, signal);
+    let codeContext = deps.getCodeFileContext?.(actor);
+    let files: RunFileEntry[];
+    if (codeContext) {
+      const revision = nextPreparation(actor);
+      const snapshot = await manifest!.getFiles(actor, signal);
+      await deps.prepareAgent({
+        actor,
+        files: snapshot,
+        sessionKey: sessionKey(actor),
+        revision,
+        signal: signal ? AbortSignal.any([lifetime.signal, signal]) : lifetime.signal,
+      });
+      codeContext = deps.getCodeFileContext?.(actor);
+      files = describeRunFiles(snapshot, scope!.runId);
+    } else {
+      files = await manifest!.list(actor, signal);
+    }
     return {
-      files,
+      files: describeCodePaths(files, codeContext),
+      ...(codeContext?.context ? { code_file_context: codeContext.context } : {}),
       ...(resumedExecutions.has(actor.executionId)
         ? {
             private_artifact_recovery:

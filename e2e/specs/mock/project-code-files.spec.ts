@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { TChatProject, TChatProjectFile, TFile } from 'librechat-data-provider';
 import type { AgentDetail } from './agents.helpers';
-import { cleanupAgent, openAgentBuilder } from './agents.helpers';
+import { openAgentBuilder } from './agents.helpers';
 import { getE2EUser } from '../../setup/user';
 import { login } from '../../setup/authenticate';
 import { withMongo } from './db';
@@ -16,7 +16,6 @@ import {
   fetchJson,
   uniqueName,
   requestJson,
-  getAccessToken,
   getRagQueries,
   getRagEmbedded,
   selectMockEndpoint,
@@ -26,10 +25,28 @@ import {
   sendMessageAndWaitForCompletion,
 } from './helpers';
 
+const accessTokens = new WeakMap<Page, string>();
+
+function getProjectAccessToken(page: Page): string {
+  const token = accessTokens.get(page);
+  if (!token) throw new Error('The project test has no authenticated access token');
+  return token;
+}
+
 test.beforeEach(async ({ page }) => {
   await page.context().clearCookies();
   await page.goto('/login');
+  const loginResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/auth/login' &&
+      response.request().method() === 'POST',
+  );
   await login(page, getE2EUser());
+  const response = await loginResponse;
+  expect(response.ok()).toBe(true);
+  const { token } = (await response.json()) as { token: string };
+  expect(token).toBeTruthy();
+  accessTokens.set(page, token);
   await page.waitForURL(/\/c\/new$/);
 });
 
@@ -58,7 +75,7 @@ for (const mode of ['handoff', 'shared subagent'] as const) {
       });
       expect(override.ok(), await override.text()).toBe(true);
       await page.goto('/projects');
-      const token = await getAccessToken(page);
+      const token = getProjectAccessToken(page);
       const project = await requestJson<TChatProject>(page, {
         path: '/api/projects',
         token,
@@ -189,7 +206,11 @@ for (const mode of ['handoff', 'shared subagent'] as const) {
       );
     } finally {
       await request.delete(overridePath, { headers: adminHeaders });
-      for (const id of agentIds.reverse()) await cleanupAgent(page, id);
+      for (const id of agentIds.reverse()) {
+        await page.request.delete(`/api/agents/${encodeURIComponent(id)}`, {
+          headers: { Authorization: `Bearer ${getProjectAccessToken(page)}` },
+        });
+      }
       await withMongo(async (db) => {
         if (projectId)
           await db.collection('chatprojects').deleteOne({ _id: new ObjectId(projectId) });
@@ -249,7 +270,7 @@ test('project CSV and generated output are shared across chats, without indexing
       },
     );
     await page.goto('/projects');
-    const token = await getAccessToken(page);
+    const token = getProjectAccessToken(page);
     const project = await requestJson<TChatProject>(page, {
       path: '/api/projects',
       token,
@@ -352,97 +373,115 @@ test('project CSV and generated output are shared across chats, without indexing
   }
 });
 
-test('same-named outputs keep their originating chat paths and canonical sandbox references', async ({
-  page,
-  request,
-}) => {
-  test.setTimeout(180_000);
-  const adminToken = await loginAdmin(request);
-  const user = await withMongo((db) =>
-    db.collection('users').findOne({ email: getE2EUser().email }),
-  );
-  if (!user) throw new Error('The authenticated project user is unavailable');
-  const overridePath = `/api/admin/config/user/${encodeURIComponent(user._id.toString())}`;
-  const adminHeaders = { Authorization: `Bearer ${adminToken}` };
-  const label = uniqueName('project-collision');
-  const conversationIds: string[] = [];
-  let projectId: string | undefined;
-  try {
-    const override = await request.put(overridePath, {
-      headers: adminHeaders,
-      data: { overrides: { projects: { codeExecution: true } } },
-    });
-    expect(override.ok(), await override.text()).toBe(true);
-    await page.goto('/projects');
-    const token = await getAccessToken(page);
-    const project = await requestJson<TChatProject>(page, {
-      path: '/api/projects',
-      token,
-      method: 'POST',
-      body: { name: 'Project output paths' },
-    });
-    projectId = project._id;
-    await resetProvisioning(page);
-    for (const origin of ['first', 'second']) {
-      await startProjectChat(page, projectId);
-      await sendMessageAndWaitForCompletion(page, `E2E_PROJECT_COLLISION:${label}:${origin}`);
-      conversationIds.push(new URL(page.url()).pathname.split('/c/')[1]);
-      await expect(
-        page.getByText('results.csv was added to the project.', { exact: true }),
-      ).toBeVisible();
-    }
-    const projectFiles = await fetchJson<TChatProjectFile[]>(
-      page,
-      `/api/projects/${projectId}/files`,
-      token,
+for (const outputName of ['results.csv', 'my results.csv']) {
+  test(`same-named outputs ${outputName} keep their originating paths and canonical references`, async ({
+    page,
+    request,
+  }) => {
+    const sanitized = outputName.includes(' ');
+    const storedName = sanitized ? 'my_results-081045.csv' : outputName;
+    test.setTimeout(180_000);
+    const adminToken = await loginAdmin(request);
+    const user = await withMongo((db) =>
+      db.collection('users').findOne({ email: getE2EUser().email }),
     );
-    expect(projectFiles.map((file) => file.filename)).toEqual(['results.csv', 'results.csv']);
-    for (const [index, origin] of ['first', 'second'].entries()) {
-      await page.goto(`/c/${conversationIds[index]}`);
-      await sendMessageAndWaitForCompletion(page, `E2E_EXECUTE_CODE:${label}-${origin}-resume`);
-      const response = await page.request.get(`${CODE_API_BASE}/__debug/uploads`);
-      const body = (await response.json()) as {
-        execs: Array<{ files: Array<{ id: string; name: string }> }>;
-      };
-      const files = body.execs.at(-1)!.files;
-      expect(files).toHaveLength(2);
-      expect(files).toContainEqual(
-        expect.objectContaining({
-          id: `e2e-project-collision-${origin}-${label}`,
-          name: 'results.csv',
-        }),
-      );
-      expect(files.filter((file) => /^results-.+\.csv$/.test(file.name))).toHaveLength(1);
-      const canonical = await withMongo((db) =>
-        db
-          .collection('files')
-          .find({ file_id: { $in: projectFiles.map((file) => file.file_id) } })
-          .toArray(),
-      );
-      expect(canonical).toHaveLength(2);
-      for (const [recordIndex, origin] of ['first', 'second'].entries()) {
-        const file = canonical.find((file) => file.conversationId === conversationIds[recordIndex]);
-        expect(file?.metadata.codeEnvRef.file_id).toBe(`e2e-project-collision-${origin}-${label}`);
-        expect(file?.metadata.codeEnvRef.sandboxFilename ?? file?.filename).toBe('results.csv');
+    if (!user) throw new Error('The authenticated project user is unavailable');
+    const overridePath = `/api/admin/config/user/${encodeURIComponent(user._id.toString())}`;
+    const adminHeaders = { Authorization: `Bearer ${adminToken}` };
+    const label = uniqueName('project-collision');
+    const conversationIds: string[] = [];
+    let projectId: string | undefined;
+    try {
+      const override = await request.put(overridePath, {
+        headers: adminHeaders,
+        data: { overrides: { projects: { codeExecution: true } } },
+      });
+      expect(override.ok(), await override.text()).toBe(true);
+      await page.goto('/projects');
+      const token = getProjectAccessToken(page);
+      const project = await requestJson<TChatProject>(page, {
+        path: '/api/projects',
+        token,
+        method: 'POST',
+        body: { name: 'Project output paths' },
+      });
+      projectId = project._id;
+      await resetProvisioning(page);
+      for (const origin of ['first', 'second']) {
+        await startProjectChat(page, projectId);
+        await sendMessageAndWaitForCompletion(
+          page,
+          `E2E_PROJECT_COLLISION:${label}:${origin}${sanitized ? ':sanitized' : ''}`,
+        );
+        conversationIds.push(new URL(page.url()).pathname.split('/c/')[1]);
+        await expect(
+          page.getByText(`${storedName} was added to the project.`, { exact: true }),
+        ).toBeVisible();
       }
-    }
-  } finally {
-    const restore = await request.delete(overridePath, { headers: adminHeaders });
-    expect(restore.ok(), await restore.text()).toBe(true);
-    await withMongo(async (db) => {
-      if (projectId)
+      const projectFiles = await fetchJson<TChatProjectFile[]>(
+        page,
+        `/api/projects/${projectId}/files`,
+        token,
+      );
+      expect(projectFiles.map((file) => file.filename)).toEqual([storedName, storedName]);
+      for (const [index, origin] of ['first', 'second'].entries()) {
+        await page.goto(`/c/${conversationIds[index]}`);
+        await sendMessageAndWaitForCompletion(page, `E2E_EXECUTE_CODE:${label}-${origin}-resume`);
+        const response = await page.request.get(`${CODE_API_BASE}/__debug/uploads`);
+        const body = (await response.json()) as {
+          execs: Array<{ files: Array<{ id: string; name: string }> }>;
+        };
+        const files = body.execs.at(-1)!.files;
+        expect(files).toHaveLength(2);
+        expect(files).toContainEqual(
+          expect.objectContaining({
+            id: `e2e-project-collision-${origin}-${label}`,
+            name: outputName,
+          }),
+        );
+        expect(
+          files.filter(
+            (file) =>
+              file.name !== outputName &&
+              (sanitized ? /^my_results-.+\.csv$/ : /^results-.+\.csv$/).test(file.name),
+          ),
+        ).toHaveLength(1);
+        const canonical = await withMongo((db) =>
+          db
+            .collection('files')
+            .find({ file_id: { $in: projectFiles.map((file) => file.file_id) } })
+            .toArray(),
+        );
+        expect(canonical).toHaveLength(2);
+        for (const [recordIndex, origin] of ['first', 'second'].entries()) {
+          const file = canonical.find(
+            (file) => file.conversationId === conversationIds[recordIndex],
+          );
+          expect(file?.metadata.codeEnvRef.file_id).toBe(
+            `e2e-project-collision-${origin}-${label}`,
+          );
+          expect(file?.metadata.codeEnvRef.sandboxFilename).toBeUndefined();
+          expect(file?.filename).toBe(storedName);
+        }
+      }
+    } finally {
+      const restore = await request.delete(overridePath, { headers: adminHeaders });
+      expect(restore.ok(), await restore.text()).toBe(true);
+      await withMongo(async (db) => {
+        if (projectId)
+          await db
+            .collection('chatprojects')
+            .deleteOne({ _id: new ObjectId(projectId), user: user._id.toString() });
         await db
-          .collection('chatprojects')
-          .deleteOne({ _id: new ObjectId(projectId), user: user._id.toString() });
-      await db
-        .collection('files')
-        .deleteMany({ conversationId: { $in: conversationIds }, user: user._id });
-      await db
-        .collection('messages')
-        .deleteMany({ conversationId: { $in: conversationIds }, user: user._id.toString() });
-      await db
-        .collection('conversations')
-        .deleteMany({ conversationId: { $in: conversationIds }, user: user._id.toString() });
-    });
-  }
-});
+          .collection('files')
+          .deleteMany({ conversationId: { $in: conversationIds }, user: user._id });
+        await db
+          .collection('messages')
+          .deleteMany({ conversationId: { $in: conversationIds }, user: user._id.toString() });
+        await db
+          .collection('conversations')
+          .deleteMany({ conversationId: { $in: conversationIds }, user: user._id.toString() });
+      });
+    }
+  });
+}

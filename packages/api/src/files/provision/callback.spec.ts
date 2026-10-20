@@ -10,6 +10,7 @@ import { prepareQueuedCodeFileContext } from '../code/queued';
 import { createSubagentCodeRouting } from '~/code/targets';
 import { createProvisionFilesCallback } from './callback';
 import { getTurnCodeEnvRef } from '../code/references';
+import { selectCodeFiles } from '../code/priming';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), warn: jest.fn(), debug: jest.fn(), info: jest.fn() },
@@ -73,13 +74,20 @@ function buildHarness({
             id: 'u1',
             storage_session_id: 'sess-1',
             file_id: 'remote-1',
+            sandboxFilename,
           },
         },
       },
       refUpdate: {
         file_id: file.file_id,
         routeKey: 'default',
-        ref: { kind: 'user', id: 'u1', storage_session_id: 'sess-1', file_id: 'remote-1' },
+        ref: {
+          kind: 'user',
+          id: 'u1',
+          storage_session_id: 'sess-1',
+          file_id: 'remote-1',
+          sandboxFilename,
+        },
       },
       /* Mirrors the service: the sandbox stores a converted image under a corrected
        * extension, so the name the model is told is not always the record's. */
@@ -254,8 +262,71 @@ describe('createProvisionFilesCallback', () => {
       const reused = originalFilename === 'data.csv';
       expect(getCodeFileInfo).toHaveBeenCalledWith(ref, {}, undefined);
       expect(h.provisionToCodeEnv).toHaveBeenCalledTimes(reused ? 0 : 1);
-      expect(h.updateCodeEnvRef).toHaveBeenCalledTimes(reused ? 0 : 1);
+      expect(h.updateCodeEnvRef).not.toHaveBeenCalled();
       expect(mounted[0]).toMatchObject({ name: 'data.csv', id: reused ? 'existing' : 'remote-1' });
+      if (!reused) {
+        expect(getTurnCodeEnvRef(req, 'default', imported, 'data.csv')?.file_id).toBe('remote-1');
+      }
+    },
+  );
+
+  it.each([true, false])(
+    'preserves a sanitized generated output in its source chat while storage is live (%s)',
+    async (live) => {
+      const ref = {
+        kind: 'user' as const,
+        id: 'user-1',
+        storage_session_id: 'source-store',
+        file_id: 'source-output',
+      };
+      const generated = makeFile({
+        file_id: `generated-${live}`,
+        filename: 'my_results-081045.csv',
+        context: FileContext.execute_code,
+        conversationId: 'source-chat',
+        metadata: { codeEnvRefs: { default: ref } },
+      });
+      const getCodeFileInfo = jest.fn(async () =>
+        live
+          ? { lastModified: new Date().toISOString(), originalFilename: 'my results.csv' }
+          : null,
+      );
+      const sourceProject = {
+        projectFileIds: new Set([generated.file_id]),
+        conversationId: 'source-chat',
+      };
+      const before = await selectCodeFiles({
+        files: [structuredClone(generated)],
+        project: sourceProject,
+        routeKey: 'default',
+        getFileInfo: getCodeFileInfo,
+      });
+      const imported = structuredClone(generated);
+      const current: CodeFileAgent = {
+        id: 'reader',
+        fileConsumers: { executeCode: true, fileSearch: false },
+        provisionState: {
+          ...state([imported], []),
+          project: { ...sourceProject, conversationId: 'another-chat' },
+        },
+      };
+      prepareQueuedCodeFileContext(current, [current], 'user-1');
+      const h = buildHarness({ contexts: [[current.id, current]], getCodeFileInfo });
+      await h.provisionFiles([Constants.EXECUTE_CODE], current.id);
+      expect(h.provisionToCodeEnv).toHaveBeenCalledTimes(1);
+      expect(h.updateCodeEnvRef).toHaveBeenCalledTimes(live ? 0 : 1);
+      expect(generated.metadata?.codeEnvRefs?.default).toEqual(ref);
+      if (live) {
+        const after = await selectCodeFiles({
+          files: [generated],
+          project: sourceProject,
+          routeKey: 'default',
+          getFileInfo: getCodeFileInfo,
+        });
+        expect(before.selected.map((file) => file.sandboxName)).toEqual(['my results.csv']);
+        expect(after.selected.map((file) => file.sandboxName)).toEqual(['my results.csv']);
+        expect(getTurnCodeEnvRef(req, 'default', imported, generated.filename)).toBeDefined();
+      }
     },
   );
 

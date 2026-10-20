@@ -18,6 +18,7 @@ function setup(
     inputs?: TFile[];
     validateMessages?: RunFileSessionDeps['validateMessages'];
     encodeMessages?: RunFileSessionDeps['encodeMessages'];
+    getCodeFileContext?: RunFileSessionDeps['getCodeFileContext'];
   } = {},
 ) {
   const saved: TFile[] = [];
@@ -116,6 +117,7 @@ function setup(
       return file;
     },
     prepareAgent: prepared,
+    getCodeFileContext: options.getCodeFileContext,
     validateMessages: options.validateMessages ?? jest.fn(),
     encodeMessages: options.encodeMessages ?? (async () => []),
     emit,
@@ -177,6 +179,41 @@ it('returns publications from every graph member without granting sibling access
   const result = await session.complete(preparation, { content: 'Analysis finished.' });
   expect(result.content).toContain('durable-output');
   expect(result.content).toContain('results.csv');
+});
+
+it('keeps per-agent code paths out of a shared graph catalog', async () => {
+  const input: TFile = {
+    file_id: 'input',
+    filename: 'results.csv',
+    filepath: '/uploads/results.csv',
+    user: 'user',
+    type: 'text/csv',
+    bytes: 12,
+    embedded: false,
+    usage: 0,
+    object: 'file',
+    metadata: { destinationChosen: false },
+  };
+  const { session, preparation } = setup(true, {
+    inputs: [input],
+    getCodeFileContext: (actor) => ({
+      paths: new Map([['input', `/mnt/data/${actor.agentId}.csv`]]),
+      context: `Project files for ${actor.agentId}`,
+    }),
+  });
+  try {
+    const result = await session.prepare(preparation);
+    expect(String(result.messages?.[0].content)).toContain(
+      'Use list_run_files before code execution',
+    );
+    expect(String(result.messages?.[0].content)).not.toContain('"code_path"');
+    const reader = await session.list('reader', preparation.executionContext);
+    const writer = await session.list('writer', preparation.executionContext);
+    expect(reader.files[0].code_path).toBe('/mnt/data/reader.csv');
+    expect(writer.files[0].code_path).toBe('/mnt/data/writer.csv');
+  } finally {
+    await session.close();
+  }
 });
 
 it('prepares every graph member from one read and reuses the snapshot for the catalog', async () => {

@@ -821,6 +821,7 @@ export const primeResources = async ({
   codeExecutionProfile,
   codeBridgeWorkerId,
   projectCodeFiles = [],
+  screenProjectFiles,
 }: {
   req?: ServerRequest;
   principal?: Pick<IUser, 'id' | 'role'>;
@@ -863,6 +864,11 @@ export const primeResources = async ({
   codeBridgeWorkerId?: string;
   /** Authorized project inputs for code only; never delivered as message attachments. */
   projectCodeFiles?: readonly TFile[];
+  /** Screens optional project inputs after the required setup snapshot is admitted. */
+  screenProjectFiles?: (
+    files: readonly TFile[],
+    persistedFiles: readonly TFile[],
+  ) => readonly TFile[];
 }): Promise<{
   attachments: Array<TFile | undefined> | undefined;
   requestAttachments: Array<TFile | undefined> | undefined;
@@ -895,8 +901,6 @@ export const primeResources = async ({
      * Prevents the same file from being added multiple times to the same resource
      */
     const processedResourceFiles = new Set<string>();
-    const projectCodeFileIds = new Set(projectCodeFiles.map((file) => file.file_id));
-    if (projectCodeFileIds.size > 0 && req) req.codeFileReferences ??= new Map();
     /**
      * The agent's tool resources object that will be updated with categorized files
      * Create a shallow copy first to avoid mutating the original
@@ -984,17 +988,6 @@ export const primeResources = async ({
       }
     }
     const resourceProvisionCandidates: Array<TFile> = [];
-    for (const file of projectCodeFiles) {
-      if (file.metadata?.codeEnvRef || file.metadata?.codeEnvRefs) {
-        addFileToResource({
-          file,
-          resourceType: EToolResources.execute_code,
-          tool_resources,
-          processedResourceFiles,
-        });
-      }
-    }
-
     if (shouldLoadContext) {
       delete tool_resources[EToolResources.context];
     }
@@ -1045,6 +1038,21 @@ export const primeResources = async ({
           }
         }
         persistedResourceFiles = admitted;
+      }
+    }
+
+    projectCodeFiles =
+      screenProjectFiles?.(projectCodeFiles, persistedResourceFiles) ?? projectCodeFiles;
+    const projectCodeFileIds = new Set(projectCodeFiles.map((file) => file.file_id));
+    if (projectCodeFileIds.size > 0 && req) req.codeFileReferences ??= new Map();
+    for (const file of projectCodeFiles) {
+      if (file.metadata?.codeEnvRef || file.metadata?.codeEnvRefs) {
+        addFileToResource({
+          file,
+          resourceType: EToolResources.execute_code,
+          tool_resources,
+          processedResourceFiles,
+        });
       }
     }
 

@@ -36,6 +36,14 @@ These tools are available to agents configured to delegate with file sharing ena
 child executions participating in that shared-file run. Enabling the deployment capability alone
 does not add them to other agents.
 
+With `projects.codeExecution: true`, permitted project files are also staged in each participating
+agent's sandbox. Shared run files claim paths before imports from other project chats. The catalog
+includes `code_path` when a filename needs an alias; use that path to open the file. Call
+`list_run_files` before executing code to discover later publications, their current paths, and
+the execution's project file context. Each graph member has its own sandbox and paths. Project
+files that exceed the remaining endpoint size allowance are skipped without dropping required
+shared inputs or agent setup files.
+
 Generated sandbox outputs stay private while a child reads, inspects, and refines them. The child can
 create `analysis.csv`, inspect it in another tool call, and rewrite that filename without losing
 the earlier version. Retained versions have separate artifact IDs, even when their filenames

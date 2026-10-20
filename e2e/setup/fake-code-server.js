@@ -203,12 +203,14 @@ async function handleExec(req, res) {
       ? body.files.map(({ name, id, storage_session_id }) => ({ name, id, storage_session_id }))
       : [],
   });
-  const collision = body.code?.match(/E2E_PROJECT_COLLISION:([A-Za-z0-9-]+):(first|second)/);
+  const collision = body.code?.match(
+    /E2E_PROJECT_COLLISION:([A-Za-z0-9-]+):(first|second)(:sanitized)?/,
+  );
   if (collision) {
-    const [, label, origin] = collision;
+    const [, label, origin, sanitized] = collision;
     const sessionId = `e2e-project-collision-${label}-${origin}`;
     const fileId = `e2e-project-collision-${origin}-${label}`;
-    const name = 'results.csv';
+    const name = sanitized ? 'my results.csv' : 'results.csv';
     generated.set(`${sessionId}/${fileId}`, {
       name,
       content: Buffer.from(`origin,count\n${origin},1\n`),

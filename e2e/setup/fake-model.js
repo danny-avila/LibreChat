@@ -2230,7 +2230,10 @@ function projectCodeSubagentResponses(text) {
         };
       }
       const result = findLastToolMessage(messages, delegateCallId);
-      if (result) return { response: getContentText(result.content) };
+      if (result) {
+        const content = getContentText(result.content);
+        return { response: content.includes(complete) ? complete : content };
+      }
       return {
         response: '',
         toolCalls: [
@@ -3469,15 +3472,18 @@ function provisioningToolResponses({ text, toolNames }) {
   }
 
   const codeLabel = getMarkerValue(text, EXECUTE_CODE_MARKER);
-  const projectCollision = text.match(/E2E_PROJECT_COLLISION:([A-Za-z0-9-]+):(first|second)/);
+  const projectCollision = text.match(
+    /E2E_PROJECT_COLLISION:([A-Za-z0-9-]+):(first|second)(:sanitized)?/,
+  );
   if (projectCollision) {
-    const [, label, origin] = projectCollision;
+    const [, label, origin, sanitized] = projectCollision;
+    const filename = sanitized ? 'my results.csv' : 'results.csv';
     return codeExecResponses(
       {
-        filename: 'results.csv',
+        filename,
         toolCallId: `call_e2e_project_collision_${label}_${origin}`,
         finalText: `E2E project collision complete: ${origin}`,
-        code: `printf 'origin,count\\n${origin},1\\n' > /mnt/data/results.csv\n# E2E_PROJECT_COLLISION:${label}:${origin}`,
+        code: `printf 'origin,count\\n${origin},1\\n' > '/mnt/data/${filename}'\n# E2E_PROJECT_COLLISION:${label}:${origin}${sanitized ?? ''}`,
       },
       toolNames,
     );
