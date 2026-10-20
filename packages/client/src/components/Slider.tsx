@@ -48,8 +48,18 @@ const Slider: React.ForwardRefExoticComponent<SliderProps & React.RefAttributes<
        *  re-resolves it, since an island can flip while the provider does not. */
       React.useLayoutEffect(() => {
         const resolve = () => {
-          const declared = rootRef.current?.parentElement?.closest('[dir]')?.getAttribute('dir');
-          setDirection(declared === 'rtl' || declared === 'ltr' ? declared : appDirection);
+          const ancestor = rootRef.current?.parentElement?.closest('[dir]');
+          if (!ancestor) {
+            setDirection(appDirection);
+            return;
+          }
+          const declared = ancestor.getAttribute('dir');
+          if (declared === 'rtl' || declared === 'ltr') {
+            setDirection(declared);
+            return;
+          }
+          /** `dir="auto"` resolves from content, which only the computed style reports. */
+          setDirection(window.getComputedStyle(ancestor).direction === 'rtl' ? 'rtl' : 'ltr');
         };
         resolve();
         const observer = new MutationObserver(resolve);
