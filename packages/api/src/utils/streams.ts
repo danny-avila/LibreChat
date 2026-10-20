@@ -24,6 +24,11 @@ export function pipeToResponse(
   res: Writable,
   onError?: (error: Error) => void,
 ): void {
+  /** A client can leave while the upstream is still being fetched; `pipeline` would throw. */
+  if (res.destroyed) {
+    source.destroy();
+    return;
+  }
   let clientLeft = false;
   let sourceEnded = false;
   source.once('end', () => {
