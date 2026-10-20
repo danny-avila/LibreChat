@@ -464,6 +464,8 @@ const validId = (value: string | undefined): value is string =>
 export function createSubagentTaskContentHandler(
   deps: ContentHandlerDependencies,
   getPageBytes: () => number = () => subagentActivityConfigSchema.parse({}).contentPageBytes,
+  getRecoveryGraceMs: () => number = () =>
+    subagentActivityConfigSchema.parse({}).contentRecoveryGraceMs,
 ): (req: ServerRequest, res: Response) => Promise<void> {
   return async (req: ServerRequest, res: Response): Promise<void> => {
     const user = req.user?.id;
@@ -546,7 +548,7 @@ export function createSubagentTaskContentHandler(
             ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
             $or: [{ expiredAt: null }, { expiredAt: { $gt: new Date() } }],
           },
-          'messageId unfinished error expiredAt +subagentTask +subagentContent',
+          'messageId unfinished error expiredAt createdAt +subagentTask +subagentContent',
           { limit: 2 },
         ),
       ]);
@@ -595,8 +597,17 @@ export function createSubagentTaskContentHandler(
         !running && assistant?.subagentContent?.throughSequence === watermark.targetThroughSequence
           ? 'complete'
           : 'partial';
+      const settledAt =
+        assistant?.createdAt == null ? NaN : new Date(assistant.createdAt).getTime();
+      const retryUntil = settledAt + getRecoveryGraceMs();
       const identity = {
         ...watermark,
+        ...(!running &&
+        recovery === 'partial' &&
+        Number.isFinite(retryUntil) &&
+        retryUntil > Date.now()
+          ? { retryUntil }
+          : {}),
         parentConversationId,
         threadId,
         taskId,

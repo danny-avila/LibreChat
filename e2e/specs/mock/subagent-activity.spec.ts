@@ -281,21 +281,12 @@ test.describe('subagent chat retained-history parity', () => {
           page,
           token,
           uniqueAgentName('E2E History Worker'),
-          undefined,
+          mode === 'normal chat' ? undefined : { enabled: true, allowSelf: true },
           [history.TOOL_NAME],
         );
         createdAgentIds.push(worker.id);
-        let selected = worker;
-        if (mode !== 'normal chat') {
-          selected = await createAgent(page, token, uniqueAgentName('E2E History Parent'), {
-            enabled: true,
-            allowSelf: false,
-            agent_ids: [worker.id],
-          });
-          createdAgentIds.push(selected.id);
-        }
-        await selectAgent(page, selected.name!);
-        const prompt = history.prompt(label, mode === 'normal chat' ? 'main' : worker.id);
+        await selectAgent(page, worker.name!);
+        const prompt = history.prompt(label, mode === 'normal chat' ? 'main' : 'self');
         if (mode === 'normal chat') {
           expect((await sendMessage(page, prompt)).ok()).toBeTruthy();
         } else {

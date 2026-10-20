@@ -1227,6 +1227,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     return this.activityOptions.contentPageBytes;
   }
 
+  get contentRecoveryGraceMs(): number {
+    return this.activityOptions.contentRecoveryGraceMs;
+  }
+
   /** Host injects the base configuration before task admission. */
   configureActivity(options: Partial<TSubagentActivityConfig> = {}): TSubagentActivityConfig {
     this.activityOptions = subagentActivityConfigSchema.parse(options);

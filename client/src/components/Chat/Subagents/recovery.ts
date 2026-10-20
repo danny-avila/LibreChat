@@ -6,6 +6,7 @@ import type {
   SubagentTaskContentSnapshot,
   TMessage,
   FullToolCall,
+  PartMetadata,
 } from 'librechat-data-provider';
 import type { StreamState, StepContext } from '@librechat/chat';
 import { isLiveSubagentStatus } from './status';
@@ -57,8 +58,38 @@ export function reduceRecoveredContent(
         groupId: step.groupId ?? part?.groupId,
       });
       if (step.stepDetails.type === StepTypes.TOOL_CALLS) {
+        const tool =
+          part?.type === ContentTypes.TOOL_CALL
+            ? (part.tool_call as FullToolCall & PartMetadata)
+            : undefined;
+        const preparedAt = tool?.toolPreparationStartedAt;
+        if (
+          !tool?.id &&
+          (step.stepDetails.tool_calls?.length ?? 0) <= 1 &&
+          typeof preparedAt === 'number' &&
+          Number.isFinite(preparedAt) &&
+          preparedAt >= 0
+        ) {
+          stream.firstFragmentByStep.set(step.id, preparedAt);
+        }
         for (const call of step.stepDetails.tool_calls ?? []) {
-          if (call.id) stream.toolCallIds.set(step.id, call.id);
+          if (!call.id) continue;
+          stream.toolCallIds.set(step.id, call.id);
+          if (part?.type !== ContentTypes.TOOL_CALL || part.tool_call?.id !== call.id) continue;
+          const tool = part.tool_call as FullToolCall & PartMetadata;
+          const timingKey = `${step.id}\u0000${call.id}`;
+          const preparedAt = tool.toolPreparationStartedAt;
+          const dispatchedAt = tool.toolDispatchedAt;
+          if (typeof preparedAt === 'number' && Number.isFinite(preparedAt) && preparedAt >= 0) {
+            stream.firstFragmentByCall.set(timingKey, preparedAt);
+          }
+          if (
+            typeof dispatchedAt === 'number' &&
+            Number.isFinite(dispatchedAt) &&
+            dispatchedAt >= 0
+          ) {
+            stream.dispatchedByCall.set(timingKey, dispatchedAt);
+          }
         }
       }
     }
@@ -70,6 +101,7 @@ export function reduceRecoveredContent(
     response.revision <= previous.snapshot.revision &&
     response.status === previous.snapshot.status &&
     response.recovery === previous.snapshot.recovery &&
+    response.retryUntil === previous.snapshot.retryUntil &&
     response.targetThroughSequence === previous.snapshot.targetThroughSequence
   )
     return previous;
@@ -79,6 +111,7 @@ export function reduceRecoveredContent(
     response.throughSequence === previous.snapshot.throughSequence &&
     response.status === previous.snapshot.status &&
     response.recovery === previous.snapshot.recovery &&
+    response.retryUntil === previous.snapshot.retryUntil &&
     response.targetThroughSequence === previous.snapshot.targetThroughSequence
   ) {
     return previous;

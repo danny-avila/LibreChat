@@ -282,6 +282,8 @@ type SubagentTaskContentIdentity = SubagentContentWatermark & {
   /** Opaque cursor for the next suffix page at the same sampled target. */
   nextCursor?: string;
   targetThroughSequence: number;
+  /** Fixed server deadline for refreshing a terminal prefix after a late commit. */
+  retryUntil?: number;
   parentConversationId: string;
   threadId: string;
   /** Stable normal assistant message identity, including before terminal persistence. */

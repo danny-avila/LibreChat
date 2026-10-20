@@ -99,7 +99,12 @@ async function runningTask(
   return { store, scope, scopeId: config.scopeId };
 }
 
-function appFor(scope: SubagentContentScope, user: string | null = scope.user, tenantId?: string) {
+function appFor(
+  scope: SubagentContentScope,
+  user: string | null = scope.user,
+  tenantId?: string,
+  recoveryGraceMs = 30_000,
+) {
   const app = express();
   app.use((req, _res, next) => {
     if (user != null) {
@@ -107,7 +112,7 @@ function appFor(scope: SubagentContentScope, user: string | null = scope.user, t
     }
     next();
   });
-  const handler = createSubagentTaskContentHandler(methods);
+  const handler = createSubagentTaskContentHandler(methods, undefined, () => recoveryGraceMs);
   app.get(
     '/api/convos/:parentConversationId/subagents/:threadId/tasks/:taskId/content',
     (req, res) => handler(req as ServerRequest, res),
@@ -490,6 +495,20 @@ it('settles the child result and releases ownership when final content persisten
       recovery: 'partial',
       throughSequence: -1,
     });
+    const retryUntil = response.body.retryUntil;
+    expect(retryUntil).toBeGreaterThan(Date.now());
+    const repeated = await request(app).get(url).expect(200);
+    expect(repeated.body.retryUntil).toBe(retryUntil);
+    const disabled = appFor(scope, scope.user, undefined, 0);
+    const noGrace = await request(disabled.app).get(disabled.url).expect(200);
+    expect(noGrace.body).not.toHaveProperty('retryUntil');
+    await mongoose.models.Message.updateOne(
+      { user: scope.user, messageId: `${scope.taskId}:assistant` },
+      { $set: { createdAt: new Date(0) } },
+      { overwriteImmutable: true, timestamps: false },
+    );
+    const expired = await request(app).get(url).expect(200);
+    expect(expired.body).not.toHaveProperty('retryUntil');
     expect(await store.claimTask(scopeId, scope.taskId)).toMatchObject({
       status: 'completed',
       result: 'Durable task result',

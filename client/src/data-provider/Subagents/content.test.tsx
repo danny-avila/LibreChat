@@ -167,3 +167,83 @@ it('retains the committed cursor while another reader still owns the same task',
   third.unmount();
   second.unmount();
 });
+
+it('refreshes a partial terminal prefix during the server-bounded late-commit window', async () => {
+  jest.useFakeTimers();
+  const partial = { ...initial, status: 'completed' as const, retryUntil: Date.now() + 6000 };
+  const { content: _content, runSteps: _steps, ...identity } = partial;
+  const missing = { ...identity, mode: 'suffix' as const, afterSequence: 0, events: [] };
+  const complete = {
+    ...missing,
+    revision: 2,
+    throughSequence: 1,
+    targetThroughSequence: 1,
+    recovery: 'complete' as const,
+    events: [
+      {
+        sequence: 1,
+        frame: {
+          event: StepEvents.ON_MESSAGE_DELTA as const,
+          data: {
+            id: 'text',
+            delta: { content: [{ type: ContentTypes.TEXT as const, text: 'Late result.' }] },
+          },
+        },
+      },
+    ],
+  };
+  let committed = false;
+  getContent.mockImplementation(async (_parent, _thread, _task, afterSequence) => {
+    if (afterSequence == null) return partial;
+    return committed ? complete : missing;
+  });
+  const { result, unmount } = renderHook(() => useSubagentTaskContentQuery(scope), {
+    wrapper: Wrapper,
+  });
+  try {
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    committed = true;
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(2000);
+    });
+    await waitFor(() => expect(result.current.data?.recovery).toBe('complete'));
+    expect(result.current.data?.content[0]).toMatchObject({ text: 'Opening. Late result.' });
+    const requests = getContent.mock.calls.length;
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10_000);
+    });
+    expect(getContent).toHaveBeenCalledTimes(requests);
+  } finally {
+    unmount();
+    jest.useRealTimers();
+  }
+});
+
+it('stops retrying genuinely partial terminal capture when its fixed deadline expires', async () => {
+  jest.useFakeTimers();
+  const partial = { ...initial, status: 'failed' as const, retryUntil: Date.now() + 4000 };
+  const { content: _content, runSteps: _steps, ...identity } = partial;
+  getContent.mockImplementation(async (_parent, _thread, _task, afterSequence) =>
+    afterSequence == null ? partial : { ...identity, mode: 'suffix', afterSequence, events: [] },
+  );
+  const { result, unmount } = renderHook(() => useSubagentTaskContentQuery(scope), {
+    wrapper: Wrapper,
+  });
+  try {
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const before = getContent.mock.calls.length;
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(4000);
+    });
+    expect(getContent.mock.calls.length).toBeGreaterThan(before);
+    const settled = getContent.mock.calls.length;
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(20_000);
+    });
+    expect(getContent).toHaveBeenCalledTimes(settled);
+    expect(result.current.data?.recovery).toBe('partial');
+  } finally {
+    unmount();
+    jest.useRealTimers();
+  }
+});

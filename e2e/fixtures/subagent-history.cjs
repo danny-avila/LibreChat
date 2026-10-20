@@ -73,6 +73,7 @@ function responsesForText(text, { getLatestUserText, messageType, getContentText
   const [, childId, label] = match;
   const gates = control(label);
   const childPrompt = `${CHILD_MARKER}${label}`;
+  const verifiedBatches = new Set();
   const toolCall = (index) => ({
     id: callId(label, index),
     name: TOOL_NAME,
@@ -113,6 +114,7 @@ function responsesForText(text, { getLatestUserText, messageType, getContentText
       }
 
       for (let start = 0; start < CALL_COUNT; start += BATCH_SIZE) {
+        if (verifiedBatches.has(start)) continue;
         const indices = Array.from({ length: BATCH_SIZE }, (_, index) => start + index);
         const returned = indices.filter((index) => results.has(callId(label, index)));
         if (returned.length === 0) {
@@ -127,6 +129,8 @@ function responsesForText(text, { getLatestUserText, messageType, getContentText
         ) {
           throw new Error(`Subagent history fixture lost MCP results: ${label} batch ${start}`);
         }
+        // Old provider context can be pruned after the actual tool result was verified.
+        verifiedBatches.add(start);
       }
 
       await gates.signal('ready');

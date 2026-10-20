@@ -38,6 +38,18 @@ export const isLegacyContentUnavailable = (error: unknown): boolean =>
   responseStatus(error) === 404 ||
   (responseStatus(error) === 409 && responseCode(error) === 'SUBAGENT_CONTENT_UNAVAILABLE');
 
+export function subagentContentRefetchInterval(
+  snapshot: SubagentTaskContentSnapshot | undefined,
+  error?: unknown,
+): number | false {
+  if (isLegacyContentUnavailable(error)) return false;
+  if (snapshot == null || isLiveSubagentStatus(snapshot.status)) return ACTIVE_THREAD_REFRESH_MS;
+  const remaining = (snapshot.retryUntil ?? 0) - Date.now();
+  if (snapshot.recovery !== 'partial' || !Number.isFinite(remaining) || remaining <= 0)
+    return false;
+  return Math.min(ACTIVE_THREAD_REFRESH_MS, remaining);
+}
+
 export function useSubagentTaskContentQuery(
   scope: TaskContentScope,
   options: UseQueryOptions<SubagentTaskContentSnapshot> = {},
@@ -103,10 +115,7 @@ export function useSubagentTaskContentQuery(
       retry: (attempt, error) => !isLegacyContentUnavailable(error) && attempt < 2,
       refetchOnWindowFocus: true,
       refetchInterval: (snapshot, query) =>
-        !isLegacyContentUnavailable(query.state.error) &&
-        (snapshot == null || isLiveSubagentStatus(snapshot.status))
-          ? ACTIVE_THREAD_REFRESH_MS
-          : false,
+        subagentContentRefetchInterval(snapshot, query.state.error),
       ...options,
     },
   );

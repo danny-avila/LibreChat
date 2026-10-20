@@ -202,3 +202,25 @@ test('browser history worker uses an isolated endpoint with enough retained outp
   );
   assert.match(browser, /provider: tools\?\.length \? 'Mock Retained History'/);
 });
+
+test('does not demand old full model context after a tool batch was already verified', async (t) => {
+  const { label, gates, script } = scenario(t);
+  const messages = [human(history.prompt(label))];
+  const first = await script.resolveInvocation(messages);
+  messages.push(...first.toolCalls.map(result));
+  const second = await script.resolveInvocation(messages);
+  // Simulate provider-only pruning, not deletion of stored/public UI history.
+  messages.splice(
+    1,
+    messages.length - 1,
+    ...first.toolCalls.map((call) => ({
+      type: 'tool',
+      tool_call_id: call.id,
+      content: 'Earlier context shortened',
+    })),
+    ...second.toolCalls.map(result),
+  );
+  const third = await script.resolveInvocation(messages);
+  assert.equal(third.toolCalls[0].id, history.callId(label, 2 * history.BATCH_SIZE));
+  assert.equal(await gates.has('ready'), false);
+});

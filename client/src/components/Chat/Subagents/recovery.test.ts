@@ -211,3 +211,209 @@ it('keeps a genuinely partial terminal capture honest without an endless catch-u
   expect(load.mock.calls).toEqual([[undefined], [0]]);
   expect(recovered.snapshot).toMatchObject({ throughSequence: 0, recovery: 'partial' });
 });
+
+it('keeps preparation timing from a snapshot when later arguments and completion arrive', () => {
+  const initial = snapshot({
+    content: [
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'call',
+          name: 'lookup',
+          args: '{',
+          stepId: 'tool',
+          toolPreparationStartedAt: 100,
+        },
+      },
+    ],
+    runSteps: [
+      {
+        id: 'tool',
+        index: 0,
+        type: StepTypes.TOOL_CALLS,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [{ id: 'call', name: 'lookup', args: '{' }],
+        },
+        usage: null,
+      },
+    ],
+  });
+  const seeded = reduceRecoveredContent(null, initial)!;
+  const continued = reduceRecoveredContent(
+    seeded,
+    suffix(
+      [
+        {
+          sequence: 1,
+          frame: {
+            event: StepEvents.ON_RUN_STEP_DELTA,
+            data: {
+              id: 'tool',
+              observed_at: 150,
+              delta: {
+                type: StepTypes.TOOL_CALLS,
+                tool_calls: [{ id: 'call', index: 0, name: 'lookup', args: '}' }],
+              },
+            },
+          },
+        },
+        {
+          sequence: 2,
+          frame: {
+            event: StepEvents.ON_TOOL_CALLS_DISPATCHED,
+            data: {
+              dispatched_at: 1000,
+              toolCalls: [{ id: 'call', stepId: 'tool', name: 'lookup' }],
+            },
+          },
+        },
+        {
+          sequence: 3,
+          frame: {
+            event: StepEvents.ON_RUN_STEP_COMPLETED,
+            data: {
+              result: {
+                id: 'tool',
+                index: 0,
+                completed_at: 1340,
+                tool_call: { id: 'call', name: 'lookup', args: '{}', output: 'Done' },
+              },
+            },
+          },
+        },
+        {
+          sequence: 4,
+          frame: {
+            event: StepEvents.ON_RUN_STEP_CLOSED,
+            data: {
+              id: 'tool',
+              index: 0,
+              type: StepTypes.TOOL_CALLS,
+              status: 'completed',
+              created_at: 100,
+              closed_at: 1340,
+            },
+          },
+        },
+      ],
+      { throughSequence: 4, targetThroughSequence: 4 },
+    ),
+  )!;
+  expect(continued.snapshot.content[0]).toMatchObject({
+    tool_call: {
+      toolPreparationStartedAt: 100,
+      toolPreparationDurationMs: 900,
+      toolDispatchedAt: 1000,
+      toolExecutionDurationMs: 340,
+    },
+  });
+  expect(seeded.snapshot.content[0]).toMatchObject({
+    tool_call: { toolPreparationStartedAt: 100 },
+  });
+});
+
+it('carries an idless first fragment forward when its provider call identity arrives', () => {
+  const initial = snapshot({
+    content: [
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: '',
+          name: 'lookup',
+          args: '{',
+          toolPreparationStartedAt: 100,
+        },
+      },
+    ],
+    runSteps: [
+      {
+        id: 'tool',
+        index: 0,
+        type: StepTypes.TOOL_CALLS,
+        stepDetails: { type: StepTypes.TOOL_CALLS, tool_calls: [{ name: 'lookup', args: '{' }] },
+        usage: null,
+      },
+    ],
+  });
+  const seeded = reduceRecoveredContent(null, initial)!;
+  const continued = reduceRecoveredContent(
+    seeded,
+    suffix([
+      {
+        sequence: 1,
+        frame: {
+          event: StepEvents.ON_RUN_STEP_DELTA,
+          data: {
+            id: 'tool',
+            observed_at: 150,
+            delta: {
+              type: StepTypes.TOOL_CALLS,
+              tool_calls: [{ id: 'assigned', index: 0, name: 'lookup', args: '}' }],
+            },
+          },
+        },
+      },
+    ]),
+  )!;
+  expect(continued.snapshot.content[0]).toMatchObject({
+    tool_call: {
+      id: 'assigned',
+      toolPreparationStartedAt: 100,
+    },
+  });
+});
+
+it('seeds an already dispatched timestamp before a later committed argument delta', () => {
+  const initial = snapshot({
+    content: [
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'call',
+          name: 'lookup',
+          args: '{',
+          toolPreparationStartedAt: 100,
+          toolDispatchedAt: 1000,
+        },
+      },
+    ],
+    runSteps: [
+      {
+        id: 'tool',
+        index: 0,
+        type: StepTypes.TOOL_CALLS,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [{ id: 'call', name: 'lookup', args: '{' }],
+        },
+        usage: null,
+      },
+    ],
+  });
+  const continued = reduceRecoveredContent(
+    reduceRecoveredContent(null, initial),
+    suffix([
+      {
+        sequence: 1,
+        frame: {
+          event: StepEvents.ON_RUN_STEP_DELTA,
+          data: {
+            id: 'tool',
+            observed_at: 150,
+            delta: {
+              type: StepTypes.TOOL_CALLS,
+              tool_calls: [{ id: 'call', index: 0, name: 'lookup', args: '}' }],
+            },
+          },
+        },
+      },
+    ]),
+  )!;
+  expect(continued.snapshot.content[0]).toMatchObject({
+    tool_call: {
+      toolPreparationStartedAt: 100,
+      toolDispatchedAt: 1000,
+    },
+  });
+});

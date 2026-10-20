@@ -38,6 +38,7 @@ import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import { ElapsedTimer } from '~/components/Chat/Messages/Elapsed';
 import { AuthorContext } from '~/Providers/AuthorContext';
 import { ChatContext } from '~/Providers/ChatContext';
+import { isEmptyContentPart } from '~/utils/messages';
 import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -348,12 +349,15 @@ function RecoveredChildMessage({
   const turn = useMemo(() => {
     const snapshot = recovered.data;
     if (snapshot == null) return props.turn;
+    const preserveTerminal =
+      !isLiveSubagentStatus(snapshot.status) &&
+      !snapshot.content.some((part) => part != null && !isEmptyContentPart(part));
     return {
       ...props.turn,
       activity: {
         ...props.turn.activity,
         messageId: snapshot.messageId,
-        content: snapshot.content,
+        content: preserveTerminal ? getActivityContent(props.turn.activity) : snapshot.content,
         status: snapshot.status,
         activityTruncated:
           snapshot.throughSequence < snapshot.targetThroughSequence ||

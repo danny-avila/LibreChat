@@ -167,6 +167,7 @@ const subagentTaskContentHandler = createSubagentTaskContentHandler(
     streamSubagentContentBatches: db.streamSubagentContentBatches,
   },
   () => subagentThreadTaskStore.contentPageBytes,
+  () => subagentThreadTaskStore.contentRecoveryGraceMs,
 );
 const subagentControlHandler = createSubagentControlHandler({
   getConvoOwnership: db.getConvoOwnership,

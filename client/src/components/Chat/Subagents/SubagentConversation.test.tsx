@@ -8,6 +8,12 @@ import SubagentConversation from './SubagentConversation';
 import { ChatContext } from '~/Providers/ChatContext';
 import { ChatSurfaceHarness } from 'test/harness';
 
+const mockRecoveredQuery = jest.fn();
+jest.mock('~/data-provider/Subagents/content', () => ({
+  ...jest.requireActual('~/data-provider/Subagents/content'),
+  useSubagentTaskContentQuery: (...args: unknown[]) => mockRecoveredQuery(...args),
+}));
+
 const mockCopyMessage = jest.fn();
 const mockPartScope = jest.fn();
 const mockParentAsk = jest.fn();
@@ -379,3 +385,46 @@ describe('standard conversation content', () => {
     },
   );
 });
+
+it.each(['failed', 'cancelled', 'interrupted', 'completed'] as const)(
+  'keeps the durable %s explanation when recovered content is empty',
+  (status) => {
+    mockRecoveredQuery.mockReturnValue({
+      data: {
+        messageId: 'task-1:assistant',
+        status,
+        recovery: 'complete',
+        content: [],
+        throughSequence: -1,
+        targetThroughSequence: -1,
+      },
+      isError: false,
+      isUnavailable: false,
+    });
+    render(
+      <ChatSurfaceHarness>
+        <SubagentConversation
+          author={author}
+          parentAuthor={parentAuthor}
+          recovery={{
+            parentConversationId: 'parent',
+            threadId: 'child',
+            selectedTaskId: 'task-1',
+            ready: true,
+          }}
+          turns={[
+            {
+              ...turns[0],
+              activity: {
+                ...turns[0].activity,
+                status,
+                items: [{ type: 'writing', text: 'Safe durable outcome.' }],
+              },
+            },
+          ]}
+        />
+      </ChatSurfaceHarness>,
+    );
+    expect(screen.getByText('Safe durable outcome.')).toBeInTheDocument();
+  },
+);
