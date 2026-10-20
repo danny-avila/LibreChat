@@ -40,6 +40,15 @@ describe('strongDirection', () => {
     expect(strongDirection('\u0964 \u0645\u0631\u062D\u0628\u0627')).toBe('ltr');
   });
 
+  it('covers scripts added after Unicode 15.1', () => {
+    expect(strongDirection('\u{10D50} hello')).toBe('rtl');
+  });
+
+  it('reads nonspacing marks of bidi class L as strong', () => {
+    expect(strongDirection('\u0CBF \u05E9\u05DC\u05D5\u05DD')).toBe('ltr');
+    expect(strongDirection('\u0651 hello')).toBe('ltr');
+  });
+
   it('honors explicit direction marks', () => {
     expect(strongDirection('\u200F hello')).toBe('rtl');
     expect(strongDirection('\u061C hello')).toBe('rtl');
