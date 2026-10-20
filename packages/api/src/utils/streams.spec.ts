@@ -41,6 +41,22 @@ describe('pipeToResponse', () => {
   });
 });
 
+describe('pipeToResponse after the upstream ended', () => {
+  it('treats a client leaving while the response flushes as a cancellation', async () => {
+    const source = Readable.from([Buffer.from('audio')]);
+    const res = new PassThrough({ highWaterMark: 1 });
+    const onError = jest.fn();
+
+    pipeToResponse(source, res, onError);
+    await new Promise((resolve) => source.on('close', resolve));
+    res.destroy();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(source.destroyed).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+  });
+});
+
 describe('pipeSegment', () => {
   it('resolves when the segment ends and leaves the response open', async () => {
     const res = new PassThrough();

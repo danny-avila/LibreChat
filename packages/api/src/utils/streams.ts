@@ -25,9 +25,17 @@ export function pipeToResponse(
   onError?: (error: Error) => void,
 ): void {
   let clientLeft = false;
-  /** Registered before `pipeline`, so it runs before the upstream is torn down in response. */
+  let sourceEnded = false;
+  source.once('end', () => {
+    sourceEnded = true;
+  });
+  /**
+   * Registered before `pipeline`, so it runs before the upstream is torn down in response. A
+   * source that already ended may be destroyed while the response flushes; only one that broke
+   * off makes the close an upstream failure.
+   */
   res.once('close', () => {
-    clientLeft = !res.writableFinished && !source.destroyed;
+    clientLeft = !res.writableFinished && (sourceEnded || !source.destroyed);
   });
   pipeline(source, res, (error) => {
     if (error && !clientLeft) {
