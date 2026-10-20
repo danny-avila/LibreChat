@@ -19,9 +19,15 @@ export type TaskContentScope = {
 
 export const TaskContentScopeContext = createContext<TaskContentScope | null>(null);
 export const subagentTaskContentKey = (scope: TaskContentScope) =>
-  [QueryKeys.subagentTaskContent, scope.parentConversationId, scope.threadId, scope.taskId] as const;
+  [
+    QueryKeys.subagentTaskContent,
+    scope.parentConversationId,
+    scope.threadId,
+    scope.taskId,
+  ] as const;
 
 const streams = atomFamily((_key: string) => atom<RecoveredContent | null>(null));
+const streamReaders = new Map<string, number>();
 
 type ContentError = { response?: { status?: number; data?: { code?: string } } };
 const responseStatus = (error: unknown): number | undefined =>
@@ -39,17 +45,37 @@ export function useSubagentTaskContentQuery(
   const store = useStore();
   const identity = JSON.stringify(subagentTaskContentKey(scope));
   const stream = useMemo(() => streams(identity), [identity]);
-  useEffect(() => () => streams.remove(identity), [identity]);
+  useEffect(() => {
+    streamReaders.set(identity, (streamReaders.get(identity) ?? 0) + 1);
+    return () => {
+      const remaining = (streamReaders.get(identity) ?? 1) - 1;
+      if (remaining > 0) {
+        streamReaders.set(identity, remaining);
+        return;
+      }
+      streamReaders.delete(identity);
+      queueMicrotask(() => {
+        if (!streamReaders.has(identity)) streams.remove(identity);
+      });
+    };
+  }, [identity]);
   const query = useQuery<SubagentTaskContentSnapshot>(
     subagentTaskContentKey(scope),
     async () => {
       const before = store.get(stream);
       const load = async (afterSequence?: number, cursor?: string) => {
         const response = await dataService.getSubagentTaskContent(
-          scope.parentConversationId, scope.threadId, scope.taskId, afterSequence, cursor,
+          scope.parentConversationId,
+          scope.threadId,
+          scope.taskId,
+          afterSequence,
+          cursor,
         );
-        if (response.taskId !== scope.taskId || response.threadId !== scope.threadId ||
-          response.parentConversationId !== scope.parentConversationId) {
+        if (
+          response.taskId !== scope.taskId ||
+          response.threadId !== scope.threadId ||
+          response.parentConversationId !== scope.parentConversationId
+        ) {
           throw new Error('subagent_content_identity_mismatch');
         }
         return response;
@@ -63,8 +89,12 @@ export function useSubagentTaskContentQuery(
         next = await recoverTaskContent(null, load);
       }
       const current = store.get(stream);
-      if (current != null && (current.snapshot.throughSequence > next.snapshot.throughSequence ||
-        current.snapshot.revision > next.snapshot.revision)) return current.snapshot;
+      if (
+        current != null &&
+        (current.snapshot.throughSequence > next.snapshot.throughSequence ||
+          current.snapshot.revision > next.snapshot.revision)
+      )
+        return current.snapshot;
       store.set(stream, next);
       return next.snapshot;
     },
@@ -74,7 +104,9 @@ export function useSubagentTaskContentQuery(
       refetchOnWindowFocus: true,
       refetchInterval: (snapshot, query) =>
         !isLegacyContentUnavailable(query.state.error) &&
-        (snapshot == null || isLiveSubagentStatus(snapshot.status)) ? ACTIVE_THREAD_REFRESH_MS : false,
+        (snapshot == null || isLiveSubagentStatus(snapshot.status))
+          ? ACTIVE_THREAD_REFRESH_MS
+          : false,
       ...options,
     },
   );
@@ -86,22 +118,40 @@ export const useSubagentToolContentQuery: ToolContentQuery = (params, options, r
   const scope = useContext(TaskContentScopeContext);
   const queryClient = useQueryClient();
   return useQuery<ToolCallPartResponse>(
-    [...subagentTaskContentKey(scope ?? { parentConversationId: '', threadId: '', taskId: '' }),
-      'part', params.toolCallId, params.stepId, params.agentId, params.partIndex, revision],
+    [
+      ...subagentTaskContentKey(scope ?? { parentConversationId: '', threadId: '', taskId: '' }),
+      'part',
+      params.toolCallId,
+      params.stepId,
+      params.agentId,
+      params.partIndex,
+      revision,
+    ],
     async () => {
       if (scope == null) throw new Error('subagent_content_scope_required');
-      const cached = queryClient.getQueryData<SubagentTaskContentSnapshot>(subagentTaskContentKey(scope));
+      const cached = queryClient.getQueryData<SubagentTaskContentSnapshot>(
+        subagentTaskContentKey(scope),
+      );
       let part = cached == null ? null : recoveredToolPart(cached, params);
       if (cached != null && cached.messageId !== params.messageId) {
         throw new Error('subagent_content_identity_mismatch');
       }
       if (part == null || hasToolCallPreview(part.tool_call)) {
         const full = await recoverTaskContent(null, (afterSequence, cursor) =>
-          dataService.getSubagentTaskContent(scope.parentConversationId, scope.threadId, scope.taskId, afterSequence, cursor));
-        if (full.snapshot.messageId !== params.messageId) throw new Error('subagent_content_identity_mismatch');
+          dataService.getSubagentTaskContent(
+            scope.parentConversationId,
+            scope.threadId,
+            scope.taskId,
+            afterSequence,
+            cursor,
+          ),
+        );
+        if (full.snapshot.messageId !== params.messageId)
+          throw new Error('subagent_content_identity_mismatch');
         part = recoveredToolPart(full.snapshot, params);
       }
-      if (part == null || hasToolCallPreview(part.tool_call)) throw new Error('subagent_content_part_unavailable');
+      if (part == null || hasToolCallPreview(part.tool_call))
+        throw new Error('subagent_content_part_unavailable');
       return { conversationId: params.conversationId, messageId: params.messageId, ...part };
     },
     {

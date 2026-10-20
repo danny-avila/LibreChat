@@ -27,6 +27,7 @@ type ActivityEnvelope = {
 };
 
 const contentReady = atomFamily((_key: string) => atom(false));
+const readyReaders = new Map<string, number>();
 
 const INITIAL_RECONNECT_MS = 500;
 const MAX_RECONNECT_MS = 5_000;
@@ -57,11 +58,28 @@ export default function useSubagentActivityStream(
     selection.event?.progressKey ?? selection.toolCallId,
     selection.partIndex,
   );
-  const [isReady, setReady] = useAtom(contentReady(key));
-  useEffect(() => () => {
-    setReady(false);
-    contentReady.remove(key);
-  }, [key, setReady]);
+  const readyKey = JSON.stringify([
+    selection.parentConversationId,
+    selection.durable?.threadId,
+    selection.durable?.taskId,
+  ]);
+  const [isReady, setReady] = useAtom(contentReady(readyKey));
+  useEffect(() => {
+    readyReaders.set(readyKey, (readyReaders.get(readyKey) ?? 0) + 1);
+    return () => {
+      const remaining = (readyReaders.get(readyKey) ?? 1) - 1;
+      if (remaining > 0) {
+        readyReaders.set(readyKey, remaining);
+        return;
+      }
+      readyReaders.delete(readyKey);
+      queueMicrotask(() => {
+        if (readyReaders.has(readyKey)) return;
+        setReady(false);
+        contentReady.remove(readyKey);
+      });
+    };
+  }, [readyKey, setReady]);
   const replayFrom = useAtomValue(
     useMemo(
       () =>
@@ -109,11 +127,16 @@ export default function useSubagentActivityStream(
     }
 
     const queryKey = [QueryKeys.subagentThread, selection.parentConversationId, threadId, taskId];
-    const contentKey = [QueryKeys.subagentTaskContent, selection.parentConversationId, threadId, taskId];
+    const contentKey = [
+      QueryKeys.subagentTaskContent,
+      selection.parentConversationId,
+      threadId,
+      taskId,
+    ];
     const refreshContent = () => {
       void queryClient.invalidateQueries(contentKey, { exact: true }, { cancelRefetch: false });
     };
-    setReady(false);
+    if ((readyReaders.get(readyKey) ?? 0) <= 1) setReady(false);
     const endpoint = `${apiBaseUrl()}/api/convos/${encodeURIComponent(selection.parentConversationId)}/subagents/${encodeURIComponent(threadId)}/tasks/${encodeURIComponent(taskId)}/activity`;
     let stream: SSE | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -149,11 +172,19 @@ export default function useSubagentActivityStream(
           return;
         }
         if (envelope.event === 'subagent_content_available') {
-          const watermark = envelope.data as {
-            taskId?: string; revision?: number; throughSequence?: number;
-          } | undefined;
-          if (watermark?.taskId === taskId && Number.isSafeInteger(watermark.revision) &&
-            Number.isSafeInteger(watermark.throughSequence)) refreshContent();
+          const watermark = envelope.data as
+            | {
+                taskId?: string;
+                revision?: number;
+                throughSequence?: number;
+              }
+            | undefined;
+          if (
+            watermark?.taskId === taskId &&
+            Number.isSafeInteger(watermark.revision) &&
+            Number.isSafeInteger(watermark.throughSequence)
+          )
+            refreshContent();
           return;
         }
         if (envelope.final === true && envelope.subagentActivity === true) {
@@ -245,6 +276,7 @@ export default function useSubagentActivityStream(
     isAuthenticated,
     key,
     queryClient,
+    readyKey,
     selection.host,
     selection.event,
     selection.parentConversationId,

@@ -51,11 +51,6 @@ export function subagentContentFrame(update: SubagentUpdateEvent): SubagentConte
         event: StepEvents.ON_RUN_STEP_COMPLETED,
         data: update.data as { result?: Agents.ToolEndEvent | null },
       };
-    case 'tool_preparation':
-      return {
-        event: StepEvents.ON_TOOL_PREPARATION,
-        data: update.data as Agents.ToolPreparationMarker,
-      };
     case 'tool_calls_dispatched':
       return {
         event: StepEvents.ON_TOOL_CALLS_DISPATCHED,
@@ -361,7 +356,11 @@ export async function readSubagentContent(
           }
         : {}),
       content: aggregator.contentParts as TMessageContentParts[],
-      runSteps: toWireRunSteps([...aggregator.stepMap.values()]),
+      runSteps: toWireRunSteps(
+        [...aggregator.stepMap.values()].filter(
+          (step): step is NonNullable<typeof step> => step != null,
+        ),
+      ),
       events,
     },
   };
@@ -381,7 +380,11 @@ export function createSubagentTaskContentHandler(
   return async (req: ServerRequest, res: Response): Promise<void> => {
     const user = req.user?.id;
     const tenantId = req.user?.tenantId || undefined;
-    const { parentConversationId, threadId, taskId } = req.params;
+    const { parentConversationId, threadId, taskId } = req.params as {
+      parentConversationId?: string;
+      threadId?: string;
+      taskId?: string;
+    };
     if (
       !user ||
       !validId(parentConversationId) ||

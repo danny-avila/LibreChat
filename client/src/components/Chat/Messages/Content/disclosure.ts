@@ -110,8 +110,9 @@ export function useToolExpansion(canExpand: boolean) {
   return [expanded, setOverride] as const;
 }
 
-
 export type ToolContentQuery = typeof useToolCallPartQuery;
 
 /** Undefined uses normal message access; null keeps a nested transcript view-only. */
-export const ToolContentQueryContext = createContext<ToolContentQuery | null | undefined>(undefined);
+export const ToolContentQueryContext = createContext<ToolContentQuery | null | undefined>(
+  undefined,
+);

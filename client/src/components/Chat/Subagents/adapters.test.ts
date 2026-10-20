@@ -689,7 +689,6 @@ describe('child activity adapters', () => {
   });
 });
 
-
 describe('standard content compatibility', () => {
   const content = [
     { type: ContentTypes.TEXT, text: 'Answer', phase: 'final_answer', agentId: 'child' },
@@ -703,8 +702,14 @@ describe('standard content compatibility', () => {
       type: ContentTypes.TOOL_CALL,
       agentId: 'child',
       tool_call: {
-        id: 'tool', name: 'bash', args: '{}', output: 'ok', progress: 1,
-        stepId: 'step', outputTruncated: true, previewRevision: 'r2',
+        id: 'tool',
+        name: 'bash',
+        args: '{}',
+        output: 'ok',
+        progress: 1,
+        stepId: 'step',
+        outputTruncated: true,
+        previewRevision: 'r2',
         subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested answer' }],
       },
     },
@@ -713,8 +718,11 @@ describe('standard content compatibility', () => {
 
   it('preserves standard parts, including non-projected parts and nested metadata', () => {
     const result = adaptLivePersistedActivity({
-      title: 'Child', progress: null, persistedContent: content,
-      initialProgress: 1, isSubmitting: false,
+      title: 'Child',
+      progress: null,
+      persistedContent: content,
+      initialProgress: 1,
+      isSubmitting: false,
     });
     expect(result.content).toBe(content);
     expect(result.items).toHaveLength(3);
@@ -722,32 +730,50 @@ describe('standard content compatibility', () => {
 
   it('retains old text-only records as a compatibility fallback', () => {
     const result = adaptLivePersistedActivity({
-      title: 'Child', progress: null, legacyOutput: 'Stored answer',
-      initialProgress: 1, isSubmitting: false,
+      title: 'Child',
+      progress: null,
+      legacyOutput: 'Stored answer',
+      initialProgress: 1,
+      isSubmitting: false,
     });
     expect(result.content).toBeUndefined();
     expect(result.items).toEqual([{ type: 'writing', text: 'Stored answer' }]);
   });
 
   it('removes public approval payloads without dropping other standard metadata', () => {
-    const withApproval = [{
-      type: ContentTypes.TOOL_CALL,
-      agentId: 'child',
-      tool_call: {
-        id: 'tool', name: 'bash', args: '{}', output: '', stepId: 'step',
-        approval: { actionId: 'private-action' },
-        subagent_content: [{
-          type: ContentTypes.TOOL_CALL,
-          tool_call: {
-            id: 'nested', name: 'bash', args: '{}', output: '',
-            approval: { actionId: 'private-nested-action' },
-          },
-        }],
+    const withApproval = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        agentId: 'child',
+        tool_call: {
+          id: 'tool',
+          name: 'bash',
+          args: '{}',
+          output: '',
+          stepId: 'step',
+          approval: { actionId: 'private-action' },
+          subagent_content: [
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: {
+                id: 'nested',
+                name: 'bash',
+                args: '{}',
+                output: '',
+                approval: { actionId: 'private-nested-action' },
+              },
+            },
+          ],
+        },
       },
-    }] as TMessageContentParts[];
+    ] as TMessageContentParts[];
     const result = adaptLivePersistedActivity({
-      title: 'Child', progress: null, persistedContent: withApproval,
-      initialProgress: 1, isSubmitting: false, approvalVisibility: 'hidden',
+      title: 'Child',
+      progress: null,
+      persistedContent: withApproval,
+      initialProgress: 1,
+      isSubmitting: false,
+      approvalVisibility: 'hidden',
     });
     expect(JSON.stringify(result.content)).not.toContain('private-action');
     expect(JSON.stringify(result.content)).not.toContain('private-nested-action');

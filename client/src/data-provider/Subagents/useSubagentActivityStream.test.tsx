@@ -802,16 +802,23 @@ it('treats content watermarks as invalidation only after the subscribed ready bo
   act(() => stream.emit('message', { ready: true, contentRecovery: true }));
   expect(result.current.isReady).toBe(true);
   mockInvalidateQueries.mockClear();
-  act(() => stream.emit('message', {
-    event: 'subagent_content_available', data: { taskId: 'task?1', revision: 3, throughSequence: 118 },
-  }));
+  act(() =>
+    stream.emit('message', {
+      event: 'subagent_content_available',
+      data: { taskId: 'task?1', revision: 3, throughSequence: 118 },
+    }),
+  );
   expect(mockInvalidateQueries).toHaveBeenCalledWith(
     [QueryKeys.subagentTaskContent, 'parent conversation', 'child/thread', 'task?1'],
-    { exact: true }, { cancelRefetch: false },
+    { exact: true },
+    { cancelRefetch: false },
   );
   mockInvalidateQueries.mockClear();
-  act(() => stream.emit('message', {
-    event: 'subagent_content_available', data: { taskId: 'other-task', revision: 9, throughSequence: 119 },
-  }));
+  act(() =>
+    stream.emit('message', {
+      event: 'subagent_content_available',
+      data: { taskId: 'other-task', revision: 9, throughSequence: 119 },
+    }),
+  );
   expect(mockInvalidateQueries).not.toHaveBeenCalled();
 });

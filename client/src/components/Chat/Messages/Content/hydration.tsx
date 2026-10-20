@@ -7,7 +7,11 @@ import {
 } from 'librechat-data-provider';
 import type { FullToolCall, TMessageContentParts } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import { ToolContentRequestContext, ToolContentPendingContext, ToolContentQueryContext } from './disclosure';
+import {
+  ToolContentRequestContext,
+  ToolContentPendingContext,
+  ToolContentQueryContext,
+} from './disclosure';
 import { useMessagePartsHost } from '~/Providers/MessagePartsHostContext';
 import { useToolCallPartQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';

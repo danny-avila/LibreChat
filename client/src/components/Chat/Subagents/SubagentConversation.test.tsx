@@ -20,8 +20,12 @@ jest.mock('~/Providers/MessagePartsHostContext', () => {
     useMessagesAsk: () => mockParentAsk,
   });
   return {
-    MessagePartsHostProvider: ({ host, children }: {
-      host: React.ContextType<typeof Context>; children: React.ReactNode;
+    MessagePartsHostProvider: ({
+      host,
+      children,
+    }: {
+      host: React.ContextType<typeof Context>;
+      children: React.ReactNode;
     }) => <Context.Provider value={host}>{children}</Context.Provider>,
     useMessagePartsHost: () => React.useContext(Context),
   };
@@ -45,13 +49,13 @@ jest.mock('~/Providers', () => ({
 
 jest.mock('~/components/Chat/Messages/Content/ContentParts', () => ({
   __esModule: true,
-  default: ({
+  default: function ContentPartsMock({
     content,
     messageId,
   }: {
     content: Array<Record<string, unknown>>;
     messageId: string;
-  }) => {
+  }) {
     const React = jest.requireActual<typeof import('react')>('react');
     const { ChatContext } = jest.requireActual('~/Providers/ChatContext');
     const { useMessagePartsHost } = jest.requireMock('~/Providers/MessagePartsHostContext');
@@ -183,9 +187,7 @@ describe('SubagentConversation', () => {
     expect(
       screen.queryByText('com_ui_subagent_activity_details_truncated'),
     ).not.toBeInTheDocument();
-    expect(
-      screen.queryByText('com_ui_subagent_activity_details_unavailable'),
-    ).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_activity_details_unavailable')).toBeInTheDocument();
     expect(screen.getByTestId('stream-elapsed')).toBeInTheDocument();
 
     fireEvent.click(
@@ -276,7 +278,6 @@ describe('SubagentConversation', () => {
   });
 });
 
-
 describe('standard conversation content', () => {
   beforeEach(() => {
     mockCopyMessage.mockClear();
@@ -285,38 +286,62 @@ describe('standard conversation content', () => {
   });
 
   it('copies the standard message source through the normal safe-copy action', () => {
-    const content = [{ type: 'text', text: 'Authoritative answer', phase: 'final_answer' }, {
-      type: 'tool_call', tool_call: { id: 'tool', name: 'bash', args: 'private input', output: 'private output' },
-    }] as TMessageContentParts[];
+    const content = [
+      { type: 'text', text: 'Authoritative answer', phase: 'final_answer' },
+      {
+        type: 'tool_call',
+        tool_call: { id: 'tool', name: 'bash', args: 'private input', output: 'private output' },
+      },
+    ] as TMessageContentParts[];
     render(
       <ChatSurfaceHarness>
         <SubagentConversation
-          turns={[{ ...turns[0], activity: { ...turns[0].activity, content, messageId: 'stable-response' } }]}
-          author={author} parentAuthor={parentAuthor}
+          turns={[
+            {
+              ...turns[0],
+              activity: { ...turns[0].activity, content, messageId: 'stable-response' },
+            },
+          ]}
+          author={author}
+          parentAuthor={parentAuthor}
         />
       </ChatSurfaceHarness>,
     );
-    expect(mockCopyMessage).toHaveBeenCalledWith(expect.objectContaining({
-      messageId: 'stable-response', content, text: '', isCreatedByUser: false,
-    }));
+    expect(mockCopyMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageId: 'stable-response',
+        content,
+        text: '',
+        isCreatedByUser: false,
+      }),
+    );
     expect(mockCopyMessage.mock.calls.at(-1)?.[0].content).toBe(content);
     expect(screen.queryByText('The release is ready.')).not.toBeInTheDocument();
   });
 
-  it.each([false, true])('never binds normal send effects, interactive approval scope=%s', (interactive) => {
-    const parent = { conversation: { conversationId: 'parent' }, ask: mockParentAsk } as ChatContract;
-    render(
-      <ChatSurfaceHarness>
-        <ChatContext.Provider value={parent}>
-          <SubagentConversation
-            turns={[turns[0]]} author={author} parentAuthor={parentAuthor} interactive={interactive}
-          />
-        </ChatContext.Provider>
-      </ChatSurfaceHarness>,
-    );
-    const [context, ask] = mockPartScope.mock.calls.at(-1)!;
-    expect(context).toBe(interactive ? parent : null);
-    ask({ text: 'Do not send this through the parent' });
-    expect(mockParentAsk).not.toHaveBeenCalled();
-  });
+  it.each([false, true])(
+    'never binds normal send effects, interactive approval scope=%s',
+    (interactive) => {
+      const parent = {
+        conversation: { conversationId: 'parent' },
+        ask: mockParentAsk,
+      } as ChatContract;
+      render(
+        <ChatSurfaceHarness>
+          <ChatContext.Provider value={parent}>
+            <SubagentConversation
+              turns={[turns[0]]}
+              author={author}
+              parentAuthor={parentAuthor}
+              interactive={interactive}
+            />
+          </ChatContext.Provider>
+        </ChatSurfaceHarness>,
+      );
+      const [context, ask] = mockPartScope.mock.calls.at(-1)!;
+      expect(context).toBe(interactive ? parent : null);
+      ask({ text: 'Do not send this through the parent' });
+      expect(mockParentAsk).not.toHaveBeenCalled();
+    },
+  );
 });

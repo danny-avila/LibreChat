@@ -427,13 +427,12 @@ export function SubagentActivityContent({
       {body}
       {activity.content == null &&
         activity.activityTruncated !== true &&
-        activity.items.some((item) =>
-          item.type === 'tool'
-            ? item.inputTruncated === true || item.outputTruncated === true
-            : item.type === 'activity_label'
-              ? item.labelTruncated === true
-              : item.textTruncated === true,
-        ) && (
+        activity.items.some((item) => {
+          if (item.type === 'tool')
+            return item.inputTruncated === true || item.outputTruncated === true;
+          if (item.type === 'activity_label') return item.labelTruncated === true;
+          return item.textTruncated === true;
+        }) && (
           <div role="status" className="text-text-secondary mt-2 text-xs">
             {localize('com_ui_subagent_activity_details_unavailable')}
           </div>

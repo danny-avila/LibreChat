@@ -31,9 +31,13 @@ function memoryStorage() {
       return { ok: true };
     },
     getSubagentContentHead: async (_scope, throughRevision) => {
-      const head = batches.findLast((batch) =>
-        throughRevision == null ? true : batch.revision <= throughRevision,
-      );
+      let head: SubagentContentBatch | undefined;
+      for (let index = batches.length - 1; index >= 0; index--) {
+        if (throughRevision == null || batches[index].revision <= throughRevision) {
+          head = batches[index];
+          break;
+        }
+      }
       return head == null
         ? null
         : { revision: head.revision, throughSequence: head.throughSequence };
@@ -203,7 +207,7 @@ it('bounds a blocked capture backlog without blocking child execution or claimin
   await journal.close();
   expect(errors).toHaveLength(1);
   expect(journal.throughSequence).toBe(999);
-  expect(batches.at(-1)?.throughSequence).toBeLessThan(journal.throughSequence);
+  expect(batches[batches.length - 1]?.throughSequence).toBeLessThan(journal.throughSequence);
   expect(
     batches.reduce((size, batch) => size + Buffer.byteLength(batch.eventsJson), 0),
   ).toBeLessThan(1024);

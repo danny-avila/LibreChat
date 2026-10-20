@@ -292,14 +292,17 @@ describe('SubagentActivity', () => {
     expect(mockContentParts.mock.calls.at(-1)?.[0].content).toBe(content);
   });
 
-  it.each([false, true])('uses the shared default fold policy with card auto-expand=%s', (autoExpand) => {
-    mockAutoExpandTools = autoExpand;
-    render(<SubagentActivity activity={{ ...base, status: 'running' }} />);
-    expect(mockContentParts).toHaveBeenLastCalledWith(
-      expect.objectContaining({ isSubmitting: true }),
-    );
-    expect(mockContentParts.mock.calls.at(-1)?.[0].foldLiveActivity).toBeUndefined();
-  });
+  it.each([false, true])(
+    'uses the shared default fold policy with card auto-expand=%s',
+    (autoExpand) => {
+      mockAutoExpandTools = autoExpand;
+      render(<SubagentActivity activity={{ ...base, status: 'running' }} />);
+      expect(mockContentParts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isSubmitting: true }),
+      );
+      expect(mockContentParts.mock.calls.at(-1)?.[0].foldLiveActivity).toBeUndefined();
+    },
+  );
   it.each(['failed', 'cancelled'] as const)(
     'renders the %s lifecycle through the shared view',
     (status) => {
@@ -393,9 +396,7 @@ describe('SubagentActivity', () => {
     );
 
     expect(screen.queryByText('bounded input')).not.toBeInTheDocument();
-    expect(
-      screen.queryByText('com_ui_subagent_activity_details_unavailable'),
-    ).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_activity_details_unavailable')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_subagent_thread_history_truncated')).not.toBeInTheDocument();
   });
 
@@ -655,7 +656,6 @@ describe('SubagentActivity', () => {
   });
 });
 
-
 it('retains standard content when a refresh fails and reports the failure', () => {
   render(<SubagentActivity activity={base} state="error" />);
   expect(screen.getByText('Final answer.')).toBeInTheDocument();
@@ -668,29 +668,44 @@ it('does not repeat an applied control already rendered at its standard content 
       activity={{
         ...base,
         content: [{ type: ContentTypes.STEER, steer: 'Applied message', steerId: 'control-1' }],
-        controls: [{
-          invocationId: 'invocation-1', controlId: 'control-1', action: 'steer',
-          status: 'applied', message: 'Applied message',
-          createdAt: '2026-10-20T00:00:00Z', updatedAt: '2026-10-20T00:00:01Z',
-        }],
+        controls: [
+          {
+            invocationId: 'invocation-1',
+            controlId: 'control-1',
+            action: 'steer',
+            status: 'applied',
+            message: 'Applied message',
+            createdAt: '2026-10-20T00:00:00Z',
+            updatedAt: '2026-10-20T00:00:01Z',
+          },
+        ],
       }}
     />,
   );
   expect(screen.queryByText('com_ui_subagent_control_status_applied')).not.toBeInTheDocument();
   expect(mockContentParts.mock.calls.at(-1)?.[0].content[0]).toMatchObject({
-    type: ContentTypes.STEER, steerId: 'control-1',
+    type: ContentTypes.STEER,
+    steerId: 'control-1',
   });
 });
 
 it('does not claim delivery or application before the server confirms it', () => {
   render(
-    <SubagentActivity activity={{
-      ...base,
-      controls: [{
-        invocationId: 'invocation-1', action: 'steer', status: 'submitted', message: 'Check it',
-        createdAt: '2026-10-20T00:00:00Z', updatedAt: '2026-10-20T00:00:00Z',
-      }],
-    }} />,
+    <SubagentActivity
+      activity={{
+        ...base,
+        controls: [
+          {
+            invocationId: 'invocation-1',
+            action: 'steer',
+            status: 'submitted',
+            message: 'Check it',
+            createdAt: '2026-10-20T00:00:00Z',
+            updatedAt: '2026-10-20T00:00:00Z',
+          },
+        ],
+      }}
+    />,
   );
   expect(screen.getByTestId('steer-receipt')).toHaveAttribute('data-receipt-state', 'sending');
 });

@@ -913,8 +913,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       prompt: durable.prompt ?? liveActivity.prompt,
       items: mergedItems,
       attachments: durable.attachments ?? liveActivity.attachments,
-      content:
-        !useLiveItems && durable.items.length > 0 ? durable.content : liveActivity.content,
+      content: !useLiveItems && durable.items.length > 0 ? durable.content : liveActivity.content,
     };
     if (
       transientControl == null ||
@@ -1522,12 +1521,16 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           parentAuthor={isSelfSpawn && selection.event == null ? childAuthor : parentAuthor}
           conversationId={threadId || selection.parentConversationId}
           interactive={selection.host === 'conversation' && selection.durable == null}
-          recovery={selection.durable == null ? undefined : {
-            parentConversationId: selection.parentConversationId,
-            threadId,
-            selectedTaskId: taskId,
-            ready: contentStream?.isReady === true,
-          }}
+          recovery={
+            selection.durable == null
+              ? undefined
+              : {
+                  parentConversationId: selection.parentConversationId,
+                  threadId,
+                  selectedTaskId: taskId,
+                  ready: contentStream?.isReady === true,
+                }
+          }
           stateByTask={conversationStateByTask}
           controllableTaskId={
             controlAvailable && !controlPending ? selection.durable?.taskId : undefined

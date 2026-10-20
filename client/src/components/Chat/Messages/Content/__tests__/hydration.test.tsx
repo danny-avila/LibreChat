@@ -293,7 +293,6 @@ describe('withFullToolCall', () => {
   });
 });
 
-
 describe('task-authorized tool preview loading', () => {
   const getToolCallPart = dataService.getToolCallPart as jest.Mock;
 
@@ -309,7 +308,9 @@ describe('task-authorized tool preview loading', () => {
 
   it('uses the authorized task query without changing standard preview hydration', async () => {
     const useAuthorizedQuery = jest.fn().mockReturnValue({
-      data: stored(), isError: false, refetch: jest.fn(),
+      data: stored(),
+      isError: false,
+      refetch: jest.fn(),
     });
     renderPart(previewPart(), { sole: true, contentQuery: useAuthorizedQuery });
     expect(screen.getByTestId('output').textContent).toBe(fullOutput);

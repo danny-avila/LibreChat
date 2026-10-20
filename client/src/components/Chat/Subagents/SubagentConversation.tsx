@@ -1,7 +1,13 @@
 import { useContext, useMemo, useState } from 'react';
 import { Radio } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
-import { Alert, Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@librechat/client';
+import {
+  Alert,
+  Button,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@librechat/client';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { ToolContentQuery } from '~/components/Chat/Messages/Content/disclosure';
@@ -10,7 +16,11 @@ import type { MessagePartsHost } from '~/hooks/Chat/contract';
 import type { ChildConversationTurn } from './adapters';
 import type { TranslationKeys } from '~/hooks';
 import type { TurnAuthor } from './author';
-import { TaskContentScopeContext, useSubagentTaskContentQuery, useSubagentToolContentQuery } from '~/data-provider/Subagents/content';
+import {
+  TaskContentScopeContext,
+  useSubagentTaskContentQuery,
+  useSubagentToolContentQuery,
+} from '~/data-provider/Subagents/content';
 import SystemEventHeader, {
   SystemEventIcon,
   systemEventHeaderClasses,
@@ -87,7 +97,7 @@ function ExternalEventTrigger({
             <span className="sr-only">{details.occurredAt}</span>
           </Button>
         </CollapsibleTrigger>
-        <CollapsibleContent className="text-text-secondary pt-0.5 pb-1 text-xs">
+        <CollapsibleContent>
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
             <dt>{localize('com_ui_subagent_event_type')}</dt>
             <dd className="text-text-primary break-words">{details.eventType}</dd>
@@ -248,9 +258,7 @@ function ChildMessage({
   if (detailsLimited && onLoadDetails != null && detailState !== 'unavailable') {
     limitedNotice = (
       <Button type="button" variant="ghost" size="sm" onClick={onLoadDetails}>
-        {detailState === 'error'
-          ? localize('com_ui_retry')
-          : localize('com_ui_load_more')}
+        {detailState === 'error' ? localize('com_ui_retry') : localize('com_ui_load_more')}
       </Button>
     );
   } else {
@@ -331,8 +339,10 @@ function RecoveredChildMessage({
     [recovery?.parentConversationId, recovery?.threadId, props.turn.taskId],
   );
   const recovered = useSubagentTaskContentQuery(scope, {
-    enabled: recovery != null &&
-      (props.turn.taskId !== recovery.selectedTaskId || recovery.ready ||
+    enabled:
+      recovery != null &&
+      (props.turn.taskId !== recovery.selectedTaskId ||
+        recovery.ready ||
         !isLiveSubagentStatus(props.turn.activity.status)),
   });
   const turn = useMemo(() => {
@@ -345,19 +355,23 @@ function RecoveredChildMessage({
         messageId: snapshot.messageId,
         content: snapshot.content,
         status: snapshot.status,
-        activityTruncated: snapshot.throughSequence < snapshot.targetThroughSequence ||
+        activityTruncated:
+          snapshot.throughSequence < snapshot.targetThroughSequence ||
           (!isLiveSubagentStatus(snapshot.status) && snapshot.recovery === 'partial'),
       },
     };
   }, [recovered.data, props.turn]);
-  const notice = recovered.isError && !recovered.isUnavailable ? (
-    <Alert variant="error" className="mb-2 flex items-center gap-2">
-      <span>{localize('com_ui_conversation_load_error')}</span>
-      <Button variant="ghost" size="sm" onClick={() => void recovered.refetch()}>
-        {localize('com_ui_retry')}
-      </Button>
-    </Alert>
-  ) : undefined;
+  const notice =
+    recovered.isError && !recovered.isUnavailable ? (
+      <Alert variant="error" className="mb-2">
+        <div className="flex items-center gap-2">
+          <span>{localize('com_ui_conversation_load_error')}</span>
+          <Button variant="ghost" size="sm" onClick={() => void recovered.refetch()}>
+            {localize('com_ui_retry')}
+          </Button>
+        </div>
+      </Alert>
+    ) : undefined;
   return (
     <TaskContentScopeContext.Provider value={scope}>
       <ChildMessage

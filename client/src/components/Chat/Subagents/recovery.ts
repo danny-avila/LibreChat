@@ -48,7 +48,13 @@ export function reduceRecoveredContent(
     const stream = createStreamState();
     stream.messages.set(response.messageId, recoveredMessage(response));
     for (const step of response.runSteps) {
-      stream.steps.set(step.id, { ...step, runId: response.messageId });
+      const part = response.content[step.index];
+      stream.steps.set(step.id, {
+        ...step,
+        runId: response.messageId,
+        agentId: step.agentId ?? part?.agentId,
+        groupId: step.groupId ?? part?.groupId,
+      });
       if (step.stepDetails.type === StepTypes.TOOL_CALLS) {
         for (const call of step.stepDetails.tool_calls ?? []) {
           if (call.id) stream.toolCallIds.set(step.id, call.id);
@@ -57,10 +63,13 @@ export function reduceRecoveredContent(
     }
     return { snapshot: response, stream };
   }
-  if (previous != null &&
+  if (
+    previous != null &&
     response.throughSequence <= previous.snapshot.throughSequence &&
     response.revision <= previous.snapshot.revision &&
-    response.status === previous.snapshot.status) return previous;
+    response.status === previous.snapshot.status
+  )
+    return previous;
   if (previous == null || response.afterSequence !== previous.snapshot.throughSequence) return null;
   if (
     response.revision === previous.snapshot.revision &&
@@ -161,7 +170,6 @@ export const recoveredToolPart = (
     ? { partIndex: index, tool_call: part.tool_call as FullToolCall }
     : null;
 };
-
 
 export type TaskContentLoader = (
   afterSequence?: number,
