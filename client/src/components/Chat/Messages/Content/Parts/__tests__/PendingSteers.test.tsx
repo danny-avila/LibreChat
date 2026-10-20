@@ -172,7 +172,7 @@ describe('PendingSteers', () => {
     const cancel = screen.getByRole('button', { name: 'com_ui_cancel' });
     expect(cancel).toBeEnabled();
     expect(cancel.parentElement).toHaveClass('flex-wrap', 'justify-end');
-    expect(cancel.parentElement).not.toHaveClass('pl-9');
+    expect(cancel.parentElement).not.toHaveClass('ps-9');
   });
 
   it('aligns failed-steer recovery actions with the bubble and allows wrapping', () => {
@@ -180,7 +180,7 @@ describe('PendingSteers', () => {
 
     const retry = screen.getByRole('button', { name: 'com_ui_retry' });
     expect(retry.parentElement).toHaveClass('flex-wrap', 'justify-end');
-    expect(retry.parentElement).not.toHaveClass('pl-9');
+    expect(retry.parentElement).not.toHaveClass('ps-9');
   });
 
   it.each(['sending', 'pending', 'failed'] as const)(

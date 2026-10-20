@@ -34,6 +34,7 @@ import {
 import store, { ptcTraceByToolCallId, ptcTraceKey, sandboxStartingByToolCallId } from '~/store';
 import { getAppPartRenderers } from '~/components/Chat/Messages/Content/Parts/slots';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
+import { chatDirectionAtom } from '~/store/chatDirection';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
 
@@ -130,7 +131,7 @@ export const appMessagePartsHost: MessagePartsHost = {
   useShowThinking: () => useAtomValue(showThinkingAtom),
   useAutoExpandTools: () => useRecoilValue<boolean>(store.autoExpandTools),
   useLaTeXParsing: () => useRecoilValue<boolean>(store.LaTeXParsing),
-  useChatDirection: () => useRecoilValue(store.chatDirection),
+  useChatDirection: () => useAtomValue(chatDirectionAtom),
   useUserTextPreferences: useAppUserTextPreferences,
   /* The atom rather than the auth context: AuthContextProvider mirrors the user into it, and the
    * public share route mounts outside that provider. */
