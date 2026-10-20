@@ -324,6 +324,18 @@ export const getActiveComposerDraftId = (index: number, conversationId: string):
   return scope?.conversationId === conversationId ? scope.draftId : null;
 };
 
+/** Captured before preparation, using the same scope and reset generation as the composer. */
+export const captureComposerDraft = (index: number, conversationId: string): (() => boolean) => {
+  const scope = composerDraftScopes.get(index);
+  const generation = getNewConversationDraftToken(index);
+  const route = window.location.pathname + window.location.search;
+  return () =>
+    (!scope || scope.conversationId === conversationId) &&
+    composerDraftScopes.get(index) === scope &&
+    getNewConversationDraftToken(index) === generation &&
+    window.location.pathname + window.location.search === route;
+};
+
 const setLocalStorageItem = (key: string, value: string): void => {
   try {
     const changed =

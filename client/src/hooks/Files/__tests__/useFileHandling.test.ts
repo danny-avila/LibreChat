@@ -302,7 +302,7 @@ describe('useFileHandling', () => {
         body,
       ),
     );
-    expect(mockDeleteFileById).toHaveBeenCalledWith(fileId);
+    expect(mockDeleteFileById).toHaveBeenCalledWith(fileId, expect.any(Function));
     await waitFor(() =>
       expect(mockLocalize).toHaveBeenCalledWith('com_error_files_provider_audio_format'),
     );
@@ -2302,6 +2302,74 @@ describe('useFileHandling', () => {
       consoleLog.mockRestore();
     });
   });
+  it('finishes a persisted replacement after its success callback consumes the source', async () => {
+    jest.useFakeTimers();
+    try {
+      let eligible = true;
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+      await act(async () => {
+        await result.current.handleFiles(
+          [new File(['text'], 'replacement.txt', { type: 'text/plain' })],
+          undefined,
+          {
+            shouldCommit: () => eligible,
+            onSuccess: () => {
+              eligible = false;
+            },
+          },
+        );
+      });
+      const body = mockMutate.mock.calls[0][0] as FormData;
+      act(() => {
+        mockUploadOptions.onSuccess?.(
+          {
+            temp_file_id: body.get('file_id') as string,
+            file_id: 'saved',
+            filepath: '/files/saved',
+            type: 'text/plain',
+            filename: 'replacement.txt',
+            source: 'local',
+            embedded: false,
+          },
+          body,
+        );
+        jest.runAllTimers();
+      });
+      expect(eligible).toBe(false);
+      expect(mockUpdateFileById).toHaveBeenLastCalledWith(
+        expect.any(String),
+        expect.objectContaining({ progress: 1 }),
+        false,
+        expect.any(Function),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('rechecks upload ownership when queued file-map updaters execute', () => {
+    const useUpdateFiles = jest.requireActual('../useUpdateFiles').default;
+    const updates: React.SetStateAction<Map<string, ExtendedFile>>[] = [];
+    const setFiles = (update: React.SetStateAction<Map<string, ExtendedFile>>) =>
+      updates.push(update);
+    const { result } = renderHook(() => useUpdateFiles(setFiles));
+    let ownsComposer = true;
+    const isCurrent = () => ownsComposer;
+    const file = { file_id: 'existing', progress: 0.2, size: 1 } as ExtendedFile;
+    act(() => {
+      result.current.addFile(file, isCurrent);
+      result.current.replaceFile(file, isCurrent);
+      result.current.updateFileById(file.file_id, { progress: 1 }, false, isCurrent);
+      result.current.deleteFileById(file.file_id, isCurrent);
+    });
+    ownsComposer = false;
+    const destination = new Map([[file.file_id, file]]);
+    for (const update of updates) {
+      expect(typeof update === 'function' ? update(destination) : update).toBe(destination);
+    }
+  });
+
   describe('stalled attachments', () => {
     /**
      * The upload only starts once the browser has decoded the image, so a decode
@@ -2325,7 +2393,7 @@ describe('useFileHandling', () => {
 
       const addedFile = mockAddFile.mock.calls[0][0] as { file_id: string };
       expect(mockMutate).not.toHaveBeenCalled();
-      expect(mockDeleteFileById).toHaveBeenCalledWith(addedFile.file_id);
+      expect(mockDeleteFileById).toHaveBeenCalledWith(addedFile.file_id, expect.any(Function));
     });
 
     it('reports the failure through the upload lifecycle when a decode fails', async () => {

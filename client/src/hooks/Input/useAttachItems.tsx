@@ -95,6 +95,7 @@ export interface UseAttachItems {
 }
 
 interface UseAttachItemsParams {
+  index?: number;
   agentId?: string | null;
   endpoint?: string | null;
   endpointType?: EModelEndpoint | string;
@@ -119,6 +120,7 @@ interface UseAttachItemsParams {
  * popover so selecting a file does not race the popover unmounting.
  */
 export default function useAttachItems({
+  index = 0,
   agentId,
   endpoint,
   endpointType,
@@ -143,6 +145,7 @@ export default function useAttachItems({
   const [, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(conversationId));
 
   const { handleFileChange } = useFileHandlingNoChatContext(undefined, {
+    index,
     files,
     setFiles,
     setFilesLoading,
@@ -151,7 +154,7 @@ export default function useAttachItems({
   const { handleSharePointFiles, isProcessing, downloadProgress } =
     useSharePointFileHandlingNoChatContext(
       { toolResource: sharePointResource },
-      { files, setFiles, setFilesLoading, conversation },
+      { index, files, setFiles, setFilesLoading, conversation },
     );
 
   const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId));

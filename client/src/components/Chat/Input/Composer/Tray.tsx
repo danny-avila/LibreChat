@@ -116,6 +116,7 @@ function Tray({
     [items, focusComposer],
   );
   const { abortUpload } = useFileHandlingNoChatContext(undefined, {
+    index,
     files,
     setFiles,
     setFilesLoading,

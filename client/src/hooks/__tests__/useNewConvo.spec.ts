@@ -1,4 +1,5 @@
-import { getDefaultStore } from 'jotai';
+import React from 'react';
+import { getDefaultStore, useAtom } from 'jotai';
 import { filesFamily } from '@librechat/chat/react';
 import { renderHook, act } from '@testing-library/react';
 import { Constants, LocalStorageKeys, EModelEndpoint } from 'librechat-data-provider';
@@ -11,6 +12,15 @@ import { useAutoSave } from '~/hooks/Input/useAutoSave';
 import { setFileSearchChoice } from '~/utils/choices';
 
 const mockDeleteFiles = jest.fn();
+const mockUploadFile = jest.fn();
+let mockPreparationGate: Promise<void> | undefined;
+let mockConfigPending = false;
+let mockDownloadedFiles: File[] = [];
+const mockResizeFile = jest.fn(async (file: File) => ({ file, resized: false }));
+const mockConvertFile = jest.fn(
+  async (file: File, _quality?: number, _onProgress?: (progress: number) => void) => file,
+);
+
 let mockSaveDrafts = false;
 let mockPreviousConversation: { conversationId: string; endpoint: EModelEndpoint } | null = null;
 let mockFileList: object[] = [];
@@ -68,6 +78,8 @@ jest.mock('librechat-data-provider', () => ({
 
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/drafts'),
+  ...jest.requireActual('~/utils/files'),
+  ...jest.requireActual('~/utils/previewCache'),
   updateLastSelectedModel: jest.fn(),
   getLocalStorageItems: () => ({}),
   getDefaultModelSpec: () => ({}),
@@ -80,7 +92,9 @@ jest.mock('~/utils', () => ({
     mockCollectForeignAttachmentClaims(excludeDraftIds, excludeOwnPane),
   getNewConversationDraftId: (index = 0) => (index === 0 ? 'new' : `new:${index}`),
   getPendingDraftId: (index = 0) => (index === 0 ? 'pending' : `pending:${index}`),
-  renewNewConversationDraftToken: jest.fn(),
+  renewNewConversationDraftToken: jest.fn(
+    jest.requireActual('~/utils/drafts').renewNewConversationDraftToken,
+  ),
   removeTabAttachmentPresence: (...args: unknown[]) => mockRemoveTabAttachmentPresence(...args),
   loadPendingDiscardIds: () => [...mockPendingDiscardIds],
   storePendingDiscardIds: (index: number, ids: string[]) => mockStorePendingDiscardIds(index, ids),
@@ -95,6 +109,41 @@ jest.mock('~/data-provider', () => ({
   useGetEndpointsQuery: () => ({ data: {} }),
   useGetStartupConfig: () => ({ data: {} }),
   useGetFiles: () => ({ data: mockFileList }),
+  useGetFileConfig: () => ({ data: null }),
+  useGetAgentByIdQuery: () => ({ data: undefined }),
+  useUploadFileMutation: () => ({ mutate: mockUploadFile }),
+}));
+
+jest.mock('@librechat/client', () => ({
+  ...jest.requireActual('@librechat/client'),
+  useToastContext: () => ({ showToast: jest.fn() }),
+}));
+jest.mock('~/Providers/AgentsMapContext', () => ({ useAgentsMapContext: () => ({}) }));
+jest.mock('../Files/useDelayedUploadToast', () => ({
+  useDelayedUploadToast: () => ({ startUploadTimer: jest.fn(), clearUploadTimer: jest.fn() }),
+}));
+jest.mock('../Files/useClientResize', () => ({
+  __esModule: true,
+  default: () => ({
+    isConfigPending: mockConfigPending,
+    waitForConfig: () => mockPreparationGate,
+    resizeImageIfNeeded: mockResizeFile,
+  }),
+}));
+jest.mock('~/utils/heicConverter', () => ({
+  processFileForUpload: (...args: [File]) => mockConvertFile(...args),
+}));
+jest.mock('../Files/useSharePointDownload', () => ({
+  __esModule: true,
+  default: () => ({
+    downloadSharePointFiles: async () => {
+      await mockPreparationGate;
+      return mockDownloadedFiles;
+    },
+    isDownloading: false,
+    downloadProgress: null,
+    error: null,
+  }),
 }));
 
 jest.mock('../Conversations/useNavigateToConvo', () => ({
@@ -111,7 +160,7 @@ jest.mock('../Assistants/useAssistantListMap', () => ({
 }));
 jest.mock('../Files/useFileHandling', () => {
   const actual = jest.requireActual('../Files/useFileHandling');
-  return { ...actual, clearUploadRecovery: jest.fn(actual.clearUploadRecovery) };
+  return { __esModule: true, ...actual, clearUploadRecovery: jest.fn(actual.clearUploadRecovery) };
 });
 jest.mock('../Agents', () => ({ useApplyModelSpecEffects: () => jest.fn() }));
 jest.mock('../Audio', () => ({ usePauseGlobalAudio: () => ({ pauseGlobalAudio: jest.fn() }) }));
@@ -208,6 +257,147 @@ describe('useNewConvo reset cleanup', () => {
       getDefaultStore().set(filesFamily(index), mockFiles as Map<string, ExtendedFile>);
     }
   });
+
+  it.each(
+    [
+      'config',
+      'queue',
+      'sharepoint',
+      'sharepoint-no-context',
+      'heic',
+      'decode',
+      'route',
+      'answer',
+      'unmount',
+    ].flatMap((boundary) => ['new', 'origin'].map((origin) => ({ boundary, origin }))),
+  )(
+    'abandons $boundary upload after $origin composer resets before staging',
+    async ({ boundary, origin }) => {
+      const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
+      const { default: useSharePoint, useSharePointFileHandlingNoChatContext } = await import(
+        '../Files/useSharePointFileHandling'
+      );
+      const { ChatContext } = await import('~/Providers/ChatContext');
+      let release: () => void = () => undefined;
+      mockPreparationGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      mockConfigPending = ['config', 'queue', 'route', 'answer', 'unmount'].includes(boundary);
+      mockSaveDrafts = true;
+      mockPreviousConversation = { conversationId: origin, endpoint: EModelEndpoint.openAI };
+      mockFiles.clear();
+      global.URL.createObjectURL = jest.fn(() => 'blob:deferred');
+      global.URL.revokeObjectURL = jest.fn();
+      mockDownloadedFiles = [new File(['search'], 'search.txt', { type: 'text/plain' })];
+      mockConvertFile.mockImplementation(async (file, _quality, onProgress) => {
+        await mockPreparationGate;
+        onProgress?.(0.8);
+        return file;
+      });
+      const imageCallbacks: (() => void)[] = [];
+      const originalImage = global.Image;
+      if (boundary === 'decode') {
+        Object.defineProperty(global, 'Image', {
+          configurable: true,
+          writable: true,
+          value: class {
+            width = 640;
+            height = 480;
+            onload: (() => void) | null = null;
+            set src(_value: string) {
+              imageCallbacks.push(() => this.onload?.());
+            }
+          },
+        });
+      }
+      const { result, rerender, unmount } = renderHook(
+        ({ conversationId, draftId }) => {
+          const [files, setFiles] = useAtom(filesFamily(2));
+          const state = {
+            index: 2,
+            files,
+            setFiles,
+            conversation: { conversationId, endpoint: EModelEndpoint.openAI } as TConversation,
+          };
+          useAutoSave({ ...state, index: 2, conversationId, draftId });
+          const handler = useFileHandlingNoChatContext(undefined, state);
+          const sharepoint = useSharePointFileHandlingNoChatContext(
+            { toolResource: 'file_search' },
+            state,
+          );
+          return { handler, sharepoint, files, state };
+        },
+        { initialProps: { conversationId: origin, draftId: null as string | null } },
+      );
+      const contextState = result.current.state;
+      const contextSharePoint = renderHook(() => useSharePoint({ toolResource: 'file_search' }), {
+        wrapper: ({ children }) =>
+          React.createElement(
+            ChatContext.Provider,
+            {
+              value: contextState as ReturnType<
+                typeof import('~/Providers/ChatContext').useChatContext
+              >,
+            },
+            children,
+          ),
+      });
+      const next = renderHook(() => useNewConvo(2));
+      let first: Promise<boolean> | undefined;
+      let pending: Promise<boolean | void> = Promise.resolve();
+      act(() => {
+        if (boundary === 'queue')
+          first = result.current.handler.handleFiles(mockDownloadedFiles, 'file_search');
+        pending =
+          boundary === 'sharepoint'
+            ? contextSharePoint.result.current.handleSharePointFiles([])
+            : boundary === 'sharepoint-no-context'
+              ? result.current.sharepoint.handleSharePointFiles([])
+              : result.current.handler.handleFiles(
+                  boundary === 'heic'
+                    ? [new File(['heic'], 'search.heic', { type: 'image/heic' })]
+                    : boundary === 'decode'
+                      ? [new File(['image'], 'search.png', { type: 'image/png' })]
+                      : mockDownloadedFiles,
+                  'file_search',
+                );
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      act(() => {
+        if (boundary === 'unmount') unmount();
+        else if (boundary === 'route') {
+          window.history.pushState({}, '', '/c/destination');
+          rerender({ conversationId: 'destination', draftId: null });
+        } else if (boundary === 'answer') {
+          rerender({ conversationId: origin, draftId: getAskAnswerDraftId('next-question') });
+        } else {
+          next.result.current.newConversation();
+          rerender({ conversationId: 'new', draftId: null });
+        }
+      });
+      await act(async () => {
+        release();
+        await first;
+        const accepted = await pending;
+        if (!boundary.startsWith('sharepoint') && boundary !== 'decode')
+          expect(accepted).toBe(false);
+        imageCallbacks.forEach((decode) => decode());
+      });
+      expect(mockUploadFile).not.toHaveBeenCalled();
+      if (boundary !== 'unmount') expect(result.current.files.size).toBe(0);
+      expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+      contextSharePoint.unmount();
+      next.unmount();
+      unmount();
+      mockConfigPending = false;
+      mockPreparationGate = undefined;
+      window.history.replaceState({}, '', '/');
+      global.Image = originalImage;
+    },
+  );
 
   it.each(['retained', 'discarded', 'disabled', 'unrelated', 'other-conversation'])(
     'restores File Search only for a retained explicit upload (%s)',
