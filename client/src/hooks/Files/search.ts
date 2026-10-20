@@ -1,7 +1,11 @@
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import type { CapturedComposerDraft } from '~/utils/drafts';
+import {
+  getFileSearchChoice,
+  transferFileSearchChoice,
+  acceptFileSearchChoice,
+} from '~/utils/choices';
 import { getTimestampedValue, isTimestampExpired, setTimestamp } from '~/utils/timestamps';
-import { getFileSearchChoice, transferFileSearchChoice } from '~/utils/choices';
 import { getNewConversationDraftRevision } from '~/utils/drafts';
 import { FILE_SEARCH_UPLOAD_PREFIX } from '~/utils/localStorage';
 
@@ -39,6 +43,20 @@ export function transferFileSearchPreference(
     // A blocked store must not prevent the acknowledged identity handoff.
   }
   return enabled;
+}
+
+export function getFileSearchPreference(conversationId: string): boolean | undefined {
+  const choice = getFileSearchChoice(conversationId);
+  if (choice) return choice.enabled;
+  try {
+    const preference = getTimestampedValue(
+      `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}${conversationId}`,
+    );
+    if (preference === 'true' || preference === 'false') return preference === 'true';
+  } catch {
+    // Unavailable storage leaves the live template as the fallback.
+  }
+  return undefined;
 }
 
 export function captureFileSearchUpload(
@@ -195,10 +213,7 @@ export function completeFileSearchUpload(
     return false;
   }
   cancelFileSearchUpload(fileId);
-  const choice = getFileSearchChoice(conversationId);
-  if (choice && choice.revision !== intent.choiceRevision && !choice.enabled) {
-    return false;
-  }
+  if (!acceptFileSearchChoice(conversationId, intent.choiceRevision)) return false;
   const preferenceKey = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}${conversationId}`;
   try {
     localStorage.setItem(preferenceKey, 'true');

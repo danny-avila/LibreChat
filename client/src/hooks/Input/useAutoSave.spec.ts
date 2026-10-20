@@ -51,6 +51,7 @@ import {
   setFilesDraft,
   renewNewConversationDraftToken,
 } from '~/utils';
+import { bindComposerLaunch, adoptComposerConversation } from '~/utils/drafts';
 import { markPastedTextFile } from '~/utils/files';
 import { useAutoSave } from '~/hooks';
 import type { ExtendedFile } from '~/common';
@@ -787,6 +788,70 @@ describe('useAutoSave — typing as a run finishes', () => {
 describe('useAutoSave — side-by-side pending drafts', () => {
   const pane0PendingId = Constants.PENDING_CONVO;
   const pane1PendingId = `${Constants.PENDING_CONVO}:1`;
+
+  it.each([0, 1].flatMap((index) => [false, true].map((explicit) => ({ index, explicit }))))(
+    'keeps post-acknowledgement uploads through run end (pane $index, explicit $explicit)',
+    ({ index, explicit }) => {
+      window.history.replaceState({}, '', '/c/new');
+      const file = {
+        file_id: 'after-ack-file',
+        progress: 1,
+        size: 6,
+        type: 'text/plain',
+        ...(explicit ? { embedded: true, tool_resource: 'file_search' } : {}),
+      };
+      (useGetFiles as jest.Mock).mockReturnValue({ data: [{ ...file, bytes: 6 }] });
+      const { result, rerender, unmount } = renderHook(
+        ({ conversationId, isSubmitting }) => {
+          const [files, setFiles] = React.useState<Map<string, ExtendedFile>>(new Map());
+          useAutoSave({ index, conversationId, isSubmitting, files, setFiles });
+          return { files, setFiles };
+        },
+        { initialProps: { conversationId: 'new', isSubmitting: true } },
+      );
+      const launch = { conversationId: 'new' };
+      bindComposerLaunch(launch, index);
+      expect(adoptComposerConversation(launch, 'saved-after-ack', index)).toBe(true);
+      act(() => {
+        window.history.replaceState({}, '', '/c/saved-after-ack');
+        rerender({ conversationId: 'saved-after-ack', isSubmitting: true });
+      });
+      act(() => result.current.setFiles(new Map([['after-ack-file', file]])));
+      const pendingId = index === 0 ? 'pending' : `pending:${index}`;
+      expect(getFilesDraft(pendingId).fileIds).toContain('after-ack-file');
+      act(() => rerender({ conversationId: 'saved-after-ack', isSubmitting: false }));
+      expect(result.current.files.get('after-ack-file')?.progress).toBe(1);
+      expect(getFilesDraft('saved-after-ack').fileIds).toContain('after-ack-file');
+      unmount();
+      window.history.replaceState({}, '', '/');
+    },
+  );
+
+  it('does not reattribute a pending draft to an unacknowledged destination', () => {
+    window.history.replaceState({}, '', '/c/new');
+    const { rerender, unmount } = renderHook(
+      ({ conversationId, files }) =>
+        useAutoSave({
+          index: 40,
+          conversationId,
+          isSubmitting: true,
+          files,
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { conversationId: 'new', files: new Map<string, ExtendedFile>() } },
+    );
+    setFilesDraft('pending:40', { fileIds: ['original-pending-file'], pendingPastes: {} });
+    act(() => {
+      window.history.replaceState({}, '', '/c/unrelated-destination');
+      rerender({
+        conversationId: 'unrelated-destination',
+        files: new Map([['unrelated-file', { file_id: 'unrelated-file', progress: 1, size: 1 }]]),
+      });
+    });
+    expect(getFilesDraft('pending:40').fileIds).toEqual(['original-pending-file']);
+    unmount();
+    window.history.replaceState({}, '', '/');
+  });
 
   it('migrates only this pane pending file draft when a run finishes', () => {
     const { rerender } = renderHook(

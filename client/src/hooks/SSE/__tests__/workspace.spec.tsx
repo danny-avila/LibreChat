@@ -8,12 +8,13 @@ import { Constants, EModelEndpoint, QueryKeys, LocalStorageKeys } from 'librecha
 import type { ChatCreatedFrame, EventSubmission, TConversation } from 'librechat-data-provider';
 import {
   registerComposerDraft,
+  adoptComposerConversation,
   bindComposerLaunch,
   captureComposerDraft,
   getActiveComposerDraftId,
 } from '~/utils/drafts';
+import { setFileSearchChoice, getFileSearchChoice, clearFileSearchChoices } from '~/utils/choices';
 import { beginFileSearchUpload, completeFileSearchUpload } from '~/hooks/Files/search';
-import { setFileSearchChoice, getFileSearchChoice } from '~/utils/choices';
 import useCodeWorkspace from '~/hooks/Agents/useCodeWorkspace';
 import useEventHandlers from '../useEventHandlers';
 
@@ -141,6 +142,7 @@ function setup(current = initialConversation, isAddedRequest = false) {
 describe('created composer identity', () => {
   beforeEach(() => {
     localStorage.clear();
+    clearFileSearchChoices();
     mockApplyAgentTemplate.mockClear();
     mockStatus.mockReturnValue([]);
     mockStartupConfig.mockReturnValue({ codeEnvironmentDecisionVersion: 1 });
@@ -218,6 +220,90 @@ describe('created composer identity', () => {
       unmount();
       queryClient.clear();
       window.history.replaceState({}, '', '/');
+    },
+  );
+
+  it.each(
+    ['saved', 'resumable'].flatMap((origin) =>
+      [
+        'accepted',
+        'disabled-before',
+        'disabled-after',
+        'blocked-storage',
+        'accepted-unset',
+        'blocked-unset',
+      ].map((completion) => ({
+        origin,
+        completion,
+      })),
+    ),
+  )(
+    'keeps the current File Search value over a stale template ($origin, $completion)',
+    ({ origin, completion }) => {
+      const saved = { ...initialConversation, conversationId: 'saved-chat' };
+      const { result, submission, createdData, unmount, queryClient } = setup(
+        origin === 'saved' ? saved : initialConversation,
+      );
+      window.history.replaceState({}, '', origin === 'saved' ? '/c/saved-chat' : '/c/new');
+      const host = {};
+      let release = registerComposerDraft(
+        0,
+        submission.conversation!.conversationId!,
+        'pending',
+        host,
+      );
+      bindComposerLaunch(submission.conversation, 0);
+      if (origin === 'resumable') {
+        expect(adoptComposerConversation(submission.conversation, 'saved-chat', 0)).toBe(true);
+        window.history.replaceState({}, '', '/c/saved-chat');
+        release();
+        release = registerComposerDraft(0, 'saved-chat', 'pending', host);
+      }
+      if (!completion.endsWith('unset')) setFileSearchChoice('saved-chat', false);
+      localStorage.setItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}saved-chat`, 'false');
+      const previousRevision = getFileSearchChoice('saved-chat')?.revision ?? null;
+      const stale = { ...submission, ephemeralAgent: { file_search: false, web_search: true } };
+      beginFileSearchUpload('late-accepted-upload', 'saved-chat');
+      const writer = Storage.prototype.setItem;
+      const storage = completion.startsWith('blocked')
+        ? jest.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+            this: Storage,
+            key: string,
+            value: string,
+          ) {
+            if (
+              key.startsWith('file-search-choice:') ||
+              key.startsWith(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}saved-chat`)
+            )
+              throw new Error('Preference storage unavailable');
+            writer.call(this, key, value);
+          })
+        : undefined;
+      try {
+        if (completion === 'disabled-before') setFileSearchChoice('saved-chat', false);
+        expect(completeFileSearchUpload('late-accepted-upload', 'saved-chat')).toBe(
+          completion !== 'disabled-before',
+        );
+        if (completion === 'disabled-after') setFileSearchChoice('saved-chat', false);
+        const enabled = !completion.startsWith('disabled');
+        if (!enabled) stale.ephemeralAgent.file_search = true;
+        act(() => {
+          result.current.createdHandler(createdData, stale);
+          result.current.createdHandler(createdData, stale);
+        });
+        expect(mockApplyAgentTemplate).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            ephemeralAgent: expect.objectContaining({ file_search: enabled, web_search: true }),
+          }),
+        );
+        if (enabled) expect(getFileSearchChoice('saved-chat')?.revision).toBe(previousRevision);
+      } finally {
+        storage?.mockRestore();
+        release();
+        unmount();
+        queryClient.clear();
+        window.history.replaceState({}, '', '/');
+      }
     },
   );
 

@@ -67,12 +67,12 @@ import {
   markTitleGenerationProcessed,
   useReconcileConversationCodeEnvironmentMutation,
 } from '~/data-provider';
+import { transferFileSearchPreference, getFileSearchPreference } from '~/hooks/Files/search';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import { getFailedCodeDecisionRequest } from '~/hooks/Agents/codeDecision';
 import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import { useChatTransport } from '~/Providers/ChatTransportContext';
-import { transferFileSearchPreference } from '~/hooks/Files/search';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useApplyAgentTemplate } from '~/hooks/Agents';
@@ -753,17 +753,15 @@ export default function useEventHandlers({
       }
 
       const { conversationId, parentMessageId } = userMessage;
-      let fileSearch: boolean | undefined;
       if (conversationId) {
         adoptComposerConversation(
           submission.conversation,
           conversationId,
           runIndex,
-          (sourceId, targetId) => {
-            fileSearch = transferFileSearchPreference(sourceId, targetId);
-          },
+          transferFileSearchPreference,
         );
       }
+      const fileSearch = conversationId ? getFileSearchPreference(conversationId) : undefined;
       lastAnnouncementTimeRef.current = Date.now();
       announcePolite({
         message: 'start',

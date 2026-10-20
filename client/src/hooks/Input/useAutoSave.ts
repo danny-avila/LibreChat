@@ -415,6 +415,20 @@ export const useAutoSave = ({
       pendingOwnerRef.current = _conversationId ?? Constants.NEW_CONVO;
     }
     if (conversationId === currentConversationId) {
+      const ownerId = _conversationId ?? Constants.NEW_CONVO;
+      if (currentDraft && currentDraft.conversationId !== ownerId) {
+        const owner = captureComposerDraft(index, currentDraft.conversationId);
+        if (owner() && owner.conversationId() === ownerId) {
+          if (pendingOwnerRef.current === currentDraft.conversationId) {
+            pendingOwnerRef.current = ownerId;
+          }
+          setCurrentDraft((previous) =>
+            previous === currentDraft && owner()
+              ? { ...previous, conversationId: ownerId }
+              : previous,
+          );
+        }
+      }
       return;
     }
 
@@ -555,6 +569,7 @@ export const useAutoSave = ({
         : { id: nextConversationId, conversationId: owner },
     );
   }, [
+    index,
     ownershipVersion,
     currentDraft,
     currentConversationId,
