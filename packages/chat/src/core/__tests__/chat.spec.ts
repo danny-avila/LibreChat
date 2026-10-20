@@ -1299,6 +1299,45 @@ describe('Chat', () => {
     expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
   });
 
+  it.each([
+    ['an attached', false],
+    ['a dropped', true],
+  ])(
+    'settles %s Assistants run a stop found already gone for the host to reconcile',
+    async (_label, dropped) => {
+      const stream = createStream();
+      const { chat, transport, onFinish } = setup(
+        {
+          prepareRequest: jest.fn(() => ({
+            payload: { endpoint: 'assistants', conversationId: 'convo-1', text: 'Hi' } as TPayload,
+            messages: [userMessage, placeholder],
+            responseMessageId: 'response-1',
+          })),
+        },
+        { sendMessages: jest.fn(async () => ({ status: 'stream' as const, stream })) },
+      );
+      transport.abort.mockResolvedValue(null);
+
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      if (dropped) {
+        stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+        await sent;
+      }
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+      await sent;
+
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ endpoint: 'assistants', abortKey: 'convo-1:response-1' }),
+      );
+      expect(stream.closed()).toBe(true);
+      expect(chat.status).toBe('ready');
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isAbort: false, isSettled: true }),
+      );
+    },
+  );
+
   it('returns the conversation an Assistants stop created for a first turn under `new`', async () => {
     const stream = createStream();
     const { chat, transport } = setup(
