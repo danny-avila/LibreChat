@@ -47,6 +47,7 @@ import {
   getAskAnswerDraftId,
   getDraft,
   getFilesDraft,
+  getPendingDraftId,
   setDraft,
   setFilesDraft,
   renewNewConversationDraftToken,
@@ -817,7 +818,7 @@ describe('useAutoSave — side-by-side pending drafts', () => {
         rerender({ conversationId: 'saved-after-ack', isSubmitting: true });
       });
       act(() => result.current.setFiles(new Map([['after-ack-file', file]])));
-      const pendingId = index === 0 ? 'pending' : `pending:${index}`;
+      const pendingId = getPendingDraftId(index);
       expect(getFilesDraft(pendingId).fileIds).toContain('after-ack-file');
       act(() => rerender({ conversationId: 'saved-after-ack', isSubmitting: false }));
       expect(result.current.files.get('after-ack-file')?.progress).toBe(1);
@@ -840,7 +841,8 @@ describe('useAutoSave — side-by-side pending drafts', () => {
         }),
       { initialProps: { conversationId: 'new', files: new Map<string, ExtendedFile>() } },
     );
-    setFilesDraft('pending:40', { fileIds: ['original-pending-file'], pendingPastes: {} });
+    const pendingId = getPendingDraftId(40);
+    setFilesDraft(pendingId, { fileIds: ['original-pending-file'], pendingPastes: {} });
     act(() => {
       window.history.replaceState({}, '', '/c/unrelated-destination');
       rerender({
@@ -848,7 +850,7 @@ describe('useAutoSave — side-by-side pending drafts', () => {
         files: new Map([['unrelated-file', { file_id: 'unrelated-file', progress: 1, size: 1 }]]),
       });
     });
-    expect(getFilesDraft('pending:40').fileIds).toEqual(['original-pending-file']);
+    expect(getFilesDraft(pendingId).fileIds).toEqual(['original-pending-file']);
     unmount();
     window.history.replaceState({}, '', '/');
   });
