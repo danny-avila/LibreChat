@@ -1,6 +1,5 @@
 import { useMemo, useCallback } from 'react';
 import { v4 } from 'uuid';
-import { useSetRecoilState } from 'recoil';
 import { useStore, useSetAtom } from 'jotai';
 import { Constants } from 'librechat-data-provider';
 import { isStoppedRun, resolveDetachedRunEnd } from '@librechat/chat';
@@ -24,7 +23,7 @@ import type {
 import type { EventHandlerParams } from './useEventHandlers';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { clearComposerDrafts, resolveRunEndTarget } from '~/utils';
-import store from '~/store';
+import { activeRunFamily } from './atoms';
 
 /**
  * Reconciliation often crosses async query boundaries. By the time an old
@@ -78,7 +77,7 @@ export default function useResumablePane({
   setGenerationEpoch: ResumablePane['setGenerationEpoch'];
 }): { pane: ResumablePane; queue: ResumableQueue } {
   const jotaiStore = useStore();
-  const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
+  const setActiveRunId = useSetAtom(activeRunFamily(runIndex));
   const setAbortScroll = useSetAtom(abortScrollFamily(runIndex));
   const setSubmission = useSetAtom(submissionByIndex(runIndex));
   const setShowStopButton = useSetAtom(showStopButtonByIndex(runIndex));

@@ -31,12 +31,14 @@ import {
   useMessagesConversation,
   useOptionalMessagesOperations,
 } from '~/Providers';
-import store, { ptcTraceByToolCallId, ptcTraceKey, sandboxStartingByToolCallId } from '~/store';
 import { getAppPartRenderers } from '~/components/Chat/Messages/Content/Parts/slots';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
+import { ptcTraceByToolCallId, ptcTraceKey } from '~/hooks/SSE/ptc';
+import { sandboxStartingByToolCallId } from '~/hooks/SSE/sandbox';
 import { chatDirectionAtom } from '~/store/chatDirection';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
+import store from '~/store';
 
 function useAppMessage(): MessagePartMessage {
   const { messageId, isSubmitting, isLatestMessage, nextType, conversationId, partIndex } =
@@ -140,7 +142,7 @@ export const appMessagePartsHost: MessagePartsHost = {
   useToast: () => useToastContext().showToast,
   useSandboxStarting: (toolCallId) => useAtomValue(sandboxStartingByToolCallId(toolCallId)),
   usePtcTrace: (messageId, toolCallId) =>
-    useRecoilValue(
+    useAtomValue(
       ptcTraceByToolCallId(toolCallId && messageId ? ptcTraceKey(messageId, toolCallId) : ''),
     ),
   useToolArtifactClaim: (artifactId) => useRecoilState(store.toolArtifactClaim(artifactId)),
