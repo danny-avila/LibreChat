@@ -23,10 +23,10 @@ import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useApplyAgentTemplate } from '~/hooks/Agents';
-import useAbortHandlers from './useAbortHandlers';
-import useFinalHandler from './useFinalHandler';
-import useTurnHandlers from './useTurnHandlers';
 import { useLiveAnnouncer } from '~/Providers';
+import useTurnHandlers from './opening';
+import useAbortHandlers from './abort';
+import useFinalHandler from './final';
 import store from '~/store';
 
 /** Skill caches refreshed when a chat turn authors a skill via `create_file`/`edit_file`. */
