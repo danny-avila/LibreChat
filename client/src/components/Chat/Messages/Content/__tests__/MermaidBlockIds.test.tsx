@@ -35,7 +35,9 @@ const view = (content: string, streaming: boolean) => (
   />
 );
 
-const renderMarkdown = (content: string, streaming: boolean) => render(view(content, streaming));
+/** Keep the diagrams under test outside the intentionally unformatted tail. */
+const renderMarkdown = (content: string, streaming: boolean) =>
+  render(view(streaming ? `${content}\n\nStreaming tail.` : content, streaming));
 
 const mermaidIds = () =>
   screen.getAllByTestId('mermaid').map((element) => element.getAttribute('data-mermaid-id'));
@@ -124,12 +126,12 @@ describe('Mermaid block ids', () => {
   });
 
   /**
-   * Fences nested in one top-level block share a provider and re-run their
-   * index on every streamed token, so the counter has to restart per render.
+   * Fences nested in one formatted block share a provider and re-run their
+   * index when that block changes, so the counter has to restart per render.
    * Without that restart the indices climb as the message grows and a diagram
    * already open in the panel loses the artifact id it was registered under.
    */
-  it('holds Mermaid ids steady as a nested block keeps streaming', () => {
+  it('holds Mermaid ids steady when a formatted nested block changes', () => {
     const listWithOne = ['- step one', '', '  ```mermaid', '  graph TD', '  A-->B', '  ```'].join(
       '\n',
     );
@@ -148,10 +150,28 @@ describe('Mermaid block ids', () => {
     const { rerender } = renderMarkdown(listWithOne, true);
     expect(mermaidIds()).toEqual(['mermaid-0']);
 
-    rerender(view(listWithTwo, true));
+    rerender(view(`${listWithTwo}\n\nStreaming tail.`, true));
     expect(mermaidIds()).toEqual(['mermaid-0', 'mermaid-1']);
 
-    rerender(view(listStillGrowing, true));
+    rerender(view(`${listStillGrowing}\n\nStreaming tail.`, true));
     expect(mermaidIds()).toEqual(['mermaid-0', 'mermaid-1']);
+  });
+
+  it('defers a nested diagram until its block is finalized and keeps its id while the tail grows', () => {
+    const nested = '- step one\n\n  ```mermaid\n  graph TD\n  A-->B\n  ```';
+    const { rerender } = render(view(nested, true));
+    expect(screen.queryAllByTestId('mermaid')).toHaveLength(0);
+
+    rerender(view(`${nested}\n\nStreaming tail.`, true));
+    expect(mermaidIds()).toEqual(['mermaid-0']);
+    const diagram = screen.getByTestId('mermaid');
+
+    rerender(view(`${nested}\n\nStreaming tail grows.`, true));
+    expect(screen.getByTestId('mermaid')).toBe(diagram);
+    expect(mermaidIds()).toEqual(['mermaid-0']);
+
+    rerender(view(`${nested}\n\nStreaming tail grows.`, false));
+    expect(screen.getByTestId('mermaid')).toBe(diagram);
+    expect(mermaidIds()).toEqual(['mermaid-0']);
   });
 });
