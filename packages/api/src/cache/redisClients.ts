@@ -18,6 +18,14 @@ const protocols = new Set(urls.map((url) => url.protocol));
 const useTls = urls[0]?.protocol === 'rediss:';
 const isRedisCluster = urls.length !== 1 || cacheConfig.USE_REDIS_CLUSTER;
 
+// Opt-in mTLS client authentication: REDIS_TLS_CERT + REDIS_TLS_KEY must both
+// be set to send a client certificate. When unset (the default), mtls spreads
+// nothing and the TLS options remain exactly as before this feature existed.
+const mtls =
+  cacheConfig.REDIS_TLS_CERT && cacheConfig.REDIS_TLS_KEY
+    ? { cert: cacheConfig.REDIS_TLS_CERT, key: cacheConfig.REDIS_TLS_KEY }
+    : {};
+
 if (cacheConfig.USE_REDIS && protocols.size > 1) {
   throw new Error('All REDIS_URI entries must use the same protocol');
 }
@@ -45,7 +53,7 @@ if (cacheConfig.USE_REDIS) {
   const redisOptions: Record<string, unknown> = {
     username: username,
     password: password,
-    tls: useTls ? { ca: ca ?? undefined } : undefined,
+    tls: useTls ? { ca: ca ?? undefined, ...mtls } : undefined,
     keyPrefix: `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}`,
     maxListeners: cacheConfig.REDIS_MAX_LISTENERS,
     retryStrategy: (times: number) => {
@@ -207,6 +215,7 @@ if (cacheConfig.USE_REDIS) {
     socket: {
       ...(isRedisCluster ? { tls: useTls } : {}),
       ...(ca ? { ca } : {}),
+      ...mtls,
       connectTimeout: cacheConfig.REDIS_CONNECT_TIMEOUT,
       reconnectStrategy: (retries: number) => {
         if (

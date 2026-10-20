@@ -54,27 +54,46 @@ if (FORCED_IN_MEMORY_CACHE_NAMESPACES.length > 0) {
 const VIOLATION_SCORE_TTL_MS = math(process.env.VIOLATION_SCORE_TTL, Time.ONE_HOUR);
 const VIOLATION_SCORE_TTL = VIOLATION_SCORE_TTL_MS > 0 ? VIOLATION_SCORE_TTL_MS : undefined;
 
-/** Helper function to safely read Redis CA certificate from file
- * @returns {string|null} The contents of the CA certificate file, or null if not set or on error
+/** Helper function to safely read Redis TLS material (CA certificate, client
+ * certificate, or client key) from a file path given via an environment variable.
+ * @returns {string|null} The contents of the TLS file, or null if not set or on error
  */
-const getRedisCA = (): string | null => {
-  const caPath = process.env.REDIS_CA;
-  if (!caPath) {
+const getRedisTLSFile = (envVar: string, label: string): string | null => {
+  const filePath = process.env[envVar];
+  if (!filePath) {
     return null;
   }
 
   try {
-    if (existsSync(caPath)) {
-      return readFileSync(caPath, 'utf8');
+    if (existsSync(filePath)) {
+      return readFileSync(filePath, 'utf8');
     } else {
-      logger.warn(`Redis CA certificate file not found: ${caPath}`);
+      logger.warn(`Redis ${label} file not found: ${filePath}`);
       return null;
     }
   } catch (error) {
-    logger.error(`Failed to read Redis CA certificate file '${caPath}':`, error);
+    logger.error(`Failed to read Redis ${label} file '${filePath}':`, error);
     return null;
   }
 };
+
+/** Read the CA certificate file referenced by REDIS_CA, if any.
+ * @returns {string|null} The contents of the CA certificate file, or null if not set or on error
+ */
+const getRedisCA = (): string | null => getRedisTLSFile('REDIS_CA', 'CA certificate');
+
+// Opt-in mTLS client authentication: when either REDIS_TLS_CERT or
+// REDIS_TLS_KEY is set, both must point to readable files or the process
+// fails to start — never silently downgrading an explicit mTLS setup.
+// When neither is set (the default), client certificates are not used and
+// the existing behaviour (server CA verification only) is fully preserved.
+const redisTlsCert = getRedisTLSFile('REDIS_TLS_CERT', 'client certificate');
+const redisTlsKey = getRedisTLSFile('REDIS_TLS_KEY', 'client key');
+if ((process.env.REDIS_TLS_CERT || process.env.REDIS_TLS_KEY) && (!redisTlsCert || !redisTlsKey)) {
+  throw new Error(
+    'REDIS_TLS_CERT and REDIS_TLS_KEY must both be set to readable files to enable TLS client authentication.',
+  );
+}
 
 const cacheConfig: {
   FORCED_IN_MEMORY_CACHE_NAMESPACES: string[];
@@ -84,6 +103,10 @@ const cacheConfig: {
   REDIS_USERNAME: string | undefined;
   REDIS_PASSWORD: string | undefined;
   REDIS_CA: string | null;
+  /** Contents of the TLS client certificate file (mTLS), or null when unset */
+  REDIS_TLS_CERT: string | null;
+  /** Contents of the TLS client key file (mTLS), or null when unset */
+  REDIS_TLS_KEY: string | null;
   REDIS_KEY_PREFIX: string;
   GLOBAL_PREFIX_SEPARATOR: string;
   REDIS_MAX_LISTENERS: number;
@@ -161,6 +184,8 @@ const cacheConfig: {
   REDIS_USERNAME: process.env.REDIS_USERNAME,
   REDIS_PASSWORD: process.env.REDIS_PASSWORD,
   REDIS_CA: getRedisCA(),
+  REDIS_TLS_CERT: redisTlsCert,
+  REDIS_TLS_KEY: redisTlsKey,
   REDIS_KEY_PREFIX: process.env[REDIS_KEY_PREFIX_VAR ?? ''] || REDIS_KEY_PREFIX || '',
   GLOBAL_PREFIX_SEPARATOR: '::',
   REDIS_MAX_LISTENERS: math(process.env.REDIS_MAX_LISTENERS, 40),
