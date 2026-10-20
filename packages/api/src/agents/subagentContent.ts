@@ -38,8 +38,12 @@ const CONTENT_GRAPH_EVENTS = {
   [StepEvents.ON_RUN_STEP_COMPLETED]: GraphEvents.ON_RUN_STEP_COMPLETED,
 };
 
+type SubagentContentUpdate = Pick<SubagentUpdateEvent, 'data'> & {
+  phase: SubagentUpdateEvent['phase'] | 'tool_preparation';
+};
+
 /** This boundary accepts only events already intended for the public main-chat stream. */
-export function subagentContentFrame(update: SubagentUpdateEvent): SubagentContentFrame | null {
+export function subagentContentFrame(update: SubagentContentUpdate): SubagentContentFrame | null {
   switch (update.phase) {
     case 'run_step': {
       const data = update.data as Agents.RunStep | undefined;
@@ -58,6 +62,11 @@ export function subagentContentFrame(update: SubagentUpdateEvent): SubagentConte
       return {
         event: StepEvents.ON_RUN_STEP_COMPLETED,
         data: update.data as { result?: Agents.ToolEndEvent | null },
+      };
+    case 'tool_preparation':
+      return {
+        event: StepEvents.ON_TOOL_PREPARATION,
+        data: update.data as Agents.ToolPreparationMarker,
       };
     case 'tool_calls_dispatched':
       return {
@@ -80,10 +89,15 @@ type JournalOptions = {
   flushMs: number;
   batchBytes: number;
   maxPendingBytes?: number;
+  settlementTimeoutMs?: number;
   append: SubagentContentMethods['appendSubagentContentBatch'];
   notify: (watermark: SubagentContentWatermark) => Promise<void>;
   onError: (error: unknown) => void;
 };
+
+type SubagentContentJournalResult =
+  | SubagentContentAppendResult
+  | { ok: false; error: { code: 'SUBAGENT_CONTENT_SETTLEMENT_TIMEOUT' } };
 
 /** Immutable append batches, not per-token replacements of a growing Mongo document. */
 export class SubagentContentJournal {
@@ -92,7 +106,9 @@ export class SubagentContentJournal {
   private captureStopped = false;
   private readonly maxPendingBytes: number;
   private timer?: ReturnType<typeof setTimeout>;
-  private writing?: Promise<SubagentContentAppendResult>;
+  private writing?: Promise<SubagentContentJournalResult>;
+  private closing?: Promise<SubagentContentJournalResult>;
+  private abandoned = false;
   private closed = false;
   private revision = 0;
   private committedSequence = -1;
@@ -117,7 +133,7 @@ export class SubagentContentJournal {
     return this.observedSequence;
   }
 
-  record(update: SubagentUpdateEvent, sequence: number): void {
+  record(update: SubagentContentUpdate, sequence: number): void {
     if (this.closed || sequence <= this.observedSequence) return;
     if (sequence !== this.observedSequence + 1) throw new Error('Subagent content sequence gap');
     this.observedSequence = sequence;
@@ -164,7 +180,7 @@ export class SubagentContentJournal {
       .finally(() => this.schedule());
   }
 
-  flush(): Promise<SubagentContentAppendResult> {
+  flush(): Promise<SubagentContentJournalResult> {
     if (this.writing != null) return this.writing;
     const operation = this.drain();
     this.writing = operation;
@@ -176,7 +192,7 @@ export class SubagentContentJournal {
     return operation;
   }
 
-  private async drain(): Promise<SubagentContentAppendResult> {
+  private async drain(): Promise<SubagentContentJournalResult> {
     while (this.pending.length > 0) {
       if (this.staged == null) {
         let count = 0;
@@ -202,6 +218,9 @@ export class SubagentContentJournal {
         leaseToken: this.options.leaseToken,
         ...batch,
       });
+      if (this.abandoned) {
+        return { ok: false, error: { code: 'SUBAGENT_CONTENT_SETTLEMENT_TIMEOUT' } };
+      }
       if (!result.ok) {
         this.closed = true;
         return result;
@@ -221,6 +240,7 @@ export class SubagentContentJournal {
   }
 
   private notify(watermark: SubagentContentWatermark): void {
+    if (this.abandoned) return;
     this.pendingNotification = watermark;
     if (this.notification != null) return;
     const operation = (async () => {
@@ -239,12 +259,36 @@ export class SubagentContentJournal {
       .catch(this.options.onError);
   }
 
-  async close(): Promise<SubagentContentAppendResult> {
+  close(): Promise<SubagentContentJournalResult> {
+    if (this.closing != null) return this.closing;
     this.closed = true;
     if (this.timer != null) clearTimeout(this.timer);
-    const result = await this.flush();
-    if (!result.ok || this.pending.length === 0) return result;
-    return this.flush();
+    this.closing = this.closeWithinBudget();
+    return this.closing;
+  }
+
+  private async closeWithinBudget(): Promise<SubagentContentJournalResult> {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const timeoutMs =
+      this.options.settlementTimeoutMs ??
+      subagentActivityConfigSchema.parse({}).contentSettlementTimeoutMs;
+    try {
+      return await Promise.race([
+        this.flush(),
+        new Promise<SubagentContentJournalResult>((resolve) => {
+          timeout = setTimeout(() => {
+            this.abandoned = true;
+            this.pending.length = 0;
+            this.pendingBytes = 0;
+            this.staged = undefined;
+            this.pendingNotification = undefined;
+            resolve({ ok: false, error: { code: 'SUBAGENT_CONTENT_SETTLEMENT_TIMEOUT' } });
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeout != null) clearTimeout(timeout);
+    }
   }
 }
 
@@ -287,7 +331,13 @@ export async function readSubagentContent(
     return { ok: false, error: { code: 'SUBAGENT_CONTENT_AHEAD' } };
   }
   const aggregator = createContentAggregator();
-  const timing = createToolTimingAdapter({ emit: () => undefined });
+  const timing = createToolTimingAdapter({
+    emit: (event) =>
+      timing.child(aggregator, {
+        phase: event.event.slice(3),
+        data: event.data,
+      }),
+  });
   const events: SubagentContentEvent[] = [];
   let throughSequence = afterSequence ?? -1;
   let revision: number | undefined;
@@ -346,6 +396,7 @@ export async function readSubagentContent(
         }
         continue;
       }
+      if (frame.event === StepEvents.ON_RUN_STEP_DELTA) await timing.delta(frame.data);
       /** SDK and wire enums have identical values, as in main-chat Redis recovery. */
       if (
         frame.event !== StepEvents.ON_TOOL_PREPARATION &&

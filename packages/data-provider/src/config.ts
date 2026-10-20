@@ -1546,6 +1546,7 @@ export const subagentActivityConfigSchema = z.object({
   /** Batch public content writes independently of the lossy live activity projection. */
   contentPageBytes: z.number().int().min(1024).max(4_194_304).default(262_144),
   contentFlushMs: z.number().int().min(10).max(10_000).default(250),
+  contentSettlementTimeoutMs: z.number().int().min(100).max(60_000).default(1000),
   contentBatchBytes: z.number().int().min(1024).max(4_194_304).default(65_536),
   contentPendingBytes: z.number().int().min(65_536).max(1_073_741_824).default(8_388_608),
   replayTtlMs: z.number().int().min(1_000).max(86_400_000).default(300_000),

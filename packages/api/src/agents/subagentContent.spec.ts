@@ -254,3 +254,140 @@ it('retries the exact frozen batch before admitting later events into a new revi
   expect(attempts[1]).toEqual(attempts[0]);
   expect(attempts[2].revision).toBe(2);
 });
+
+it('bounds final settlement and never starts another batch after a timed-out append', async () => {
+  jest.useFakeTimers();
+  const { methods } = memoryStorage();
+  let release: () => void = () => undefined;
+  const blocked = new Promise<{ ok: true }>((resolve) => {
+    release = () => resolve({ ok: true });
+  });
+  const append = jest.fn(methods.appendSubagentContentBatch).mockImplementationOnce(() => blocked);
+  const notify = jest.fn(async () => undefined);
+  const journal = new SubagentContentJournal({
+    scope,
+    flushMs: 60_000,
+    batchBytes: 1024,
+    settlementTimeoutMs: 100,
+    append,
+    notify,
+    onError: () => undefined,
+  });
+  try {
+    journal.record(
+      update('message_delta', {
+        id: 's',
+        delta: { content: [{ type: 'text', text: 'x'.repeat(1500) }] },
+      }),
+      0,
+    );
+    journal.record(
+      update('message_delta', { id: 's', delta: { content: [{ type: 'text', text: 'later' }] } }),
+      1,
+    );
+    let outcome: unknown;
+    const closing = journal.close().then((result) => {
+      outcome = result;
+    });
+    await jest.advanceTimersByTimeAsync(100);
+    const atDeadline = outcome;
+    release();
+    await closing;
+    await Promise.resolve();
+    expect(atDeadline).toEqual({
+      ok: false,
+      error: { code: 'SUBAGENT_CONTENT_SETTLEMENT_TIMEOUT' },
+    });
+    expect(journal.throughSequence).toBe(1);
+    expect(append).toHaveBeenCalledTimes(1);
+    expect(notify).not.toHaveBeenCalled();
+  } finally {
+    release();
+    jest.useRealTimers();
+  }
+});
+
+it.each(['marker', 'argument delta'] as const)(
+  'restores preparation timing from a retained %s',
+  async (source) => {
+    const { methods } = memoryStorage();
+    const journal = journalFor(methods);
+    journal.record(
+      update('run_step', {
+        id: 'tool',
+        index: 0,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call', name: 'lookup', args: '{}', type: 'tool_call' }],
+        },
+      }),
+      0,
+    );
+    if (source === 'marker') {
+      journal.record(
+        {
+          phase: 'tool_preparation',
+          data: { id: 'tool', index: 0, toolCallId: 'call', observed_at: 100 },
+        },
+        1,
+      );
+    } else {
+      journal.record(
+        update('run_step_delta', {
+          id: 'tool',
+          observed_at: 100,
+          delta: {
+            type: 'tool_calls',
+            tool_calls: [{ id: 'call', index: 0, name: 'lookup', args: '{}' }],
+          },
+        }),
+        1,
+      );
+    }
+    journal.record(
+      update('tool_calls_dispatched', {
+        dispatched_at: 1000,
+        toolCalls: [{ id: 'call', stepId: 'tool', name: 'lookup' }],
+      }),
+      2,
+    );
+    journal.record(
+      update('run_step_completed', {
+        result: {
+          id: 'tool',
+          type: 'tool_call',
+          completed_at: 1340,
+          tool_call: { id: 'call', name: 'lookup', args: '{}', output: 'Done', progress: 1 },
+        },
+      }),
+      3,
+    );
+    await journal.close();
+    const result = await readSubagentContent(methods, scope);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.content[0]).toMatchObject({
+      type: 'tool_call',
+      tool_call: {
+        toolPreparationStartedAt: 100,
+        toolPreparationDurationMs: 900,
+        toolDispatchedAt: 1000,
+        toolExecutionDurationMs: 340,
+      },
+    });
+    if (source === 'marker') {
+      const suffix = await readSubagentContent(methods, scope, 0);
+      expect(suffix).toMatchObject({
+        ok: true,
+        value: {
+          events: expect.arrayContaining([
+            expect.objectContaining({
+              sequence: 1,
+              frame: expect.objectContaining({ event: 'on_tool_preparation' }),
+            }),
+          ]),
+        },
+      });
+    }
+  },
+);

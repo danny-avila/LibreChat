@@ -1589,6 +1589,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                   flushMs: this.activityOptions.contentFlushMs,
                   batchBytes: this.activityOptions.contentBatchBytes,
                   maxPendingBytes: this.activityOptions.contentPendingBytes,
+                  settlementTimeoutMs: this.activityOptions.contentSettlementTimeoutMs,
                   append,
                   notify: (watermark) =>
                     this.activityStream.publishContent(

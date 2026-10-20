@@ -63,7 +63,10 @@ async function until(predicate: () => Promise<boolean>): Promise<void> {
   }
 }
 
-async function runningTask(run: (runtime: SubagentTaskRuntime) => Promise<{ content: string }>) {
+async function runningTask(
+  run: (runtime: SubagentTaskRuntime) => Promise<{ content: string }>,
+  contentSettlementTimeoutMs = 1000,
+) {
   const user = 'content-owner';
   const parentConversationId = randomUUID();
   await methods.saveConvo(
@@ -71,7 +74,7 @@ async function runningTask(run: (runtime: SubagentTaskRuntime) => Promise<{ cont
     { conversationId: parentConversationId, title: 'Parent' },
   );
   const store = new SubagentThreadTaskStore(methods, {
-    activity: { contentRecoveryEnabled: true, contentFlushMs: 10 },
+    activity: { contentRecoveryEnabled: true, contentFlushMs: 10, contentSettlementTimeoutMs },
   });
   stores.push(store);
   const config = buildSubagentThreadTaskConfig(store, { userId: user, parentConversationId });
@@ -446,4 +449,53 @@ it('keeps partial public content on task failure and never discloses a recovery 
   });
   expect(JSON.stringify(failed.body)).not.toContain('private');
   read.mockRestore();
+});
+
+it('settles the child result and releases ownership when final content persistence stalls', async () => {
+  let release: () => void = () => undefined;
+  const pending = new Promise<{ ok: false; error: { code: 'SUBAGENT_CONTENT_GONE' } }>(
+    (resolve) => {
+      release = () => resolve({ ok: false, error: { code: 'SUBAGENT_CONTENT_GONE' } });
+    },
+  );
+  const append = jest
+    .spyOn(methods, 'appendSubagentContentBatch')
+    .mockImplementation(() => pending);
+  try {
+    const { scope, store, scopeId } = await runningTask(async (runtime) => {
+      runtime.reportProgress(
+        progress('message_delta', {
+          id: 's',
+          delta: { content: [{ type: 'text', text: 'Partial capture' }] },
+        }),
+      );
+      return { content: 'Durable task result' };
+    }, 100);
+    await until(async () => store.get(scopeId, scope.taskId)?.status === 'completed');
+    expect(store.isThreadActiveForOwner(scope.user, scope.conversationId)).toBe(false);
+    const terminal = (
+      await methods.getMessages(
+        { user: scope.user, conversationId: scope.conversationId },
+        '+subagentContent',
+      )
+    ).find((message) => message.messageId === `${scope.taskId}:assistant`);
+    expect(terminal).toMatchObject({
+      text: 'Durable task result',
+      subagentContent: { version: 1, throughSequence: 0 },
+    });
+    const { app, url } = appFor(scope);
+    const response = await request(app).get(url).expect(200);
+    expect(response.body).toMatchObject({
+      status: 'completed',
+      recovery: 'partial',
+      throughSequence: -1,
+    });
+    expect(await store.claimTask(scopeId, scope.taskId)).toMatchObject({
+      status: 'completed',
+      result: 'Durable task result',
+    });
+  } finally {
+    release();
+    append.mockRestore();
+  }
 });
