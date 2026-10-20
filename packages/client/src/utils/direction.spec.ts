@@ -19,6 +19,13 @@ describe('direction helpers', () => {
     expect(isRtl(null)).toBe(false);
   });
 
+  it('lets a CSS direction override win over an ancestor dir attribute', () => {
+    const island = document.createElement('div');
+    island.style.direction = 'rtl';
+    mount('ltr').appendChild(island);
+    expect(isRtl(island)).toBe(true);
+  });
+
   it('swaps left and right placements for an RTL anchor only', () => {
     const rtl = mount('rtl');
     const ltr = mount('ltr');

@@ -1,16 +1,18 @@
 const OPPOSITE: Record<string, string> = { left: 'right', right: 'left' };
 
-/** Reads the writing direction from the element itself (nearest `dir` attribute, else computed style), so an LTR island inside an RTL page
- *  (and the reverse) resolves correctly instead of following the document. */
+/** Reads the writing direction the browser resolved for the element itself (a `dir` attribute,
+ *  `dir="auto"`, or a CSS `direction` override), so an LTR island inside an RTL page (and the
+ *  reverse) resolves correctly instead of following the document. Without a computed value (a
+ *  non-rendering DOM such as jsdom) the nearest `dir` attribute decides. */
 export function isRtl(element?: Element | null): boolean {
   if (!element || typeof window === 'undefined') {
     return false;
   }
-  const declared = element.closest('[dir]')?.getAttribute('dir');
-  if (declared === 'rtl' || declared === 'ltr') {
-    return declared === 'rtl';
+  const computed = window.getComputedStyle(element).direction;
+  if (computed === 'rtl' || computed === 'ltr') {
+    return computed === 'rtl';
   }
-  return window.getComputedStyle(element).direction === 'rtl';
+  return element.closest('[dir]')?.getAttribute('dir') === 'rtl';
 }
 
 /** Maps a physical `left`/`right` side or placement (`right`, `left-start`) to the side that
