@@ -1,6 +1,7 @@
 export * from './app';
 export * from './acl/accessControlService';
 export * from './acl/insightsPermissions';
+export * from './acl/audit';
 export * from './acl/middleware';
 export * from './acl/principals';
 export * from './acl/search';
@@ -11,12 +12,14 @@ export * from './artifacts';
 export * from './admin';
 export * from './cdn';
 export * from './code';
+export * from './pulls';
 /* Auth */
 export * from './auth';
 /* API Keys */
 export * from './apiKeys';
 /* MCP */
 export * from './mcp/mcpConfig';
+export * from './mcp/capabilities';
 export * from './mcp/authority';
 export * from './mcp/registry/MCPServersRegistry';
 export * from './mcp/MCPManager';
@@ -26,9 +29,16 @@ export * from './mcp/oauth';
 export * from './mcp/auth';
 export * from './mcp/zod';
 export * from './mcp/errors';
+export * from './mcp/audit';
+export * from './mcp/loading';
 export * from './mcp/openid';
 export * from './mcp/cache';
 export * from './mcp/tools';
+export * from './mcp/apps';
+export * from './mcp/apps/controller';
+export * from './mcp/apps/binding';
+export * from './mcp/apps/limits';
+export * from './mcp/sandbox';
 export * from './mcp/catalog/store';
 export * from './mcp/catalog/recovery';
 export * from './mcp/authorization';
@@ -39,6 +49,7 @@ export * from './mcp/reinitialize';
 export * from './mcp/icons';
 /* Utilities */
 export * from './mcp/utils';
+export * from './mcp/domainValidation';
 export * from './mcp/context';
 export * from './utils';
 export { default as Tokenizer, countTokens } from './utils/tokenizer';
@@ -77,6 +88,8 @@ export * from './prompts';
 export * from './projects';
 /* Conversations */
 export * from './conversations';
+/* Messages */
+export * from './messages';
 /* Skills */
 export * from './schedules';
 export * from './schedules/service';
@@ -121,7 +134,15 @@ export * from './stream';
 export { memoryDiagnostics } from './utils/memory';
 /* RUM */
 export * from './rum/proxy';
+export * from './rum/limiter';
+/* OpenAPI */
+export { createOpenApiRouter } from './openapi/router';
+export type { OpenApiRouterDeps } from './openapi/router';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';
 export type * from './types';
+
+export * from './tools/approval';
+
+export * from './mcp/approval';

@@ -1,13 +1,14 @@
 import { useMemo, useState, useCallback, memo } from 'react';
 import type { TFile, TMessage } from 'librechat-data-provider';
+import { useMessagePartsHost } from '~/Providers/MessagePartsHostContext';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { usesImagePreview, hydrateFileDeliveryMetadata } from '~/utils';
-import { useFileMapContext, useShareContext } from '~/Providers';
 import FilePreviewDialog from './FilePreviewDialog';
+import { useShareContext } from '~/Providers';
 import Image from './Image';
 
 const Files = ({ message }: { message?: TMessage }) => {
-  const fileMap = useFileMapContext();
+  const fileMap = useMessagePartsHost().useFileMap();
   const { shareId } = useShareContext();
   const files = useMemo(
     () => hydrateFileDeliveryMetadata(message?.files, undefined, shareId ? undefined : fileMap),
@@ -43,6 +44,7 @@ const Files = ({ message }: { message?: TMessage }) => {
         imageFiles.map((file) => (
           <Image
             key={file.file_id}
+            alignRight
             imagePath={file.preview ?? file.filepath ?? ''}
             height={file.height ?? 1920}
             width={file.width ?? 1080}

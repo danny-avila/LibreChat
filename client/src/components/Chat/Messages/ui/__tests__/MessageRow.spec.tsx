@@ -15,13 +15,17 @@ const renderRow = ({
   hasParallelContent = false,
   fullWidth = false,
   isEditing = false,
-  plain = false,
+  systemLabel,
+  showAuthor,
+  outlined,
 }: {
   isCreatedByUser: boolean;
   hasParallelContent?: boolean;
   fullWidth?: boolean;
   isEditing?: boolean;
-  plain?: boolean;
+  systemLabel?: string;
+  showAuthor?: boolean;
+  outlined?: boolean;
 }) =>
   render(
     <MessageRow
@@ -36,24 +40,73 @@ const renderRow = ({
       hasParallelContent={hasParallelContent}
       fullWidth={fullWidth}
       isEditing={isEditing}
-      plain={plain}
+      systemLabel={systemLabel}
+      showAuthor={showAuthor}
+      outlined={outlined}
     >
       <p>{MESSAGE_BODY}</p>
     </MessageRow>,
   );
 
 describe('MessageRow', () => {
-  it('renders a plain user row as a full-width block without header or bubble', () => {
-    renderRow({ isCreatedByUser: true, plain: true });
+  it('renders a system row in the transcript under a visible heading', () => {
+    renderRow({ isCreatedByUser: true, systemLabel: 'System' });
 
     const row = screen.getByLabelText('User message');
     const messageSurface = screen.getByText(MESSAGE_BODY).parentElement;
+    const heading = screen.getByRole('heading', { name: 'System' });
 
-    expect(row).not.toHaveClass('justify-end');
-    expect(messageSurface).not.toHaveClass('bg-surface-tertiary');
+    expect(row).toHaveClass('items-start');
+    expect(row.querySelector('[data-system-turn]')).not.toHaveClass('items-end');
     expect(messageSurface).toHaveClass('w-full');
-    expect(screen.queryByRole('heading', { hidden: true })).not.toBeInTheDocument();
+    expect(messageSurface).not.toHaveClass('bg-surface-user-message');
+    expect(heading).not.toHaveClass('sr-only');
+    expect(screen.queryByText('You')).not.toBeInTheDocument();
     expect(screen.getByTestId('message-actions')).toBeInTheDocument();
+  });
+
+  it('excludes System output from the assistant code shortcut selector', () => {
+    renderRow({ isCreatedByUser: true, systemLabel: 'System' });
+    expect(screen.getByLabelText('User message').querySelector('.agent-turn')).toBeNull();
+  });
+
+  it('keeps System events on the transcript side', () => {
+    renderRow({ isCreatedByUser: true, systemLabel: 'System' });
+    expect(screen.getByLabelText('User message')).not.toHaveClass('justify-end');
+  });
+
+  it('does not wrap System content in a user bubble', () => {
+    renderRow({ isCreatedByUser: true, systemLabel: 'System' });
+    expect(screen.getByTestId('message-body')).not.toHaveClass('border');
+  });
+
+  it('names another author of a user-side turn with the agent header, mirrored', () => {
+    renderRow({ isCreatedByUser: true, showAuthor: true });
+
+    const row = screen.getByLabelText('User message');
+    const heading = screen.getByRole('heading', { name: 'Message from You' });
+    const messageSurface = screen.getByText(MESSAGE_BODY).parentElement;
+
+    /** The user's position and filled bubble, under the same visible
+     *  avatar-and-name line an agent turn carries — closed toward the bubble. */
+    expect(row).toHaveClass('justify-end');
+    expect(heading).not.toHaveClass('sr-only');
+    expect(heading).toHaveClass('justify-end', 'text-sm', 'font-semibold');
+    expect(heading).toContainElement(screen.getByTestId('message-icon'));
+    expect(screen.getByTestId('message-icon').parentElement).toHaveClass('size-6');
+    expect(heading.lastElementChild).toHaveTextContent('You');
+    expect(messageSurface).toHaveClass('bg-surface-user-message');
+    expect(messageSurface).not.toHaveClass('border');
+  });
+
+  it('outlines a delivered user-side turn without a system heading', () => {
+    renderRow({ isCreatedByUser: true, showAuthor: true, outlined: true });
+
+    const messageSurface = screen.getByText(MESSAGE_BODY).parentElement;
+
+    expect(messageSurface).toHaveClass('border', 'border-border-medium');
+    expect(messageSurface).not.toHaveClass('bg-surface-user-message');
+    expect(screen.getByRole('heading', { name: 'Message from You' })).toBeVisible();
   });
 
   it('renders user content as a right-aligned semantic surface without a visible avatar', () => {
@@ -66,7 +119,7 @@ describe('MessageRow', () => {
     expect(row).toHaveAttribute('role', 'group');
     expect(row).toHaveClass('justify-end');
     expect(userTurn).toHaveClass('items-end');
-    expect(messageSurface).toHaveClass('bg-surface-tertiary', 'rounded-theme-surface');
+    expect(messageSurface).toHaveClass('bg-surface-user-message', 'rounded-theme-surface');
     expect(screen.queryByTestId('message-icon')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { hidden: true })).toHaveClass('sr-only');
   });
@@ -151,7 +204,7 @@ describe('MessageRow', () => {
 
     expect(row.querySelector('.user-turn')).toHaveClass('w-full');
     expect(messageSurface).toHaveClass('w-full');
-    expect(messageSurface).not.toHaveClass('bg-surface-tertiary');
+    expect(messageSurface).not.toHaveClass('bg-surface-user-message');
   });
 
   it('expands an edited assistant message to full width', () => {

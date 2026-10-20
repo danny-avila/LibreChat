@@ -25,6 +25,9 @@ beforeAll(async () => {
     mongoose.models.SystemGrant || mongoose.model<t.ISystemGrant>('SystemGrant', systemGrantSchema);
   methods = createSystemGrantMethods(mongoose);
   await mongoose.connect(mongoServer.getUri());
+  // Connecting does not wait for the unique index. Complete initialization
+  // before any seeding or duplicate writes can race the background build.
+  await SystemGrant.init();
 });
 
 afterAll(async () => {
@@ -773,6 +776,20 @@ describe('systemGrant methods', () => {
     });
   });
 
+  describe('findGrantsForPrincipal', () => {
+    it('reads the grants deleteGrantsForPrincipal would remove, without removing them', async () => {
+      await methods.grantCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: 'find-role',
+        capability: SystemCapabilities.READ_USERS,
+      });
+
+      const found = await methods.findGrantsForPrincipal(PrincipalType.ROLE, 'find-role');
+      expect(found.map((g) => g.capability)).toEqual([SystemCapabilities.READ_USERS]);
+      expect(await methods.findGrantsForPrincipal(PrincipalType.ROLE, 'find-role')).toHaveLength(1);
+    });
+  });
+
   describe('deleteGrantsForPrincipal', () => {
     it('deletes all grants for a principal', async () => {
       const groupId = new Types.ObjectId();
@@ -893,6 +910,18 @@ describe('systemGrant methods', () => {
   });
 
   describe('schema validation', () => {
+    it('starts with the non-sparse unique grant index ready', async () => {
+      const indexes = await SystemGrant.collection.indexes();
+      const unique = indexes.find((index) => index.unique === true);
+      expect(unique?.key).toEqual({
+        principalType: 1,
+        principalId: 1,
+        capability: 1,
+        tenantId: 1,
+      });
+      expect(unique?.sparse).not.toBe(true);
+    });
+
     it('rejects null tenantId at the schema level', async () => {
       await expect(
         SystemGrant.create({

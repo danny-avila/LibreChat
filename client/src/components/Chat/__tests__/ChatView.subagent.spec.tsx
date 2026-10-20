@@ -27,13 +27,17 @@ jest.mock('librechat-data-provider', () => ({
   buildTree: ({ messages }: { messages: unknown[] }) => messages,
 }));
 
+jest.mock('@librechat/chat/react', () => ({
+  ...jest.requireActual('@librechat/chat/react'),
+  useQueueDrain: jest.fn(),
+  useQueuedTurnReveal: jest.fn(),
+}));
+
 jest.mock('~/hooks', () => ({
   useAddedResponse: () => ({}),
   useResumeOnLoad: jest.fn(),
   useBranchOnLoad: jest.fn(),
   useAdaptiveSSE: jest.fn(),
-  useQueueDrain: jest.fn(),
-  useQueuedTurnReveal: jest.fn(),
   useScrollbarGutterSeed: jest.fn(),
   useLocalize: () => (key: string) => key,
   useChatHelpers: () => ({
@@ -50,11 +54,13 @@ jest.mock('~/Providers', () => {
     ChatContext: Context,
     AddedChatContext: Context,
     ChatFormProvider: Passthrough,
+    ComposerRestoreProvider: Passthrough,
     useFileMapContext: () => new Map(),
   };
 });
 
 jest.mock('~/data-provider', () => ({
+  useProjectQuery: () => ({ data: undefined }),
   useGetMessagesByConvoId: () => ({
     data: [{ messageId: 'message-1' }],
     isLoading: false,
@@ -69,10 +75,15 @@ jest.mock('../Presentation', () => ({ children }: { children: React.ReactNode })
 ));
 jest.mock('../Input/ChatForm', () => () => <div data-testid="chat-form" />);
 jest.mock('../Landing', () => () => <div data-testid="landing" />);
+jest.mock('~/components/Lia', () => () => null);
+jest.mock('../Trace', () => ({
+  TraceSurface: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 jest.mock('../Footer', () => ({
   __esModule: true,
   default: () => <div data-testid="footer" />,
   useConfiguredFooter: () => false,
+  useLandingFooter: () => true,
 }));
 jest.mock('../Header', () => ({ readOnly }: { readOnly?: boolean }) => (
   <div data-read-only={String(readOnly)} data-testid="header" />
@@ -85,8 +96,6 @@ jest.mock('~/utils', () => ({
 jest.mock('~/store', () => ({
   __esModule: true,
   default: {
-    submissionByIndex: jest.fn(),
-    isSubmittingFamily: jest.fn(),
     centerFormOnLanding: {},
   },
 }));
@@ -100,22 +109,6 @@ describe('ChatView child-thread execution identity', () => {
     mockConversation = {
       conversationId: 'child-thread',
       title: 'Graph child',
-      subagentThread: {
-        parentConversationId: 'parent-thread',
-      },
-    };
-
-    render(<ChatView />);
-
-    expect(screen.queryByTestId('chat-form')).not.toBeInTheDocument();
-    expect(screen.getByRole('note')).toHaveTextContent('com_ui_subagent_thread_read_only');
-    expect(screen.getByTestId('header')).toHaveAttribute('data-read-only', 'true');
-  });
-
-  it('keeps a saved-agent child view-only after it settles', () => {
-    mockConversation = {
-      conversationId: 'child-thread',
-      title: 'Saved agent child',
       subagentThread: {
         parentConversationId: 'parent-thread',
       },

@@ -10,6 +10,7 @@ import {
 import type {
   AgentModelParameters,
   SettingDefinition,
+  TModelReasoning,
   TEndpointsConfig,
   TStartupConfig,
 } from 'librechat-data-provider';
@@ -21,13 +22,13 @@ export type AgentParameterConfig = {
 
 export type ResolvedAgentParameterSettings = {
   /**
-   * Every parameter the endpoint schema defines for this model. Pruning reads
-   * this, so a value the role may not *see* is still recognised and preserved:
+   * Every parameter the endpoint schema defines after administrator drops. Pruning reads
+   * this, so a value hidden by the model or role is still recognised and preserved:
    * dropping it here would delete another user's configuration on an unrelated
    * save by someone without the permission.
    */
   parameters: SettingDefinition[];
-  /** The subset that gets a control. Role-gated parameters are absent. */
+  /** The subset that gets a control. Model-hidden and role-gated parameters are absent. */
   visibleParameters: SettingDefinition[];
   schemaResolved: boolean;
 };
@@ -40,6 +41,7 @@ export function resolveAgentParameterSettings({
   provider,
   startupConfig,
   webSearchAllowed,
+  modelReasoning,
 }: AgentParameterConfig & {
   model: string;
   provider: string;
@@ -47,6 +49,8 @@ export function resolveAgentParameterSettings({
    *  Anthropic and Google column sets, so without this the builder offers a
    *  switch the server will refuse. Narrows `visibleParameters` only. */
   webSearchAllowed: boolean;
+  /** Provider-reported efforts for `model` on an OpenRouter endpoint; `undefined` while unknown. */
+  modelReasoning?: TModelReasoning | null;
 }): ResolvedAgentParameterSettings {
   const resolvedEndpointsConfig = endpointsConfig ?? {};
   const endpointType = getEndpointField(resolvedEndpointsConfig, provider, 'type');
@@ -67,19 +71,28 @@ export function resolveAgentParameterSettings({
     agentParamSettings[combinedKey] ?? agentParamSettings[overriddenEndpointKey];
   const overriddenParams = customParams?.paramDefinitions;
   const overriddenParamsMap = keyBy(overriddenParams ?? [], 'key');
-  const modelAwareParams = applyModelAwareDefaults(
-    (defaultParams ?? []).filter((param) => param != null && !dropParamsSet.has(param.key)),
+  /** Keep endpoint-recognized keys independent of model visibility. Only explicit
+   * administrator drops remove keys from the schema used by both save paths. */
+  const endpointParams = (defaultParams ?? []).filter(
+    (param) => param != null && !dropParamsSet.has(param.key),
+  );
+  const applyOverride = (param: SettingDefinition) =>
+    (overriddenParamsMap[param.key] as SettingDefinition) ?? param;
+  const parameters = endpointParams.map(applyOverride);
+  const visibleParameters = applyModelAwareDefaults(
+    endpointParams,
     overriddenEndpointKey,
     model,
-  );
-  const parameters = modelAwareParams.map(
-    (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
-  );
+    resolvedEndpointsConfig[provider]?.responsesApiRouting,
+    modelReasoning,
+  )
+    .map(applyOverride)
+    .filter((param) => param.key !== 'web_search' || webSearchAllowed);
 
   return {
     schemaResolved: defaultParams != null || overriddenParams != null,
     parameters,
-    visibleParameters: parameters.filter((param) => param.key !== 'web_search' || webSearchAllowed),
+    visibleParameters,
   };
 }
 

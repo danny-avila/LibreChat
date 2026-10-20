@@ -142,7 +142,7 @@ export function buildResponse(
     instructions: context.instructions ?? null,
     output: tracker.items,
     error: null,
-    tools: [],
+    tools: context.tools ?? [],
     tool_choice: 'auto',
     truncation: 'disabled',
     parallel_tool_calls: true,
@@ -278,6 +278,13 @@ export interface StreamHandlerConfig {
   res: ServerResponse;
   context: ResponseContext;
   tracker: ResponseTracker;
+  /**
+   * Names the caller declared and executes itself. A call to one of these is
+   * never run by the server, so `on_tool_end` cannot terminate its item and the
+   * run's own finalization has to. Omitted by every request that declares none,
+   * which leaves that request's event stream untouched.
+   */
+  clientToolNames?: ReadonlySet<string>;
 }
 
 /**
@@ -316,33 +323,6 @@ export function emitResponseCompleted(config: StreamHandlerConfig, usage?: Usage
   const response = buildResponse(context, tracker, 'completed', usage);
   writeEvent(res, {
     type: 'response.completed',
-    sequence_number: tracker.nextSequence(),
-    response,
-  });
-}
-
-/**
- * Emit response.failed event
- */
-export function emitResponseFailed(
-  config: StreamHandlerConfig,
-  error: { type: string; message: string; code?: string },
-): void {
-  const { res, context, tracker } = config;
-  tracker.status = 'failed';
-  const response = buildResponse(context, tracker, 'failed');
-  response.error = {
-    type: error.type as
-      | 'server_error'
-      | 'invalid_request'
-      | 'not_found'
-      | 'model_error'
-      | 'too_many_requests',
-    message: error.message,
-    code: error.code,
-  };
-  writeEvent(res, {
-    type: 'response.failed',
     sequence_number: tracker.nextSequence(),
     response,
   });
@@ -892,44 +872,4 @@ export function writeAttachmentEvent(
     message_id: options?.messageId,
     conversation_id: options?.conversationId,
   });
-}
-
-/* =============================================================================
- * NON-STREAMING RESPONSE BUILDER
- * ============================================================================= */
-
-/**
- * Build a complete non-streaming response
- */
-export function buildResponsesNonStreamingResponse(
-  context: ResponseContext,
-  tracker: ResponseTracker,
-): Response {
-  return buildResponse(context, tracker, 'completed');
-}
-
-/**
- * Update tracker usage from collected data
- */
-export function updateTrackerUsage(
-  tracker: ResponseTracker,
-  usage: {
-    promptTokens?: number;
-    completionTokens?: number;
-    reasoningTokens?: number;
-    cachedTokens?: number;
-  },
-): void {
-  if (usage.promptTokens != null) {
-    tracker.usage.inputTokens = usage.promptTokens;
-  }
-  if (usage.completionTokens != null) {
-    tracker.usage.outputTokens = usage.completionTokens;
-  }
-  if (usage.reasoningTokens != null) {
-    tracker.usage.reasoningTokens = usage.reasoningTokens;
-  }
-  if (usage.cachedTokens != null) {
-    tracker.usage.cachedTokens = usage.cachedTokens;
-  }
 }

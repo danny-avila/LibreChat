@@ -110,7 +110,8 @@ describe('useBranchOnLoad', () => {
     const jotaiStore = createStore();
 
     renderHook(
-      () => useBranchOnLoad(conversation.conversationId, () => branchedMessages, 0, true),
+      () =>
+        useBranchOnLoad(conversation.conversationId ?? undefined, () => branchedMessages, 0, true),
       {
         wrapper: createWrapper(queryClient, jotaiStore, ({ set }) => {
           set(store.conversationByIndex(0), conversation);
@@ -130,7 +131,8 @@ describe('useBranchOnLoad', () => {
     const jotaiStore = createStore();
 
     const { rerender } = renderHook(
-      () => useBranchOnLoad(conversation.conversationId, () => branchedMessages, 0, true),
+      () =>
+        useBranchOnLoad(conversation.conversationId ?? undefined, () => branchedMessages, 0, true),
       {
         wrapper: createWrapper(queryClient, jotaiStore, ({ set }) => {
           set(store.conversationByIndex(0), conversation);
