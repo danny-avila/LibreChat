@@ -161,6 +161,8 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
       { $setOnInsert: { ...base, fragment: -1 } },
       { upsert: true },
     );
+    /** The lease admits an append, but settlement can release it during I/O.
+     * Only deletion or expiration revokes the retained task's lifetime. */
     const [seedStillPresent, parentStillPresent, childStillPresent] = await Promise.all([
       Message.exists(inputFilter),
       Conversation.exists({
@@ -172,9 +174,6 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
         ...owner,
         conversationId: scope.conversationId,
         'subagentThread.parentConversationId': scope.parentConversationId,
-        'subagentThreadLease.taskId': scope.taskId,
-        'subagentThreadLease.expiresAt': { $gt: new Date() },
-        ...(leaseToken == null ? {} : { 'subagentThreadLease.token': leaseToken }),
         ...activeExpirationFilter<IConversation>(),
       }),
     ]);

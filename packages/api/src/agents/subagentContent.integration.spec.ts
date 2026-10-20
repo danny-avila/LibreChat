@@ -499,3 +499,162 @@ it('settles the child result and releases ownership when final content persisten
     append.mockRestore();
   }
 });
+
+it('preserves the committed prefix when the timed-out final database append finishes after lease release', async () => {
+  const appends: Array<ReturnType<typeof methods.appendSubagentContentBatch>> = [];
+  const appendContent = methods.appendSubagentContentBatch;
+  const observeAppend = jest
+    .spyOn(methods, 'appendSubagentContentBatch')
+    .mockImplementation((input) => {
+      const operation = appendContent(input);
+      appends.push(operation);
+      return operation;
+    });
+  let finish: () => void = () => undefined;
+  const finished = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const { scope, store, scopeId } = await runningTask(async (runtime) => {
+    runtime.reportProgress(
+      progress('run_step', {
+        id: 'text',
+        index: 0,
+        stepDetails: {
+          type: 'message_creation',
+          message_creation: { message_id: 'retained' },
+        },
+      }),
+    );
+    runtime.reportProgress(
+      progress('message_delta', {
+        id: 'text',
+        delta: { content: [{ type: 'text', text: 'Retained prefix. ' }] },
+      }),
+    );
+    await finished;
+    runtime.reportProgress(
+      progress('message_delta', {
+        id: 'text',
+        delta: { content: [{ type: 'text', text: 'Late suffix.' }] },
+      }),
+    );
+    return { content: 'Durable result' };
+  }, 100);
+  await until(async () => (await methods.getSubagentContentHead(scope))?.throughSequence === 1);
+  const prefix = await methods.getSubagentContentHead(scope);
+  const collection = mongoose.models.SubagentContent.collection;
+  const bulkWrite = collection.bulkWrite.bind(collection);
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let completed: () => void = () => undefined;
+  const completion = new Promise<void>((resolve) => {
+    completed = resolve;
+  });
+  const pending = jest.spyOn(collection, 'bulkWrite').mockImplementation(async (...args) => {
+    await released;
+    try {
+      return await bulkWrite(...args);
+    } finally {
+      completed();
+    }
+  });
+  try {
+    finish();
+    await until(async () => store.get(scopeId, scope.taskId)?.status === 'completed');
+    expect(store.isThreadActiveForOwner(scope.user, scope.conversationId)).toBe(false);
+    expect(await methods.getSubagentContentHead(scope)).toEqual(prefix);
+    release();
+    await completion;
+    await Promise.all(appends);
+    expect(await methods.getSubagentContentHead(scope)).toMatchObject({ throughSequence: 2 });
+    const recovered = await readSubagentContent(methods, scope);
+    expect(recovered).toMatchObject({
+      ok: true,
+      value: {
+        throughSequence: 2,
+        content: [{ type: 'text', text: 'Retained prefix. Late suffix.' }],
+      },
+    });
+    expect(await store.claimTask(scopeId, scope.taskId)).toMatchObject({
+      status: 'completed',
+      result: 'Durable result',
+    });
+  } finally {
+    finish();
+    release();
+    pending.mockRestore();
+    observeAppend.mockRestore();
+  }
+});
+
+it.each(['deleted', 'expired'] as const)(
+  'removes in-flight content when the retained child is %s, not merely settled',
+  async (lifetime) => {
+    let finish: () => void = () => undefined;
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const { scope } = await runningTask(async () => {
+      await finished;
+      return { content: 'Done' };
+    });
+    await until(
+      async () =>
+        (
+          await methods.getMessages({
+            user: scope.user,
+            conversationId: scope.conversationId,
+          })
+        ).length > 0,
+    );
+    const first = await methods.appendSubagentContentBatch({
+      ...scope,
+      revision: 1,
+      fromSequence: 0,
+      throughSequence: 0,
+      eventsJson: '[]',
+    });
+    expect(first).toEqual({ ok: true });
+    const collection = mongoose.models.SubagentContent.collection;
+    const bulkWrite = collection.bulkWrite.bind(collection);
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started: () => void = () => undefined;
+    const entering = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const pending = jest.spyOn(collection, 'bulkWrite').mockImplementation(async (...args) => {
+      started();
+      await released;
+      return bulkWrite(...args);
+    });
+    const late = methods.appendSubagentContentBatch({
+      ...scope,
+      revision: 2,
+      fromSequence: 1,
+      throughSequence: 1,
+      eventsJson: '[]',
+    });
+    try {
+      await entering;
+      const conversation = mongoose.models.Conversation;
+      const filter = { user: scope.user, conversationId: scope.conversationId };
+      if (lifetime === 'deleted') await conversation.deleteOne(filter);
+      else await conversation.updateOne(filter, { $set: { expiredAt: new Date(0) } });
+      release();
+      expect(await late).toEqual({ ok: false, error: { code: 'SUBAGENT_CONTENT_GONE' } });
+      expect(await mongoose.models.SubagentContent.countDocuments({ taskId: scope.taskId })).toBe(
+        0,
+      );
+    } finally {
+      release();
+      await late;
+      pending.mockRestore();
+      finish();
+    }
+  },
+);
