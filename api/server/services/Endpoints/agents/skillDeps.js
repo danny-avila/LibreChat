@@ -255,6 +255,7 @@ function buildAgentToolContext({ agent, config }) {
     requestScopedConnections: config.requestScopedConnections,
     userMCPAuthMap: config.userMCPAuthMap,
     tool_resources: config.tool_resources,
+    primedCodeFiles: config.primedCodeFiles,
     actionsEnabled: config.actionsEnabled,
     accessibleMcpServerNames: config.accessibleMcpServerNames,
     accessibleSkillIds: config.accessibleSkillIds,

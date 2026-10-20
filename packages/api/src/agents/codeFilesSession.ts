@@ -9,6 +9,11 @@ import {
 } from './execution';
 import { createCodeDestinationSet, reserveCodeDestination } from '~/files/code/destinations';
 
+/** Host recovery may replace these exact stored objects, but never a newer sandbox output. */
+export type ProvisionedCodeFile = CodeEnvFile & {
+  replaces?: ReadonlyArray<{ id: string; storage_session_id: string }>;
+};
+
 /**
  * Minimal shape for an agent that may contribute primed code files to its
  * execution-profile partition. Both `InitializedAgent` and `RunAgent` satisfy it,
@@ -192,7 +197,8 @@ export function seedCodeFilesIntoSessions(
  *
  * Composes `(storage_session_id, id)` as the identity. `name` alone isn't sufficient:
  * two distinct uploads can share a filename across different storage sessions and
- * file_ids. First seen wins, so pre-existing refs keep their position.
+ * file_ids. First seen wins, so pre-existing refs keep their position. Host
+ * recovery can replace an exact input identity at its already-announced path.
  *
  * The representative top-level `session_id` is preserved when one already exists,
  * otherwise it stands in from the first incoming file's `storage_session_id`, since
@@ -204,7 +210,7 @@ export function seedCodeFilesIntoSessions(
  */
 export function mergeCodeFilesIntoContext(
   prior: { session_id?: string; files?: CodeEnvFile[] | FileRefs } | undefined,
-  files: CodeEnvFile[] | undefined,
+  files: ProvisionedCodeFile[] | undefined,
   sessionKey?: string,
 ): { session_id: string; files: CodeEnvFile[] } | undefined {
   if (!files || files.length === 0) {
@@ -220,6 +226,13 @@ export function mergeCodeFilesIntoContext(
    * against the sandbox's one-file-per-path constraint.
    */
   const seenKeys = new Set<string>();
+  const replacements = new Map<string, CodeEnvFile>();
+  for (const incoming of files) {
+    const { replaces, ...file } = incoming;
+    for (const replaced of replaces ?? []) {
+      replacements.set(`${replaced.storage_session_id}\0${replaced.id}\0${file.name}`, file);
+    }
+  }
   const destinations = createCodeDestinationSet();
   const mergedFiles: CodeEnvFile[] = [];
   const pushIfFresh = (f: { id?: string; storage_session_id?: string; name?: string }): void => {
@@ -236,9 +249,12 @@ export function mergeCodeFilesIntoContext(
     mergedFiles.push(f as CodeEnvFile);
   };
   if (prior?.files) {
-    for (const f of prior.files) pushIfFresh(f);
+    for (const f of prior.files) {
+      const key = `${f.storage_session_id ?? prior.session_id ?? ''}\0${f.id}\0${f.name}`;
+      pushIfFresh(replacements.get(key) ?? f);
+    }
   }
-  for (const f of files) pushIfFresh(f);
+  for (const { replaces: _replaces, ...file } of files) pushIfFresh(file);
 
   const representativeSessionId = prior?.session_id ?? files[0].storage_session_id;
   if (!representativeSessionId) {

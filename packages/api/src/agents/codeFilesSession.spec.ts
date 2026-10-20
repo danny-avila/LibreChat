@@ -75,6 +75,24 @@ describe('mergeCodeFilesIntoContext', () => {
     expect(merged?.files.map((f) => f.id)).toEqual(['id-A']);
   });
 
+  it('refreshes a legacy input reference using its execution session as storage fallback', () => {
+    const current = file('fresh', 'new-storage', 'data.csv');
+    const merged = mergeCodeFilesIntoContext(
+      { session_id: 'old-storage', files: [{ id: 'expired', name: 'data.csv' }] },
+      [{ ...current, replaces: [{ id: 'expired', storage_session_id: 'old-storage' }] }],
+    );
+    expect(merged).toEqual({ session_id: 'old-storage', files: [current] });
+  });
+
+  it('keeps an input mounted elsewhere when its identity receives a new advertised alias', () => {
+    const prior = file('input', 'old-storage', 'original.csv');
+    const current = file('copy', 'new-storage', 'alias.csv');
+    const merged = mergeCodeFilesIntoContext({ session_id: 'execution', files: [prior] }, [
+      { ...current, replaces: [{ id: prior.id, storage_session_id: prior.storage_session_id }] },
+    ]);
+    expect(merged?.files).toEqual([prior, current]);
+  });
+
   it('reports nothing to record when there are no files', () => {
     expect(mergeCodeFilesIntoContext({ session_id: 'exec-1' }, [])).toBeUndefined();
   });

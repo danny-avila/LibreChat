@@ -4,12 +4,14 @@ import { z } from 'zod';
 import { ToolMessage } from '@librechat/agents/langchain';
 import { tool } from '@librechat/agents/langchain/tools';
 import type {
+  CodeEnvFile,
   SubagentExecutionContext,
   ToolExecuteBatchRequest,
   ToolExecuteResult,
 } from '@librechat/agents';
 import type { CodeExecutionContext } from '../execution';
 import type { ToolExecuteOptions } from '../handlers';
+import type { ProvisionedCodeFile } from '../codeFilesSession';
 import { createToolExecuteHandler } from '../handlers';
 
 const identity: SubagentExecutionContext = {
@@ -35,7 +37,10 @@ function setup(context?: Partial<CodeExecutionContext>, toolName = 'execute_code
   const prepareTools = jest.fn(async () => {
     calls.push('prepare');
   });
-  const provisionFiles = jest.fn(async () => {
+  const provisionFiles = jest.fn<
+    Promise<ProvisionedCodeFile[] | void>,
+    Parameters<NonNullable<ToolExecuteOptions['provisionFiles']>>
+  >(async () => {
     calls.push('provision');
   });
   const loadedTool = tool(async () => '', {
@@ -138,6 +143,82 @@ function setup(context?: Partial<CodeExecutionContext>, toolName = 'execute_code
 }
 
 describe('shared-file event execution identity', () => {
+  it('replaces an expired input reference without losing the execution session or skill files', async () => {
+    const test = setup(undefined, 'bash_tool');
+    const current: CodeEnvFile = {
+      id: 'recovered-input',
+      resource_id: 'worker',
+      kind: 'agent',
+      storage_session_id: 'current-storage',
+      name: 'results.csv',
+    };
+    const expired = { ...current, id: 'expired-input', storage_session_id: 'expired-storage' };
+    const skill: CodeEnvFile = {
+      id: 'skill-file',
+      resource_id: 'skill',
+      kind: 'skill',
+      version: 1,
+      storage_session_id: 'skill-storage',
+      name: 'skill/helper.py',
+    };
+    test.provisionFiles.mockResolvedValue([{ ...current, replaces: [expired] }]);
+    expect(
+      (
+        await test.execute(identity, [
+          {
+            id: 'code-call',
+            name: 'bash_tool',
+            args: { code: 'ls /mnt/data' },
+            codeSessionContext: { session_id: 'existing-execution', files: [skill, expired] },
+          },
+        ])
+      )[0].status,
+    ).toBe('success');
+    expect(test.invoke).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        toolCall: expect.objectContaining({
+          session_id: 'existing-execution',
+          _injected_files: [skill, current],
+        }),
+      }),
+    );
+  });
+
+  it('keeps a rewritten sandbox output when an older input is recovered at its path', async () => {
+    const test = setup(undefined, 'bash_tool');
+    const current: CodeEnvFile = {
+      id: 'recovered-input',
+      resource_id: 'worker',
+      kind: 'agent',
+      storage_session_id: 'current-storage',
+      name: 'results.csv',
+    };
+    const output: CodeEnvFile = {
+      ...current,
+      id: 'rewritten-output',
+      storage_session_id: 'output-storage',
+    };
+    test.provisionFiles.mockResolvedValue([
+      {
+        ...current,
+        replaces: [{ id: 'expired-input', storage_session_id: 'expired-storage' }],
+      },
+    ]);
+    await test.execute(identity, [
+      {
+        id: 'code-call',
+        name: 'bash_tool',
+        args: { code: 'cat /mnt/data/results.csv' },
+        codeSessionContext: { session_id: 'existing-execution', files: [output] },
+      },
+    ]);
+    expect(test.invoke).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ toolCall: expect.objectContaining({ _injected_files: [output] }) }),
+    );
+  });
+
   it('authorizes before provisioning and overwrites inherited tool and artifact identities', async () => {
     const test = setup();
     expect((await test.execute())[0].status).toBe('success');

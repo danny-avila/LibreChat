@@ -1,7 +1,8 @@
 import { agentsEndpointSchema } from 'librechat-data-provider';
-import type { CodeEnvFile, SubagentExecutionContext } from '@librechat/agents';
+import type { SubagentExecutionContext } from '@librechat/agents';
 import type { TFile } from 'librechat-data-provider';
 import type { PublishedCodeOutputResult } from '~/files/code/publication';
+import type { ProvisionedCodeFile } from '~/agents/codeFilesSession';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import type { CodeExecutionContext } from '~/agents/execution';
 import type { RunFileMessageEncoderDeps } from './encode';
@@ -21,7 +22,7 @@ type ProvisionCallback = (
   agentId?: string,
   signal?: AbortSignal,
   context?: SubagentExecutionContext,
-) => Promise<CodeEnvFile[] | void>;
+) => Promise<ProvisionedCodeFile[] | void>;
 
 export interface ChatRunFileBindings extends RunFileHost {
   getCodeExecutionContext: (
@@ -35,7 +36,7 @@ export interface ChatRunFileBindings extends RunFileHost {
     agentId?: string,
     signal?: AbortSignal,
     context?: SubagentExecutionContext,
-  ) => Promise<CodeEnvFile[] | void>;
+  ) => Promise<ProvisionedCodeFile[] | void>;
   wrapToolEnd: (fallback: ToolEndCallback) => ToolEndCallback;
 }
 

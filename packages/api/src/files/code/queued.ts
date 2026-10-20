@@ -285,7 +285,11 @@ export function planCodeFileUploads({
       getCodeFileDestinationScope(file, state.project),
       storedName,
     ]);
-    if (confirmedNames.has(destination)) return false;
+    if (
+      confirmedNames.has(destination) &&
+      !(projectSession?.frozen && projectSession.mountedNames.has(file.file_id))
+    )
+      return false;
     confirmedNames.add(destination);
     return true;
   });

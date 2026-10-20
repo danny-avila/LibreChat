@@ -56,6 +56,7 @@ import type {
 import type { ScheduleMCPExecution } from '~/schedules/authorization/execution';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { InterruptibleToolBatchRequest } from './steering/tools';
+import type { ProvisionedCodeFile } from './codeFilesSession';
 import type { ArtifactDeliveryFailure } from '~/files/code';
 import type { BackgroundToolResultState } from './harvest';
 import type { SandboxTextReader } from '~/files/code/text';
@@ -337,7 +338,7 @@ export interface ToolExecuteOptions {
     agentId?: string,
     signal?: AbortSignal,
     executionContext?: SubagentExecutionContext,
-  ) => Promise<CodeEnvFile[] | void>;
+  ) => Promise<ProvisionedCodeFile[] | void>;
   /**
    * Persists a backgrounded code-execution result onto the dispatch turn once
    * the detached call settles: downloads/persists generated files, patches the

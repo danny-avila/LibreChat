@@ -226,10 +226,17 @@ export async function selectCodeFiles({
   /** A stored path is superseded only within its originating chat. Project files
    * from other chats (or uploads without a chat) remain independent inputs. */
   const storedDestinations = new Set<string>();
+  const plannedMounts = project?.sessionPlan?.frozen
+    ? project.sessionPlan.mountedNames
+    : new Map<string, string>();
   const surviving = resolved.filter((candidate) => {
     const scope = getCodeFileDestinationScope(candidate.file, project);
     const storedDestination = JSON.stringify([scope, candidate.storedName]);
-    if (candidate.storedName && storedDestinations.has(storedDestination)) {
+    if (
+      candidate.storedName &&
+      storedDestinations.has(storedDestination) &&
+      !plannedMounts.has(candidate.file.file_id)
+    ) {
       skippedSuperseded++;
       return false;
     }
@@ -248,9 +255,6 @@ export async function selectCodeFiles({
     reserveCodeDestination(destinations, name);
     reserveCodeDestination(fixedProjectPaths, name);
   }
-  const plannedMounts = project?.sessionPlan?.frozen
-    ? project.sessionPlan.mountedNames
-    : new Map<string, string>();
   for (const candidate of surviving) {
     if (isImportedProjectFile(candidate.file, project)) continue;
     const name = plannedMounts.get(candidate.file.file_id);
