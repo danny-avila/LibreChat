@@ -514,3 +514,53 @@ it.each([false, true, undefined])(
     );
   },
 );
+
+it('does not render cached recovery after the loaded task capability is revoked', () => {
+  mockRecoveredQuery.mockReturnValue({
+    data: {
+      messageId: 'task-1:assistant',
+      status: 'completed',
+      recovery: 'complete',
+      content: [{ type: 'text', text: 'Cached recovered content.' }],
+      throughSequence: 0,
+      targetThroughSequence: 0,
+    },
+  });
+  const props = {
+    author,
+    parentAuthor,
+    recovery: {
+      parentConversationId: 'parent',
+      threadId: 'child',
+      selectedTaskId: 'task-1',
+      ready: true,
+    },
+    turns: [
+      {
+        ...turns[0],
+        contentRecoveryAvailable: true,
+        activity: {
+          ...turns[0].activity,
+          items: [{ type: 'writing' as const, text: 'Current durable activity.' }],
+        },
+      },
+    ],
+  };
+  const { rerender } = render(
+    <ChatSurfaceHarness>
+      <SubagentConversation {...props} />
+    </ChatSurfaceHarness>,
+  );
+  expect(screen.getByText('Cached recovered content.')).toBeInTheDocument();
+  rerender(
+    <ChatSurfaceHarness>
+      <SubagentConversation
+        {...props}
+        turns={[{ ...props.turns[0], contentRecoveryAvailable: false }]}
+      />
+    </ChatSurfaceHarness>,
+  );
+  expect(screen.queryByText('Cached recovered content.')).not.toBeInTheDocument();
+  expect(screen.getByText('Current durable activity.')).toBeInTheDocument();
+  expect(mockRecoveredQuery).toHaveBeenLastCalledWith(expect.any(Object), { enabled: false });
+});

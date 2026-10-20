@@ -349,7 +349,7 @@ function RecoveredChildMessage({
   });
   const turn = useMemo(() => {
     const snapshot = recovered.data;
-    if (snapshot == null) return props.turn;
+    if (snapshot == null || props.turn.contentRecoveryAvailable === false) return props.turn;
     const preserveActivity = !snapshot.content.some(
       (part) => part != null && !isEmptyContentPart(part),
     );
@@ -368,7 +368,9 @@ function RecoveredChildMessage({
     };
   }, [recovered.data, props.turn]);
   const notice =
-    recovered.isError && !recovered.isUnavailable ? (
+    props.turn.contentRecoveryAvailable !== false &&
+    recovered.isError &&
+    !recovered.isUnavailable ? (
       <Alert variant="error" className="mb-2">
         <div className="flex items-center gap-2">
           <span>{localize('com_ui_conversation_load_error')}</span>
