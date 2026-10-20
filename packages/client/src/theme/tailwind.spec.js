@@ -112,6 +112,7 @@ describe('LibreChat Tailwind preset', () => {
     expect(modern).not.toContain("[dir='rtl']");
     /** Only a browser without `:dir()` falls back to the attribute. */
     expect(fallback).toContain(":is([dir='rtl'], [dir='rtl'] *)");
+    expect(fallback).toContain(":not([dir='rtl'] [dir='ltr'], [dir='rtl'] [dir='ltr'] *)");
     expect(fallback).toContain('--theme-switch-width');
   });
 

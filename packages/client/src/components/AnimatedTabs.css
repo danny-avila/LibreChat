@@ -67,12 +67,26 @@
 
 /* Chrome and Edge before 120 drop the `:dir()` rules; mirror by the `dir` attribute there. */
 @supports not selector(:dir(rtl)) {
-  .animated-panels:is([dir='rtl'], [dir='rtl'] *):has(> [data-was-open]) > .animated-tab-panel {
+  .animated-panels:is([dir='rtl'], [dir='rtl'] *):not(
+      [dir='rtl'] [dir='ltr'],
+      [dir='rtl'] [dir='ltr'] *
+    ):has(> [data-was-open])
+    > .animated-tab-panel {
     translate: 100%;
   }
 
-  .animated-panels:is([dir='rtl'], [dir='rtl'] *) [data-was-open] ~ .animated-tab-panel,
-  .animated-panels:is([dir='rtl'], [dir='rtl'] *) [data-open] ~ .animated-tab-panel {
+  .animated-panels:is([dir='rtl'], [dir='rtl'] *):not(
+      [dir='rtl'] [dir='ltr'],
+      [dir='rtl'] [dir='ltr'] *
+    )
+    [data-was-open]
+    ~ .animated-tab-panel,
+  .animated-panels:is([dir='rtl'], [dir='rtl'] *):not(
+      [dir='rtl'] [dir='ltr'],
+      [dir='rtl'] [dir='ltr'] *
+    )
+    [data-open]
+    ~ .animated-tab-panel {
     translate: -100%;
   }
 }

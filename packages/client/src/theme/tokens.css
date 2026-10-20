@@ -369,14 +369,14 @@
 
 /* Mirrors by the element's own direction, so an LTR island inside an RTL page stays unmirrored,
  * which Tailwind's `rtl:` (it also matches `[dir='rtl'] *`) does not. A browser without `:dir()`
- * (Chrome and Edge before 120) drops that rule, so it falls back to the nearest `dir='rtl'`
- * attribute instead of staying unmirrored. */
+ * (Chrome and Edge before 120) drops that rule, so it falls back to a `dir='rtl'` ancestor that
+ * no `dir='ltr'` island sits beneath. */
 @custom-variant dir-rtl {
   &:dir(rtl) {
     @slot;
   }
   @supports not selector(:dir(rtl)) {
-    &:is([dir='rtl'], [dir='rtl'] *) {
+    &:is([dir='rtl'], [dir='rtl'] *):not([dir='rtl'] [dir='ltr'], [dir='rtl'] [dir='ltr'] *) {
       @slot;
     }
   }
