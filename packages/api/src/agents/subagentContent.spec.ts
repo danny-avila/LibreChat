@@ -27,6 +27,7 @@ const update = (phase: SubagentUpdateEvent['phase'], data: unknown): SubagentUpd
 function memoryStorage() {
   const batches: SubagentContentBatch[] = [];
   const methods: SubagentContentMethods = {
+    reconcileSubagentContent: async () => ({ ok: true }),
     appendSubagentContentBatch: async ({ revision, fromSequence, throughSequence, eventsJson }) => {
       batches.push({ revision, fromSequence, throughSequence, eventsJson });
       return { ok: true };
@@ -491,6 +492,84 @@ describe('journal close retries', () => {
     expect(batches[0].throughSequence).toBe(0);
     expect(journal.throughSequence).toBe(2);
     expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it('continues cleanup-only recovery at the configured cadence after fast retries are exhausted', async () => {
+    const { methods } = memoryStorage();
+    let rejectAppend: (error: Error) => void = () => undefined;
+    const append = jest.fn(methods.appendSubagentContentBatch).mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectAppend = reject;
+        }),
+    );
+    const reconcile = jest
+      .fn(methods.reconcileSubagentContent)
+      .mockRejectedValueOnce(new Error('cleanup 1'))
+      .mockRejectedValueOnce(new Error('cleanup 2'))
+      .mockRejectedValueOnce(new Error('cleanup 3'))
+      .mockRejectedValueOnce(new Error('cleanup 4'));
+    const notify = jest.fn(async () => undefined);
+    const journal = new SubagentContentJournal({
+      scope,
+      leaseToken: 'lease',
+      flushMs: 10,
+      batchBytes: 1,
+      settlementTimeoutMs: 100,
+      append,
+      reconcile,
+      cleanupRetry: { retryAttempts: 3, retryBaseDelayMs: 10, recoveryDelayMs: 100 },
+      notify,
+      onError: () => undefined,
+    });
+    journal.record(update('message_delta', { id: 's', delta: { content: [] } }), 0);
+    const closing = journal.close();
+    await jest.advanceTimersByTimeAsync(100);
+    await expect(closing).resolves.toEqual(timeoutResult);
+    expect(reconcile).not.toHaveBeenCalled();
+    rejectAppend(new Error('late partial write'));
+    await jest.advanceTimersByTimeAsync(0);
+    expect(reconcile).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(30);
+    expect(reconcile).toHaveBeenCalledTimes(3);
+    await jest.advanceTimersByTimeAsync(99);
+    expect(reconcile).toHaveBeenCalledTimes(3);
+    await jest.advanceTimersByTimeAsync(101);
+    expect(reconcile).toHaveBeenCalledTimes(5);
+    expect(
+      reconcile.mock.calls.every(([target]) => JSON.stringify(target) === JSON.stringify(scope)),
+    ).toBe(true);
+    expect(append).toHaveBeenCalledTimes(1);
+    expect(notify).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it('reconciles when the deadline expires between failed append attempts', async () => {
+    const { methods } = memoryStorage();
+    const append = jest
+      .fn(methods.appendSubagentContentBatch)
+      .mockRejectedValue(new Error('partial write'));
+    const reconcile = jest.fn(methods.reconcileSubagentContent);
+    const journal = new SubagentContentJournal({
+      scope,
+      flushMs: 1000,
+      batchBytes: 1_000_000,
+      settlementTimeoutMs: 100,
+      append,
+      reconcile,
+      notify: async () => undefined,
+      onError: () => undefined,
+    });
+    journal.record(update('message_delta', { id: 's', delta: { content: [] } }), 0);
+    const closing = journal.close();
+    await jest.advanceTimersByTimeAsync(100);
+    await expect(closing).resolves.toEqual(timeoutResult);
+    expect(reconcile).toHaveBeenCalledTimes(1);
+    const attempts = append.mock.calls.length;
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(append).toHaveBeenCalledTimes(attempts);
+    expect(jest.getTimerCount()).toBe(0);
   });
 
   it.each(['resolve', 'reject'])(

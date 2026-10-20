@@ -8,6 +8,7 @@ import {
   getRunStepDurationMs,
 } from 'librechat-data-provider';
 import type {
+  TSubagentActivityConfig,
   SubagentContentEvent,
   SubagentContentFrame,
   SubagentContentWatermark,
@@ -83,6 +84,51 @@ export function subagentContentFrame(update: SubagentContentUpdate): SubagentCon
   }
 }
 
+type CleanupRetry = Pick<
+  TSubagentActivityConfig,
+  'retryAttempts' | 'retryBaseDelayMs' | 'recoveryDelayMs'
+>;
+
+/** Detached from execution: one small scope and one unref'd timer until storage recovers. */
+async function reconcileAbandonedContent(
+  scope: SubagentContentScope,
+  reconcile: SubagentContentMethods['reconcileSubagentContent'],
+  policy: CleanupRetry,
+  onError: (error: unknown) => void,
+): Promise<void> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      await reconcile(scope);
+      return;
+    } catch (error) {
+      onError(error);
+      attempt = Math.min(attempt + 1, policy.retryAttempts);
+      const delay =
+        attempt < policy.retryAttempts
+          ? Math.min(policy.recoveryDelayMs, policy.retryBaseDelayMs * 2 ** (attempt - 1))
+          : policy.recoveryDelayMs;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, delay);
+        timer.unref?.();
+      });
+    }
+  }
+}
+
+function reconcileAfterWrite(
+  writing: Promise<SubagentContentJournalResult> | undefined,
+  scope: SubagentContentScope,
+  reconcile: SubagentContentMethods['reconcileSubagentContent'],
+  policy: CleanupRetry,
+  onError: (error: unknown) => void,
+): void {
+  void Promise.resolve(writing)
+    .catch(() => undefined)
+    .then(() => reconcileAbandonedContent(scope, reconcile, policy, onError))
+    .catch(onError);
+}
+
 type JournalOptions = {
   scope: SubagentContentScope;
   leaseToken?: string;
@@ -91,6 +137,8 @@ type JournalOptions = {
   maxPendingBytes?: number;
   settlementTimeoutMs?: number;
   append: SubagentContentMethods['appendSubagentContentBatch'];
+  reconcile?: SubagentContentMethods['reconcileSubagentContent'];
+  cleanupRetry?: CleanupRetry;
   notify: (watermark: SubagentContentWatermark) => Promise<void>;
   onError: (error: unknown) => void;
 };
@@ -288,6 +336,17 @@ export class SubagentContentJournal {
         this.pendingBytes = 0;
         this.staged = undefined;
         this.pendingNotification = undefined;
+        if (this.options.reconcile != null) {
+          const { user, tenantId, parentConversationId, conversationId, taskId } =
+            this.options.scope;
+          reconcileAfterWrite(
+            this.writing,
+            { user, tenantId, parentConversationId, conversationId, taskId },
+            this.options.reconcile,
+            this.options.cleanupRetry ?? subagentActivityConfigSchema.parse({}),
+            this.options.onError,
+          );
+        }
         resolve(timeoutResult);
       }, timeoutMs);
     });

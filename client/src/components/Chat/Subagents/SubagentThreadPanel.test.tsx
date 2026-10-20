@@ -251,6 +251,7 @@ jest.mock('./SubagentConversation', () => ({
     parentAuthor: { name: string };
     turns: Array<{
       taskId: string;
+      outcome?: { text: string };
       trigger: { summary: string };
       activity: { items: Array<{ text?: string }>; activityTruncated?: boolean };
     }>;
@@ -266,7 +267,7 @@ jest.mock('./SubagentConversation', () => ({
     >
       {author.icon}
       {turns.map((turn) => (
-        <div key={turn.taskId} data-testid="conversation-turn">
+        <div key={turn.taskId} data-testid="conversation-turn" data-outcome={turn.outcome?.text}>
           {turn.trigger.summary}
           {turn.activity.items.map((item, index) => (
             <span key={index}>{item.text}</span>
@@ -3464,6 +3465,69 @@ describe('SubagentThreadPanel', () => {
       expect(turns[1 - synthesizedIndex]).toHaveTextContent('Durable window turn');
     },
   );
+
+  it.each(['latest window', 'empty window', 'selected trigger only'] as const)(
+    'carries the exact durable answer into a selected task outside the %s',
+    (window) => {
+      const outcome = {
+        messageId: 'task-old:assistant',
+        parentMessageId: 'task-old:user',
+        role: 'assistant' as const,
+        text: 'Durable historical answer.',
+      };
+      const turn = {
+        taskId: window === 'selected trigger only' ? 'task-old' : 'task-new',
+        trigger: { kind: 'parent_continuation' as const, summary: 'Window trigger' },
+        status: 'completed' as const,
+        activity: [],
+        activityTruncated: false,
+        messages: [],
+      };
+      mockUseSubagentThreadQuery.mockReturnValue({
+        data: {
+          ...completedView,
+          messages: [
+            outcome,
+            { ...outcome, messageId: 'another-task:assistant', text: 'Unrelated answer' },
+          ],
+          turns: window === 'empty window' ? [] : [turn],
+        },
+        isLoading: false,
+        isError: false,
+        isReadinessPending: false,
+      });
+      const selected: ActiveSubagentPanel = {
+        ...selection,
+        durable: { threadId: 'child-thread', taskId: 'task-old' },
+      };
+      render(
+        <Root>
+          <SubagentThreadPanel selection={selected} />
+        </Root>,
+      );
+      const outcomes = screen
+        .getAllByTestId('conversation-turn')
+        .map((row) => row.getAttribute('data-outcome'))
+        .filter(Boolean);
+      expect(outcomes).toEqual(['Durable historical answer.']);
+    },
+  );
+
+  it('does not attribute a retained previous-task response to the newly selected task', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, turns: [] },
+      isPreviousData: true,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    render(
+      <Root>
+        <SubagentThreadPanel selection={selection} />
+      </Root>,
+    );
+    expect(screen.getByTestId('conversation-turn')).not.toHaveAttribute('data-outcome');
+  });
 
   it('loads an exact older turn projection only after the local disclosure is opened', async () => {
     const truncatedView: SubagentThreadView = {

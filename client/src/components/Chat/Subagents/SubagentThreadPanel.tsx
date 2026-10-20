@@ -1030,6 +1030,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     };
   }, [historyRebaseActive, latestConversationTurns, latestHistoryGeneration, threadId, threadView]);
   const retainedTurnsValid = retainedTurnsGenerationRef.current === selectionGenerationRef.current;
+  const selectedOutcome = useMemo(
+    () =>
+      taskView?.messages.find(
+        (message) => message.messageId === `${taskId}:assistant` && message.role === 'assistant',
+      ),
+    [taskView, taskId],
+  );
   const conversationTurns = useMemo(() => {
     const durableTurns = retainedTurnsValid
       ? mergeChildConversationTurns(
@@ -1044,7 +1051,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       const selectedTurnIndex = durableTurns.findIndex((turn) => turn.taskId === taskId);
       if (selectedTurnIndex >= 0) {
         return durableTurns.map((turn, index) => {
-          const selected = index === selectedTurnIndex ? { ...turn, activity } : turn;
+          const selected =
+            index === selectedTurnIndex
+              ? { ...turn, activity, outcome: selectedOutcome ?? turn.outcome }
+              : turn;
           const override = turnDetailOverrides.get(turn.taskId);
           return override == null ? selected : { ...selected, activity: override };
         });
@@ -1060,6 +1070,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       )?.createdAt;
       const synthesizedTurn = {
         taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
+        ...(selectedOutcome == null ? {} : { outcome: selectedOutcome }),
         trigger: {
           kind:
             selection.event == null
@@ -1089,6 +1100,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     return [
       {
         taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
+        ...(selectedOutcome == null ? {} : { outcome: selectedOutcome }),
         trigger: {
           kind:
             selection.event == null ? ('parent_dispatch' as const) : ('external_event' as const),
@@ -1109,6 +1121,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     retainedTurnsValid,
     threadId,
     selection,
+    selectedOutcome,
     taskId,
     turnDetailOverrides,
   ]);

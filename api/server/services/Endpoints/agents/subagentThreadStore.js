@@ -56,6 +56,7 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
   {
     acquireSubagentThreadLease: db.acquireSubagentThreadLease,
     appendSubagentContentBatch: db.appendSubagentContentBatch,
+    reconcileSubagentContent: db.reconcileSubagentContent,
     claimSubagentTaskResult: db.claimSubagentTaskResult,
     releaseSubagentTaskResultClaim: db.releaseSubagentTaskResultClaim,
     countActiveSubagentThreadLeases: db.countActiveSubagentThreadLeases,

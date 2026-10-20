@@ -995,6 +995,113 @@ describe('selective task content deletion', () => {
     },
   );
 
+  it.each(
+    [undefined, 'tenant-a'].flatMap((tenantId) =>
+      (['postwrite', 'fragment', 'commit'] as const).map((failure) => ({ tenantId, failure })),
+    ),
+  )(
+    'automatically reconciles an abandoned journal after $failure cleanup failure ($tenantId)',
+    async ({ tenantId, failure }) => {
+      const scope = await seedTask(tenantId);
+      const Model = mongoose.models.SubagentContent;
+      await Model.deleteMany(journalFilter(scope));
+      const neighbors = [
+        { ...scope, taskId: randomUUID() },
+        { ...scope, user: 'other-owner' },
+        { ...scope, tenantId: tenantId == null ? 'tenant-b' : undefined },
+        { ...scope, conversationId: randomUUID() },
+      ];
+      await Model.create(
+        neighbors.map((neighbor) => ({
+          ...neighbor,
+          ...batch,
+          _id: randomUUID(),
+          fragment: 0,
+          fragments: 1,
+          digest: 'neighbor',
+          payload: 'retained',
+        })),
+      );
+      const collection = Model.collection;
+      const bulkWrite = collection.bulkWrite.bind(collection);
+      let release: () => void = () => undefined;
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let started: () => void = () => undefined;
+      const entering = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const pending = jest
+        .spyOn(collection, 'bulkWrite')
+        .mockImplementationOnce(async (...args) => {
+          started();
+          await released;
+          const result = await bulkWrite(...args);
+          if (failure === 'fragment') throw new Error('partial fragment acknowledgement lost');
+          return result;
+        });
+      const updateOne = collection.updateOne.bind(collection);
+      const commit = jest.spyOn(collection, 'updateOne').mockImplementationOnce(async (...args) => {
+        const result = await updateOne(...args);
+        if (failure === 'commit') throw new Error('commit acknowledgement lost');
+        return result;
+      });
+      const append = jest.fn(methods.appendSubagentContentBatch);
+      const notify = jest.fn(async () => undefined);
+      const errors = jest.fn();
+      const journal = new SubagentContentJournal({
+        scope,
+        flushMs: 60_000,
+        batchBytes: 1,
+        settlementTimeoutMs: 20,
+        append,
+        reconcile: methods.reconcileSubagentContent,
+        cleanupRetry: { retryAttempts: 3, retryBaseDelayMs: 1, recoveryDelayMs: 100 },
+        notify,
+        onError: errors,
+      });
+      journal.record(
+        progress('message_delta', {
+          id: 's',
+          delta: { content: [{ type: 'text', text: 'late bytes' }] },
+        }),
+        0,
+      );
+      await entering;
+      journal.record(progress('message_delta', { id: 's', delta: { content: [] } }), 1);
+      await expect(journal.close()).resolves.toMatchObject({
+        ok: false,
+        error: { code: 'SUBAGENT_CONTENT_SETTLEMENT_TIMEOUT' },
+      });
+      await methods.deleteMessages(sourceFilter(scope, 'both'));
+      await mongoose.models.Conversation.deleteMany({
+        ...owner(scope),
+        conversationId: { $in: [scope.parentConversationId, scope.conversationId] },
+      });
+      const failed = jest
+        .spyOn(collection, 'deleteMany')
+        .mockRejectedValueOnce(new Error('late cleanup unavailable'));
+      try {
+        release();
+        await until(async () => failed.mock.calls.length >= 2);
+        await until(async () => (await Model.countDocuments(journalFilter(scope))) === 0);
+        expect(append).toHaveBeenCalledTimes(1);
+        expect(notify).not.toHaveBeenCalled();
+        expect(errors).toHaveBeenCalled();
+        for (const neighbor of neighbors) {
+          expect(await Model.countDocuments(journalFilter(neighbor))).toBe(1);
+        }
+      } finally {
+        release();
+        await Promise.allSettled(append.mock.results.map((result) => result.value));
+        failed.mockRestore();
+        pending.mockRestore();
+        commit.mockRestore();
+      }
+    },
+  );
+
   it('retries a failed post-write cleanup after selective source erasure', async () => {
     const scope = await seedTask();
     const collection = mongoose.models.SubagentContent.collection;

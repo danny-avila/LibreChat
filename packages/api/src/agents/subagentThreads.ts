@@ -133,7 +133,9 @@ type SubagentThreadMethods = Pick<
   | 'saveConvo'
   | 'saveMessage'
 > &
-  Partial<Pick<AllMethods, 'getAgentName' | 'appendSubagentContentBatch'>>;
+  Partial<
+    Pick<AllMethods, 'getAgentName' | 'appendSubagentContentBatch' | 'reconcileSubagentContent'>
+  >;
 
 interface SubagentThreadScope {
   version: typeof SCOPE_VERSION;
@@ -1606,6 +1608,12 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                   maxPendingBytes: this.activityOptions.contentPendingBytes,
                   settlementTimeoutMs: this.activityOptions.contentSettlementTimeoutMs,
                   append,
+                  reconcile: this.methods.reconcileSubagentContent,
+                  cleanupRetry: {
+                    retryAttempts: this.activityOptions.retryAttempts,
+                    retryBaseDelayMs: this.activityOptions.retryBaseDelayMs,
+                    recoveryDelayMs: this.activityOptions.recoveryDelayMs,
+                  },
                   notify: (watermark) =>
                     this.activityStream.publishContent(
                       preparedThread.conversation.conversationId,

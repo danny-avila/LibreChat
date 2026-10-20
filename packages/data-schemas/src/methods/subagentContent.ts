@@ -60,6 +60,7 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
   appendSubagentContentBatch: (
     input: SubagentContentScope & SubagentContentBatch & { leaseToken?: string },
   ) => Promise<SubagentContentAppendResult>;
+  reconcileSubagentContent: (scope: SubagentContentScope) => Promise<SubagentContentAppendResult>;
   getSubagentContentHead: (
     scope: SubagentContentScope,
     throughRevision?: number,
@@ -114,8 +115,7 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
       }),
     ]);
     if (seed == null || parent == null || child == null) {
-      /** Retry a failed post-write cleanup even after the source has gone. */
-      if (seed == null || parent == null) await contentModel().deleteMany(scopeFilter(scope));
+      await reconcileSubagentContent(scope);
       return { ok: false, error: { code: 'SUBAGENT_CONTENT_GONE' } };
     }
     const Model = contentModel();
@@ -164,10 +164,24 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
       { $setOnInsert: { ...base, fragment: -1 } },
       { upsert: true },
     );
-    /** The lease admits an append, but settlement can release it during I/O.
-     * Only deletion or expiration revokes the retained task's lifetime. */
-    const [seedStillPresent, parentStillPresent, childStillPresent] = await Promise.all([
-      Message.exists(inputFilter),
+    return reconcileSubagentContent(scope);
+  }
+
+  /** Cleanup never replays payloads or requires a live execution lease. */
+  async function reconcileSubagentContent(
+    scope: SubagentContentScope,
+  ): Promise<SubagentContentAppendResult> {
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const owner = { user: scope.user, ...tenantFilter(scope.tenantId) };
+    const [seed, parent, child] = await Promise.all([
+      Message.exists({
+        ...owner,
+        conversationId: scope.conversationId,
+        messageId: `${scope.taskId}:user`,
+        'subagentContent.deleted': { $ne: true },
+        ...activeExpirationFilter<IMessage>(),
+      }),
       Conversation.exists({
         ...owner,
         conversationId: scope.parentConversationId,
@@ -180,8 +194,8 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
         ...activeExpirationFilter<IConversation>(),
       }),
     ]);
-    if (seedStillPresent == null || parentStillPresent == null || childStillPresent == null) {
-      await Model.deleteMany(scopeFilter(scope));
+    if (seed == null || parent == null || child == null) {
+      await contentModel().deleteMany(scopeFilter(scope));
       return { ok: false, error: { code: 'SUBAGENT_CONTENT_GONE' } };
     }
     return { ok: true };
@@ -276,7 +290,12 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
     }
   }
 
-  return { appendSubagentContentBatch, getSubagentContentHead, streamSubagentContentBatches };
+  return {
+    appendSubagentContentBatch,
+    reconcileSubagentContent,
+    getSubagentContentHead,
+    streamSubagentContentBatches,
+  };
 }
 
 export type SubagentContentMethods = ReturnType<typeof createSubagentContentMethods>;
