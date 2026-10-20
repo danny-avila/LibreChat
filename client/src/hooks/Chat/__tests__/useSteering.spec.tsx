@@ -1,8 +1,9 @@
 import React from 'react';
+import { useSteering } from '@librechat/chat/react';
 import { RecoilRoot, type MutableSnapshot } from 'recoil';
 import { claimQueuedIntent, releaseQueuedIntent } from '@librechat/chat';
 import { act, render, renderHook, waitFor } from '@testing-library/react';
-import { isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
+import { useQueueDrain, isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
 import {
   getDefaultStore,
   Provider as JotaiProvider,
@@ -11,37 +12,16 @@ import {
   useSetAtom,
 } from 'jotai';
 import {
+  hasLiveRunPause,
+  hydrateFileDeliveryMetadata as mergeQueuedTurnFileMetadata,
+} from '@librechat/chat';
+import {
   Constants,
   ContentTypes,
   EModelEndpoint,
   LocalStorageKeys,
   ReasoningEffort,
 } from 'librechat-data-provider';
-import {
-  revealedQueuedTurnFamily,
-  pendingSteerCancelClientIdsFamily,
-  acceptedSteerClientIdsByConvoId,
-  activeGenerationCreatedAtByConvoId,
-  activeGenerationProtocolVersionByConvoId,
-  appliedSteerIdsByConvoId,
-  pendingSteersByConvoId,
-  resetSteerFamilies,
-} from '@librechat/chat/react';
-import type { CodeApprovalMode, TConversation, TFile, TMessage } from 'librechat-data-provider';
-import type { ExtendedFile } from '~/common';
-import { clearAllDrafts, getPendingDraftId, getNewConversationDraftId } from '~/utils';
-import useUpdateFiles from '~/hooks/Files/useUpdateFiles';
-import ChatSettingsProvider from '~/routes/ChatSettings';
-import { duringRunActionAtom } from '~/store/duringRun';
-import { applyPendingAction } from '~/utils/approval';
-import English from '~/locales/en/translation.json';
-import useQueueDrain from '../useQueueDrain';
-import '~/Providers/SteerHostContext';
-import { useSteering } from '@librechat/chat/react';
-import {
-  hasLiveRunPause,
-  hydrateFileDeliveryMetadata as mergeQueuedTurnFileMetadata,
-} from '@librechat/chat';
 import {
   getReasoningStateKey,
   pendingQuotesByConvoId,
@@ -58,7 +38,26 @@ import {
   resetQueueFamilies,
   recoveryDispositionsFamily,
 } from '@librechat/chat/react';
+import {
+  revealedQueuedTurnFamily,
+  pendingSteerCancelClientIdsFamily,
+  acceptedSteerClientIdsByConvoId,
+  activeGenerationCreatedAtByConvoId,
+  activeGenerationProtocolVersionByConvoId,
+  appliedSteerIdsByConvoId,
+  pendingSteersByConvoId,
+  resetSteerFamilies,
+} from '@librechat/chat/react';
+import type { CodeApprovalMode, TConversation, TFile, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '@librechat/chat';
+import type { ExtendedFile } from '~/common';
+import { clearAllDrafts, getPendingDraftId, getNewConversationDraftId } from '~/utils';
+import useUpdateFiles from '~/hooks/Files/useUpdateFiles';
+import ChatSettingsProvider from '~/routes/ChatSettings';
+import { duringRunActionAtom } from '~/store/duringRun';
+import { SteerHostTestProvider } from 'test/steerHost';
+import { applyPendingAction } from '~/utils/approval';
+import English from '~/locales/en/translation.json';
 
 const CONVO_ID = 'convo-steer-ui';
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -175,8 +174,10 @@ function setup(params: HookParams = {}, initialize?: (snapshot: MutableSnapshot)
     <RecoilRoot
       initializeState={withActiveGeneration(initialize, params.conversationId ?? CONVO_ID)}
     >
-      <GenerationProbe />
-      <ChatSettingsProvider>{children}</ChatSettingsProvider>
+      <SteerHostTestProvider>
+        <GenerationProbe />
+        <ChatSettingsProvider>{children}</ChatSettingsProvider>
+      </SteerHostTestProvider>
     </RecoilRoot>
   );
   const rendered = renderHook(
@@ -319,7 +320,7 @@ describe('useSteering', () => {
             getDefaultStore().set(isSubmittingFamily(0), false);
           })}
         >
-          {children}
+          <SteerHostTestProvider>{children}</SteerHostTestProvider>
         </RecoilRoot>
       );
       const { result } = renderHook(
@@ -410,7 +411,7 @@ describe('useSteering', () => {
             getDefaultStore().set(isSubmittingFamily(0), false);
           })}
         >
-          {children}
+          <SteerHostTestProvider>{children}</SteerHostTestProvider>
         </RecoilRoot>
       );
       const { result } = renderHook(
@@ -696,7 +697,9 @@ describe('useSteering', () => {
     ) {
       const sendNow = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <RecoilRoot initializeState={initializer}>{children}</RecoilRoot>
+        <RecoilRoot initializeState={initializer}>
+          <SteerHostTestProvider>{children}</SteerHostTestProvider>
+        </RecoilRoot>
       );
       const rendered = renderHook(
         () => ({
@@ -1642,7 +1645,7 @@ describe('useSteering', () => {
             ]);
           })}
         >
-          {children}
+          <SteerHostTestProvider>{children}</SteerHostTestProvider>
         </RecoilRoot>
       );
       const { result } = renderHook(
@@ -1848,7 +1851,9 @@ describe('useSteering', () => {
       const sendNow = jest.fn();
       const stopGenerating = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <RecoilRoot initializeState={withActiveGeneration(initialize)}>{children}</RecoilRoot>
+        <RecoilRoot initializeState={withActiveGeneration(initialize)}>
+          <SteerHostTestProvider>{children}</SteerHostTestProvider>
+        </RecoilRoot>
       );
       const rendered = renderHook(
         () => ({
@@ -2028,7 +2033,9 @@ describe('useSteering', () => {
     ) {
       const sendNow = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <RecoilRoot initializeState={withActiveGeneration(initialize)}>{children}</RecoilRoot>
+        <RecoilRoot initializeState={withActiveGeneration(initialize)}>
+          <SteerHostTestProvider>{children}</SteerHostTestProvider>
+        </RecoilRoot>
       );
       const rendered = renderHook(
         ({ convoId, isSubmitting }: { convoId: string; isSubmitting: boolean }) => ({
@@ -2606,7 +2613,7 @@ describe('useSteering', () => {
             getDefaultStore().set(activeGenerationProtocolVersionByConvoId(otherConversationId), 2);
           }}
         >
-          {children}
+          <SteerHostTestProvider>{children}</SteerHostTestProvider>
         </RecoilRoot>
       );
       const { result, rerender } = renderHook(
@@ -2668,7 +2675,9 @@ describe('useSteering', () => {
       const sendNow = jest.fn();
       const stopGenerating = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <RecoilRoot initializeState={withActiveGeneration(initialize)}>{children}</RecoilRoot>
+        <RecoilRoot initializeState={withActiveGeneration(initialize)}>
+          <SteerHostTestProvider>{children}</SteerHostTestProvider>
+        </RecoilRoot>
       );
       const rendered = renderHook(
         () => ({
@@ -3799,7 +3808,7 @@ describe('useSteering', () => {
                 }
           }
         >
-          {children}
+          <SteerHostTestProvider>{children}</SteerHostTestProvider>
         </RecoilRoot>
       );
       const rendered = renderHook(
@@ -3898,7 +3907,9 @@ describe('useSteering', () => {
 
         render(
           <RecoilRoot initializeState={withActiveGeneration()}>
-            <Composer />
+            <SteerHostTestProvider>
+              <Composer />
+            </SteerHostTestProvider>
           </RecoilRoot>,
         );
         return {
@@ -4230,7 +4241,7 @@ describe('useSteering', () => {
               reasoningStore,
             )}
           >
-            {children}
+            <SteerHostTestProvider>{children}</SteerHostTestProvider>
           </RecoilRoot>
         </JotaiProvider>
       );
