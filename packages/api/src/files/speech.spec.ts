@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { SpeechMessageCache } from './speech';
@@ -143,7 +144,44 @@ describe('capSpeechInput', () => {
     },
   );
 
-  it('reads text over the configured cap only up to the cap', () => {
-    expect(capSpeechInput('a'.repeat(11), { maxInputChars: 10 })).toBe('a'.repeat(10));
+  it('reads text over the configured cap only up to the cap, saying so without the text', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      expect(capSpeechInput('a'.repeat(11), { maxInputChars: 10 })).toBe('a'.repeat(10));
+      expect(warn).toHaveBeenCalledWith(
+        '[TTS] Text of 11 characters exceeds speech.tts.maxInputChars (10); reading the first 10',
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('stays quiet for text within the cap', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      capSpeechInput('a'.repeat(10), { maxInputChars: 10 });
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('createSpeechChunkProcessor at the cap', () => {
+  it('warns once when a message is longer than the cap', async () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const { cache, processChunks } = setup(null, 10);
+    cache.get.mockResolvedValue({ text: 'b'.repeat(25), complete: false });
+    try {
+      await processChunks();
+      await processChunks();
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        '[TTS] Text of 25 characters exceeds speech.tts.maxInputChars (10); reading the first 10',
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
