@@ -218,8 +218,13 @@ test('the agent detail close button bleeds past the inline end under RTL @scenar
 test('a prompt command keeps its typed text clear of the counter under RTL @scenario:rtl-prompt-counter-clear-of-text', async ({
   page,
 }) => {
-  await page.goto('/prompts/new', { timeout: 15_000 });
-  const input = page.getByRole('textbox', {
+  await page.goto(NEW_CHAT_PATH, { timeout: 15_000 });
+  const promptsButton = page.getByRole('button', { name: 'Prompts', exact: true });
+  if ((await promptsButton.getAttribute('aria-pressed')) !== 'true') {
+    await promptsButton.click();
+  }
+  await page.getByRole('button', { name: 'Create Prompt' }).click();
+  const input = page.getByRole('dialog').getByRole('textbox', {
     name: 'Optional: Enter a command for the prompt or name will be used',
   });
   await expect(input).toBeVisible();
