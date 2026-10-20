@@ -1,7 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import { createHash, randomUUID } from 'node:crypto';
 import { subagentActivityConfigSchema } from 'librechat-data-provider';
-import type { TSubagentActivityConfig, SubagentContentAvailableFrame, SubagentContentWatermark } from 'librechat-data-provider';
+import type {
+  TSubagentActivityConfig,
+  SubagentContentAvailableFrame,
+  SubagentContentWatermark,
+} from 'librechat-data-provider';
 import type { ConversationMethods, MessageMethods } from '@librechat/data-schemas';
 import type { SubagentUpdateEvent } from '@librechat/agents';
 import type { Response } from 'express';
@@ -263,10 +267,17 @@ export class SubagentActivityStream {
     watermark: SubagentContentWatermark,
   ): Promise<void> {
     const streamId = `${subagentActivityStreamId(threadId, taskId)}:content`;
-    const event: SubagentContentAvailableFrame = { event: 'subagent_content_available', data: watermark };
+    const event: SubagentContentAvailableFrame = {
+      event: 'subagent_content_available',
+      data: watermark,
+    };
     if (this.transport.emitReplayableChunk != null) {
-      await this.transport.emitReplayableChunk(streamId, event,
-        { ...this.replayLimits, items: 1, bytes: 1024 }, { id: `content:${watermark.revision}` });
+      await this.transport.emitReplayableChunk(
+        streamId,
+        event,
+        { ...this.replayLimits, items: 1, bytes: 1024 },
+        { id: `content:${watermark.revision}` },
+      );
       return;
     }
     await emitObservedChunk(this.transport, streamId, event);
@@ -329,11 +340,14 @@ export class SubagentActivityStream {
       const frame = value as SubagentContentAvailableFrame | null;
       if (frame?.event === 'subagent_content_available') subscriber.onContent?.(frame);
     };
-    const contentSubscription = subscriber.onContent == null ? undefined : this.transport.subscribe(
-      contentStreamId,
-      { onChunk: onContent, onReplay: (events) => events.forEach(onContent) },
-      replayable ? { replay: { ...this.replayLimits, items: 1, bytes: 1024 } } : undefined,
-    );
+    const contentSubscription =
+      subscriber.onContent == null
+        ? undefined
+        : this.transport.subscribe(
+            contentStreamId,
+            { onChunk: onContent, onReplay: (events) => events.forEach(onContent) },
+            replayable ? { replay: { ...this.replayLimits, items: 1, bytes: 1024 } } : undefined,
+          );
     let closed = false;
     let demandHeartbeat: ReturnType<typeof setInterval> | undefined;
     unsubscribe = () => {

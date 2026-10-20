@@ -38,7 +38,10 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
   appendSubagentContentBatch: (
     input: SubagentContentScope & SubagentContentBatch & { leaseToken?: string },
   ) => Promise<SubagentContentAppendResult>;
-  getSubagentContentHead: (scope: SubagentContentScope, throughRevision?: number) => Promise<SubagentContentHead | null>;
+  getSubagentContentHead: (
+    scope: SubagentContentScope,
+    throughRevision?: number,
+  ) => Promise<SubagentContentHead | null>;
   streamSubagentContentBatches: (
     scope: SubagentContentScope,
     throughRevision: number,
@@ -52,9 +55,12 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
   ): Promise<SubagentContentAppendResult> {
     const { revision, fromSequence, throughSequence, eventsJson, leaseToken, ...scope } = input;
     if (
-      !Number.isSafeInteger(revision) || revision < 1 ||
-      !Number.isSafeInteger(fromSequence) || fromSequence < 0 ||
-      !Number.isSafeInteger(throughSequence) || throughSequence < fromSequence
+      !Number.isSafeInteger(revision) ||
+      revision < 1 ||
+      !Number.isSafeInteger(fromSequence) ||
+      fromSequence < 0 ||
+      !Number.isSafeInteger(throughSequence) ||
+      throughSequence < fromSequence
     ) {
       throw new Error('Invalid subagent content batch');
     }
@@ -70,11 +76,13 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
     const [seed, parent, child] = await Promise.all([
       Message.findOne(inputFilter).select('expiredAt').lean<Pick<IMessage, 'expiredAt'>>(),
       Conversation.exists({
-        ...owner, conversationId: scope.parentConversationId,
+        ...owner,
+        conversationId: scope.parentConversationId,
         ...activeExpirationFilter<IConversation>(),
       }),
       Conversation.exists({
-        ...owner, conversationId: scope.conversationId,
+        ...owner,
+        conversationId: scope.conversationId,
         'subagentThread.parentConversationId': scope.parentConversationId,
         'subagentThreadLease.taskId': scope.taskId,
         'subagentThreadLease.expiresAt': { $gt: new Date() },
@@ -89,19 +97,37 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
     const digest = createHash('sha256').update(eventsJson).digest('hex');
     const fragments = Math.ceil(eventsJson.length / FRAGMENT_CHARS);
     const base = {
-      ...scope, revision, fromSequence, throughSequence, digest, fragments,
+      ...scope,
+      revision,
+      fromSequence,
+      throughSequence,
+      digest,
+      fragments,
       ...(seed.expiredAt == null ? {} : { expiredAt: seed.expiredAt }),
     };
-    const recordId = (fragment: number) => createHash('sha256').update(JSON.stringify([
-      scope.tenantId ?? null, scope.user, scope.conversationId, scope.taskId, revision, fragment,
-    ])).digest('hex');
+    const recordId = (fragment: number) =>
+      createHash('sha256')
+        .update(
+          JSON.stringify([
+            scope.tenantId ?? null,
+            scope.user,
+            scope.conversationId,
+            scope.taskId,
+            revision,
+            fragment,
+          ]),
+        )
+        .digest('hex');
     const records = Array.from({ length: fragments }, (_, fragment) => ({
       updateOne: {
         filter: { _id: recordId(fragment), ...scopeFilter(scope), revision, fragment, digest },
-        update: { $setOnInsert: {
-          ...base, fragment,
-          payload: eventsJson.slice(fragment * FRAGMENT_CHARS, (fragment + 1) * FRAGMENT_CHARS),
-        } },
+        update: {
+          $setOnInsert: {
+            ...base,
+            fragment,
+            payload: eventsJson.slice(fragment * FRAGMENT_CHARS, (fragment + 1) * FRAGMENT_CHARS),
+          },
+        },
         upsert: true,
       },
     }));
@@ -114,14 +140,20 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
     );
     const [seedStillPresent, parentStillPresent, childStillPresent] = await Promise.all([
       Message.exists(inputFilter),
-      Conversation.exists({ ...owner, conversationId: scope.parentConversationId,
-        ...activeExpirationFilter<IConversation>() }),
-      Conversation.exists({ ...owner, conversationId: scope.conversationId,
+      Conversation.exists({
+        ...owner,
+        conversationId: scope.parentConversationId,
+        ...activeExpirationFilter<IConversation>(),
+      }),
+      Conversation.exists({
+        ...owner,
+        conversationId: scope.conversationId,
         'subagentThread.parentConversationId': scope.parentConversationId,
         'subagentThreadLease.taskId': scope.taskId,
         'subagentThreadLease.expiresAt': { $gt: new Date() },
         ...(leaseToken == null ? {} : { 'subagentThreadLease.token': leaseToken }),
-        ...activeExpirationFilter<IConversation>() }),
+        ...activeExpirationFilter<IConversation>(),
+      }),
     ]);
     if (seedStillPresent == null || parentStillPresent == null || childStillPresent == null) {
       await Model.deleteMany(scopeFilter(scope));
@@ -134,11 +166,16 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
     scope: SubagentContentScope,
     throughRevision?: number,
   ): Promise<SubagentContentHead | null> {
-    return contentModel().findOne({
-      ...scopeFilter(scope), fragment: -1,
-      ...(throughRevision == null ? {} : { revision: { $lte: throughRevision } }),
-      ...activeExpirationFilter(),
-    }).sort({ revision: -1 }).select('revision throughSequence -_id').lean<SubagentContentHead>();
+    return contentModel()
+      .findOne({
+        ...scopeFilter(scope),
+        fragment: -1,
+        ...(throughRevision == null ? {} : { revision: { $lte: throughRevision } }),
+        ...activeExpirationFilter(),
+      })
+      .sort({ revision: -1 })
+      .select('revision throughSequence -_id')
+      .lean<SubagentContentHead>();
   }
 
   async function* streamSubagentContentBatches(
@@ -146,10 +183,16 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
     throughRevision: number,
     afterSequence = -1,
   ): AsyncGenerator<SubagentContentBatch> {
-    const cursor = contentModel().find({
-      ...scopeFilter(scope), revision: { $lte: throughRevision },
-      throughSequence: { $gt: afterSequence }, ...activeExpirationFilter(),
-    }).sort({ revision: 1, fragment: 1 }).lean().cursor();
+    const cursor = contentModel()
+      .find({
+        ...scopeFilter(scope),
+        revision: { $lte: throughRevision },
+        throughSequence: { $gt: afterSequence },
+        ...activeExpirationFilter(),
+      })
+      .sort({ revision: 1, fragment: 1 })
+      .lean()
+      .cursor();
     let commit: ISubagentContentChunk | undefined;
     let payloads: string[] = [];
     const decode = (): SubagentContentBatch => {
@@ -160,8 +203,12 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
       if (createHash('sha256').update(eventsJson).digest('hex') !== commit.digest) {
         throw new Error('Invalid committed subagent content digest');
       }
-      return { revision: commit.revision, fromSequence: commit.fromSequence,
-        throughSequence: commit.throughSequence, eventsJson };
+      return {
+        revision: commit.revision,
+        fromSequence: commit.fromSequence,
+        throughSequence: commit.throughSequence,
+        eventsJson,
+      };
     };
     try {
       for await (const row of cursor) {
@@ -171,9 +218,13 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
           payloads = [];
           continue;
         }
-        if (commit == null || row.revision !== commit.revision ||
-          row.fragment !== payloads.length || row.digest !== commit.digest ||
-          typeof row.payload !== 'string') {
+        if (
+          commit == null ||
+          row.revision !== commit.revision ||
+          row.fragment !== payloads.length ||
+          row.digest !== commit.digest ||
+          typeof row.payload !== 'string'
+        ) {
           throw new Error('Invalid committed subagent content fragment');
         }
         payloads.push(row.payload);

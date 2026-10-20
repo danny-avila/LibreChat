@@ -248,18 +248,20 @@ export type SubagentDigest = {
 };
 
 /** Public graph events only. Never a private model transcript or tool execution request. */
-export type SubagentContentFrame = Extract<
-  ChatStepFrame,
-  {
-    event:
-      | StepEvents.ON_RUN_STEP
-      | StepEvents.ON_MESSAGE_DELTA
-      | StepEvents.ON_REASONING_DELTA
-      | StepEvents.ON_RUN_STEP_DELTA
-      | StepEvents.ON_RUN_STEP_COMPLETED
-      | StepEvents.ON_RUN_STEP_CLOSED;
-  }
-> | { event: StepEvents.ON_TOOL_PREPARATION; data: Agents.ToolPreparationMarker }
+export type SubagentContentFrame =
+  | Extract<
+      ChatStepFrame,
+      {
+        event:
+          | StepEvents.ON_RUN_STEP
+          | StepEvents.ON_MESSAGE_DELTA
+          | StepEvents.ON_REASONING_DELTA
+          | StepEvents.ON_RUN_STEP_DELTA
+          | StepEvents.ON_RUN_STEP_COMPLETED
+          | StepEvents.ON_RUN_STEP_CLOSED;
+      }
+    >
+  | { event: StepEvents.ON_TOOL_PREPARATION; data: Agents.ToolPreparationMarker }
   | { event: StepEvents.ON_TOOL_CALLS_DISPATCHED; data: Agents.ToolCallsDispatchedEvent };
 
 export type SubagentContentEvent = { sequence: number; frame: SubagentContentFrame };
@@ -311,6 +313,4 @@ export type SubagentTaskContentSuffix = SubagentTaskContentIdentity & {
  * Never fold bounded activity deltas onto these content snapshots.
  * Poll while running as a fallback for an unavailable notification transport.
  * A suffix's throughSequence also covers non-rendering activity events. */
-export type SubagentTaskContentResponse =
-  | SubagentTaskContentSnapshot
-  | SubagentTaskContentSuffix;
+export type SubagentTaskContentResponse = SubagentTaskContentSnapshot | SubagentTaskContentSuffix;

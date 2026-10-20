@@ -4123,13 +4123,20 @@ export function createMessageMethods(
   async function deleteMessages(filter: FilterQuery<IMessage>) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const wholeScope = typeof filter.user === 'string' &&
+      const wholeScope =
+        typeof filter.user === 'string' &&
         Object.keys(filter).every((key) => ['user', 'conversationId', 'tenantId'].includes(key));
-      const contentSources = wholeScope ? [] : await Message.find({
-        $and: [filter, { subagentContent: { $exists: true } }],
-      }).select('user tenantId conversationId messageId').lean<IMessage[]>();
+      const contentSources = wholeScope
+        ? []
+        : await Message.find({
+            $and: [filter, { subagentContent: { $exists: true } }],
+          })
+            .select('user tenantId conversationId messageId')
+            .lean<IMessage[]>();
       const result = await Message.deleteMany(filter);
-      const SubagentContent = mongoose.models.SubagentContent as Model<ISubagentContentChunk> | undefined;
+      const SubagentContent = mongoose.models.SubagentContent as
+        | Model<ISubagentContentChunk>
+        | undefined;
       if (SubagentContent != null) {
         /** Owner/conversation deletion must remain retryable after the messages
          * have gone, including cleanup retries following a storage outage. */
@@ -4141,12 +4148,22 @@ export function createMessageMethods(
           });
           return result;
         }
-        const scopes = new Map<string, { user: string; conversationId: string; taskId: string; tenantId: string | { $exists: false } }>();
+        const scopes = new Map<
+          string,
+          {
+            user: string;
+            conversationId: string;
+            taskId: string;
+            tenantId: string | { $exists: false };
+          }
+        >();
         for (const source of contentSources) {
           const taskId = source.messageId.replace(/:(user|assistant)$/, '');
           if (taskId === source.messageId) continue;
           scopes.set(`${source.tenantId ?? ''}:${source.user}:${source.conversationId}:${taskId}`, {
-            user: source.user, conversationId: source.conversationId, taskId,
+            user: source.user,
+            conversationId: source.conversationId,
+            taskId,
             tenantId: source.tenantId ?? { $exists: false },
           });
         }

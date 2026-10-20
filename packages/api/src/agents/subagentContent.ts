@@ -1,6 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import { createContentAggregator } from '@librechat/agents';
-import { subagentActivityConfigSchema, StepEvents, ContentTypes, getRunStepCloseMetadata, getRunStepDurationMs } from 'librechat-data-provider';
+import {
+  subagentActivityConfigSchema,
+  StepEvents,
+  ContentTypes,
+  getRunStepCloseMetadata,
+  getRunStepDurationMs,
+} from 'librechat-data-provider';
 import type {
   SubagentContentEvent,
   SubagentContentFrame,
@@ -34,17 +40,32 @@ export function subagentContentFrame(update: SubagentUpdateEvent): SubagentConte
     case 'message_delta':
       return { event: StepEvents.ON_MESSAGE_DELTA, data: update.data as Agents.MessageDeltaEvent };
     case 'reasoning_delta':
-      return { event: StepEvents.ON_REASONING_DELTA, data: update.data as Agents.ReasoningDeltaEvent };
+      return {
+        event: StepEvents.ON_REASONING_DELTA,
+        data: update.data as Agents.ReasoningDeltaEvent,
+      };
     case 'run_step_delta':
       return { event: StepEvents.ON_RUN_STEP_DELTA, data: update.data as Agents.RunStepDeltaEvent };
     case 'run_step_completed':
-      return { event: StepEvents.ON_RUN_STEP_COMPLETED, data: update.data as { result?: Agents.ToolEndEvent | null } };
+      return {
+        event: StepEvents.ON_RUN_STEP_COMPLETED,
+        data: update.data as { result?: Agents.ToolEndEvent | null },
+      };
     case 'tool_preparation':
-      return { event: StepEvents.ON_TOOL_PREPARATION, data: update.data as Agents.ToolPreparationMarker };
+      return {
+        event: StepEvents.ON_TOOL_PREPARATION,
+        data: update.data as Agents.ToolPreparationMarker,
+      };
     case 'tool_calls_dispatched':
-      return { event: StepEvents.ON_TOOL_CALLS_DISPATCHED, data: update.data as Agents.ToolCallsDispatchedEvent };
+      return {
+        event: StepEvents.ON_TOOL_CALLS_DISPATCHED,
+        data: update.data as Agents.ToolCallsDispatchedEvent,
+      };
     case 'run_step_closed':
-      return { event: StepEvents.ON_RUN_STEP_CLOSED, data: update.data as Agents.RunStepClosedEvent };
+      return {
+        event: StepEvents.ON_RUN_STEP_CLOSED,
+        data: update.data as Agents.RunStepClosedEvent,
+      };
     default:
       return null;
   }
@@ -55,6 +76,7 @@ type JournalOptions = {
   leaseToken?: string;
   flushMs: number;
   batchBytes: number;
+  maxPendingBytes?: number;
   append: SubagentContentMethods['appendSubagentContentBatch'];
   notify: (watermark: SubagentContentWatermark) => Promise<void>;
   onError: (error: unknown) => void;
@@ -64,6 +86,8 @@ type JournalOptions = {
 export class SubagentContentJournal {
   private readonly pending: Array<{ sequence: number; json?: string; bytes: number }> = [];
   private pendingBytes = 0;
+  private captureStopped = false;
+  private readonly maxPendingBytes: number;
   private timer?: ReturnType<typeof setTimeout>;
   private writing?: Promise<SubagentContentAppendResult>;
   private closed = false;
@@ -73,24 +97,38 @@ export class SubagentContentJournal {
   private notification?: Promise<void>;
   private pendingNotification?: SubagentContentWatermark;
 
-  constructor(private readonly options: JournalOptions) {}
+  constructor(private readonly options: JournalOptions) {
+    this.maxPendingBytes =
+      options.maxPendingBytes ?? subagentActivityConfigSchema.parse({}).contentPendingBytes;
+  }
 
-  get throughSequence(): number { return this.observedSequence; }
+  get throughSequence(): number {
+    return this.observedSequence;
+  }
 
   record(update: SubagentUpdateEvent, sequence: number): void {
     if (this.closed || sequence <= this.observedSequence) return;
     if (sequence !== this.observedSequence + 1) throw new Error('Subagent content sequence gap');
     this.observedSequence = sequence;
+    if (this.captureStopped) return;
     const frame = subagentContentFrame(update);
     /** Serialize before returning to the producer, which can mutate its event objects. */
     let json: string | undefined;
     try {
       json = frame == null ? undefined : JSON.stringify({ sequence, frame });
     } catch (error) {
-      this.closed = true;
-      throw error;
+      this.captureStopped = true;
+      this.options.onError(error);
+      return;
     }
-    const bytes = json == null ? 0 : Buffer.byteLength(json, 'utf8');
+    const bytes = (json == null ? 0 : Buffer.byteLength(json, 'utf8')) + 64;
+    if (this.pendingBytes + bytes > this.maxPendingBytes) {
+      this.captureStopped = true;
+      this.options.onError(
+        new Error('Subagent content persistence backlog exceeded its byte limit'),
+      );
+      return;
+    }
     this.pending.push({ sequence, json, bytes });
     this.pendingBytes += bytes;
     if (this.pendingBytes >= this.options.batchBytes && this.writing == null) {
@@ -110,16 +148,20 @@ export class SubagentContentJournal {
   }
 
   private startFlush(): void {
-    void this.flush().catch(this.options.onError).finally(() => this.schedule());
+    void this.flush()
+      .catch(this.options.onError)
+      .finally(() => this.schedule());
   }
 
   flush(): Promise<SubagentContentAppendResult> {
     if (this.writing != null) return this.writing;
     const operation = this.drain();
     this.writing = operation;
-    void operation.finally(() => {
-      if (this.writing === operation) this.writing = undefined;
-    }).catch(() => undefined);
+    void operation
+      .finally(() => {
+        if (this.writing === operation) this.writing = undefined;
+      })
+      .catch(() => undefined);
     return operation;
   }
 
@@ -135,7 +177,7 @@ export class SubagentContentJournal {
       const batch = this.pending.slice(0, count);
       const throughSequence = batch[count - 1].sequence;
       const revision = this.revision + 1;
-      const eventsJson = `[${batch.flatMap((entry) => entry.json == null ? [] : [entry.json]).join(',')}]`;
+      const eventsJson = `[${batch.flatMap((entry) => (entry.json == null ? [] : [entry.json])).join(',')}]`;
       const result = await this.options.append({
         ...this.options.scope,
         leaseToken: this.options.leaseToken,
@@ -169,10 +211,12 @@ export class SubagentContentJournal {
       }
     })();
     this.notification = operation;
-    void operation.finally(() => {
-      if (this.notification === operation) this.notification = undefined;
-      if (this.pendingNotification != null) this.notify(this.pendingNotification);
-    }).catch(this.options.onError);
+    void operation
+      .finally(() => {
+        if (this.notification === operation) this.notification = undefined;
+        if (this.pendingNotification != null) this.notify(this.pendingNotification);
+      })
+      .catch(this.options.onError);
   }
 
   async close(): Promise<SubagentContentAppendResult> {
@@ -190,15 +234,18 @@ type ContentReadMethods = Pick<
 >;
 
 export type SubagentContentReadResult =
-  | { ok: true; value: {
-      content: TMessageContentParts[];
-      runSteps: Agents.RunStep[];
-      events: SubagentContentEvent[];
-      throughSequence: number;
-      revision: number;
-      targetThroughSequence: number;
-      nextCursor?: string;
-    } }
+  | {
+      ok: true;
+      value: {
+        content: TMessageContentParts[];
+        runSteps: Agents.RunStep[];
+        events: SubagentContentEvent[];
+        throughSequence: number;
+        revision: number;
+        targetThroughSequence: number;
+        nextCursor?: string;
+      };
+    }
   | { ok: false; error: { code: 'SUBAGENT_CONTENT_AHEAD' | 'SUBAGENT_CONTENT_GAP' } };
 
 /** A sampled commit head fences the snapshot. Later batches are a suffix, never
@@ -209,7 +256,10 @@ export async function readSubagentContent(
   afterSequence?: number,
   options: { pageBytes?: number; throughRevision?: number } = {},
 ): Promise<SubagentContentReadResult> {
-  const head = await methods.getSubagentContentHead(scope, options.throughRevision) ?? { revision: 0, throughSequence: -1 };
+  const head = (await methods.getSubagentContentHead(scope, options.throughRevision)) ?? {
+    revision: 0,
+    throughSequence: -1,
+  };
   if (options.throughRevision != null && head.revision !== options.throughRevision) {
     return { ok: false, error: { code: 'SUBAGENT_CONTENT_GAP' } };
   }
@@ -224,16 +274,27 @@ export async function readSubagentContent(
   let pageBytes = 0;
   let stopped = false;
   const pageLimit = options.pageBytes ?? subagentActivityConfigSchema.parse({}).contentPageBytes;
-  pages: for await (const batch of methods.streamSubagentContentBatches(scope, head.revision, afterSequence)) {
-    if (batch.fromSequence > throughSequence + 1 || batch.throughSequence <= throughSequence ||
-      (revision != null && batch.revision !== revision + 1)) {
+  pages: for await (const batch of methods.streamSubagentContentBatches(
+    scope,
+    head.revision,
+    afterSequence,
+  )) {
+    if (
+      batch.fromSequence > throughSequence + 1 ||
+      batch.throughSequence <= throughSequence ||
+      (revision != null && batch.revision !== revision + 1)
+    ) {
       return { ok: false, error: { code: 'SUBAGENT_CONTENT_GAP' } };
     }
     const entries: SubagentContentEvent[] = JSON.parse(batch.eventsJson);
     let previous = batch.fromSequence - 1;
     for (const entry of entries) {
-      if (!Number.isSafeInteger(entry.sequence) || entry.sequence <= previous ||
-        entry.sequence < batch.fromSequence || entry.sequence > batch.throughSequence) {
+      if (
+        !Number.isSafeInteger(entry.sequence) ||
+        entry.sequence <= previous ||
+        entry.sequence < batch.fromSequence ||
+        entry.sequence > batch.throughSequence
+      ) {
         return { ok: false, error: { code: 'SUBAGENT_CONTENT_GAP' } };
       }
       previous = entry.sequence;
@@ -266,7 +327,10 @@ export async function readSubagentContent(
         continue;
       }
       /** SDK and wire enums have identical values, as in main-chat Redis recovery. */
-      if (frame.event !== StepEvents.ON_TOOL_PREPARATION && frame.event !== StepEvents.ON_TOOL_CALLS_DISPATCHED) {
+      if (
+        frame.event !== StepEvents.ON_TOOL_PREPARATION &&
+        frame.event !== StepEvents.ON_TOOL_CALLS_DISPATCHED
+      ) {
         aggregator.aggregateContent(frame as Parameters<typeof aggregator.aggregateContent>[0]);
       }
       timing.child(aggregator, { phase: frame.event.slice(3), data: frame.data });
@@ -274,21 +338,33 @@ export async function readSubagentContent(
     throughSequence = batch.throughSequence;
     revision = batch.revision;
   }
-  if (!stopped && (throughSequence !== head.throughSequence ||
-    (revision != null && revision !== head.revision))) {
+  if (
+    !stopped &&
+    (throughSequence !== head.throughSequence || (revision != null && revision !== head.revision))
+  ) {
     return { ok: false, error: { code: 'SUBAGENT_CONTENT_GAP' } };
   }
-  return { ok: true, value: {
-    revision: revision ?? head.revision,
-    throughSequence,
-    targetThroughSequence: head.throughSequence,
-    ...(stopped ? { nextCursor: Buffer.from(JSON.stringify({
-      afterSequence: throughSequence, throughRevision: head.revision,
-    })).toString('base64url') } : {}),
-    content: aggregator.contentParts as TMessageContentParts[],
-    runSteps: toWireRunSteps([...aggregator.stepMap.values()]),
-    events,
-  } };
+  return {
+    ok: true,
+    value: {
+      revision: revision ?? head.revision,
+      throughSequence,
+      targetThroughSequence: head.throughSequence,
+      ...(stopped
+        ? {
+            nextCursor: Buffer.from(
+              JSON.stringify({
+                afterSequence: throughSequence,
+                throughRevision: head.revision,
+              }),
+            ).toString('base64url'),
+          }
+        : {}),
+      content: aggregator.contentParts as TMessageContentParts[],
+      runSteps: toWireRunSteps([...aggregator.stepMap.values()]),
+      events,
+    },
+  };
 }
 
 type ContentHandlerDependencies = ContentReadMethods &
@@ -306,8 +382,13 @@ export function createSubagentTaskContentHandler(
     const user = req.user?.id;
     const tenantId = req.user?.tenantId || undefined;
     const { parentConversationId, threadId, taskId } = req.params;
-    if (!user || !validId(parentConversationId) || !validId(threadId) || !validId(taskId) ||
-      parentConversationId === threadId) {
+    if (
+      !user ||
+      !validId(parentConversationId) ||
+      !validId(threadId) ||
+      !validId(taskId) ||
+      parentConversationId === threadId
+    ) {
       res.status(404).json({ error: 'Conversation not found' });
       return;
     }
@@ -317,74 +398,133 @@ export function createSubagentTaskContentHandler(
     const cursor = req.query.cursor;
     if (cursor != null) {
       try {
-        if (typeof cursor !== 'string' || cursor.length > 1024 || after != null) throw new Error('Invalid cursor');
-        const parsed: { afterSequence?: number; throughRevision?: number } = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
-        if (!Number.isSafeInteger(parsed.afterSequence) || parsed.afterSequence! < -1 ||
-          !Number.isSafeInteger(parsed.throughRevision) || parsed.throughRevision! < 0) throw new Error('Invalid cursor');
+        if (typeof cursor !== 'string' || cursor.length > 1024 || after != null)
+          throw new Error('Invalid cursor');
+        const parsed: { afterSequence?: number; throughRevision?: number } = JSON.parse(
+          Buffer.from(cursor, 'base64url').toString('utf8'),
+        );
+        if (
+          !Number.isSafeInteger(parsed.afterSequence) ||
+          parsed.afterSequence! < -1 ||
+          !Number.isSafeInteger(parsed.throughRevision) ||
+          parsed.throughRevision! < 0
+        )
+          throw new Error('Invalid cursor');
         afterSequence = parsed.afterSequence;
         throughRevision = parsed.throughRevision;
       } catch {
-        res.status(400).json({ error: 'Invalid content cursor', code: 'SUBAGENT_CONTENT_INVALID_CURSOR' });
+        res
+          .status(400)
+          .json({ error: 'Invalid content cursor', code: 'SUBAGENT_CONTENT_INVALID_CURSOR' });
         return;
       }
     }
-    if (after != null && (typeof after !== 'string' || !/^-?\d+$/.test(after) ||
-      !Number.isSafeInteger(afterSequence) || afterSequence! < -1)) {
-      res.status(400).json({ error: 'Invalid content cursor', code: 'SUBAGENT_CONTENT_INVALID_CURSOR' });
+    if (
+      after != null &&
+      (typeof after !== 'string' ||
+        !/^-?\d+$/.test(after) ||
+        !Number.isSafeInteger(afterSequence) ||
+        afterSequence! < -1)
+    ) {
+      res
+        .status(400)
+        .json({ error: 'Invalid content cursor', code: 'SUBAGENT_CONTENT_INVALID_CURSOR' });
       return;
     }
-    const scope: SubagentContentScope = { user, tenantId, parentConversationId, conversationId: threadId, taskId };
+    const scope: SubagentContentScope = {
+      user,
+      tenantId,
+      parentConversationId,
+      conversationId: threadId,
+      taskId,
+    };
     try {
       const [parent, child, messages] = await Promise.all([
         deps.getConvoOwnership(user, parentConversationId, tenantId ?? null),
-        deps.getSubagentThreadForParent({ user, parentConversationId, conversationId: threadId, tenantId }),
-        deps.getMessages({ user, conversationId: threadId,
-          messageId: { $in: [`${taskId}:user`, `${taskId}:assistant`] },
-          ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
-          $or: [{ expiredAt: null }, { expiredAt: { $gt: new Date() } }],
-        }, 'messageId unfinished error expiredAt +subagentTask +subagentContent', { limit: 2 }),
+        deps.getSubagentThreadForParent({
+          user,
+          parentConversationId,
+          conversationId: threadId,
+          tenantId,
+        }),
+        deps.getMessages(
+          {
+            user,
+            conversationId: threadId,
+            messageId: { $in: [`${taskId}:user`, `${taskId}:assistant`] },
+            ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+            $or: [{ expiredAt: null }, { expiredAt: { $gt: new Date() } }],
+          },
+          'messageId unfinished error expiredAt +subagentTask +subagentContent',
+          { limit: 2 },
+        ),
       ]);
       const seed = messages.find((message) => message.messageId === `${taskId}:user`);
       const assistant = messages.find((message) => message.messageId === `${taskId}:assistant`);
-      if (parent == null || child == null || seed == null || parent.tenantId !== tenantId ||
-        child.tenantId !== tenantId || child.subagentThread?.parentConversationId !== parentConversationId) {
+      if (
+        parent == null ||
+        child == null ||
+        seed == null ||
+        parent.tenantId !== tenantId ||
+        child.tenantId !== tenantId ||
+        child.subagentThread?.parentConversationId !== parentConversationId
+      ) {
         res.status(404).json({ error: 'Conversation not found' });
         return;
       }
       if (seed.subagentContent?.version !== 1) {
-        res.status(409).json({ error: 'Subagent content unavailable', code: 'SUBAGENT_CONTENT_UNAVAILABLE' });
+        res
+          .status(409)
+          .json({ error: 'Subagent content unavailable', code: 'SUBAGENT_CONTENT_UNAVAILABLE' });
         return;
       }
       const result = await readSubagentContent(deps, scope, afterSequence, {
-        pageBytes: getPageBytes(), throughRevision,
+        pageBytes: getPageBytes(),
+        throughRevision,
       });
       if (!result.ok) {
-        res.status(409).json({ error: 'Subagent content must be reloaded', code: result.error.code });
+        res
+          .status(409)
+          .json({ error: 'Subagent content must be reloaded', code: result.error.code });
         return;
       }
       const { content, runSteps, events, ...watermark } = result.value;
       const durableStatus = assistant?.subagentTask?.status;
       const running = durableStatus == null || durableStatus === 'running';
-      const leaseActive = child.subagentThreadLease?.taskId === taskId &&
+      const leaseActive =
+        child.subagentThreadLease?.taskId === taskId &&
         child.subagentThreadLease.expiresAt > new Date();
-      const status: SubagentThreadStatus = running
-        ? (leaseActive ? 'running' : 'interrupted')
-        : durableStatus === 'error' ? 'failed' : durableStatus === 'cancelled' ? 'cancelled' : 'completed';
+      let status: SubagentThreadStatus = 'completed';
+      if (running) status = leaseActive ? 'running' : 'interrupted';
+      else if (durableStatus === 'error') status = 'failed';
+      else if (durableStatus === 'cancelled') status = 'cancelled';
       /** A live lease proves ownership, not that every producer-observed event
        * has reached storage. Only terminal expected-watermark equality is complete. */
-      const recovery = !running &&
-        assistant?.subagentContent?.throughSequence === watermark.targetThroughSequence
-        ? 'complete' : 'partial';
-      const identity = { ...watermark, parentConversationId, threadId, taskId,
-        messageId: `${taskId}:assistant`, parentMessageId: `${taskId}:user`,
-        sender: child.subagentThread.subagentType, status, recovery } as const;
-      const response: SubagentTaskContentResponse = afterSequence == null
-        ? { ...identity, mode: 'snapshot', content, runSteps }
-        : { ...identity, mode: 'suffix', afterSequence, events };
+      const recovery =
+        !running && assistant?.subagentContent?.throughSequence === watermark.targetThroughSequence
+          ? 'complete'
+          : 'partial';
+      const identity = {
+        ...watermark,
+        parentConversationId,
+        threadId,
+        taskId,
+        messageId: `${taskId}:assistant`,
+        parentMessageId: `${taskId}:user`,
+        sender: child.subagentThread.subagentType,
+        status,
+        recovery,
+      } as const;
+      const response: SubagentTaskContentResponse =
+        afterSequence == null
+          ? { ...identity, mode: 'snapshot', content, runSteps }
+          : { ...identity, mode: 'suffix', afterSequence, events };
       res.json(response);
     } catch (error) {
       logger.error('[subagentContent] Content recovery unavailable', getSafeErrorMetadata(error));
-      res.status(503).json({ error: 'Subagent content unavailable', code: 'SUBAGENT_CONTENT_UNAVAILABLE' });
+      res
+        .status(503)
+        .json({ error: 'Subagent content unavailable', code: 'SUBAGENT_CONTENT_UNAVAILABLE' });
     }
   };
 }

@@ -1576,10 +1576,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               const recorder = this.trackActivity(request.scopeId, runtime.taskId);
               let activitySequence = 0;
               const append = this.methods.appendSubagentContentBatch;
-              if (append != null) {
+              if (append != null && this.activityOptions.contentRecoveryEnabled) {
                 lease.content = new SubagentContentJournal({
                   scope: {
-                    user: scope.userId, tenantId: scope.tenantId,
+                    user: scope.userId,
+                    tenantId: scope.tenantId,
                     parentConversationId: scope.parentConversationId,
                     conversationId: preparedThread.conversation.conversationId,
                     taskId: runtime.taskId,
@@ -1587,14 +1588,19 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                   leaseToken: lease.shared?.token,
                   flushMs: this.activityOptions.contentFlushMs,
                   batchBytes: this.activityOptions.contentBatchBytes,
+                  maxPendingBytes: this.activityOptions.contentPendingBytes,
                   append,
-                  notify: (watermark) => this.activityStream.publishContent(
-                    preparedThread.conversation.conversationId, runtime.taskId, watermark,
-                  ),
-                  onError: (error) => logger.warn(
-                    '[subagentThreads] Public child content persistence unavailable',
-                    getSafeErrorMetadata(error),
-                  ),
+                  notify: (watermark) =>
+                    this.activityStream.publishContent(
+                      preparedThread.conversation.conversationId,
+                      runtime.taskId,
+                      watermark,
+                    ),
+                  onError: (error) =>
+                    logger.warn(
+                      '[subagentThreads] Public child content persistence unavailable',
+                      getSafeErrorMetadata(error),
+                    ),
                 });
               }
               const activityRuntime: SubagentTaskRuntime = {
@@ -3275,9 +3281,12 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             text: request.input,
             endpoint: EModelEndpoint.agents,
             isCreatedByUser: true,
-            ...(this.methods.appendSubagentContentBatch == null ? {} : {
-              subagentContent: { version: 1 as const },
-            }),
+            ...(this.methods.appendSubagentContentBatch == null ||
+            !this.activityOptions.contentRecoveryEnabled
+              ? {}
+              : {
+                  subagentContent: { version: 1 as const },
+                }),
             subagentTask: {
               attemptKey,
               parentRunId: request.parentRunId,
@@ -3357,10 +3366,15 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     const result = await lease.content?.close().catch((error) => {
       /** The terminal row records the expected watermark, so a failed final
        * flush exposes a partial prefix instead of pretending history is complete. */
-      logger.warn('[subagentThreads] Public child content handoff incomplete', getSafeErrorMetadata(error));
+      logger.warn(
+        '[subagentThreads] Public child content handoff incomplete',
+        getSafeErrorMetadata(error),
+      );
     });
     if (result != null && !result.ok) {
-      logger.warn('[subagentThreads] Public child content handoff unavailable', { code: result.error.code });
+      logger.warn('[subagentThreads] Public child content handoff unavailable', {
+        code: result.error.code,
+      });
     }
   }
 
@@ -3416,9 +3430,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         endpoint: EModelEndpoint.agents,
         isCreatedByUser: false,
         unfinished: false,
-        ...(contentThroughSequence == null ? {} : {
-          subagentContent: { version: 1 as const, throughSequence: contentThroughSequence },
-        }),
+        ...(contentThroughSequence == null
+          ? {}
+          : {
+              subagentContent: { version: 1 as const, throughSequence: contentThroughSequence },
+            }),
         ...(subagentTranscript == null ? {} : { subagentTranscript }),
         ...(subagentActivityProjection == null ? {} : { subagentActivityProjection }),
         subagentTask: {
@@ -3466,9 +3482,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         endpoint: EModelEndpoint.agents,
         isCreatedByUser: false,
         unfinished: false,
-        ...(contentThroughSequence == null ? {} : {
-          subagentContent: { version: 1 as const, throughSequence: contentThroughSequence },
-        }),
+        ...(contentThroughSequence == null
+          ? {}
+          : {
+              subagentContent: { version: 1 as const, throughSequence: contentThroughSequence },
+            }),
         error: true,
         subagentTask: {
           attemptKey: createSubagentAttemptKey(request.scopeId, request.idempotencyKey),
@@ -3543,9 +3561,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         endpoint: EModelEndpoint.agents,
         isCreatedByUser: false,
         unfinished: false,
-        ...(contentThroughSequence == null ? {} : {
-          subagentContent: { version: 1 as const, throughSequence: contentThroughSequence },
-        }),
+        ...(contentThroughSequence == null
+          ? {}
+          : {
+              subagentContent: { version: 1 as const, throughSequence: contentThroughSequence },
+            }),
         subagentTask: {
           attemptKey: createSubagentAttemptKey(request.scopeId, request.idempotencyKey),
           parentRunId: request.parentRunId,

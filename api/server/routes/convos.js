@@ -158,13 +158,16 @@ const subagentActivityStreamHandler = createSubagentActivityStreamHandler(
     subscribe: subagentThreadTaskStore.subscribeActivity.bind(subagentThreadTaskStore),
   },
 );
-const subagentTaskContentHandler = createSubagentTaskContentHandler({
-  getConvoOwnership: db.getConvoOwnership,
-  getSubagentThreadForParent: db.getSubagentThreadForParent,
-  getMessages: db.getMessages,
-  getSubagentContentHead: db.getSubagentContentHead,
-  streamSubagentContentBatches: db.streamSubagentContentBatches,
-}, () => subagentThreadTaskStore.contentPageBytes);
+const subagentTaskContentHandler = createSubagentTaskContentHandler(
+  {
+    getConvoOwnership: db.getConvoOwnership,
+    getSubagentThreadForParent: db.getSubagentThreadForParent,
+    getMessages: db.getMessages,
+    getSubagentContentHead: db.getSubagentContentHead,
+    streamSubagentContentBatches: db.streamSubagentContentBatches,
+  },
+  () => subagentThreadTaskStore.contentPageBytes,
+);
 const subagentControlHandler = createSubagentControlHandler({
   getConvoOwnership: db.getConvoOwnership,
   getSubagentThreadForParent: db.getSubagentThreadForParent,

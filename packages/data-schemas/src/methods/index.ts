@@ -1,5 +1,11 @@
 import { createSubagentContentMethods, type SubagentContentMethods } from './subagentContent';
-export type { SubagentContentScope, SubagentContentHead, SubagentContentBatch, SubagentContentMethods, SubagentContentAppendResult } from './subagentContent';
+export type {
+  SubagentContentScope,
+  SubagentContentHead,
+  SubagentContentBatch,
+  SubagentContentMethods,
+  SubagentContentAppendResult,
+} from './subagentContent';
 import type { ToolApprovalGrantStorage } from 'librechat-data-provider';
 import type { ScheduleMCPConsentStorage } from './scheduleConsent';
 import { createToolApprovalGrantMethods } from './toolApprovalGrant';

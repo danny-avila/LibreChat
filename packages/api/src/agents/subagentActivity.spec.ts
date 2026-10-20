@@ -389,13 +389,19 @@ describe('detached subagent activity stream', () => {
     const stream = new SubagentActivityStream(transport);
     const onContent = jest.fn();
     const subscription = stream.subscribe('child-thread', 'task-1', {
-      onEvent: jest.fn(), onContent,
+      onEvent: jest.fn(),
+      onContent,
     });
     await subscription.ready;
     const watermark = { taskId: 'task-1', throughSequence: 150, revision: 3 };
     await stream.publishContent('child-thread', 'task-1', watermark);
-    expect(onContent).toHaveBeenCalledWith({ event: 'subagent_content_available', data: watermark });
-    expect(transport.emitted[0].streamId).toBe(`${subagentActivityStreamId('child-thread', 'task-1')}:content`);
+    expect(onContent).toHaveBeenCalledWith({
+      event: 'subagent_content_available',
+      data: watermark,
+    });
+    expect(transport.emitted[0].streamId).toBe(
+      `${subagentActivityStreamId('child-thread', 'task-1')}:content`,
+    );
     subscription.unsubscribe();
     await Promise.resolve();
     expect(transport.handlers.size).toBe(0);
