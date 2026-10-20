@@ -21,11 +21,11 @@ import {
 } from '~/utils';
 import { useGetUserBalance, fetchStreamStatus, useGetStartupConfig } from '~/data-provider';
 import { useChatTransport } from '~/Providers/ChatTransportContext';
-import useResumableEvents from './useResumableEvents';
-import useResumableSteers from './useResumableSteers';
 import { useAuthContext } from '~/hooks/AuthContext';
-import useResumableCache from './useResumableCache';
-import useResumablePane from './useResumablePane';
+import useResumableEvents from './events';
+import useResumableSteers from './steers';
+import useResumableCache from './cache';
+import useResumablePane from './pane';
 import useSteerState from './steer';
 
 type ChatHelpers = Pick<
