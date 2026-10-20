@@ -8,6 +8,7 @@ import type { DeleteResult, FilterQuery, Model, Types, UpdateQuery } from 'mongo
 import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { SearchParams } from 'meilisearch';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+import type { ISubagentContentChunk } from '~/models/subagentContent';
 import type { AppConfig, IConversation, IMessage } from '~/types';
 import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
@@ -4122,7 +4123,36 @@ export function createMessageMethods(
   async function deleteMessages(filter: FilterQuery<IMessage>) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      return await Message.deleteMany(filter);
+      const wholeScope = typeof filter.user === 'string' &&
+        Object.keys(filter).every((key) => ['user', 'conversationId', 'tenantId'].includes(key));
+      const contentSources = wholeScope ? [] : await Message.find({
+        $and: [filter, { subagentContent: { $exists: true } }],
+      }).select('user tenantId conversationId messageId').lean<IMessage[]>();
+      const result = await Message.deleteMany(filter);
+      const SubagentContent = mongoose.models.SubagentContent as Model<ISubagentContentChunk> | undefined;
+      if (SubagentContent != null) {
+        /** Owner/conversation deletion must remain retryable after the messages
+         * have gone, including cleanup retries following a storage outage. */
+        if (wholeScope) {
+          await SubagentContent.deleteMany({
+            user: filter.user,
+            ...(filter.conversationId == null ? {} : { conversationId: filter.conversationId }),
+            ...(filter.tenantId == null ? {} : { tenantId: filter.tenantId }),
+          });
+          return result;
+        }
+        const scopes = new Map<string, { user: string; conversationId: string; taskId: string; tenantId: string | { $exists: false } }>();
+        for (const source of contentSources) {
+          const taskId = source.messageId.replace(/:(user|assistant)$/, '');
+          if (taskId === source.messageId) continue;
+          scopes.set(`${source.tenantId ?? ''}:${source.user}:${source.conversationId}:${taskId}`, {
+            user: source.user, conversationId: source.conversationId, taskId,
+            tenantId: source.tenantId ?? { $exists: false },
+          });
+        }
+        if (scopes.size > 0) await SubagentContent.deleteMany({ $or: [...scopes.values()] });
+      }
+      return result;
     } catch (err) {
       logger.error('Error deleting messages:', err);
       throw err;

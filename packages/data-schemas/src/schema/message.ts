@@ -152,6 +152,15 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: String,
     },
     metadata: { type: mongoose.Schema.Types.Mixed },
+    subagentContent: {
+      type: {
+        version: { type: Number, enum: [1], required: true },
+        throughSequence: Number,
+      },
+      _id: false,
+      select: false,
+      default: undefined,
+    },
     subagentTranscript: {
       type: {
         taskId: { type: String, required: true },

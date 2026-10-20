@@ -1542,6 +1542,10 @@ export type HostFileEditLimits = z.infer<typeof hostFileEditLimitsSchema>;
 
 /** Server-side resource and recovery policy for ephemeral child activity. */
 export const subagentActivityConfigSchema = z.object({
+  /** Batch public content writes independently of the lossy live activity projection. */
+  contentPageBytes: z.number().int().min(1024).max(4_194_304).default(262_144),
+  contentFlushMs: z.number().int().min(10).max(10_000).default(250),
+  contentBatchBytes: z.number().int().min(1024).max(4_194_304).default(65_536),
   replayTtlMs: z.number().int().min(1_000).max(86_400_000).default(300_000),
   publicationTimeoutMs: z.number().int().min(100).max(60_000).default(1_000),
   retryAttempts: z.number().int().min(1).max(10).default(3),

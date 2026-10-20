@@ -172,8 +172,10 @@ export const subagentTaskContent = (
   threadId: string,
   taskId: string,
   afterSequence?: number,
+  cursor?: string,
 ) => {
   const endpoint = `${parentSubagents(parentConversationId)}/${encodeURIComponent(threadId)}/tasks/${encodeURIComponent(taskId)}/content`;
+  if (cursor != null) return `${endpoint}?cursor=${encodeURIComponent(cursor)}`;
   return afterSequence == null ? endpoint : `${endpoint}?afterSequence=${afterSequence}`;
 };
 

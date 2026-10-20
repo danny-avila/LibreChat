@@ -1203,9 +1203,10 @@ export function getSubagentTaskContent(
   threadId: string,
   taskId: string,
   afterSequence?: number,
+  cursor?: string,
 ): Promise<t.SubagentTaskContentResponse> {
   return request.get(
-    endpoints.subagentTaskContent(parentConversationId, threadId, taskId, afterSequence),
+    endpoints.subagentTaskContent(parentConversationId, threadId, taskId, afterSequence, cursor),
   );
 }
 

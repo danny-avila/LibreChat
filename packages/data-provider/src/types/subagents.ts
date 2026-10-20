@@ -1,7 +1,7 @@
-import type { ChatStepFrame } from './transport';
 import type { TMessageContentParts } from './content';
-import type { Agents } from './agents';
+import type { ChatStepFrame } from './transport';
 import type { StepEvents } from './runs';
+import type { Agents } from './agents';
 
 export type SubagentThreadStatus =
   | 'dispatched'
@@ -259,7 +259,8 @@ export type SubagentContentFrame = Extract<
       | StepEvents.ON_RUN_STEP_COMPLETED
       | StepEvents.ON_RUN_STEP_CLOSED;
   }
->;
+> | { event: StepEvents.ON_TOOL_PREPARATION; data: Agents.ToolPreparationMarker }
+  | { event: StepEvents.ON_TOOL_CALLS_DISPATCHED; data: Agents.ToolCallsDispatchedEvent };
 
 export type SubagentContentEvent = { sequence: number; frame: SubagentContentFrame };
 
@@ -276,6 +277,9 @@ export type SubagentContentAvailableFrame = {
 };
 
 type SubagentTaskContentIdentity = SubagentContentWatermark & {
+  /** Opaque cursor for the next suffix page at the same sampled target. */
+  nextCursor?: string;
+  targetThroughSequence: number;
   parentConversationId: string;
   threadId: string;
   /** Stable normal assistant message identity, including before terminal persistence. */
@@ -283,7 +287,8 @@ type SubagentTaskContentIdentity = SubagentContentWatermark & {
   parentMessageId: string;
   sender: string;
   status: SubagentThreadStatus;
-  /** Partial means a retained prefix, not permission to invent missing content. */
+  /** Running tasks expose committed prefixes (partial). Complete requires a
+   * terminal row whose expected watermark matches the committed target. */
   recovery: 'complete' | 'partial';
 };
 
@@ -299,9 +304,11 @@ export type SubagentTaskContentSuffix = SubagentTaskContentIdentity & {
   events: SubagentContentEvent[];
 };
 
-/** Subscribe to activity first, wait for ready, then GET content. Treat
+/** Subscribe to activity first, wait for ready or terminal, then GET content. Treat
  * subagent_content_available as invalidation, never a content delta. Read the
- * committed suffix with afterSequence; ignore duplicate revisions/sequences.
+ * committed suffix with afterSequence; drain nextCursor before fetching a newer
+ * target. Deduplicate by sequence, not revision alone (pages may share a batch).
+ * Never fold bounded activity deltas onto these content snapshots.
  * Poll while running as a fallback for an unavailable notification transport.
  * A suffix's throughSequence also covers non-rendering activity events. */
 export type SubagentTaskContentResponse =
