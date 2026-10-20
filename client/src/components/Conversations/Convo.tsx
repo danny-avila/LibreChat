@@ -445,8 +445,11 @@ function Conversation({
           description={localize('com_ui_chat_is_shared')}
           side="top"
           className="mr-1 shrink-0 cursor-help"
+          role="img"
+          tabIndex={0}
+          aria-label={localize('com_ui_chat_is_shared')}
           render={
-            <span className="inline-flex" aria-hidden="true">
+            <span className="inline-flex">
               <Link2 className="icon-sm text-text-secondary" aria-hidden="true" />
             </span>
           }
