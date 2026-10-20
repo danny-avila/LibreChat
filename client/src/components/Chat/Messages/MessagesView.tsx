@@ -220,7 +220,7 @@ function MessagesViewContent({
             onNearBottomChange={handleNearBottom}
           />
 
-          <MessageNav scrollableRef={scrollableRef} />
+          <MessageNav key={treeConversationId} scrollableRef={scrollableRef} />
         </div>
       </div>
     </>

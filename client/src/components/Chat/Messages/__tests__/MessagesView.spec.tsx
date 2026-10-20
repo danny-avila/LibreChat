@@ -5,6 +5,8 @@ import type { TMessage } from 'librechat-data-provider';
 let mockMessagesKey = 'convo-1';
 let mockMaximizeChatSpace = false;
 let mockFlatThread = false;
+const mockNavMount = jest.fn();
+const mockNavUnmount = jest.fn();
 
 jest.mock('jotai', () => ({
   ...jest.requireActual('jotai'),
@@ -88,10 +90,19 @@ jest.mock('../ScrollButton', () => ({
   __esModule: true,
   default: () => null,
 }));
-jest.mock('../MessageNav', () => ({
-  __esModule: true,
-  default: () => null,
-}));
+jest.mock('../MessageNav', () => {
+  const { useEffect } = jest.requireActual('react');
+  return {
+    __esModule: true,
+    default: function MessageNav() {
+      useEffect(() => {
+        mockNavMount();
+        return () => mockNavUnmount();
+      }, []);
+      return null;
+    },
+  };
+});
 
 jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
@@ -167,6 +178,21 @@ describe('MessagesView pending steers', () => {
     expect(destinationTarget).toHaveAttribute('data-conversation-id', 'convo-2');
     expect(destinationTarget).not.toBe(initialTarget);
     expect(initialTarget.isConnected).toBe(false);
+  });
+
+  it('releases the outgoing navigation rail on a warm switch, not on same-chat updates', () => {
+    const view = render(<MessagesView messagesTree={messageTree} messages={messageTree} />);
+    expect(mockNavMount).toHaveBeenCalledTimes(1);
+    const updated = [{ ...messageTree[0], text: 'updated' }];
+    view.rerender(<MessagesView messagesTree={updated} messages={updated} />);
+    expect(mockNavMount).toHaveBeenCalledTimes(1);
+    expect(mockNavUnmount).not.toHaveBeenCalled();
+
+    const destination = [{ ...messageTree[0], conversationId: 'convo-2' }];
+    view.rerender(<MessagesView messagesTree={destination} messages={destination} />);
+
+    expect(mockNavUnmount).toHaveBeenCalledTimes(1);
+    expect(mockNavMount).toHaveBeenCalledTimes(2);
   });
 
   it('keeps recovery visible while the message tree is temporarily empty', () => {

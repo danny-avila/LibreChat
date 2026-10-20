@@ -3,6 +3,7 @@ import {
   allowedAddressesSchema,
   agentsEndpointSchema,
   DEFAULT_RETAINED_ANSWER_TOKENS,
+  DEFAULT_HISTORY_CACHE_MAX_BYTES,
   DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
   bedrockModels,
   configSchema,
@@ -232,6 +233,26 @@ describe('repository instruction configuration', () => {
       ).toBe(false);
     }
   });
+});
+
+describe('inactive history payload budget', () => {
+  it('defaults the budget with and without an interface block', () => {
+    expect(interfaceSchema.parse({}).historyCacheMaxBytes).toBe(DEFAULT_HISTORY_CACHE_MAX_BYTES);
+    expect(interfaceSchema.parse(undefined).historyCacheMaxBytes).toBe(
+      DEFAULT_HISTORY_CACHE_MAX_BYTES,
+    );
+  });
+
+  it('accepts zero to disable the inactive-history grace', () => {
+    expect(interfaceSchema.parse({ historyCacheMaxBytes: 0 }).historyCacheMaxBytes).toBe(0);
+  });
+
+  it.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1, '8MB'])(
+    'rejects an invalid payload budget %p',
+    (historyCacheMaxBytes) => {
+      expect(interfaceSchema.safeParse({ historyCacheMaxBytes }).success).toBe(false);
+    },
+  );
 });
 
 describe('steer escalation confirmation timeout', () => {

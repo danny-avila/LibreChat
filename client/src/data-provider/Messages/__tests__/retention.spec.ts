@@ -60,6 +60,108 @@ describe('retainMessages', () => {
     expect(isCached(queryClient, 'a')).toBe(false);
   });
 
+  it('releases an oversized history instead of keeping it for the warm-cache grace', () => {
+    stop();
+    stop = retainMessages(queryClient, { isPinned: () => false, maxBytes: 1024 });
+    queryClient.setQueryData([QueryKeys.messages, 'large'], [
+      { ...history('large')[0], text: 'x'.repeat(4096) },
+    ]);
+    observe(queryClient, 'large')();
+
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+
+    expect(isCached(queryClient, 'large')).toBe(false);
+  });
+
+  it('rechecks the budget when a late cache write grows a previously measured history', () => {
+    stop();
+    stop = retainMessages(queryClient, { isPinned: () => false, maxBytes: 1024 });
+    visit(queryClient, 'a');
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+    expect(isCached(queryClient, 'a')).toBe(true);
+
+    queryClient.setQueryData([QueryKeys.messages, 'a'], [
+      { ...history('a')[0], text: 'x'.repeat(4096) },
+    ]);
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+
+    expect(isCached(queryClient, 'a')).toBe(false);
+  });
+
+  it('applies the payload budget across all recently left histories, newest first', () => {
+    stop();
+    stop = retainMessages(queryClient, { isPinned: () => false, recent: 3, maxBytes: 1024 });
+    for (const id of ['a', 'b', 'c']) {
+      queryClient.setQueryData([QueryKeys.messages, id], [
+        { ...history(id)[0], text: 'x'.repeat(300) },
+      ]);
+      observe(queryClient, id)();
+      jest.advanceTimersByTime(10);
+    }
+
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+
+    expect(isCached(queryClient, 'a')).toBe(false);
+    expect(isCached(queryClient, 'b')).toBe(false);
+    expect(isCached(queryClient, 'c')).toBe(true);
+  });
+
+  it('does not inspect observed, pinned or exempt histories to enforce the budget', () => {
+    stop();
+    stop = retainMessages(queryClient, {
+      isPinned: (id) => pinned.has(id),
+      isExempt: (id) => id === 'assistant',
+      maxBytes: 0,
+    });
+    seed(queryClient, 'shown');
+    const unmount = observe(queryClient, 'shown');
+    pinned.add('running');
+    visit(queryClient, 'running');
+    visit(queryClient, 'assistant');
+    visit(queryClient, 'left');
+
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+
+    expect(isCached(queryClient, 'shown')).toBe(true);
+    expect(isCached(queryClient, 'running')).toBe(true);
+    expect(isCached(queryClient, 'assistant')).toBe(true);
+    expect(isCached(queryClient, 'left')).toBe(false);
+    unmount();
+  });
+
+  it('stops measuring once a payload exceeds the budget without serializing it', () => {
+    stop();
+    stop = retainMessages(queryClient, { isPinned: () => false, maxBytes: 1024 });
+    const message = { ...history('large')[0], text: 'x'.repeat(4096) };
+    const toJSON = jest.fn(() => {
+      throw new Error('must not serialize the transcript');
+    });
+    Object.defineProperty(message, 'toJSON', { value: toJSON });
+    queryClient.setQueryData([QueryKeys.messages, 'large'], [message]);
+    const trailing = jest.fn(() => {
+      throw new Error('must stop at the oversized text');
+    });
+    Object.defineProperty(message, 'trailing', { enumerable: true, get: trailing });
+    observe(queryClient, 'large')();
+
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+
+    expect(isCached(queryClient, 'large')).toBe(false);
+    expect(toJSON).not.toHaveBeenCalled();
+    expect(trailing).not.toHaveBeenCalled();
+  });
+
+  it('releases unobserved full tool parts even when the small history keeps its grace', () => {
+    visit(queryClient, 'a');
+    const key = [QueryKeys.toolCallPart, 'a', 'message', 'call'];
+    queryClient.setQueryData(key, { tool_call: { output: 'x'.repeat(4096) } });
+
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+
+    expect(isCached(queryClient, 'a')).toBe(true);
+    expect(queryClient.getQueryData(key)).toBeUndefined();
+  });
+
   it('keeps only the most recently left conversation across a burst of switches', () => {
     visit(queryClient, 'a');
     jest.advanceTimersByTime(10);
