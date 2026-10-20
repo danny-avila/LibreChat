@@ -3742,6 +3742,46 @@ describe('Chat', () => {
       );
     });
 
+    it.each([
+      ['still preparing', 'prepare', { status: 'stopped' }],
+      ['sent but unanswered', 'start', { status: 'unaddressable' }],
+    ])(
+      'also stops a dropped generation when stopping its retry %s',
+      async (_label, phase, expected) => {
+        const prepareRequest = jest.fn((): ChatPreparedRequest | Promise<ChatPreparedRequest> => ({
+          payload,
+          messages: [userMessage, placeholder],
+        }));
+        const { chat, stream, transport } = setup({
+          prepareRequest,
+          resumeSelection: () => ({ endpoint: 'agents' }),
+        });
+        const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+        await flush();
+        stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+        await sent;
+
+        const pending = () => new Promise<never>(() => undefined);
+        if (phase === 'prepare') {
+          prepareRequest.mockImplementationOnce(pending);
+        } else {
+          transport.sendMessages.mockImplementationOnce(pending);
+        }
+        const retry = chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] });
+        await flush();
+
+        await expect(chat.stop()).resolves.toEqual(expected);
+        await retry;
+        expect(transport.abort).toHaveBeenCalledWith(
+          expect.objectContaining({
+            endpoint: 'agents',
+            streamId: 'convo-1',
+            generationCreatedAt: 100,
+          }),
+        );
+      },
+    );
+
     it('ignores a late status read restoring a pause whose generation was stopped', async () => {
       const { chat, stream } = setup({ resumeSelection: () => ({ endpoint: 'agents' }) });
       chat.restorePendingAction(pausedAction, 500);
@@ -4113,6 +4153,24 @@ describe('Chat', () => {
       await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
 
       await expect(chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+    });
+
+    it('keeps a lost start unaddressable when its retry is stopped while preparing', async () => {
+      const failure = Object.assign(new Error('Network Error'), { code: 'ERR_NETWORK' });
+      const prepareRequest = jest.fn((): ChatPreparedRequest | Promise<ChatPreparedRequest> => ({
+        payload,
+        messages: [userMessage, placeholder],
+      }));
+      const { chat, transport } = setup({ prepareRequest });
+      transport.sendMessages.mockRejectedValueOnce(failure);
+      await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+
+      prepareRequest.mockImplementationOnce(() => new Promise<never>(() => undefined));
+      const retry = chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] });
+      await flush();
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+      await retry;
     });
   });
 

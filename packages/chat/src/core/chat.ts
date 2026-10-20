@@ -749,15 +749,20 @@ export class Chat {
       return this.stopPaused();
     }
     if (!active.stream && !active.reattach) {
+      const { detached } = this;
       active.controller.abort();
       await active.finished;
       /**
        * A start already handed to the transport may be running on the server with no frame naming
        * it; a late stream is stopped by `dropLateStart`, but one that never arrives is the caller's.
        */
-      return active.sent || (this.unaddressed && !this.active)
-        ? unaddressable
-        : { status: 'stopped' };
+      const own: ChatStopResult = active.sent ? unaddressable : { status: 'stopped' };
+      if (detached && this.detached === detached && !this.active) {
+        /** The cancelled retry never took over the dropped generation, which this stop also ends. */
+        const result = await this.stopDetached(detached);
+        return active.sent ? own : result;
+      }
+      return this.unaddressed && !this.active ? unaddressable : own;
     }
     const { generation } = active;
     if (!generation.endpoint) {
