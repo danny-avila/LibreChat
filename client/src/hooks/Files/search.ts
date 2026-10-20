@@ -1,4 +1,4 @@
-import { LocalStorageKeys } from 'librechat-data-provider';
+import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import type { CapturedComposerDraft } from '~/utils/drafts';
 import { getTimestampedValue, isTimestampExpired, setTimestamp } from '~/utils/timestamps';
 import { getFileSearchChoice, transferFileSearchChoice } from '~/utils/choices';
@@ -10,10 +10,11 @@ export type FileSearchUploadContext = Readonly<{
   conversationId: string;
   choiceRevision: string | null;
   createdAt: number;
+  projectId?: string | null;
 }>;
 type Intent = FileSearchUploadContext;
 const owners = new WeakMap<FileSearchUploadContext, CapturedComposerDraft>();
-const assignments = new Map<string, () => void>();
+const assignments = new Map<string, { owner: CapturedComposerDraft; dispose: () => void }>();
 
 export function transferFileSearchPreference(
   sourceId: string,
@@ -48,6 +49,7 @@ export function captureFileSearchUpload(
     },
     choiceRevision: getFileSearchChoice(conversationId)?.revision ?? null,
     createdAt: Date.now(),
+    projectId: new URLSearchParams(window.location.search).get('projectId'),
   };
   if (owner) owners.set(context, owner);
   return context;
@@ -59,12 +61,12 @@ export function beginFileSearchUpload(
 ): { choiceRevision: string | null; persisted: boolean } {
   const context = typeof operation === 'string' ? captureFileSearchUpload(operation) : operation;
   const { choiceRevision } = context;
-  assignments.get(fileId)?.();
+  assignments.get(fileId)?.dispose();
   const owner = owners.get(context);
-  if (owner)
-    assignments.set(
-      fileId,
-      owner.onAssignment((sourceId, targetId) => {
+  if (owner?.registered) {
+    assignments.set(fileId, {
+      owner,
+      dispose: owner.onAssignment((sourceId, targetId) => {
         transferFileSearchPreference(sourceId, targetId);
         try {
           localStorage.setItem(keyFor(fileId), JSON.stringify(context));
@@ -72,7 +74,8 @@ export function beginFileSearchUpload(
           /* Live recovery owns completion. */
         }
       }),
-    );
+    });
+  }
   try {
     localStorage.setItem(keyFor(fileId), JSON.stringify(context));
     return { choiceRevision, persisted: true };
@@ -83,7 +86,7 @@ export function beginFileSearchUpload(
 }
 
 export function cancelFileSearchUpload(fileId: string): void {
-  assignments.get(fileId)?.();
+  assignments.get(fileId)?.dispose();
   assignments.delete(fileId);
   try {
     localStorage.removeItem(keyFor(fileId));
@@ -125,10 +128,19 @@ export function completeFileSearchUpload(
   intent ??=
     choiceRevision === undefined ? null : { conversationId, choiceRevision, createdAt: Date.now() };
   if (!intent) {
-    cancelFileSearchUpload(fileId);
+    if (!assignments.has(fileId)) cancelFileSearchUpload(fileId);
     return false;
   }
   if (intent.conversationId !== conversationId) {
+    return false;
+  }
+  const owner = assignments.get(fileId)?.owner;
+  const changedProject =
+    conversationId === Constants.NEW_CONVO &&
+    intent.projectId !== undefined &&
+    intent.projectId !== new URLSearchParams(window.location.search).get('projectId');
+  if (changedProject || (owner && !owner() && !owner.retainsFile(fileId))) {
+    cancelFileSearchUpload(fileId);
     return false;
   }
   cancelFileSearchUpload(fileId);

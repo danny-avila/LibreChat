@@ -68,6 +68,7 @@ export const renewNewConversationDraftToken = (index = 0): void => {
       generation,
       route: composerRoute(),
       sourceId: undefined,
+      sourcePropPending: false,
       assignedRoute: undefined,
       assignments: new Set(),
     });
@@ -327,6 +328,7 @@ type ComposerDraftScope = {
   route: string;
   assignedRoute?: string;
   sourceId?: string;
+  sourcePropPending?: boolean;
   assignments: Set<(sourceId: string, targetId: string) => void>;
 };
 const composerDraftScopes = new Map<number, ComposerDraftScope>();
@@ -343,12 +345,13 @@ export const registerComposerDraft = (
   const generation = getNewConversationDraftToken(index);
   const answerId = isAskAnswerDraftId(draftId) ? draftId : null;
   const route = composerRoute();
-  const scope =
+  const scope: ComposerDraftScope =
     host &&
     previous != null &&
     (previous.host === host || (!previous.active && previous.sourceId != null)) &&
     previous.generation === generation &&
-    previous.conversationId === conversationId &&
+    (previous.conversationId === conversationId ||
+      (previous.sourcePropPending && previous.sourceId === conversationId)) &&
     previous.answerId === answerId &&
     (previous.route === route || previous.assignedRoute === route)
       ? previous
@@ -368,6 +371,7 @@ export const registerComposerDraft = (
   scope.host = host;
   scope.active = true;
   scope.draftId = draftId;
+  if (scope.conversationId === conversationId) scope.sourcePropPending = false;
   composerDraftScopes.set(index, scope);
   return () => {
     const current = composerDraftScopes.get(index);
@@ -461,6 +465,7 @@ export const adoptComposerConversation = (
   if (scope.conversationId !== Constants.NEW_CONVO || composerRoute() !== scope.route) return false;
   const sourceId = scope.conversationId;
   scope.sourceId = sourceId;
+  scope.sourcePropPending = true;
   scope.conversationId = targetId;
   const assignedRoute = new URL(scope.route, window.location.origin);
   assignedRoute.pathname = assignedRoute.pathname.replace(
@@ -487,6 +492,7 @@ export const resolveComposerConversationId = (conversationId: string): string =>
 export type CapturedComposerDraft = (() => boolean) & {
   registered: boolean;
   conversationId: () => string;
+  retainsFile: (fileId: string) => boolean;
   onAssignment: (listener: (sourceId: string, targetId: string) => void) => () => void;
 };
 
@@ -509,6 +515,11 @@ export const captureComposerDraft = (
     {
       registered: scope != null,
       conversationId: () => scope?.conversationId ?? conversationId,
+      retainsFile: (fileId: string) => {
+        if (!scope || scope.conversationId === Constants.NEW_CONVO) return false;
+        const draft = getFilesDraft(scope.draftId);
+        return isFilesDraftOwnedByThisTab(draft) && draft.fileIds.includes(fileId);
+      },
       onAssignment: (listener: (sourceId: string, targetId: string) => void) => {
         scope?.assignments.add(listener);
         return () => {

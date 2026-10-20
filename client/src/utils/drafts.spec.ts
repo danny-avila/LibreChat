@@ -1419,6 +1419,75 @@ describe('logical composer lifetime', () => {
     window.history.replaceState({}, '', '/');
   });
 
+  it('keeps the acknowledged owner while its source prop catches up after the URL', () => {
+    window.history.replaceState({}, '', '/c/new?projectId=project');
+    const host = {};
+    const releaseSource = registerComposerDraft(25, Constants.NEW_CONVO, 'pending:25', host);
+    const captured = captureComposerDraft(25, Constants.NEW_CONVO);
+    const launch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(launch, 25);
+    expect(adoptComposerConversation(launch, 'acknowledged-url', 25)).toBe(true);
+    window.history.replaceState({}, '', '/c/acknowledged-url?projectId=project');
+    releaseSource();
+    const releaseLagging = registerComposerDraft(25, Constants.NEW_CONVO, 'pending:25', host);
+    expect(captured()).toBe(true);
+    expect(captured.conversationId()).toBe('acknowledged-url');
+    expect(adoptComposerConversation(launch, 'acknowledged-url', 25)).toBe(true);
+    releaseLagging();
+    const releaseSaved = registerComposerDraft(25, 'acknowledged-url', 'acknowledged-url', host);
+    expect(captured()).toBe(true);
+    window.history.replaceState({}, '', '/c/acknowledged-url?projectId=other');
+    releaseSaved();
+    const releaseOther = registerComposerDraft(25, 'acknowledged-url', 'acknowledged-url', host);
+    expect(captured()).toBe(false);
+    releaseOther();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('does not reuse the source alias after the saved conversation prop has arrived', () => {
+    window.history.replaceState({}, '', '/c/new');
+    const host = {};
+    const releaseSource = registerComposerDraft(29, Constants.NEW_CONVO, 'pending:29', host);
+    const owner = captureComposerDraft(29, Constants.NEW_CONVO);
+    const launch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(launch, 29);
+    expect(adoptComposerConversation(launch, 'saved-before-back', 29)).toBe(true);
+    window.history.replaceState({}, '', '/c/saved-before-back');
+    releaseSource();
+    const releaseSaved = registerComposerDraft(29, 'saved-before-back', 'saved-before-back', host);
+    expect(owner()).toBe(true);
+    window.history.pushState({}, '', '/c/new');
+    releaseSaved();
+    const releaseReturned = registerComposerDraft(29, Constants.NEW_CONVO, 'new:29', host);
+    expect(owner()).toBe(false);
+    expect(captureComposerDraft(29, Constants.NEW_CONVO)()).toBe(true);
+    expect(adoptComposerConversation(launch, 'saved-before-back', 29)).toBe(false);
+    releaseReturned();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('permits origin recovery only when an owned saved draft still references the file', () => {
+    const release = registerComposerDraft(26, 'saved-owner', 'saved-owner', {});
+    const captured = captureComposerDraft(26, 'saved-owner');
+    setFilesDraft('saved-owner', { fileIds: ['kept-file'], pendingPastes: {} });
+    release();
+    expect(captured()).toBe(false);
+    expect(captured.retainsFile('kept-file')).toBe(true);
+    expect(captured.retainsFile('absent-file')).toBe(false);
+    clearFilesDraft('saved-owner');
+    expect(captured.retainsFile('kept-file')).toBe(false);
+  });
+
+  it('never treats a shared new-chat draft as a retained retired project', () => {
+    const release = registerComposerDraft(27, Constants.NEW_CONVO, 'new:27', {});
+    const captured = captureComposerDraft(27, Constants.NEW_CONVO);
+    setFilesDraft('new:27', { fileIds: ['old-project-file'], pendingPastes: {} });
+    release();
+    expect(captured()).toBe(false);
+    expect(captured.retainsFile('old-project-file')).toBe(false);
+    clearFilesDraft('new:27');
+  });
+
   it('rejects an acknowledgement from a launch superseded by New Chat', () => {
     const release = registerComposerDraft(8, Constants.NEW_CONVO, 'pending:8', {});
     const submissionConversation = { conversationId: Constants.NEW_CONVO };

@@ -8,12 +8,18 @@ import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import {
   setFilesDraft,
+  registerComposerDraft,
   getAskAnswerDraftId,
   bindComposerLaunch,
   captureComposerDraft,
   adoptComposerConversation,
 } from '~/utils/drafts';
-import { beginFileSearchUpload, transferFileSearchPreference } from '~/hooks/Files/search';
+import {
+  beginFileSearchUpload,
+  captureFileSearchUpload,
+  completeFileSearchUpload,
+  transferFileSearchPreference,
+} from '~/hooks/Files/search';
 import { setFileSearchChoice, transferFileSearchChoice } from '~/utils/choices';
 import { clearUploadRecovery } from '~/hooks/Files/useFileHandling';
 import { useAutoSave } from '~/hooks/Input/useAutoSave';
@@ -375,6 +381,293 @@ describe('useNewConvo reset cleanup', () => {
     client.clear();
     window.history.replaceState({}, '', '/');
   });
+
+  it.each(
+    [false, true].flatMap((saveDrafts) =>
+      [undefined, 'file_search'].map((resource) => ({ saveDrafts, resource })),
+    ),
+  )(
+    'keeps acknowledged $resource completion before props catch up (saveDrafts: $saveDrafts)',
+    async ({ saveDrafts, resource }) => {
+      const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
+      mockSaveDrafts = saveDrafts;
+      mockFiles.clear();
+      mockConfigPending = false;
+      mockPreparationGate = undefined;
+      window.history.replaceState({}, '', '/c/new');
+      global.URL.createObjectURL = jest.fn(() => 'blob:acknowledged-gap');
+      global.URL.revokeObjectURL = jest.fn();
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false, cacheTime: Infinity } },
+      });
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(QueryClientProvider, { client }, children);
+      const { result, rerender, unmount } = renderHook(
+        ({ conversationId, tick }) => {
+          const [files, setFiles] = useAtom(filesFamily(2));
+          useAutoSave({ index: 2, conversationId, isSubmitting: true, files, setFiles });
+          return {
+            files,
+            tick,
+            handler: useFileHandlingNoChatContext(undefined, {
+              index: 2,
+              files,
+              setFiles,
+              conversation: { conversationId, endpoint: EModelEndpoint.openAI } as TConversation,
+            }),
+          };
+        },
+        { wrapper, initialProps: { conversationId: 'new', tick: 0 } },
+      );
+      const launch = { conversationId: 'new' };
+      bindComposerLaunch(launch, 2);
+      const captured = captureComposerDraft(2, 'new');
+      await act(async () => {
+        await result.current.handler.handleFiles(
+          [new File(['search'], 'ack.txt', { type: 'text/plain' })],
+          resource,
+        );
+      });
+      const body = mockUploadFile.mock.calls[0][0] as FormData;
+      const options = mockUploadOptions;
+      expect(adoptComposerConversation(launch, 'acknowledged-chat', 2)).toBe(true);
+      act(() => {
+        window.history.replaceState({}, '', '/c/acknowledged-chat');
+        rerender({ conversationId: 'new', tick: 1 });
+      });
+      expect(captured()).toBe(true);
+      expect(captured.conversationId()).toBe('acknowledged-chat');
+      expect(adoptComposerConversation(launch, 'acknowledged-chat', 2)).toBe(true);
+      act(() => rerender({ conversationId: 'acknowledged-chat', tick: 2 }));
+      mockSetEphemeralAgent.mockClear();
+      await act(async () => {
+        const persisted = {
+          file_id: 'persisted-ack',
+          temp_file_id: body.get('file_id'),
+          filepath: '/files/ack.txt',
+          filename: 'ack.txt',
+          type: 'text/plain',
+          bytes: 6,
+          embedded: resource === 'file_search',
+        };
+        mockFileList = [persisted];
+        options.onSuccess?.(persisted, body);
+        rerender({ conversationId: 'acknowledged-chat', tick: 3 });
+        await new Promise((resolve) => setTimeout(resolve, 320));
+      });
+      expect(result.current.files.get(body.get('file_id') as string)?.progress).toBe(1);
+      if (resource === 'file_search') {
+        expect(mockSetEphemeralAgent).toHaveBeenCalledWith(
+          'acknowledged-chat',
+          expect.any(Function),
+        );
+        expect(mockSetEphemeralAgent).not.toHaveBeenCalledWith('new', expect.anything());
+      } else expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+      unmount();
+      client.clear();
+      window.history.replaceState({}, '', '/');
+    },
+  );
+
+  it.each(
+    [false, true].flatMap((saveDrafts) =>
+      ['remove', 'replace'].map((change) => ({ saveDrafts, change })),
+    ),
+  )(
+    'does not activate a retired project upload after $change (saveDrafts: $saveDrafts)',
+    async ({ saveDrafts, change }) => {
+      const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
+      mockSaveDrafts = saveDrafts;
+      mockFiles.clear();
+      mockConfigPending = false;
+      mockPreparationGate = undefined;
+      window.history.replaceState({}, '', '/c/new?projectId=project-a');
+      global.URL.createObjectURL = jest.fn(() => 'blob:retired-project');
+      global.URL.revokeObjectURL = jest.fn();
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false, cacheTime: Infinity } },
+      });
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(QueryClientProvider, { client }, children);
+      const { result, rerender, unmount } = renderHook(
+        ({ projectId, tick }) => {
+          const [files, setFiles] = useAtom(filesFamily(2));
+          useAutoSave({ index: 2, conversationId: 'new', files, setFiles });
+          return {
+            files,
+            tick,
+            handler: useFileHandlingNoChatContext(undefined, {
+              index: 2,
+              files,
+              setFiles,
+              conversation: {
+                conversationId: 'new',
+                endpoint: EModelEndpoint.openAI,
+                chatProjectId: projectId,
+              } as TConversation,
+            }),
+          };
+        },
+        { wrapper, initialProps: { projectId: 'project-a' as string | null, tick: 0 } },
+      );
+      const owner = captureComposerDraft(2, 'new');
+      await act(async () => {
+        await result.current.handler.handleFiles(
+          [new File(['search'], 'retired.txt', { type: 'text/plain' })],
+          'file_search',
+        );
+      });
+      const body = mockUploadFile.mock.calls[0][0] as FormData;
+      const options = mockUploadOptions;
+      const projectId = change === 'replace' ? 'project-b' : null;
+      act(() => {
+        window.history.replaceState({}, '', projectId ? `/c/new?projectId=${projectId}` : '/c/new');
+        rerender({ projectId, tick: 1 });
+      });
+      expect(owner()).toBe(false);
+      mockSetEphemeralAgent.mockClear();
+      const persisted = {
+        file_id: 'persisted-retired',
+        temp_file_id: body.get('file_id'),
+        filepath: '/files/retired.txt',
+        filename: 'retired.txt',
+        type: 'text/plain',
+        bytes: 6,
+        embedded: true,
+        llmDeliveryPath: 'none',
+      };
+      // The real mutation caches the response before invoking its success callback.
+      await act(async () => {
+        mockFileList = [persisted];
+        rerender({ projectId, tick: 2 });
+      });
+      await act(async () => {
+        options.onSuccess?.(persisted, body);
+        await new Promise((resolve) => setTimeout(resolve, 320));
+      });
+      expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+      expect(localStorage.getItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}new`)).not.toBe(
+        'true',
+      );
+      unmount();
+      client.clear();
+      window.history.replaceState({}, '', '/');
+    },
+  );
+
+  it.each([false, true])(
+    'activates after navigation only when the owning saved draft retains the upload (%s)',
+    async (retained) => {
+      const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
+      mockSaveDrafts = retained;
+      mockFiles.clear();
+      mockConfigPending = false;
+      window.history.replaceState({}, '', '/c/retained-origin');
+      global.URL.createObjectURL = jest.fn(() => 'blob:retained-origin');
+      global.URL.revokeObjectURL = jest.fn();
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false, cacheTime: Infinity } },
+      });
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(QueryClientProvider, { client }, children);
+      const { result, rerender, unmount } = renderHook(
+        ({ conversationId, tick }) => {
+          const [files, setFiles] = useAtom(filesFamily(2));
+          useAutoSave({ index: 2, conversationId, files, setFiles });
+          return {
+            files,
+            tick,
+            handler: useFileHandlingNoChatContext(undefined, {
+              index: 2,
+              files,
+              setFiles,
+              conversation: { conversationId, endpoint: EModelEndpoint.openAI } as TConversation,
+            }),
+          };
+        },
+        { wrapper, initialProps: { conversationId: 'retained-origin', tick: 0 } },
+      );
+      await act(async () => {
+        await result.current.handler.handleFiles(
+          [new File(['search'], 'retained.txt', { type: 'text/plain' })],
+          'file_search',
+        );
+      });
+      const body = mockUploadFile.mock.calls[0][0] as FormData;
+      const options = mockUploadOptions;
+      act(() => {
+        window.history.pushState({}, '', '/c/destination');
+        rerender({ conversationId: 'destination', tick: 1 });
+      });
+      mockSetEphemeralAgent.mockClear();
+      await act(async () => {
+        const persisted = {
+          file_id: 'persisted-retained',
+          temp_file_id: body.get('file_id'),
+          filepath: '/files/retained.txt',
+          filename: 'retained.txt',
+          type: 'text/plain',
+          bytes: 6,
+          embedded: true,
+        };
+        mockFileList = [persisted];
+        rerender({ conversationId: 'destination', tick: 2 });
+        options.onSuccess?.(persisted, body);
+        await new Promise((resolve) => setTimeout(resolve, 320));
+      });
+      expect(mockSetEphemeralAgent).not.toHaveBeenCalledWith('destination', expect.anything());
+      if (retained)
+        expect(mockSetEphemeralAgent).toHaveBeenCalledWith('retained-origin', expect.any(Function));
+      else expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+      unmount();
+      client.clear();
+      window.history.replaceState({}, '', '/');
+    },
+  );
+
+  it.each([false, true])(
+    'keeps the live completion fence when intent storage is blocked (retire: %s)',
+    (retire) => {
+      window.history.replaceState({}, '', '/c/new?projectId=source-project');
+      const release = registerComposerDraft(28, 'new', 'new:28', {});
+      const owner = captureComposerDraft(28, 'new');
+      const write = Storage.prototype.setItem;
+      const unavailable = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+        this: Storage,
+        key: string,
+        value: string,
+      ) {
+        if (key.startsWith('file-search-upload:')) throw new Error('Intent storage unavailable');
+        write.call(this, key, value);
+      });
+      const intent = beginFileSearchUpload('blocked-owner', captureFileSearchUpload('new', owner));
+      expect(intent.persisted).toBe(false);
+      // Cache restoration lacks a fallback revision; it cannot consume the mutation's live fence.
+      expect(completeFileSearchUpload('blocked-owner', 'new')).toBe(false);
+      let releaseReplacement: (() => void) | undefined;
+      if (retire) {
+        window.history.replaceState({}, '', '/c/new?projectId=replacement');
+        release();
+        releaseReplacement = registerComposerDraft(28, 'new', 'new:28', {});
+      }
+      expect(completeFileSearchUpload('blocked-owner', 'new', intent.choiceRevision)).toBe(!retire);
+      unavailable.mockRestore();
+      releaseReplacement?.();
+      release();
+      window.history.replaceState({}, '', '/');
+    },
+  );
+
+  it.each([false, true])(
+    'restores persisted intent only in its original new-chat project (%s)',
+    (sameProject) => {
+      window.history.replaceState({}, '', '/c/new?projectId=original-project');
+      beginFileSearchUpload('persisted-project-intent', 'new');
+      if (!sameProject) window.history.replaceState({}, '', '/c/new?projectId=other-project');
+      expect(completeFileSearchUpload('persisted-project-intent', 'new')).toBe(sameProject);
+      window.history.replaceState({}, '', '/');
+    },
+  );
 
   it.each([false, true])(
     'completes the next first-ID upload after a same-route reset (saveDrafts: %s)',
