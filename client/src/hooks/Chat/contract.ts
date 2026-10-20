@@ -11,6 +11,7 @@ import type {
   ChatTransportRequest,
 } from 'librechat-data-provider';
 import type { SetStateAction, Dispatch, MouseEvent } from 'react';
+import type { PendingSteer } from '@librechat/chat';
 import type {
   ArmSteerParams,
   ArmSteerResponse,
@@ -32,7 +33,6 @@ import type {
   PtcTrace,
 } from '~/common';
 import type { MessagesEditing } from '~/Providers/MessagesViewContext';
-import type { PendingSteer } from './queue';
 
 /** Options accepted by {@link ChatConversationContract.newConversation}: the shared params plus
  *  the two flags only the root pane's generator honors. */

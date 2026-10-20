@@ -12,6 +12,11 @@ import { FOLD_GLYPH_CLASS } from '../rows';
 import { litFoldPath } from '../rail';
 import { Text } from '../Parts';
 
+/** No previewed subagent run here leaves a file in doubt, so no owner is ever asked for. */
+jest.mock('~/data-provider', () => ({
+  useSubagentAttachmentCallsQueries: () => [],
+}));
+
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string | number, string>) => {
     if (key === 'com_ui_ran_n_actions') {
@@ -54,9 +59,11 @@ jest.mock('~/components/MCPUIResource', () => {
     MCPAppViews: ({
       attachments,
       resources,
+      ordinalStart = 1,
     }: {
       attachments?: TAttachment[];
       resources?: MCPAppResourceOccurrence[];
+      ordinalStart?: number;
     }) => {
       const suppressed = ReactActual.useContext(MCPAppSuppressionContext);
       const selectedAttachments =
@@ -73,6 +80,7 @@ jest.mock('~/components/MCPUIResource', () => {
       return (
         <div
           data-testid="mcp-app-attachments"
+          data-ordinal={ordinalStart}
           data-owners={visible
             .map((attachment) => {
               const owned = attachment as TAttachment & { agentId?: string; stepId?: string };
@@ -165,6 +173,23 @@ jest.mock('../Parts', () => ({
   MemoryCall: ({ attachments }: { attachments?: TAttachment[] }) => (
     <div data-testid="memory-call" data-count={attachments?.length ?? 0} />
   ),
+  /** Mirrors the card: it offers its run's Apps only while it shows attachments. */
+  SubagentCall: ({
+    attachments,
+    hideAttachments,
+  }: {
+    attachments?: TAttachment[];
+    hideAttachments?: boolean;
+  }) => {
+    const { MCPAppViews } = jest.requireMock<typeof import('~/components/MCPUIResource')>(
+      '~/components/MCPUIResource',
+    );
+    return (
+      <div data-testid="subagent-call">
+        {!hideAttachments && <MCPAppViews attachments={attachments} />}
+      </div>
+    );
+  },
 }));
 
 jest.mock('~/components/Web/Sources', () => ({
@@ -868,6 +893,71 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     ] as unknown as TMessageContentParts[];
     rerender(frame(parallel));
     expect(screen.getByTestId('mcp-app-attachments')).toBe(appView);
+  });
+
+  const makeSubagentCall = (id: string, childId: string): TMessageContentParts =>
+    ({
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id,
+        name: Constants.SUBAGENT,
+        args: '{}',
+        output: 'Shown.',
+        subagent_content: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            [ContentTypes.TOOL_CALL]: {
+              id: childId,
+              name: `show_app${MCP_DELIMITER}demo`,
+              args: '{}',
+              output: 'shown',
+            },
+          },
+        ],
+      },
+    }) as unknown as TMessageContentParts;
+
+  it('keeps a subagent run App mounted while its row is regrouped', () => {
+    const subagent = makeSubagentCall('call_subagent', 'child_app');
+    const otherCall = makeMcpToolCall('call_other');
+    const frame = (content: TMessageContentParts[]) => (
+      <RecoilRoot>
+        <ContentParts
+          {...baseProps}
+          content={content}
+          attachments={[appAttachment('child_app')]}
+          messageId="response_"
+          conversationId="conversation-1"
+          isLatestMessage
+        />
+      </RecoilRoot>
+    );
+    const { rerender } = render(frame([subagent]));
+    const appView = screen.getByTestId('mcp-app-attachments');
+    expect(appView).toHaveAttribute('data-owners', 'none/none/child_app');
+
+    /** An adjacent call moves the subagent row into a tool group. */
+    rerender(frame([subagent, otherCall]));
+    expect(screen.getByTestId('mcp-app-attachments')).toBe(appView);
+
+    /** A phase marker then claims both calls. */
+    rerender(frame([subagent, otherCall, makePhasePart(0, 2, 'Showed the app')]));
+    expect(screen.getByTestId('mcp-app-attachments')).toBe(appView);
+  });
+
+  it('numbers subagent run Apps across the message', () => {
+    renderContentParts({
+      ...baseProps,
+      content: [
+        makeSubagentCall('call_first', 'child_first'),
+        makeTextPart('between the runs'),
+        makeSubagentCall('call_second', 'child_second'),
+      ],
+      attachments: [appAttachment('child_first'), appAttachment('child_second')],
+    });
+    expect(
+      screen.getAllByTestId('mcp-app-attachments').map((view) => view.dataset.ordinal),
+    ).toEqual(['1', '2']);
   });
 
   it('retains an existing resource when another App is inserted into its tool result', () => {
