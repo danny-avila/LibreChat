@@ -6,6 +6,7 @@ import type { VerifyToolAuthResponse } from 'librechat-data-provider';
 import type { UseQueryOptions } from '@tanstack/react-query';
 import { useVerifyAgentToolAuth, useGetStartupConfig } from '~/data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
+import { setFileSearchChoice } from '~/utils/choices';
 import { setTimestamp } from '~/utils/timestamps';
 import { ephemeralAgentByConvoId } from '~/store';
 
@@ -135,6 +136,9 @@ export function useToolToggle({
         return;
       }
 
+      if (localStorageKey === LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_) {
+        setFileSearchChoice(key, typeof value === 'string' ? value.length > 0 : value);
+      }
       // Update ephemeralAgent (localStorage will sync automatically via effect)
       setEphemeralAgent((prev) => ({
         ...(prev || {}),
@@ -155,6 +159,7 @@ export function useToolToggle({
       toolKey,
       storageContextKey,
       localStorageKey,
+      key,
     ],
   );
 

@@ -24,10 +24,10 @@ import {
   setDraft,
   setFilesDraft,
 } from '~/utils';
+import { completeFileSearchUpload, hasPendingFileSearchUpload } from '~/hooks/Files/search';
 import { isPastedTextFileMarked, markPastedTextFile } from '~/utils/files';
 import { hasInFlightUpload } from '~/hooks/Files/useFileHandling';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
-import { completeFileSearchUpload } from '~/hooks/Files/search';
 import { ephemeralAgentByConvoId } from '~/store';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
@@ -516,6 +516,12 @@ export const useAutoSave = ({
     const draftFileIds = [
       ...fileIds,
       ...pendingFileIds.filter((fileId) => !fileIds.includes(fileId)),
+      ...existingDraft.fileIds.filter(
+        (fileId) =>
+          !fileIds.includes(fileId) &&
+          !pendingFileIds.includes(fileId) &&
+          hasPendingFileSearchUpload(fileId, _conversationId ?? Constants.NEW_CONVO),
+      ),
     ];
     const liveIds = new Set(draftFileIds);
     files.forEach((file, key) => {
@@ -546,7 +552,7 @@ export const useAutoSave = ({
       pastedTextIds,
       pendingPastes: existingDraft.pendingPastes,
     });
-  }, [conversationId, saveDrafts, currentConversationId, fileIds, files]);
+  }, [conversationId, saveDrafts, currentConversationId, fileIds, files, _conversationId]);
 
   return { consumeDraft, preserveText, settleText };
 };

@@ -385,7 +385,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
             completeFileSearchUpload(
               file_id,
               conversationId,
-              intent.persisted ? undefined : intent.requestedAt,
+              intent.persisted ? undefined : intent.choiceRevision,
             )
           ) {
             setEphemeralAgent((prev) => ({ ...prev, [EToolResources.file_search]: true }));

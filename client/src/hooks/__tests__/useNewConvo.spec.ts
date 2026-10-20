@@ -7,7 +7,7 @@ import type { ExtendedFile } from '~/common';
 import { clearUploadRecovery } from '~/hooks/Files/useFileHandling';
 import { beginFileSearchUpload } from '~/hooks/Files/search';
 import { useAutoSave } from '~/hooks/Input/useAutoSave';
-import { setTimestamp } from '~/utils/timestamps';
+import { setFileSearchChoice } from '~/utils/choices';
 import { setFilesDraft } from '~/utils/drafts';
 
 const mockDeleteFiles = jest.fn();
@@ -225,19 +225,13 @@ describe('useNewConvo reset cleanup', () => {
       });
       setFilesDraft('origin-conversation', { fileIds: ['pending-search'], pendingPastes: {} });
       if (mode !== 'unrelated') {
-        const now = Date.now();
-        const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
         beginFileSearchUpload(
           'pending-search',
           mode === 'other-conversation' ? 'other-conversation' : 'origin-conversation',
         );
         if (mode === 'disabled') {
-          clock.mockReturnValue(now + 1);
-          const preference = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}origin-conversation`;
-          localStorage.setItem(preference, 'false');
-          setTimestamp(preference);
+          setFileSearchChoice('origin-conversation', false);
         }
-        clock.mockRestore();
       }
       const next = renderHook(() => useNewConvo());
       act(() => next.result.current.newConversation());

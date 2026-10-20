@@ -1,9 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { RecoilRoot } from 'recoil';
+import { useForm } from 'react-hook-form';
 import { render, act } from '@testing-library/react';
+import { LocalStorageKeys } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ExtendedFile, ChatFormValues } from '~/common';
 import { beginFileSearchUpload, completeFileSearchUpload } from '~/hooks/Files/search';
+import { getFileSearchChoice, clearFileSearchChoices } from '~/utils/choices';
 import BadgeRowProvider, { useBadgeRowContext } from '../BadgeRowContext';
+import { ChatFormProvider } from '~/Providers/ChatFormContext';
+import { useAutoSave } from '~/hooks/Input/useAutoSave';
+import { ephemeralAgentByConvoId } from '~/store';
 
 /**
  * `BadgeRowProvider` is an inline child of `ChatForm`, which re-renders on every
@@ -29,6 +36,7 @@ jest.mock('@librechat/client', () => ({
    would look unstable for a reason that does not exist outside the tests. */
 const mockTranslate = (key: string) => key;
 const mockToolAuth = { authenticated: false };
+let mockCachedFiles: object[] = [];
 jest.mock('react-i18next', () => ({
   ...jest.requireActual('react-i18next'),
   useTranslation: () => ({ t: mockTranslate, i18n: { changeLanguage: jest.fn() } }),
@@ -43,9 +51,10 @@ jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => ({ data: undefined }),
   useMCPServersQuery: () => ({ data: undefined, isLoading: false }),
   useVerifyAgentToolAuth: () => ({ data: mockToolAuth }),
+  useGetFiles: () => ({ data: mockCachedFiles }),
 }));
 
-function renderProvider() {
+function renderProvider(initialId = 'convo-badge-row', restoreDraft = false, initiallyOff = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, cacheTime: 0 } },
   });
@@ -54,24 +63,174 @@ function renderProvider() {
     value = useBadgeRowContext();
     return null;
   };
-  const Tree = ({ marker }: { marker: number }) => (
+  let stage: (file: ExtendedFile) => void = () => undefined;
+  let restoredFiles = new Map<string, ExtendedFile>();
+  function DraftOwner({ id }: { id: string }) {
+    const [files, setFiles] = useState(new Map<string, ExtendedFile>());
+    stage = (file) => setFiles(new Map([[file.file_id, file]]));
+    restoredFiles = files;
+    useAutoSave({ conversationId: id, files, setFiles });
+    return null;
+  }
+  function Form({ id }: { id: string }) {
+    const methods = useForm<ChatFormValues>({ defaultValues: { text: '' } });
+    return (
+      <ChatFormProvider {...methods}>
+        <DraftOwner id={id} />
+      </ChatFormProvider>
+    );
+  }
+  const Tree = ({ marker, id }: { marker: number; id: string }) => (
     <QueryClientProvider client={client}>
-      <RecoilRoot>
-        <BadgeRowProvider conversationId="convo-badge-row">
+      <RecoilRoot
+        initializeState={({ set }) => {
+          if (initiallyOff) set(ephemeralAgentByConvoId(initialId), { file_search: false });
+        }}
+      >
+        <BadgeRowProvider conversationId={id}>
           {/* Re-rendered along with the provider, the way `Bar` is. */}
           <span>{marker}</span>
           <Consumer />
+          {restoreDraft && <Form id={id} />}
         </BadgeRowProvider>
       </RecoilRoot>
     </QueryClientProvider>
   );
-  const { rerender, unmount } = render(<Tree marker={0} />);
+  let id = initialId;
+  const { rerender, unmount } = render(<Tree marker={0} id={id} />);
   return {
     getValue: () => value,
     unmount,
-    retype: (marker: number) => rerender(<Tree marker={marker} />),
+    retype: (marker: number) => rerender(<Tree marker={marker} id={id} />),
+    navigate: (next: string) => {
+      id = next;
+      rerender(<Tree marker={0} id={id} />);
+    },
+    stage: (file: ExtendedFile) => stage(file),
+    files: () => restoredFiles,
   };
 }
+
+describe('File Search deferred upload effects', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    clearFileSearchChoices();
+    mockCachedFiles = [];
+  });
+
+  const file = (): ExtendedFile => ({
+    file_id: 'pending-search',
+    type: 'text/plain',
+    progress: 0.2,
+    size: 5,
+    tool_resource: 'file_search',
+  });
+  const persisted = {
+    file_id: 'server-search',
+    temp_file_id: 'pending-search',
+    filename: 'search.txt',
+    filepath: '/files/search.txt',
+    type: 'text/plain',
+    bytes: 5,
+    embedded: true,
+    llmDeliveryPath: 'none',
+  };
+
+  it.each([
+    ['passive', true, false],
+    ['disable', false, true],
+    ['disable-then-enable', true, true],
+  ] as const)(
+    'preserves explicit ordering through real navigation effects (%s)',
+    async (action, enabled, sameMs) => {
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(1000);
+      const view = renderProvider('origin', true, true);
+      act(() => view.stage(file()));
+      const toggle = view.getValue()?.fileSearch;
+      if (!toggle) throw new Error('Missing real File Search toggle');
+      const intent = beginFileSearchUpload('pending-search', 'origin');
+      let resolveMutation: () => void = () => undefined;
+      let activated = false;
+      const mutation = new Promise<void>((resolve) => {
+        resolveMutation = resolve;
+      });
+      const completion = mutation.then(() => {
+        activated = completeFileSearchUpload(
+          'pending-search',
+          'origin',
+          intent.persisted ? undefined : intent.choiceRevision,
+        );
+        if (activated) toggle.setEphemeralAgent((previous) => ({ ...previous, file_search: true }));
+      });
+      if (!sameMs) clock.mockReturnValue(2000);
+      act(() => view.navigate('new'));
+      if (!sameMs) clock.mockReturnValue(3000);
+      act(() => view.navigate('origin'));
+      expect(localStorage.getItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}origin`)).toBe(
+        'false',
+      );
+      expect(getFileSearchChoice('origin')).toBeNull();
+      if (action !== 'passive')
+        act(() => view.getValue()?.fileSearch.handleChange({ value: false }));
+      if (action === 'disable-then-enable')
+        act(() => view.getValue()?.fileSearch.handleChange({ value: true }));
+      await act(async () => {
+        resolveMutation();
+        await completion;
+      });
+      expect(activated).toBe(enabled);
+      expect(view.getValue()?.fileSearch.isToolEnabled).toBe(enabled);
+      mockCachedFiles = [persisted];
+      act(() => view.retype(1));
+      expect(view.files().get('pending-search')?.file_id).toBe('server-search');
+      act(() => view.navigate('new'));
+      act(() => view.navigate('origin'));
+      expect(view.getValue()?.fileSearch.isToolEnabled).toBe(enabled);
+      view.unmount();
+      const reloaded = renderProvider('origin', true);
+      expect(reloaded.getValue()?.fileSearch.isToolEnabled).toBe(enabled);
+      reloaded.unmount();
+      clock.mockRestore();
+    },
+  );
+
+  it('honors an explicit disable when intent storage is unavailable', () => {
+    const view = renderProvider('origin', false, true);
+    const write = Storage.prototype.setItem;
+    const unavailable = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (key.startsWith('file-search-upload:') || key.startsWith('file-search-choice:')) {
+        throw new Error('Storage unavailable');
+      }
+      write.call(this, key, value);
+    });
+    const intent = beginFileSearchUpload('pending-search', 'origin');
+    expect(intent.persisted).toBe(false);
+    act(() => view.getValue()?.fileSearch.handleChange({ value: false }));
+    expect(completeFileSearchUpload('pending-search', 'origin', intent.choiceRevision)).toBe(false);
+    unavailable.mockRestore();
+    view.unmount();
+  });
+
+  it('restores a pending explicit intent after reload without a surviving mutation callback', () => {
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(1000);
+    const first = renderProvider('origin', true, true);
+    act(() => first.stage(file()));
+    beginFileSearchUpload('pending-search', 'origin');
+    act(() => first.navigate('new'));
+    first.unmount();
+    clock.mockReturnValue(2000);
+    mockCachedFiles = [persisted];
+    const reloaded = renderProvider('origin', true);
+    expect(reloaded.files().get('pending-search')?.file_id).toBe('server-search');
+    expect(reloaded.getValue()?.fileSearch.isToolEnabled).toBe(true);
+    reloaded.unmount();
+    clock.mockRestore();
+  });
+});
 
 describe('BadgeRowProvider', () => {
   it('recovers completed explicit uploads on reload without overriding a later disable', () => {
