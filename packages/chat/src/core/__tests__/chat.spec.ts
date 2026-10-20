@@ -4313,6 +4313,27 @@ describe('Chat', () => {
       await expect(chat.stop()).resolves.toEqual({ status: 'idle' });
     });
 
+    it('keeps a dropped generation stoppable through a late status read of a stopped one', async () => {
+      const { chat, stream, transport } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      chat.restorePendingAction(pausedAction, 50);
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      transport.abort.mockClear();
+
+      chat.restorePendingAction({ ...pausedAction, expiresAt: Date.now() + 60_000 }, 50);
+
+      expect(chat.pendingAction).toBeUndefined();
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ streamId: 'convo-1', generationCreatedAt: 100 }),
+      );
+    });
+
     it('ignores a late status read for a late start a stop already ended', async () => {
       let deliver: ((result: { status: 'stream'; stream: ChatStream }) => void) | undefined;
       const late = createStream({ streamId: 'convo-1', generationCreatedAt: 300 });
