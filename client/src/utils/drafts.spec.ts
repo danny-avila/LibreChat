@@ -30,6 +30,7 @@ import {
   registerComposerDraft,
   captureComposerDraft,
   bindComposerLaunch,
+  consumeComposerQuery,
   adoptComposerConversation,
   resolveComposerConversationId,
   getActiveComposerDraftId,
@@ -1298,6 +1299,78 @@ describe('logical composer lifetime', () => {
     expect(getActiveComposerDraftId(17, Constants.NEW_CONVO)).toBeNull();
     expect(sibling()).toBe(true);
     releaseSibling();
+  });
+
+  it('keeps captured upload ownership across consumed prompt parameters and acknowledgement', () => {
+    window.history.replaceState({}, '', '/c/new?prompt=hello&submit=true&projectId=project');
+    const release = registerComposerDraft(20, Constants.NEW_CONVO, 'pending:20', {});
+    const captured = captureComposerDraft(20, Constants.NEW_CONVO);
+    const launch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(launch, 20);
+    consumeComposerQuery(
+      20,
+      Constants.NEW_CONVO,
+      '/c/new',
+      'submit=true&projectId=project&prompt=hello',
+      'projectId=project',
+    );
+    window.history.replaceState({}, '', '/c/new?projectId=project');
+    expect(captured()).toBe(true);
+    expect(adoptComposerConversation(launch, 'cleaned-chat', 20)).toBe(true);
+    window.history.replaceState({}, '', '/c/cleaned-chat?projectId=project');
+    expect(captured()).toBe(true);
+    window.history.pushState({}, '', '/c/another-chat?projectId=project');
+    expect(captured()).toBe(false);
+    release();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('preserves an acknowledged route when its consumed parameters are cleaned afterwards', () => {
+    window.history.replaceState({}, '', '/c/new?prompt=hello');
+    const release = registerComposerDraft(21, Constants.NEW_CONVO, 'pending:21', {});
+    const launch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(launch, 21);
+    const captured = captureComposerDraft(21, Constants.NEW_CONVO);
+    expect(adoptComposerConversation(launch, 'assigned-cleanup', 21)).toBe(true);
+    window.history.replaceState({}, '', '/c/assigned-cleanup?prompt=hello');
+    consumeComposerQuery(21, 'assigned-cleanup', '/c/assigned-cleanup', 'prompt=hello', '');
+    window.history.replaceState({}, '', '/c/assigned-cleanup');
+    expect(captured()).toBe(true);
+    expect(adoptComposerConversation(launch, 'assigned-cleanup', 21)).toBe(true);
+    release();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it.each([
+    { owner: 'new', path: '/c/new', from: 'prompt=hello&projectId=project', to: '' },
+    { owner: 'new', path: '/c/new', from: 'prompt=hello&projectId=project', to: 'projectId=other' },
+    {
+      owner: 'other',
+      path: '/c/new',
+      from: 'prompt=hello&projectId=project',
+      to: 'projectId=project',
+    },
+    {
+      owner: 'new',
+      path: '/c/new',
+      from: 'prompt=hello&projectId=project',
+      to: 'prompt=another&projectId=project',
+    },
+    {
+      owner: 'new',
+      path: '/c/unrelated',
+      from: 'prompt=hello&projectId=project',
+      to: 'projectId=project',
+    },
+  ])('does not treat a project, owner, prompt, or path change as consumption (%j)', (change) => {
+    window.history.replaceState({}, '', '/c/new?prompt=hello&projectId=project');
+    const release = registerComposerDraft(22, Constants.NEW_CONVO, 'pending:22', {});
+    const captured = captureComposerDraft(22, Constants.NEW_CONVO);
+    consumeComposerQuery(22, change.owner, change.path, change.from, change.to);
+    window.history.replaceState({}, '', change.path + (change.to ? `?${change.to}` : ''));
+    expect(captured()).toBe(false);
+    release();
+    window.history.replaceState({}, '', '/');
   });
 
   it('rejects an acknowledgement from a launch superseded by New Chat', () => {

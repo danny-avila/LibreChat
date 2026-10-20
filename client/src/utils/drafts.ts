@@ -384,6 +384,49 @@ export const getActiveComposerDraftId = (index: number, conversationId: string):
   return scope?.active && scope.conversationId === conversationId ? scope.draftId : null;
 };
 
+const normalizedComposerSearch = (search: string): string => {
+  const params = new URLSearchParams(search);
+  params.sort();
+  return params.toString();
+};
+
+/** Only consumed parameters change here; project and navigation changes keep their fence. */
+export const consumeComposerQuery = (
+  index: number,
+  conversationId: string,
+  pathname: string,
+  previousSearch: string,
+  nextSearch: string,
+): void => {
+  const scope = composerDraftScopes.get(index);
+  if (
+    !scope?.active ||
+    scope.generation !== getNewConversationDraftToken(index) ||
+    (scope.conversationId !== conversationId && scope.sourceId !== conversationId)
+  ) {
+    return;
+  }
+  const previous = new URLSearchParams(previousSearch);
+  const next = new URLSearchParams(nextSearch);
+  if (
+    (previous.get('projectId') || null) !== (next.get('projectId') || null) ||
+    Array.from(next.keys()).some((key) => key !== 'projectId')
+  ) {
+    return;
+  }
+  const expectedSearch = normalizedComposerSearch(previousSearch);
+  const cleanedSearch = next.toString();
+  for (const field of ['route', 'assignedRoute'] as const) {
+    const value = scope[field];
+    if (value == null) continue;
+    const route = new URL(value, window.location.origin);
+    if (route.pathname !== pathname || normalizedComposerSearch(route.search) !== expectedSearch) {
+      continue;
+    }
+    scope[field] = pathname + (cleanedSearch ? `?${cleanedSearch}` : '');
+  }
+};
+
 export const bindComposerLaunch = (
   conversation: object | null | undefined,
   index: number,
@@ -459,7 +502,7 @@ export const captureComposerDraft = (
           (scope.conversationId === conversationId || scope.sourceId === conversationId))) &&
       composerDraftScopes.get(index) === scope &&
       getNewConversationDraftToken(index) === generation &&
-      (composerRoute() === route ||
+      (composerRoute() === (scope?.route ?? route) ||
         (scope?.assignedRoute != null && composerRoute() === scope.assignedRoute)),
     {
       registered: scope != null,
