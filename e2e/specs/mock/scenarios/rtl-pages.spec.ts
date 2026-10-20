@@ -91,6 +91,13 @@ test('the project workspace mirrors under RTL and its separator follows the poin
       .toBeLessThan(before.details.width - DRAG / 2);
     expect((await box(chats)).width).toBeGreaterThan(before.chats.width + DRAG / 2);
     expect((await box(details)).x).toBeGreaterThan((await box(chats)).x);
+
+    /* The panels were reordered while mounted; the arrow keys still move the separator
+     * the way they point. */
+    const dragged = (await box(details)).width;
+    await separator.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(async () => (await box(details)).width).toBeLessThan(dragged - 4);
   } finally {
     await requestJson(page, {
       path: `/api/projects/${encodeURIComponent(project._id)}`,
@@ -151,6 +158,11 @@ test('a shared link mirrors its artifacts pane under RTL and its separator follo
       .toBeLessThan(before.artifacts.width - DRAG / 2);
     expect((await box(content)).width).toBeGreaterThan(before.content.width + DRAG / 2);
     expect((await box(artifacts)).x).toBeLessThan((await box(content)).x);
+
+    const dragged = (await box(artifacts)).width;
+    await separator.focus();
+    await reader.keyboard.press('ArrowRight');
+    await expect.poll(async () => (await box(artifacts)).width).toBeGreaterThan(dragged + 4);
   } finally {
     await readerContext.close();
   }
@@ -201,6 +213,31 @@ test('the agent detail close button bleeds past the inline end under RTL @scenar
   } finally {
     await cleanupAgent(page, agent.id).catch(() => undefined);
   }
+});
+
+test('a prompt command keeps its typed text clear of the counter under RTL @scenario:rtl-prompt-counter-clear-of-text', async ({
+  page,
+}) => {
+  await page.goto('/prompts/new', { timeout: 15_000 });
+  const input = page.getByRole('textbox', {
+    name: 'Optional: Enter a command for the prompt or name will be used',
+  });
+  await expect(input).toBeVisible();
+  await input.fill('a'.repeat(40));
+  const counter = input.locator('xpath=../..').getByText(/^\d+\/\d+$/);
+  await expect(counter).toBeVisible();
+
+  /* LTR: the counter sits after the field, at the right. */
+  expect((await box(input)).x + (await box(input)).width).toBeLessThanOrEqual(
+    (await box(counter)).x + 0.5,
+  );
+
+  await setDirection(page, 'rtl');
+  /* RTL: the counter moves to the left and the field ends before it. */
+  await expect.poll(async () => (await box(counter)).x).toBeLessThan((await box(input)).x);
+  const field = await box(input);
+  const count = await box(counter);
+  expect(count.x + count.width).toBeLessThanOrEqual(field.x + 0.5);
 });
 
 test('marketplace category tabs follow the visual arrow direction under RTL @scenario:rtl-category-tabs-arrow-keys', async ({
