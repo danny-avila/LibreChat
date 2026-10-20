@@ -359,6 +359,9 @@ const getApplyFailure = (event: ChatEvent, failure: unknown): Outcome => {
     : { kind: 'error', error, disconnect: true };
 };
 
+/** The answer for a stop the server says found no generation, as an already-settled run. */
+const goneStop: ChatStreamAbortResult = { success: false, settled: true, code: 'NO_ACTIVE_RUN' };
+
 const isStreamAbort = (result: ChatAbortResult): result is ChatStreamAbortResult =>
   result != null && 'success' in result;
 
@@ -716,7 +719,15 @@ export class Chat {
         this.settle(getStopOutcome(generation), active);
         return;
       }
-      const ended = continuation || restored || dropped != null || active.reattach.continuation;
+      /**
+       * A caller that named the generation, as a status read does, knew it running; an unnamed
+       * probe finding nothing only means nothing runs. A generation already seen ending is done.
+       */
+      const named =
+        options.generationCreatedAt != null &&
+        !this.endedGenerations.has(options.generationCreatedAt);
+      const ended =
+        continuation || restored || named || dropped != null || active.reattach.continuation;
       if (!stream && ended) {
         this.action = undefined;
         this.decisions.clear();
@@ -848,8 +859,8 @@ export class Chat {
       await this.mergeRunMessages(result.runMessages, () => this.active === active);
       active.controller.abort();
       active.stream?.close();
-    } else if (result === null) {
-      /** No Assistants run was left to stop, so its stream will not report an end either. */
+    } else if (result === null || result === goneStop) {
+      /** No run was left to stop, so its stream will not report an end either. */
       active.controller.abort();
       active.stream?.close();
     } else if (!active.stream && !generation.persistenceFailed) {
@@ -980,7 +991,13 @@ export class Chat {
       throw this.lifetime.signal.reason;
     }
     const result = await untilAborted(
-      this.init.transport.abort({ chatId: this.id, ...target }),
+      this.init.transport.abort({ chatId: this.id, ...target }).catch((error: unknown) => {
+        if (isGone(error as ChatTransportError)) {
+          /** Nothing is left to stop, so the run ended on its own and the host reloads it. */
+          return goneStop;
+        }
+        throw error;
+      }),
       this.lifetime.signal,
     );
     if (result && 'success' in result && !result.success && !result.settled) {

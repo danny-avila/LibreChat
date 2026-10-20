@@ -1778,8 +1778,7 @@ describe('Chat', () => {
 
     /** The answer lands just before the stream opens, so the stop cancels the open. */
     answer?.({ success: false, settled: true, terminalStatus: 'complete' });
-    await Promise.resolve();
-    await Promise.resolve();
+    await flush();
     open?.(opened);
     await stopped;
     await resumed;
@@ -4347,6 +4346,20 @@ describe('Chat', () => {
       expect(onFinish).toHaveBeenLastCalledWith(
         expect.objectContaining({ isSettled: true, isResponseUnknown: true, message: undefined }),
       );
+    });
+
+    it('settles a named reattachment that finds its generation already finished', async () => {
+      const { chat, transport, onFinish } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      transport.reconnectToStream.mockResolvedValue(null);
+
+      await chat.resumeStream();
+      expect(onFinish).not.toHaveBeenCalled();
+
+      await chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 300 });
+      expect(onFinish).toHaveBeenCalledTimes(1);
+      expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isSettled: true }));
     });
 
     it('ignores a late status read for a late start a stop already ended', async () => {

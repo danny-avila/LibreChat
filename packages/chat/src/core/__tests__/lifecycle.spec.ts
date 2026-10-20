@@ -402,6 +402,13 @@ const events: Record<string, (h: Harness) => Promise<void>> = {
     });
     await events.stop(h);
   },
+  /** A stop the server answers 404: the generation finished and was deleted before it arrived. */
+  goneStop: async (h) => {
+    h.transport.abort.mockRejectedValue(
+      Object.assign(new Error('Not found'), { response: { status: 404 } }),
+    );
+    await events.stop(h);
+  },
   /** A reconnect that finds nothing running: the generation ended while nothing was attached. */
   reconnectIdle: async (h) => {
     h.transport.reconnectToStream.mockResolvedValue(null);
@@ -765,7 +772,12 @@ const table: Array<[keyof typeof states, keyof typeof events, Expected]> = [
     },
   ],
   ['detached', 'reconnectIdle', { status: 'ready', finishes: 2, last: settled, abort: NONE }],
-  ['restored', 'reconnectIdle', { status: 'ready', finishes: 0, action: NONE, abort: NONE }],
+  /** The reconnect named generation 100, which the caller knew running, so finding none settles it. */
+  [
+    'restored',
+    'reconnectIdle',
+    { status: 'ready', finishes: 1, last: settled, action: NONE, abort: NONE },
+  ],
   ['aborted', 'reconnectIdle', { status: 'ready', finishes: 1, last: aborted, abort: NONE }],
   [
     'detached',
@@ -959,8 +971,55 @@ const teardown: Array<[keyof typeof states, keyof typeof events, Expected]> = [
   ],
 ];
 
+/** A stop that finds the generation already gone ends whatever the chat still held for it. */
+const gone: Array<[keyof typeof states, keyof typeof events, Expected]> = [
+  [
+    'attached',
+    'goneStop',
+    {
+      status: 'ready',
+      connection: 'idle',
+      finishes: 1,
+      last: settled,
+      abort: live,
+      outcome: 'ok',
+      after: undefined,
+    },
+  ],
+  [
+    'detached',
+    'goneStop',
+    { status: 'ready', finishes: 2, last: settled, abort: live, outcome: 'ok' },
+  ],
+  [
+    'paused',
+    'goneStop',
+    {
+      status: 'ready',
+      connection: 'idle',
+      finishes: 1,
+      last: settled,
+      action: NONE,
+      abort: live,
+      outcome: 'ok',
+    },
+  ],
+  [
+    'restored',
+    'goneStop',
+    {
+      status: 'ready',
+      finishes: 1,
+      last: settled,
+      action: NONE,
+      abort: restoredTarget,
+      outcome: 'ok',
+    },
+  ],
+];
+
 describe('Chat teardown', () => {
-  it.each(teardown)('%s + %s', async (state, event, expected) => {
+  it.each([...teardown, ...gone])('%s + %s', async (state, event, expected) => {
     const h = createHarness();
     await states[state](h);
     await events[event](h);
