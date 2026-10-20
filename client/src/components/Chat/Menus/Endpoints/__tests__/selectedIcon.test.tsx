@@ -36,7 +36,7 @@ describe('getSelectedIcon', () => {
   });
 
   it('keeps the endpoint icon for a model with no known maker', () => {
-    renderSelected('phi4:14b');
+    renderSelected('starcoder2:15b');
     expect(screen.getByRole('img', { name: 'Ollama' })).toBeInTheDocument();
   });
 });

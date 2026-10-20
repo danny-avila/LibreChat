@@ -2156,3 +2156,13 @@ describe('reset interval validation', () => {
     },
   );
 });
+
+describe('passwordHashing config', () => {
+  it.each([1, 4, 32])('accepts %s hash workers', (maxWorkers) => {
+    expect(configSchema.shape.passwordHashing.parse({ maxWorkers })).toEqual({ maxWorkers });
+  });
+
+  it.each([0, 33, 1.5])('rejects %s hash workers', (maxWorkers) => {
+    expect(configSchema.shape.passwordHashing.safeParse({ maxWorkers }).success).toBe(false);
+  });
+});

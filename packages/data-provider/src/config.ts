@@ -2385,6 +2385,8 @@ const ttsLocalaiSchema = z.object({
 
 const ttsSchema = z.object({
   allowedAddresses: allowedAddressesSchema,
+  /** Longest text one request may synthesize; each 1,000 characters is a separate paid call. */
+  maxInputChars: z.number().int().positive().optional(),
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenlabs: ttsElevenLabsSchema.optional(),
@@ -4409,6 +4411,13 @@ export const configSchema = z.object({
     })
     .optional(),
   rateLimits: rateLimitSchema.optional(),
+  /** Worker threads that hash and verify passwords and auth tokens off the event loop. */
+  passwordHashing: z
+    .object({
+      /** Defaults to one less than the CPU count, at most 4. */
+      maxWorkers: z.number().int().min(1).max(32).optional(),
+    })
+    .optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
   filters: filtersConfigSchema.optional(),
