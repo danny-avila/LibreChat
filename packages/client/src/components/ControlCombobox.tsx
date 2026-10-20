@@ -121,23 +121,24 @@ function ControlCombobox({
     setValue: setSearchValue,
   });
 
+  /** Ariakit syncs the `placement` option into its store on every render, so the mirrored side
+   *  has to be the option itself, or the next render (a keystroke in the search) restores it. */
+  const [resolvedPlacement, setResolvedPlacement] = useState(placement);
   const select = Ariakit.useSelectStore({
     combobox,
     defaultItems: items.map(getItem),
     value: selectedValue,
     setValue,
     setOpen: onOpenChange,
-    placement,
+    placement: resolvedPlacement,
   });
 
   const selectOpen = select.useState('open');
   const selectAnchor = select.useState('anchorElement');
   /** Re-resolved on each open: a language switch flips the direction without remounting. */
   useLayoutEffect(() => {
-    if (placement) {
-      select.setState('placement', resolveSide(placement, selectAnchor));
-    }
-  }, [select, placement, selectAnchor, selectOpen]);
+    setResolvedPlacement(placement ? resolveSide(placement, selectAnchor) : placement);
+  }, [placement, selectAnchor, selectOpen]);
   useEffect(() => {
     // The select owns the popover; hiding it does not hide the combobox store.
     if (!selectOpen) {
