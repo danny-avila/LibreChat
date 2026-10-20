@@ -1452,21 +1452,25 @@ export class Chat {
       message = messages[messages.length - 1];
     }
     const { settled } = outcome;
-    this.notify();
-    if (outcome.kind === 'error') {
-      this.init.onError?.(outcome.error);
+    try {
+      this.notify();
+    } finally {
+      /** A listener that throws on the terminal state still leaves the host told how it ended. */
+      if (outcome.kind === 'error') {
+        this.init.onError?.(outcome.error);
+      }
+      this.init.onFinish?.({
+        message,
+        messages,
+        isAbort: outcome.kind === 'abort',
+        isDisconnect: outcome.kind === 'error' && outcome.disconnect,
+        isError: outcome.kind === 'error',
+        isSettled: settled !== undefined,
+        isResponseUnknown: responseUnknown,
+        ...(settled?.conversationId !== undefined && { conversationId: settled.conversationId }),
+        ...(settled?.reason !== undefined && { reconcileReason: settled.reason }),
+      });
     }
-    this.init.onFinish?.({
-      message,
-      messages,
-      isAbort: outcome.kind === 'abort',
-      isDisconnect: outcome.kind === 'error' && outcome.disconnect,
-      isError: outcome.kind === 'error',
-      isSettled: settled !== undefined,
-      isResponseUnknown: responseUnknown,
-      ...(settled?.conversationId !== undefined && { conversationId: settled.conversationId }),
-      ...(settled?.reason !== undefined && { reconcileReason: settled.reason }),
-    });
   }
 
   private release(active: ActiveRequest): void {
@@ -1555,9 +1559,18 @@ export class Chat {
     this.notify();
   }
 
+  /** Tells every listener, so one that throws cannot hide the change from the rest; then rethrows. */
   private notify(): void {
+    let failure: { error: unknown } | undefined;
     for (const listener of this.listeners) {
-      listener();
+      try {
+        listener();
+      } catch (error) {
+        failure ??= { error };
+      }
+    }
+    if (failure) {
+      throw failure.error;
     }
   }
 }

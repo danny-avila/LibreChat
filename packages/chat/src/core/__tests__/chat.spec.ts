@@ -223,6 +223,27 @@ describe('Chat', () => {
     expect(chat.connection).toBe('idle');
   });
 
+  it('finishes the turn when a subscriber throws on its terminal state', async () => {
+    const { chat, stream, onFinish } = setup();
+    const after = jest.fn();
+    chat.subscribe(() => {
+      if (chat.status === 'ready') {
+        throw new Error('listener failed');
+      }
+    });
+    chat.subscribe(after);
+
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    after.mockClear();
+    stream.push(finalEvent());
+    await sent;
+
+    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isError: false }));
+    expect(after).toHaveBeenCalled();
+    expect(chat.status).toBe('ready');
+  });
+
   it('notifies subscribers of each change', async () => {
     const { chat, stream } = setup();
     const listener = jest.fn();
