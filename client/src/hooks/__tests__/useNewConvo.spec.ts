@@ -2,17 +2,24 @@ import React from 'react';
 import { getDefaultStore, useAtom } from 'jotai';
 import { filesFamily } from '@librechat/chat/react';
 import { renderHook, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Constants, LocalStorageKeys, EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
+import {
+  setFilesDraft,
+  getAskAnswerDraftId,
+  bindComposerLaunch,
+  adoptComposerConversation,
+} from '~/utils/drafts';
+import { beginFileSearchUpload, transferFileSearchPreference } from '~/hooks/Files/search';
+import { setFileSearchChoice, transferFileSearchChoice } from '~/utils/choices';
 import { clearUploadRecovery } from '~/hooks/Files/useFileHandling';
-import { setFilesDraft, getAskAnswerDraftId } from '~/utils/drafts';
-import { beginFileSearchUpload } from '~/hooks/Files/search';
 import { useAutoSave } from '~/hooks/Input/useAutoSave';
-import { setFileSearchChoice } from '~/utils/choices';
 
 const mockDeleteFiles = jest.fn();
 const mockUploadFile = jest.fn();
+let mockUploadOptions: { onSuccess?: (data: object, body: FormData) => void } = {};
 let mockPreparationGate: Promise<void> | undefined;
 let mockConfigPending = false;
 let mockDownloadedFiles: File[] = [];
@@ -66,7 +73,10 @@ jest.mock('recoil', () => ({
     return null;
   },
   useSetRecoilState: (key: string) => (update: unknown) => mockSetEphemeralAgent(key, update),
-  useRecoilCallback: () => jest.fn(),
+  useRecoilCallback: (callback) =>
+    callback.length === 0
+      ? jest.fn()
+      : callback({ set: (key, update) => mockSetEphemeralAgent(key, update) }),
 }));
 jest.mock('librechat-data-provider/react-query', () => ({
   useGetModelsQuery: () => ({ data: {} }),
@@ -111,7 +121,10 @@ jest.mock('~/data-provider', () => ({
   useGetFiles: () => ({ data: mockFileList }),
   useGetFileConfig: () => ({ data: null }),
   useGetAgentByIdQuery: () => ({ data: undefined }),
-  useUploadFileMutation: () => ({ mutate: mockUploadFile }),
+  useUploadFileMutation: (options) => {
+    mockUploadOptions = options;
+    return { mutate: mockUploadFile };
+  },
 }));
 
 jest.mock('@librechat/client', () => ({
@@ -258,6 +271,202 @@ describe('useNewConvo reset cleanup', () => {
     }
   });
 
+  it.each(['before-ack', 'after-ack', 'later-disable'])(
+    'keeps the accepted upload preference when completion is %s',
+    (order) => {
+      const sourceKey = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}new`;
+      const targetKey = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}assigned-preference`;
+      setFileSearchChoice('new', false);
+      localStorage.setItem(sourceKey, order === 'before-ack' ? 'true' : 'false');
+      transferFileSearchPreference('new', 'assigned-preference');
+      if (order === 'after-ack') localStorage.setItem(targetKey, 'true');
+      if (order === 'later-disable') setFileSearchChoice('assigned-preference', false);
+      expect(transferFileSearchPreference('new', 'assigned-preference')).toBe(
+        order !== 'later-disable',
+      );
+      expect(localStorage.getItem(targetKey)).toBe(JSON.stringify(order !== 'later-disable'));
+    },
+  );
+
+  it.each(['upload', 'composer'])(
+    'keeps acknowledged first-ID completion when the %s host remounts',
+    async (remount) => {
+      const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
+      mockSaveDrafts = false;
+      mockFiles.clear();
+      mockConfigPending = false;
+      global.URL.createObjectURL = jest.fn(() => 'blob:remount');
+      global.URL.revokeObjectURL = jest.fn();
+      const queryClient = new QueryClient({
+        defaultOptions: {
+          queries: { retry: false, cacheTime: Infinity },
+          mutations: { retry: false },
+        },
+      });
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(QueryClientProvider, { client: queryClient }, children);
+      const useDraft = ({ conversationId }: { conversationId: string }) => {
+        const [files, setFiles] = useAtom(filesFamily(2));
+        useAutoSave({ index: 2, conversationId, files, setFiles });
+        return { files, setFiles };
+      };
+      let draft = renderHook(useDraft, { wrapper, initialProps: { conversationId: 'new' } });
+      const upload = renderHook(
+        () =>
+          useFileHandlingNoChatContext(undefined, {
+            index: 2,
+            ...draft.result.current,
+            conversation: {
+              conversationId: 'new',
+              endpoint: EModelEndpoint.openAI,
+            } as TConversation,
+          }),
+        { wrapper },
+      );
+      const launch = { conversationId: 'new' };
+      bindComposerLaunch(launch, 2);
+      await act(async () => {
+        await upload.result.current.handleFiles(
+          [new File(['file'], 'remount.txt', { type: 'text/plain' })],
+          'file_search',
+        );
+      });
+      const body = mockUploadFile.mock.calls[0][0] as FormData;
+      const options = mockUploadOptions;
+      expect(adoptComposerConversation(launch, 'saved-remount', 2)).toBe(true);
+      act(() => draft.rerender({ conversationId: 'saved-remount' }));
+      upload.unmount();
+      if (remount === 'composer') {
+        draft.unmount();
+        draft = renderHook(useDraft, {
+          wrapper,
+          initialProps: { conversationId: 'saved-remount' },
+        });
+      }
+      const replacement = renderHook(
+        () =>
+          useFileHandlingNoChatContext(undefined, {
+            index: 2,
+            ...draft.result.current,
+            conversation: {
+              conversationId: 'saved-remount',
+              endpoint: EModelEndpoint.openAI,
+            } as TConversation,
+          }),
+        { wrapper },
+      );
+      await act(async () => {
+        options.onSuccess?.(
+          {
+            temp_file_id: body.get('file_id'),
+            file_id: 'persisted-remount',
+            filename: 'remount.txt',
+            filepath: '/files/remount',
+            type: 'text/plain',
+            embedded: true,
+          },
+          body,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 320));
+      });
+      expect(draft.result.current.files.get(body.get('file_id') as string)?.progress).toBe(1);
+      replacement.unmount();
+      draft.unmount();
+      queryClient.clear();
+    },
+  );
+
+  it.each([
+    'pending-no-drafts',
+    'assigned',
+    'assigned-disable',
+    'source-disable',
+    'unrelated-navigation',
+  ])('keeps logical upload ownership through %s', async (mode) => {
+    const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
+    mockConfigPending = false;
+    mockPreparationGate = undefined;
+    mockFiles.clear();
+    mockSaveDrafts = mode !== 'pending-no-drafts';
+    const sourceId = mode === 'pending-no-drafts' ? 'existing-chat' : 'new';
+    const sourceConversation = { conversationId: sourceId };
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, cacheTime: Infinity },
+        mutations: { retry: false },
+      },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: queryClient }, children);
+    global.URL.createObjectURL = jest.fn(() => 'blob:logical');
+    global.URL.revokeObjectURL = jest.fn();
+    const { result, rerender, unmount } = renderHook(
+      ({ conversationId, isSubmitting }) => {
+        const [files, setFiles] = useAtom(filesFamily(2));
+        useAutoSave({ index: 2, conversationId, isSubmitting, files, setFiles });
+        return {
+          files,
+          handler: useFileHandlingNoChatContext(undefined, {
+            index: 2,
+            files,
+            setFiles,
+            conversation: { conversationId, endpoint: EModelEndpoint.openAI } as TConversation,
+          }),
+        };
+      },
+      { wrapper, initialProps: { conversationId: sourceId, isSubmitting: true } },
+    );
+    if (mode !== 'pending-no-drafts') bindComposerLaunch(sourceConversation, 2);
+    await act(async () => {
+      expect(
+        await result.current.handler.handleFiles(
+          [new File(['text'], 'logical.txt', { type: 'text/plain' })],
+          'file_search',
+        ),
+      ).toBe(true);
+    });
+    const body = mockUploadFile.mock.calls[0][0] as FormData;
+    const options = mockUploadOptions;
+    const targetId = mode === 'pending-no-drafts' ? sourceId : 'saved-chat';
+    if (mode !== 'pending-no-drafts' && mode !== 'unrelated-navigation') {
+      expect(adoptComposerConversation(sourceConversation, targetId, 2)).toBe(true);
+      transferFileSearchChoice('new', targetId);
+    }
+    act(() => rerender({ conversationId: targetId, isSubmitting: false }));
+    if (mode === 'assigned-disable') setFileSearchChoice(targetId, false);
+    if (mode === 'source-disable') setFileSearchChoice('new', false);
+    mockSetEphemeralAgent.mockClear();
+    await act(async () => {
+      const persisted = {
+        temp_file_id: body.get('file_id'),
+        file_id: 'server-file',
+        filepath: '/files/logical',
+        filename: 'logical.txt',
+        type: 'text/plain',
+        bytes: 4,
+        embedded: true,
+      };
+      mockFileList = [persisted];
+      options.onSuccess?.(persisted, body);
+      rerender({ conversationId: targetId, isSubmitting: false });
+      await new Promise((resolve) => setTimeout(resolve, 320));
+    });
+    if (mode === 'pending-no-drafts' || mode === 'assigned') {
+      expect(result.current.files.get(body.get('file_id') as string)?.progress).toBe(1);
+      expect(mockSetEphemeralAgent).toHaveBeenCalledWith(targetId, expect.any(Function));
+      expect(localStorage.getItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}${targetId}`)).toBe(
+        'true',
+      );
+    } else if (mode !== 'unrelated-navigation')
+      expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+    if (mode !== 'pending-no-drafts' && mode !== 'unrelated-navigation')
+      expect(localStorage.getItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}new`)).not.toBe(
+        'true',
+      );
+    unmount();
+    queryClient.clear();
+  });
+
   it.each(
     [
       'config',
@@ -310,6 +519,14 @@ describe('useNewConvo reset cleanup', () => {
           },
         });
       }
+      const queryClient = new QueryClient({
+        defaultOptions: {
+          queries: { retry: false, cacheTime: Infinity },
+          mutations: { retry: false },
+        },
+      });
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(QueryClientProvider, { client: queryClient }, children);
       const { result, rerender, unmount } = renderHook(
         ({ conversationId, draftId }) => {
           const [files, setFiles] = useAtom(filesFamily(2));
@@ -327,40 +544,43 @@ describe('useNewConvo reset cleanup', () => {
           );
           return { handler, sharepoint, files, state };
         },
-        { initialProps: { conversationId: origin, draftId: null as string | null } },
+        { wrapper, initialProps: { conversationId: origin, draftId: null as string | null } },
       );
       const contextState = result.current.state;
       const contextSharePoint = renderHook(() => useSharePoint({ toolResource: 'file_search' }), {
         wrapper: ({ children }) =>
           React.createElement(
-            ChatContext.Provider,
-            {
-              value: contextState as ReturnType<
-                typeof import('~/Providers/ChatContext').useChatContext
-              >,
-            },
-            children,
+            QueryClientProvider,
+            { client: queryClient },
+            React.createElement(
+              ChatContext.Provider,
+              {
+                value: contextState as ReturnType<
+                  typeof import('~/Providers/ChatContext').useChatContext
+                >,
+              },
+              children,
+            ),
           ),
       });
-      const next = renderHook(() => useNewConvo(2));
+      const next = renderHook(() => useNewConvo(2), { wrapper });
       let first: Promise<boolean> | undefined;
       let pending: Promise<boolean | void> = Promise.resolve();
       act(() => {
         if (boundary === 'queue')
           first = result.current.handler.handleFiles(mockDownloadedFiles, 'file_search');
-        pending =
-          boundary === 'sharepoint'
-            ? contextSharePoint.result.current.handleSharePointFiles([])
-            : boundary === 'sharepoint-no-context'
-              ? result.current.sharepoint.handleSharePointFiles([])
-              : result.current.handler.handleFiles(
-                  boundary === 'heic'
-                    ? [new File(['heic'], 'search.heic', { type: 'image/heic' })]
-                    : boundary === 'decode'
-                      ? [new File(['image'], 'search.png', { type: 'image/png' })]
-                      : mockDownloadedFiles,
-                  'file_search',
-                );
+        if (boundary === 'sharepoint') {
+          pending = contextSharePoint.result.current.handleSharePointFiles([]);
+        } else if (boundary === 'sharepoint-no-context') {
+          pending = result.current.sharepoint.handleSharePointFiles([]);
+        } else {
+          let selectedFiles = mockDownloadedFiles;
+          if (boundary === 'heic')
+            selectedFiles = [new File(['heic'], 'search.heic', { type: 'image/heic' })];
+          else if (boundary === 'decode')
+            selectedFiles = [new File(['image'], 'search.png', { type: 'image/png' })];
+          pending = result.current.handler.handleFiles(selectedFiles, 'file_search');
+        }
       });
       await act(async () => {
         await Promise.resolve();
@@ -396,6 +616,7 @@ describe('useNewConvo reset cleanup', () => {
       mockPreparationGate = undefined;
       window.history.replaceState({}, '', '/');
       global.Image = originalImage;
+      queryClient.clear();
     },
   );
 

@@ -262,9 +262,15 @@ export const useAutoSave = ({
    * which after a send put the just-sent attachment straight back as a chip. */
   const activeStorageId =
     currentConversationId === pendingDraftId ? pendingDraftId : conversationId;
+  const composerHostRef = useRef({});
   useEffect(() => {
     if (!activeStorageId) return;
-    return registerComposerDraft(index, _conversationId ?? Constants.NEW_CONVO, activeStorageId);
+    return registerComposerDraft(
+      index,
+      _conversationId ?? Constants.NEW_CONVO,
+      activeStorageId,
+      composerHostRef.current,
+    );
   }, [index, _conversationId, activeStorageId]);
 
   /** Snapshot before a URL prompt replaces text; user input resumes normal persistence. */

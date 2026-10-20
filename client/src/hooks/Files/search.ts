@@ -1,7 +1,8 @@
 import { LocalStorageKeys } from 'librechat-data-provider';
-import { isTimestampExpired, setTimestamp } from '~/utils/timestamps';
+import type { CapturedComposerDraft } from '~/utils/drafts';
+import { getTimestampedValue, isTimestampExpired, setTimestamp } from '~/utils/timestamps';
+import { getFileSearchChoice, transferFileSearchChoice } from '~/utils/choices';
 import { FILE_SEARCH_UPLOAD_PREFIX } from '~/utils/localStorage';
-import { getFileSearchChoice } from '~/utils/choices';
 
 const keyFor = (fileId: string) => `${FILE_SEARCH_UPLOAD_PREFIX}${fileId}`;
 
@@ -11,13 +12,45 @@ export type FileSearchUploadContext = Readonly<{
   createdAt: number;
 }>;
 type Intent = FileSearchUploadContext;
+const owners = new WeakMap<FileSearchUploadContext, CapturedComposerDraft>();
+const assignments = new Map<string, () => void>();
 
-export function captureFileSearchUpload(conversationId: string): FileSearchUploadContext {
-  return {
-    conversationId,
+export function transferFileSearchPreference(
+  sourceId: string,
+  targetId: string,
+): boolean | undefined {
+  let enabled = transferFileSearchChoice(sourceId, targetId);
+  const targetKey = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}${targetId}`;
+  try {
+    const preference =
+      getTimestampedValue(targetKey) ??
+      getTimestampedValue(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}${sourceId}`);
+    if (enabled == null && (preference === 'true' || preference === 'false')) {
+      enabled = preference === 'true';
+    }
+    if (enabled != null) {
+      localStorage.setItem(targetKey, JSON.stringify(enabled));
+      setTimestamp(targetKey);
+    }
+  } catch {
+    // A blocked store must not prevent the acknowledged identity handoff.
+  }
+  return enabled;
+}
+
+export function captureFileSearchUpload(
+  conversationId: string,
+  owner?: CapturedComposerDraft,
+): FileSearchUploadContext {
+  const context = {
+    get conversationId() {
+      return owner?.conversationId() ?? conversationId;
+    },
     choiceRevision: getFileSearchChoice(conversationId)?.revision ?? null,
     createdAt: Date.now(),
   };
+  if (owner) owners.set(context, owner);
+  return context;
 }
 
 export function beginFileSearchUpload(
@@ -26,6 +59,20 @@ export function beginFileSearchUpload(
 ): { choiceRevision: string | null; persisted: boolean } {
   const context = typeof operation === 'string' ? captureFileSearchUpload(operation) : operation;
   const { choiceRevision } = context;
+  assignments.get(fileId)?.();
+  const owner = owners.get(context);
+  if (owner)
+    assignments.set(
+      fileId,
+      owner.onAssignment((sourceId, targetId) => {
+        transferFileSearchPreference(sourceId, targetId);
+        try {
+          localStorage.setItem(keyFor(fileId), JSON.stringify(context));
+        } catch {
+          /* Live recovery owns completion. */
+        }
+      }),
+    );
   try {
     localStorage.setItem(keyFor(fileId), JSON.stringify(context));
     return { choiceRevision, persisted: true };
@@ -36,6 +83,8 @@ export function beginFileSearchUpload(
 }
 
 export function cancelFileSearchUpload(fileId: string): void {
+  assignments.get(fileId)?.();
+  assignments.delete(fileId);
   try {
     localStorage.removeItem(keyFor(fileId));
   } catch {

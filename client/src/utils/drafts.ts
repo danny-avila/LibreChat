@@ -304,36 +304,161 @@ export const subscribeDraftOwnership = (id: string, onChange: () => void): (() =
   };
 };
 
-type ComposerDraftScope = { conversationId: string; draftId: string };
+type ComposerDraftScope = {
+  conversationId: string;
+  draftId: string;
+  host?: object;
+  registration: object;
+  active: boolean;
+  generation: symbol;
+  answerId: string | null;
+  route: string;
+  assignedRoute?: string;
+  sourceId?: string;
+  assignments: Set<(sourceId: string, targetId: string) => void>;
+};
 const composerDraftScopes = new Map<number, ComposerDraftScope>();
+const composerLaunches = new WeakMap<object, { index: number; scope: ComposerDraftScope }>();
+const composerRoute = () => window.location.pathname + window.location.search;
 
 export const registerComposerDraft = (
   index: number,
   conversationId: string,
   draftId: string,
+  host?: object,
 ): (() => void) => {
-  const scope = { conversationId, draftId };
+  const previous = composerDraftScopes.get(index);
+  const generation = getNewConversationDraftToken(index);
+  const answerId = isAskAnswerDraftId(draftId) ? draftId : null;
+  const scope =
+    host &&
+    previous != null &&
+    (previous.host === host || (!previous.active && previous.sourceId != null)) &&
+    previous.generation === generation &&
+    previous.conversationId === conversationId &&
+    previous.answerId === answerId
+      ? previous
+      : {
+          conversationId,
+          draftId,
+          host,
+          registration: {},
+          generation,
+          answerId,
+          active: true,
+          route: composerRoute(),
+          assignments: new Set<(sourceId: string, targetId: string) => void>(),
+        };
+  const registration = {};
+  scope.registration = registration;
+  scope.host = host;
+  scope.active = true;
+  scope.draftId = draftId;
   composerDraftScopes.set(index, scope);
   return () => {
-    if (composerDraftScopes.get(index) === scope) composerDraftScopes.delete(index);
+    if (composerDraftScopes.get(index) !== scope || scope.registration !== registration) return;
+    scope.active = false;
+    void Promise.resolve().then(() => {
+      if (composerDraftScopes.get(index) === scope && !scope.active) {
+        composerDraftScopes.delete(index);
+      }
+    });
   };
 };
 
 export const getActiveComposerDraftId = (index: number, conversationId: string): string | null => {
   const scope = composerDraftScopes.get(index);
-  return scope?.conversationId === conversationId ? scope.draftId : null;
+  return scope?.active && scope.conversationId === conversationId ? scope.draftId : null;
 };
 
-/** Captured before preparation, using the same scope and reset generation as the composer. */
-export const captureComposerDraft = (index: number, conversationId: string): (() => boolean) => {
+export const bindComposerLaunch = (
+  conversation: object | null | undefined,
+  index: number,
+): void => {
+  const scope = composerDraftScopes.get(index);
+  if (conversation && scope?.active) composerLaunches.set(conversation, { index, scope });
+};
+
+/** Only an acknowledged submission may rename a logical new-chat composer. */
+export const adoptComposerConversation = (
+  conversation: object | null | undefined,
+  targetId: string,
+  index: number,
+): boolean => {
+  const launch = conversation ? composerLaunches.get(conversation) : undefined;
+  const scope = launch?.scope;
+  if (
+    !scope ||
+    launch?.index !== index ||
+    !scope.active ||
+    composerDraftScopes.get(index) !== scope ||
+    scope.generation !== getNewConversationDraftToken(index) ||
+    !targetId ||
+    targetId === Constants.NEW_CONVO
+  )
+    return false;
+  if (scope.sourceId === Constants.NEW_CONVO && scope.conversationId === targetId) {
+    return composerRoute() === scope.route || composerRoute() === scope.assignedRoute;
+  }
+  if (scope.conversationId !== Constants.NEW_CONVO || composerRoute() !== scope.route) return false;
+  const sourceId = scope.conversationId;
+  scope.sourceId = sourceId;
+  scope.conversationId = targetId;
+  const assignedRoute = new URL(scope.route, window.location.origin);
+  assignedRoute.pathname = assignedRoute.pathname.replace(
+    /\/new$/,
+    `/${encodeURIComponent(targetId)}`,
+  );
+  scope.assignedRoute = assignedRoute.pathname + assignedRoute.search;
+  scope.assignments.forEach((listener) => listener(sourceId, targetId));
+  return true;
+};
+
+export const resolveComposerConversationId = (conversationId: string): string => {
+  let assignedId: string | undefined;
+  for (const [index, scope] of composerDraftScopes) {
+    if (!scope.active || scope.generation !== getNewConversationDraftToken(index)) continue;
+    if (scope.conversationId === conversationId) return conversationId;
+    if (scope.sourceId !== conversationId) continue;
+    if (assignedId != null) return conversationId;
+    assignedId = scope.conversationId;
+  }
+  return assignedId ?? conversationId;
+};
+
+export type CapturedComposerDraft = (() => boolean) & {
+  registered: boolean;
+  conversationId: () => string;
+  onAssignment: (listener: (sourceId: string, targetId: string) => void) => () => void;
+};
+
+export const captureComposerDraft = (
+  index: number,
+  conversationId: string,
+): CapturedComposerDraft => {
   const scope = composerDraftScopes.get(index);
   const generation = getNewConversationDraftToken(index);
-  const route = window.location.pathname + window.location.search;
-  return () =>
-    (!scope || scope.conversationId === conversationId) &&
-    composerDraftScopes.get(index) === scope &&
-    getNewConversationDraftToken(index) === generation &&
-    window.location.pathname + window.location.search === route;
+  const route = composerRoute();
+  return Object.assign(
+    () =>
+      (!scope ||
+        (scope.active &&
+          (scope.conversationId === conversationId || scope.sourceId === conversationId))) &&
+      composerDraftScopes.get(index) === scope &&
+      getNewConversationDraftToken(index) === generation &&
+      (composerRoute() === route ||
+        (scope?.assignedRoute != null && composerRoute() === scope.assignedRoute)),
+    {
+      registered: scope != null,
+      conversationId: () => scope?.conversationId ?? conversationId,
+      onAssignment: (listener: (sourceId: string, targetId: string) => void) => {
+        scope?.assignments.add(listener);
+        return () => {
+          scope?.assignments.delete(listener);
+        };
+      },
+    },
+  );
 };
 
 const setLocalStorageItem = (key: string, value: string): void => {

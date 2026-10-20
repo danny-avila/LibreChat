@@ -83,6 +83,8 @@ import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData, TFinalResData } from '~/common';
 import {
   logger,
+  adoptComposerConversation,
+  bindComposerLaunch,
   clearComposerDrafts,
   applySteerPart,
   resolveRunEndTarget,
@@ -111,6 +113,7 @@ import {
 } from '~/data-provider';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { useChatTransport } from '~/Providers/ChatTransportContext';
+import { transferFileSearchPreference } from '~/hooks/Files/search';
 import { reopenTermsOnRefusal } from '~/utils/terms';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { fetchConvoSnapshot } from '~/utils/convos';
@@ -291,9 +294,13 @@ export default function useResumableSSE(
       );
       upsertConvoInAllQueries(queryClient, optimisticConversation);
 
-      return hydrateSubmissionMessages(currentSubmission, conversationId);
+      const hydrated = hydrateSubmissionMessages(currentSubmission, conversationId);
+      if (adoptComposerConversation(currentSubmission.conversation, conversationId, runIndex)) {
+        bindComposerLaunch(hydrated.conversation, runIndex);
+      }
+      return hydrated;
     },
-    [getMessages, queryClient],
+    [getMessages, queryClient, runIndex],
   );
   const [_completed, setCompleted] = useState(new Set());
   const [streamId, setStreamId] = useState<string | null>(null);
@@ -1376,6 +1383,9 @@ export default function useResumableSSE(
             queueTitleGeneration(newStreamId);
           }
           if (isInitialNewConversation(submission)) {
+            if (adoptComposerConversation(submission.conversation, newStreamId, runIndex)) {
+              transferFileSearchPreference(Constants.NEW_CONVO, newStreamId);
+            }
             run.optimisticStreamIds.add(newStreamId);
             replaceNewConversationUrl(newStreamId);
           }

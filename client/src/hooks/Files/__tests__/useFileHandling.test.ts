@@ -107,6 +107,9 @@ jest.mock('@librechat/client', () => ({
 
 jest.mock('recoil', () => ({
   ...jest.requireActual('recoil'),
+  useRecoilCallback: jest.fn((callback) =>
+    callback({ set: (atom, update) => mockSetEphemeralAgent(update, atom.key) }),
+  ),
   useSetRecoilState: jest.fn(
     (atom: { key: string }) =>
       (update: (previous: typeof mockEphemeralAgent) => typeof mockEphemeralAgent) => {

@@ -28,6 +28,10 @@ import {
   setFilesDraft,
   subscribeDraftOwnership,
   registerComposerDraft,
+  captureComposerDraft,
+  bindComposerLaunch,
+  adoptComposerConversation,
+  resolveComposerConversationId,
   getActiveComposerDraftId,
   removePendingTextAttachmentDraft,
   setPendingTextAttachmentDraft,
@@ -1169,5 +1173,103 @@ describe('composer draft ownership', () => {
     clearFilesDraft('observed');
     await Promise.resolve();
     expect(changed).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('logical composer lifetime', () => {
+  it('preserves pending storage migration but rejects a new host and answer scope', () => {
+    const host = {};
+    const leavePending = registerComposerDraft(7, 'chat', 'pending:7', host);
+    const captured = captureComposerDraft(7, 'chat');
+    leavePending();
+    const leaveIdle = registerComposerDraft(7, 'chat', 'chat', host);
+    expect(captured()).toBe(true);
+    leaveIdle();
+    const leaveAnswer = registerComposerDraft(7, 'chat', 'ask-answer:question', host);
+    expect(captured()).toBe(false);
+    leaveAnswer();
+  });
+  it('hands an acknowledged scope to a replacement host without accepting stale cleanup', () => {
+    const releaseFirst = registerComposerDraft(9, Constants.NEW_CONVO, 'pending:9', {});
+    const launch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(launch, 9);
+    const captured = captureComposerDraft(9, Constants.NEW_CONVO);
+    expect(adoptComposerConversation(launch, 'assigned-chat', 9)).toBe(true);
+    releaseFirst();
+    const releaseReplacement = registerComposerDraft(9, 'assigned-chat', 'assigned-chat', {});
+    releaseFirst();
+    expect(captured()).toBe(true);
+    expect(captured.conversationId()).toBe('assigned-chat');
+    releaseReplacement();
+    expect(captured()).toBe(false);
+  });
+
+  it('does not revive an acknowledged scope after genuine teardown', async () => {
+    const release = registerComposerDraft(10, Constants.NEW_CONVO, 'pending:10', {});
+    const launch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(launch, 10);
+    const captured = captureComposerDraft(10, Constants.NEW_CONVO);
+    expect(adoptComposerConversation(launch, 'closed-chat', 10)).toBe(true);
+    release();
+    await Promise.resolve();
+    const closeNewHost = registerComposerDraft(10, 'closed-chat', 'closed-chat', {});
+    expect(captured()).toBe(false);
+    closeNewHost();
+  });
+
+  it('does not treat a remount without acknowledgement as the same composer', () => {
+    const release = registerComposerDraft(11, 'existing-chat', 'existing-chat', {});
+    const captured = captureComposerDraft(11, 'existing-chat');
+    release();
+    const closeReplacement = registerComposerDraft(11, 'existing-chat', 'existing-chat', {});
+    expect(captured()).toBe(false);
+    closeReplacement();
+  });
+
+  it('keeps side-by-side new-chat choices from targeting an assigned pane', () => {
+    const releaseAssigned = registerComposerDraft(12, Constants.NEW_CONVO, 'pending:12', {});
+    const launch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(launch, 12);
+    const captured = captureComposerDraft(12, Constants.NEW_CONVO);
+    expect(adoptComposerConversation(launch, 'assigned-pane', 12)).toBe(true);
+    const releaseNew = registerComposerDraft(13, Constants.NEW_CONVO, 'new:13', {});
+    expect(resolveComposerConversationId(Constants.NEW_CONVO)).toBe(Constants.NEW_CONVO);
+    expect(captured()).toBe(true);
+    expect(captured.conversationId()).toBe('assigned-pane');
+    releaseNew();
+    releaseAssigned();
+  });
+
+  it('rejects a stale acknowledgement after navigation before React commits', () => {
+    window.history.replaceState({}, '', '/c/new?prompt=hello');
+    const release = registerComposerDraft(14, Constants.NEW_CONVO, 'pending:14', {});
+    const launch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(launch, 14);
+    window.history.pushState({}, '', '/c/unrelated');
+    expect(adoptComposerConversation(launch, 'stale-id', 14)).toBe(false);
+    release();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('preserves the query when the server replaces the new-chat URL', () => {
+    window.history.replaceState({}, '', '/c/new?prompt=hello');
+    const release = registerComposerDraft(15, Constants.NEW_CONVO, 'pending:15', {});
+    const launch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(launch, 15);
+    const captured = captureComposerDraft(15, Constants.NEW_CONVO);
+    expect(adoptComposerConversation(launch, 'assigned-id', 15)).toBe(true);
+    window.history.replaceState({}, '', '/c/assigned-id?prompt=hello');
+    expect(captured()).toBe(true);
+    release();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('rejects an acknowledgement from a launch superseded by New Chat', () => {
+    const release = registerComposerDraft(8, Constants.NEW_CONVO, 'pending:8', {});
+    const submissionConversation = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(submissionConversation, 8);
+    renewNewConversationDraftToken(8);
+    expect(adoptComposerConversation(submissionConversation, 'server-id', 8)).toBe(false);
+    release();
   });
 });

@@ -41,6 +41,7 @@ import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { ConvoTitleState } from '~/utils/convos';
 import {
   logger,
+  adoptComposerConversation,
   setDraft,
   getConversationDraftId,
   scrollToEnd,
@@ -71,6 +72,7 @@ import { getFailedCodeDecisionRequest } from '~/hooks/Agents/codeDecision';
 import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import { useChatTransport } from '~/Providers/ChatTransportContext';
+import { transferFileSearchPreference } from '~/hooks/Files/search';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useApplyAgentTemplate } from '~/hooks/Agents';
@@ -751,6 +753,11 @@ export default function useEventHandlers({
       }
 
       const { conversationId, parentMessageId } = userMessage;
+      const fileSearch =
+        conversationId &&
+        adoptComposerConversation(submission.conversation, conversationId, runIndex)
+          ? transferFileSearchPreference(Constants.NEW_CONVO, conversationId)
+          : undefined;
       lastAnnouncementTimeRef.current = Date.now();
       announcePolite({
         message: 'start',
@@ -803,7 +810,10 @@ export default function useEventHandlers({
         applyAgentTemplate({
           targetId: conversationId,
           sourceId: submission.conversation?.conversationId,
-          ephemeralAgent: submission.ephemeralAgent,
+          ephemeralAgent:
+            fileSearch == null
+              ? submission.ephemeralAgent
+              : { ...submission.ephemeralAgent, file_search: fileSearch },
           specName: submission.conversation?.spec,
           startupConfig: queryClient.getQueryData<TStartupConfig>(startupConfigKey(true)),
         });
@@ -820,6 +830,7 @@ export default function useEventHandlers({
       setConversation,
       applyAgentTemplate,
       focusRegeneratedResponse,
+      runIndex,
     ],
   );
 

@@ -4,9 +4,16 @@ import { RecoilRoot } from 'recoil';
 import { MemoryRouter } from 'react-router-dom';
 import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Constants, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
+import { Constants, EModelEndpoint, QueryKeys, LocalStorageKeys } from 'librechat-data-provider';
 import type { ChatCreatedFrame, EventSubmission, TConversation } from 'librechat-data-provider';
+import {
+  registerComposerDraft,
+  bindComposerLaunch,
+  captureComposerDraft,
+  getActiveComposerDraftId,
+} from '~/utils/drafts';
 import useCodeWorkspace from '~/hooks/Agents/useCodeWorkspace';
+import { setFileSearchChoice } from '~/utils/choices';
 import useEventHandlers from '../useEventHandlers';
 
 const mockStatus = jest.fn();
@@ -129,6 +136,61 @@ function setup(current = initialConversation, isAddedRequest = false) {
   };
   return { ...hook, submission, createdData, queryClient };
 }
+
+describe('created composer identity', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockApplyAgentTemplate.mockClear();
+    mockStatus.mockReturnValue([]);
+    mockStartupConfig.mockReturnValue({ codeEnvironmentDecisionVersion: 1 });
+  });
+
+  it.each([true, false])(
+    'preserves current File Search preference across acknowledgement (%s)',
+    (enabled) => {
+      const { result, submission, unmount, queryClient } = setup();
+      const release = registerComposerDraft(0, Constants.NEW_CONVO, 'pending', {});
+      bindComposerLaunch(submission.conversation, 0);
+      localStorage.setItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}new`, 'true');
+      if (!enabled) setFileSearchChoice('saved-chat', false);
+      act(() =>
+        result.current.createdHandler(
+          { created: true, message: submission.userMessage },
+          {
+            ...submission,
+            ephemeralAgent: { file_search: false },
+          },
+        ),
+      );
+      expect(mockApplyAgentTemplate).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          targetId: 'saved-chat',
+          ephemeralAgent: expect.objectContaining({ file_search: enabled }),
+        }),
+      );
+      expect(localStorage.getItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}saved-chat`)).toBe(
+        JSON.stringify(enabled),
+      );
+      release();
+      unmount();
+      queryClient.clear();
+    },
+  );
+
+  it('adopts only the composer bound to the acknowledged launch', () => {
+    const { result, submission, unmount } = setup();
+    const release = registerComposerDraft(0, Constants.NEW_CONVO, 'pending', {});
+    bindComposerLaunch(submission.conversation, 0);
+    const captured = captureComposerDraft(0, Constants.NEW_CONVO);
+    act(() =>
+      result.current.createdHandler({ created: true, message: submission.userMessage }, submission),
+    );
+    expect(captured.conversationId()).toBe('saved-chat');
+    expect(getActiveComposerDraftId(0, 'saved-chat')).toBe('pending');
+    release();
+    unmount();
+  });
+});
 
 describe('workspace decision at stream acknowledgement', () => {
   beforeEach(() => {

@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useMemo, useState } from 'react';
 import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
-import { useSetRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
   megabyte,
   QueryKeys,
@@ -201,7 +201,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const abortControllerRef = useRef<AbortController | null>(null);
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
   const { files, setFiles, conversation, index = 0 } = fileState;
-  const owner = useMemo(() => ({}), [index, conversation?.conversationId, params?.fileSetter]);
+  const owner = useMemo(() => ({}), [index, params?.fileSetter]);
+  const currentConversationRef = useRef(conversation?.conversationId ?? Constants.NEW_CONVO);
+  currentConversationRef.current = conversation?.conversationId ?? Constants.NEW_CONVO;
   const ownerRef = useRef<typeof owner | null>(owner);
   ownerRef.current = owner;
   useEffect(() => {
@@ -226,6 +228,15 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const setFilesLoading = fileState.setFilesLoading ?? noop;
   const setEphemeralAgent = useSetRecoilState(
     ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
+  );
+  const activateFileSearch = useRecoilCallback(
+    ({ set }) =>
+      (conversationId: string) =>
+        set(ephemeralAgentByConvoId(conversationId), (previous) => ({
+          ...previous,
+          [EToolResources.file_search]: true,
+        })),
+    [],
   );
   const { isTemporary } = useChatSettings();
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
@@ -427,15 +438,22 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     toolResource?: string,
     lifecycle?: UploadLifecycleCallbacks,
   ): UploadLifecycleCallbacks | undefined => {
+    const ownsDraft = captureComposerDraft(
+      index,
+      conversation?.conversationId ?? Constants.NEW_CONVO,
+    );
     if (isConversationUpload) {
-      const ownsDraft = captureComposerDraft(
-        index,
-        conversation?.conversationId ?? Constants.NEW_CONVO,
-      );
+      const originId = conversation?.conversationId ?? Constants.NEW_CONVO;
       const shouldCommit = lifecycle?.shouldCommit;
       const previousOwner = lifecycle?.isCurrent;
+      const usesComposerOwner = ownsDraft.registered && params?.fileSetter == null;
       const isCurrent = () =>
-        ownerRef.current === owner && ownsDraft() && previousOwner?.() !== false;
+        (usesComposerOwner || ownerRef.current === owner) &&
+        ownsDraft() &&
+        (usesComposerOwner ||
+          currentConversationRef.current === originId ||
+          currentConversationRef.current === ownsDraft.conversationId()) &&
+        previousOwner?.() !== false;
       lifecycle = {
         ...lifecycle,
         isCurrent,
@@ -454,9 +472,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     return {
       ...lifecycle,
       fileSearch: {
-        context: captureFileSearchUpload(conversation?.conversationId ?? Constants.NEW_CONVO),
-        activate: () =>
-          setEphemeralAgent((previous) => ({ ...previous, [EToolResources.file_search]: true })),
+        context: captureFileSearchUpload(
+          conversation?.conversationId ?? Constants.NEW_CONVO,
+          ownsDraft,
+        ),
+        activate: () => activateFileSearch(ownsDraft.conversationId()),
       },
     };
   };
