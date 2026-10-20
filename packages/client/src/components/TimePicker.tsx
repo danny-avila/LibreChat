@@ -2,8 +2,8 @@ import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { Clock } from 'lucide-react';
 import { Root, Trigger, Content } from '@radix-ui/react-popover';
 import type { KeyboardEvent, ReactNode } from 'react';
-import { cn, resolveArrowKey } from '~/utils';
 import { fieldControl } from './Field';
+import { cn } from '~/utils';
 
 const HOURS_24 = Array.from({ length: 24 }, (_, value) => value);
 const HOURS_12 = Array.from({ length: 12 }, (_, index) => (index === 0 ? 12 : index));
@@ -84,7 +84,7 @@ export function TimeColumn({
       Home: 0,
       End: values.length - 1,
     };
-    const target = moves[resolveArrowKey(event.key, event.currentTarget)];
+    const target = moves[event.key];
     if (target == null) {
       return;
     }

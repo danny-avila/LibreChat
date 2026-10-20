@@ -173,7 +173,7 @@ describe('MinutePicker', () => {
     expect(screen.getByTestId('minute')).toHaveTextContent('30');
   });
 
-  it('swaps ArrowLeft and ArrowRight under an RTL direction', async () => {
+  it('keeps ArrowRight advancing like ArrowDown in an RTL document, since the column is vertical', async () => {
     const user = userEvent.setup();
     document.documentElement.setAttribute('dir', 'rtl');
     try {
@@ -184,7 +184,7 @@ describe('MinutePicker', () => {
 
       fireEvent.keyDown(options[0], { key: 'ArrowRight' });
       expect(screen.getByTestId('minute')).toHaveTextContent(
-        options[options.length - 1].getAttribute('data-value') ?? '',
+        options[1].getAttribute('data-value') ?? '',
       );
     } finally {
       document.documentElement.removeAttribute('dir');
