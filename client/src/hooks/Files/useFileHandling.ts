@@ -11,6 +11,7 @@ import {
   EToolResources,
   mergeFileConfig,
   isAssistantsEndpoint,
+  isEphemeralAgentId,
   getEndpointFileConfig,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
@@ -353,9 +354,24 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     file_id: string,
     uploadLifecycle?: UploadLifecycleCallbacks,
   ) => {
-    if (uploadLifecycle) {
-      uploadErrorCallbacks.set(file_id, uploadLifecycle);
-      uploadLifecycle.onStart?.(file_id);
+    /* Capture the originating conversation's setter, not the mutation observer's
+     * current conversation. Removal clears this callback before any late success. */
+    const callbacks =
+      isConversationUpload &&
+      !isAssistantsEndpoint(endpointType ?? endpoint) &&
+      formData.get('tool_resource') === EToolResources.file_search &&
+      isEphemeralAgentId(formData.get('agent_id') as string | null)
+        ? {
+            ...uploadLifecycle,
+            onSuccess: (id: string) => {
+              setEphemeralAgent((prev) => ({ ...prev, [EToolResources.file_search]: true }));
+              uploadLifecycle?.onSuccess?.(id);
+            },
+          }
+        : uploadLifecycle;
+    if (callbacks) {
+      uploadErrorCallbacks.set(file_id, callbacks);
+      callbacks.onStart?.(file_id);
     }
     uploadFile.mutate(formData);
   };

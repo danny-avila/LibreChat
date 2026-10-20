@@ -81,6 +81,7 @@ interface Options {
   codeEnvironmentId?: string;
   statefulCodeSessionsAllowedByAgent?: boolean;
   authContext?: TAuthContext;
+  initialFileSearch?: boolean;
 }
 
 function accessContext(canUseFileSearch?: boolean): TAuthContext {
@@ -214,7 +215,15 @@ function renderAttach(options: Options = {}) {
     {
       wrapper: ({ children }: { children: React.ReactNode }) => (
         <AuthContext.Provider value={options.authContext ?? allowedAccess}>
-          <RecoilRoot>{children}</RecoilRoot>
+          <RecoilRoot
+            initializeState={({ set }) => {
+              if (options.initialFileSearch) {
+                set(ephemeralAgentByConvoId('convo-1'), { file_search: true });
+              }
+            }}
+          >
+            {children}
+          </RecoilRoot>
         </AuthContext.Provider>
       ),
     },
@@ -348,6 +357,24 @@ describe('useAttachItems', () => {
     );
   });
 
+  describe.each([false, true])('cancelled File Search selection (preenabled=%s)', (enabled) => {
+    it.each(['local', 'sharepoint'])('preserves the prior tool state for %s', (source) => {
+      const { result } = renderAttach({
+        isUnifiedMode: true,
+        sharePointEnabled: true,
+        initialFileSearch: enabled,
+      });
+      act(() => {
+        result.current.entries.find((entry) => entry.id === `${source}:file_search`)?.onSelect();
+      });
+      if (source === 'sharepoint') {
+        act(() => result.current.setIsSharePointDialogOpen(false));
+      }
+      expect(result.current.ephemeralAgent?.file_search ?? false).toBe(enabled);
+      expect(mockHandleFileChange).not.toHaveBeenCalled();
+    });
+  });
+
   describe('unified destinations', () => {
     it('keeps both sources implicit when File Search is disabled, even with code enabled', () => {
       expect(
@@ -437,7 +464,7 @@ describe('useAttachItems', () => {
       ).toMatchObject({ label: 'com_ui_upload_file_search (com_files_upload_sharepoint)' });
     });
 
-    it('carries File Search through the picker, enables it, and resets the next upload', () => {
+    it('carries File Search through the picker without enabling it and resets the next upload', () => {
       const { result } = renderAttach({ isUnifiedMode: true });
       const input = document.createElement('input');
       Object.defineProperty(result.current.inputRef, 'current', { value: input, writable: true });
@@ -450,7 +477,7 @@ describe('useAttachItems', () => {
         expect.anything(),
         EToolResources.file_search,
       );
-      expect(result.current.ephemeralAgent?.[EToolResources.file_search]).toBe(true);
+      expect(result.current.ephemeralAgent?.[EToolResources.file_search]).not.toBe(true);
 
       act(() => {
         result.current.entries.find((entry) => entry.id === 'local:unified')?.onSelect();

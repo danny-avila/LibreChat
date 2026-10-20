@@ -346,7 +346,6 @@ export default function useAttachItems({
           icon: <FileSearch className="icon-md" aria-hidden="true" />,
           onSelect: () => {
             setToolResource(EToolResources.file_search);
-            setEphemeralAgent((prev) => ({ ...prev, [EToolResources.file_search]: true }));
             onAction();
           },
         });

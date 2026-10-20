@@ -2,6 +2,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import {
   megabyte,
   Constants,
+  EToolResources,
   mergeFileConfig,
   EModelEndpoint,
   getEndpointFileConfig,
@@ -51,6 +52,14 @@ let mockHeicModuleError: Error | undefined;
 const mockShowToast = jest.fn();
 const mockSetFilesLoading = jest.fn();
 const mockMutate = jest.fn();
+let mockEphemeralAgent: { file_search?: boolean; execute_code?: boolean } = {};
+const mockSetEphemeralAgent = jest.fn(
+  (update: (previous: typeof mockEphemeralAgent) => typeof mockEphemeralAgent, _key?: string) => {
+    mockEphemeralAgent = update(mockEphemeralAgent);
+  },
+);
+let mockDownloadedFiles: File[] = [];
+let mockDownloadError: Error | undefined;
 const mockProcessFileForUpload = jest.fn(
   async (_file: File, _quality?: number, _onProgress?: (progress: number) => void) => _file,
 );
@@ -94,7 +103,12 @@ jest.mock('@librechat/client', () => ({
 
 jest.mock('recoil', () => ({
   ...jest.requireActual('recoil'),
-  useSetRecoilState: jest.fn(() => jest.fn()),
+  useSetRecoilState: jest.fn(
+    (atom: { key: string }) =>
+      (update: (previous: typeof mockEphemeralAgent) => typeof mockEphemeralAgent) => {
+        mockSetEphemeralAgent(update, atom.key);
+      },
+  ),
 }));
 
 jest.mock('~/Providers/ChatSettingsContext', () => ({
@@ -103,7 +117,7 @@ jest.mock('~/Providers/ChatSettingsContext', () => ({
 
 jest.mock('~/store', () => ({
   __esModule: true,
-  ephemeralAgentByConvoId: jest.fn(() => ({ key: 'mock' })),
+  ephemeralAgentByConvoId: jest.fn((key: string) => ({ key })),
 }));
 
 jest.mock('@tanstack/react-query', () => ({
@@ -130,6 +144,22 @@ jest.mock('~/hooks/useLocalize', () => {
   fn.TranslationKeys = {};
   return { __esModule: true, default: fn, TranslationKeys: {} };
 });
+
+jest.mock('../useSharePointDownload', () => ({
+  __esModule: true,
+  default: (options: { onFilesDownloaded?: (files: File[]) => void | Promise<void> }) => ({
+    downloadSharePointFiles: async () => {
+      if (mockDownloadError) {
+        throw mockDownloadError;
+      }
+      await options.onFilesDownloaded?.(mockDownloadedFiles);
+      return mockDownloadedFiles;
+    },
+    isDownloading: false,
+    downloadProgress: null,
+    error: null,
+  }),
+}));
 
 jest.mock('../useDelayedUploadToast', () => ({
   useDelayedUploadToast: jest.fn(() => ({
@@ -218,6 +248,9 @@ describe('useFileHandling', () => {
     mockIsTemporary = false;
     mockImageDecodes = true;
     mockUploadOptions = {};
+    mockEphemeralAgent = {};
+    mockDownloadedFiles = [];
+    mockDownloadError = undefined;
   });
 
   const loadHook = async () => (await import('../useFileHandling')).default;
@@ -1512,6 +1545,201 @@ describe('useFileHandling', () => {
       expect(uploadedFile.name).toBe('photo.jpg');
       expect(uploadedFile.type).toBe('image/jpeg');
     });
+  });
+
+  describe('explicit File Search activation', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => {
+      act(() => jest.runOnlyPendingTimers());
+      jest.useRealTimers();
+    });
+
+    const document = () => new File(['hello'], 'search.txt', { type: 'text/plain' });
+    const succeed = (body: FormData) => {
+      mockUploadOptions.onSuccess?.(
+        {
+          temp_file_id: body.get('file_id') as string,
+          file_id: 'persisted-search-file',
+          filepath: '/files/search.txt',
+          type: 'text/plain',
+          filename: 'search.txt',
+          source: 'local',
+          embedded: true,
+        },
+        body,
+      );
+    };
+
+    it('activates after persistence and before the attachment is submit-ready', async () => {
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+      const onSuccess = jest.fn(() => expect(mockEphemeralAgent.file_search).toBe(true));
+      await act(async () => {
+        await result.current.handleFiles([document()], EToolResources.file_search, { onSuccess });
+      });
+      expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+      act(() => succeed(mockMutate.mock.calls[0][0]));
+      expect(mockEphemeralAgent.file_search).toBe(true);
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+      expect(mockUpdateFileById).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ progress: 1 }),
+        expect.anything(),
+      );
+    });
+
+    it.each(['empty', 'rejected', 'invalid', 'oversized'])(
+      'does not activate for an %s batch',
+      async (mode) => {
+        const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        if (mode === 'rejected') mockValidateFiles.mockReturnValueOnce(false);
+        if (mode === 'invalid') {
+          mockValidateFiles.mockImplementationOnce(() => {
+            throw new Error('invalid config');
+          });
+        }
+        mockFileConfig = mergeFileConfig({ endpoints: { default: { fileSizeLimit: 1 } } });
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+        const files =
+          mode === 'empty'
+            ? []
+            : [
+                mode === 'oversized'
+                  ? makeSizedFile('large.txt', 'text/plain', 2 * megabyte)
+                  : document(),
+              ];
+        await act(async () => {
+          expect(await result.current.handleFiles(files, EToolResources.file_search)).toBe(false);
+        });
+        expect(mockMutate).not.toHaveBeenCalled();
+        expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+        error.mockRestore();
+      },
+    );
+
+    it.each([false, true])('preserves preenabled=%s on cancel/error', async (enabled) => {
+      const log = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      mockEphemeralAgent = { file_search: enabled };
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+      await act(async () => {
+        await result.current.handleFiles([document()], EToolResources.file_search);
+      });
+      const body = mockMutate.mock.calls[0][0] as FormData;
+      act(() => result.current.abortUpload(body.get('file_id') as string));
+      act(() => succeed(body));
+      expect(mockEphemeralAgent.file_search).toBe(enabled);
+      expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+      act(() => mockUploadOptions.onError?.(new Error('upload failed'), body));
+      expect(mockEphemeralAgent.file_search).toBe(enabled);
+      log.mockRestore();
+    });
+
+    it('does not activate on upload failure without cancellation', async () => {
+      const log = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+      await act(async () => {
+        await result.current.handleFiles([document()], EToolResources.file_search);
+      });
+      act(() => {
+        mockUploadOptions.onError?.(new Error('upload failed'), mockMutate.mock.calls[0][0]);
+      });
+      expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+      log.mockRestore();
+    });
+
+    it('activates when a surviving file in a partially rejected batch succeeds', async () => {
+      mockFileConfig = mergeFileConfig({ endpoints: { default: { fileSizeLimit: 1 } } });
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+      await act(async () => {
+        expect(
+          await result.current.handleFiles(
+            [document(), makeSizedFile('large.txt', 'text/plain', 2 * megabyte)],
+            EToolResources.file_search,
+          ),
+        ).toBe(true);
+      });
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+      act(() => succeed(mockMutate.mock.calls[0][0]));
+      expect(mockEphemeralAgent.file_search).toBe(true);
+    });
+
+    it('activates only the originating conversation after navigation', async () => {
+      mockConversation = { conversationId: 'origin', endpoint: 'openAI' };
+      const useFileHandling = await loadHook();
+      const { result, rerender } = renderHook(() => useFileHandling());
+      await act(async () => {
+        await result.current.handleFiles([document()], EToolResources.file_search);
+      });
+      mockConversation = { conversationId: 'destination', endpoint: 'openAI' };
+      rerender();
+      act(() => succeed(mockMutate.mock.calls[0][0]));
+      expect(mockSetEphemeralAgent).toHaveBeenCalledWith(expect.any(Function), 'origin');
+      expect(mockSetEphemeralAgent).not.toHaveBeenCalledWith(expect.anything(), 'destination');
+    });
+
+    it.each([undefined, EToolResources.context])(
+      'leaves implicit/context uploads unchanged (%s)',
+      async (resource) => {
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+        await act(async () => {
+          await result.current.handleFiles([document()], resource);
+        });
+        act(() => succeed(mockMutate.mock.calls[0][0]));
+        expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not change saved-agent tool configuration', async () => {
+      mockConversation = { agent_id: 'agent_saved', endpoint: 'agents' };
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+      await act(async () => {
+        await result.current.handleFiles([document()], EToolResources.file_search);
+      });
+      act(() => succeed(mockMutate.mock.calls[0][0]));
+      expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+    });
+
+    it.each(['empty', 'rejected', 'success', 'download failure'])(
+      'uses the same persistence boundary for SharePoint (%s)',
+      async (mode) => {
+        const log = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        mockDownloadedFiles = mode === 'empty' ? [] : [document()];
+        if (mode === 'rejected') mockValidateFiles.mockReturnValueOnce(false);
+        if (mode === 'download failure') mockDownloadError = new Error('download failed');
+        const { useSharePointFileHandlingNoChatContext } =
+          await import('../useSharePointFileHandling');
+        const { result } = renderHook(() =>
+          useSharePointFileHandlingNoChatContext(
+            { toolResource: EToolResources.file_search },
+            { files: new Map(), setFiles: jest.fn(), conversation: null },
+          ),
+        );
+        await act(async () => {
+          const promise = result.current.handleSharePointFiles([]);
+          if (mode === 'download failure') {
+            await expect(promise).rejects.toThrow('download failed');
+          } else {
+            await promise;
+          }
+        });
+        expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+        if (mode === 'success') {
+          expect(mockMutate).toHaveBeenCalledTimes(1);
+          act(() => succeed(mockMutate.mock.calls[0][0]));
+          expect(mockEphemeralAgent.file_search).toBe(true);
+        } else {
+          expect(mockMutate).not.toHaveBeenCalled();
+        }
+        log.mockRestore();
+      },
+    );
   });
 
   /** Callers gate success messaging on this result, so a rejected upload must not report true */
