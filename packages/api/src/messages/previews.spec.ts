@@ -13,6 +13,7 @@ import {
   withToolCallPreviews,
   withMessageToolCallPreviews,
   TOOL_CALL_PREVIEW_ELISION,
+  findSubagentAttachmentCalls,
 } from './previews';
 
 const limits = { outputChars: 1_024, argsChars: 1_024 };
@@ -733,5 +734,55 @@ describe('rejectToolCallPreviewWrites', () => {
     const result = run([toolPart({ output: 'x'.repeat(10_000) })]);
     expect(result.next).toHaveBeenCalled();
     expect(result.status).not.toHaveBeenCalled();
+  });
+});
+
+describe('findSubagentAttachmentCalls', () => {
+  const call = (id: string, extra: Record<string, unknown> = {}) => ({
+    type: ContentTypes.TOOL_CALL,
+    ...extra,
+    tool_call: { id, name: 'bash_tool', args: '{}', output: 'ok', progress: 1 },
+  });
+  const subagent = (id: string, transcript: unknown[], extra: Record<string, unknown> = {}) => ({
+    type: ContentTypes.TOOL_CALL,
+    ...extra,
+    tool_call: {
+      id,
+      name: 'subagent',
+      args: '{}',
+      output: 'done',
+      progress: 1,
+      subagent_content: transcript,
+    },
+  });
+
+  it('names the subagent whose transcript holds the scoped call, not one reusing the id unscoped', () => {
+    const content = [
+      call('call_0'),
+      subagent('sub_a', [call('call_0')]),
+      subagent('sub_b', [call('call_0', { agentId: 'illustrator' })], { agentId: 'host' }),
+    ];
+    const found = findSubagentAttachmentCalls(content, [
+      { toolCallId: 'call_0', agentId: 'illustrator' },
+    ]);
+    expect(found).toEqual([
+      { toolCallId: 'sub_a', calls: [{ id: 'call_0' }] },
+      {
+        toolCallId: 'sub_b',
+        agentId: 'host',
+        calls: [{ id: 'call_0', agentId: 'illustrator' }],
+      },
+    ]);
+  });
+
+  it('walks nested runs and ignores calls no queried file names', () => {
+    const content = [
+      subagent('outer', [subagent('inner', [call('deep'), call('other')])]),
+      { type: ContentTypes.TEXT, text: 'done' },
+    ];
+    expect(findSubagentAttachmentCalls(content, [{ toolCallId: 'deep' }])).toEqual([
+      { toolCallId: 'outer', calls: [{ id: 'deep' }] },
+    ]);
+    expect(findSubagentAttachmentCalls(content, [])).toEqual([]);
   });
 });

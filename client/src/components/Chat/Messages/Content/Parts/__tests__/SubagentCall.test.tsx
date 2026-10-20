@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type {
   PartMetadata,
+  TAttachment,
   SubagentIdentity,
   SubagentUpdateEvent,
   ParentSubagentSummary,
@@ -60,6 +61,12 @@ jest.mock('~/hooks', () => ({
 jest.mock('../Attachment', () => ({
   AttachmentGroup: ({ attachments }: { attachments: unknown }) => (
     <div data-testid="attachment-group">{JSON.stringify(attachments)}</div>
+  ),
+}));
+
+jest.mock('~/components/MCPUIResource', () => ({
+  MCPAppViews: ({ attachments }: { attachments?: unknown[] }) => (
+    <div data-testid="app-views">{JSON.stringify(attachments)}</div>
   ),
 }));
 
@@ -729,6 +736,44 @@ describe('SubagentCall', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Ran agent' })).toBeDisabled();
+  });
+
+  /** A tool inside the run saves its MCP App under the child call id, so the
+   *  standalone card is the only row that can show it. */
+  it('renders the MCP Apps its run produced beside its files', () => {
+    const app = {
+      type: 'ui_resources',
+      toolCallId: 'child-app-call',
+      ui_resources: [{ uri: 'ui://e2e/app', toolName: 'show_app', serverName: 'e2e-app' }],
+    } as unknown as TAttachment;
+    const tree = (hideAttachments: boolean) => (
+      <MemoryRouter>
+        <RecoilRoot>
+          <MessageContext.Provider
+            value={{
+              conversationId: 'parent-conversation',
+              messageId: 'parent',
+              isExpanded: false,
+            }}
+          >
+            <SubagentCall
+              toolCallId="app-call"
+              initialProgress={1}
+              args={{ subagent_type: 'self', description: 'Show the app.' }}
+              output="Shown."
+              attachments={[app]}
+              hideAttachments={hideAttachments}
+            />
+          </MessageContext.Provider>
+        </RecoilRoot>
+      </MemoryRouter>
+    );
+    const rendered = render(tree(false));
+
+    expect(JSON.parse(screen.getByTestId('app-views').textContent ?? '')).toEqual([app]);
+
+    rendered.rerender(tree(true));
+    expect(screen.queryByTestId('app-views')).toBeNull();
   });
 
   it('keeps model-authored lookalike output on the foreground adapter', () => {
