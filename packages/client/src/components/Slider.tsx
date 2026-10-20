@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useDirection } from '@radix-ui/react-direction';
 import * as SliderPrimitive from '@radix-ui/react-slider';
-import { cn, disabledFillClasses } from '~/utils';
+import { cn, isRtl, disabledFillClasses } from '~/utils';
 
 type SliderProps = React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root> & {
   className?: string;
@@ -28,10 +28,28 @@ const Slider: React.ForwardRefExoticComponent<SliderProps & React.RefAttributes<
       },
       ref,
     ) => {
-      const direction = useDirection();
+      const appDirection = useDirection();
+      const [direction, setDirection] = React.useState(appDirection);
+      const rootRef = React.useRef<HTMLSpanElement | null>(null);
+      const setRootRef = React.useCallback(
+        (node: HTMLSpanElement | null) => {
+          rootRef.current = node;
+          if (typeof ref === 'function') {
+            ref(node);
+          } else if (ref) {
+            ref.current = node;
+          }
+        },
+        [ref],
+      );
+      /** Radix reads only the app-wide provider. The root stamps its own `dir`, so the nearest
+       *  `dir` above it decides, and an LTR island inside an RTL app keeps an LTR slider. */
+      React.useLayoutEffect(() => {
+        setDirection(isRtl(rootRef.current?.parentElement) ? 'rtl' : 'ltr');
+      }, [appDirection]);
       return (
         <SliderPrimitive.Root
-          ref={ref}
+          ref={setRootRef}
           dir={direction}
           {...props}
           {...{
