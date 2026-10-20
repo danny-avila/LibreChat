@@ -1,7 +1,14 @@
 /**
  * Ranges of Unicode Bidi_Class R and AL, and of every class other than L, R and AL, generated
- * from the Unicode 15.1 character database. Unassigned code points and combining marks are
- * left out, as are controls, so a range spans the gaps between its members.
+ * from the Unicode 15.1 character database (Python 3.13 `unicodedata.bidirectional`).
+ * Unassigned code points, nonspacing and enclosing marks and controls are left out, so a
+ * range spans the gaps between its members. To regenerate, collect the code points of each
+ * class while skipping categories Cn, Cs, Mn, Me and Cc, and merge them into ranges.
+ *
+ * Six assigned code points disagree with the table, all harmless as a first character:
+ * U+0CBF, U+0CC6, U+11A07, U+11A08 and U+11C3F are nonspacing marks of bidi class L, which
+ * only follow a letter that already decides; U+1171E (Ahom) is categorized differently by
+ * the newer Unicode version in the JavaScript runtime.
  */
 const RTL_STRONG =
   /[\u05BE-\u05F4\u0608\u060B\u060D\u061B-\u064A\u066D-\u06D5\u06E5-\u06E6\u06EE-\u06EF\u06FA-\u07F5\u07FA-\u088E\u08A0-\u08C9\u200F\uFB1D-\uFB28\uFB2A-\uFD3D\uFD50-\uFDC7\uFDF0-\uFDFC\uFE70-\uFEFC\u{10800}-\u{1091B}\u{10920}-\u{10B35}\u{10B40}-\u{10D23}\u{10E80}-\u{10FF6}\u{1E800}-\u{1EEBB}]/u;
