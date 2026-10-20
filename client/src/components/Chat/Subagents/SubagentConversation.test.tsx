@@ -1,7 +1,12 @@
 import React from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import type { FullToolCall, TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type {
+  FullToolCall,
+  PartMetadata,
+  TMessage,
+  TMessageContentParts,
+} from 'librechat-data-provider';
 import type { ChatContract } from '~/hooks/Chat/contract';
 import type { ChildConversationTurn } from './adapters';
 import type { TurnAuthor } from './author';
@@ -574,7 +579,7 @@ it('does not render cached recovery after refreshed history revokes the retained
 it.each(['running', 'completed'] as const)(
   'strips root and nested approval payloads from %s recovered content without changing the cache',
   (status) => {
-    const nested: FullToolCall = {
+    const nested: FullToolCall & PartMetadata = {
       id: 'nested',
       name: 'nested_tool',
       args: '{}',
@@ -582,7 +587,7 @@ it.each(['running', 'completed'] as const)(
       progress: 0,
       approval: { actionId: 'nested-approval', allowed_decisions: ['approve'] },
     };
-    const tool: FullToolCall = {
+    const tool: FullToolCall & PartMetadata = {
       id: 'root',
       name: 'protected_tool',
       args: '{}',
