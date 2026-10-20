@@ -3,7 +3,13 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { logger, balanceSchema } from '@librechat/data-schemas';
 import type { NextFunction, Request as ServerRequest, Response as ServerResponse } from 'express';
 import type { IBalance, IBalanceUpdate } from '@librechat/data-schemas';
-import { buildBalanceUpdateFields, createSetBalanceConfig } from './balance';
+import type { ServerRequest as ApiServerRequest } from '~/types/http';
+import {
+  buildBalanceUpdateFields,
+  createSetBalanceConfig,
+  createUpdatePersonalSpendLimit,
+  resolveAssignedCreditLimit,
+} from './balance';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -782,5 +788,146 @@ describe('balance refill mode synchronization', () => {
   test('restores additive mode when the reset option is removed', () => {
     const record = { ...config, refillMode: 'reset', lastRefill: new Date() } as IBalance;
     expect(buildBalanceUpdateFields(config, record, 'user-1')).toEqual({ refillMode: 'add' });
+  });
+});
+
+describe('resolveAssignedCreditLimit', () => {
+  it('prefers the configured start balance', () => {
+    expect(resolveAssignedCreditLimit({ assignedCreditLimit: 20_000, tokenCredits: 500 })).toBe(
+      20_000,
+    );
+  });
+
+  it('falls back to current token credits', () => {
+    expect(resolveAssignedCreditLimit({ tokenCredits: 500 })).toBe(500);
+  });
+});
+
+describe('createUpdatePersonalSpendLimit', () => {
+  const upsertPersonal = jest.fn();
+  const findPersonal = jest.fn();
+  const next = jest.fn() as unknown as NextFunction;
+
+  const createReq = (body: Record<string, unknown>): ApiServerRequest =>
+    ({ user: { id: 'user-1' }, body }) as unknown as ApiServerRequest;
+
+  const createRes = (locals: Record<string, unknown> = {}) => {
+    const res = {
+      locals,
+      statusCode: 200,
+      body: undefined as unknown,
+      status(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        this.body = payload;
+        return this;
+      },
+      sendStatus(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+    };
+    return res as unknown as ServerResponse & { statusCode: number; body: unknown };
+  };
+
+  const handler = () =>
+    createUpdatePersonalSpendLimit({
+      upsertBalanceFields: upsertPersonal,
+      findBalanceByUser: findPersonal,
+    });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    findPersonal.mockResolvedValue({
+      tokenCredits: 1000,
+    } as unknown as IBalance);
+  });
+
+  it('returns 204 when balance is disabled', async () => {
+    const res = createRes({ balanceConfigEnabled: false });
+    await handler()(createReq({ personalSpendEnabled: true }), res, next);
+    expect(res.statusCode).toBe(204);
+    expect(upsertPersonal).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty body', async () => {
+    const res = createRes({ balanceConfigEnabled: true });
+    await handler()(createReq({}), res, next);
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a negative limit', async () => {
+    const res = createRes({ balanceConfigEnabled: true, assignedCreditLimit: 1000 });
+    await handler()(createReq({ personalSpendLimit: -1 }), res, next);
+    expect(res.statusCode).toBe(400);
+    expect(upsertPersonal).not.toHaveBeenCalled();
+  });
+
+  it('rejects a limit above the assigned credit allotment', async () => {
+    const res = createRes({
+      balanceConfigEnabled: true,
+      assignedCreditLimit: 1000,
+      balanceData: { tokenCredits: 1000 } as unknown as IBalance,
+    });
+    await handler()(createReq({ personalSpendLimit: 1001 }), res, next);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        error: 'personalSpendLimit cannot exceed the assigned credit limit',
+        assignedCreditLimit: 1000,
+      }),
+    );
+    expect(upsertPersonal).not.toHaveBeenCalled();
+  });
+
+  it('persists a limit at the assigned ceiling without clamping against used spend', async () => {
+    upsertPersonal.mockResolvedValue({
+      _id: 'bal-1',
+      user: 'user-1',
+      tokenCredits: 1000,
+      autoRefillEnabled: false,
+      personalSpendEnabled: true,
+      personalSpendLimit: 50,
+      personalSpendUsed: 80,
+    } as unknown as IBalance);
+
+    const res = createRes({
+      balanceConfigEnabled: true,
+      assignedCreditLimit: 1000,
+      balanceData: { tokenCredits: 1000 } as unknown as IBalance,
+    });
+    await handler()(createReq({ personalSpendEnabled: true, personalSpendLimit: 50 }), res, next);
+
+    expect(upsertPersonal).toHaveBeenCalledWith('user-1', {
+      personalSpendEnabled: true,
+      personalSpendLimit: 50,
+    } satisfies IBalanceUpdate);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        personalSpendEnabled: true,
+        personalSpendLimit: 50,
+        personalSpendUsed: 80,
+      }),
+    );
+  });
+
+  it('clears the limit with null', async () => {
+    upsertPersonal.mockResolvedValue({
+      _id: 'bal-1',
+      tokenCredits: 100,
+      autoRefillEnabled: false,
+      personalSpendEnabled: true,
+      personalSpendLimit: null,
+      personalSpendUsed: 10,
+    } as unknown as IBalance);
+
+    const res = createRes({ balanceConfigEnabled: true, assignedCreditLimit: 1000 });
+    await handler()(createReq({ personalSpendLimit: null }), res, next);
+
+    expect(upsertPersonal).toHaveBeenCalledWith('user-1', { personalSpendLimit: null });
+    expect(res.statusCode).toBe(200);
   });
 });

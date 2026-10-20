@@ -1,7 +1,12 @@
 import { useRecoilValue } from 'recoil';
-import { QueryKeys, dataService } from 'librechat-data-provider';
-import { useQuery } from '@tanstack/react-query';
-import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { MutationKeys, QueryKeys, dataService } from 'librechat-data-provider';
+import type {
+  QueryObserverResult,
+  UseMutationOptions,
+  UseMutationResult,
+  UseQueryOptions,
+} from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import store from '~/store';
 
@@ -29,6 +34,23 @@ export const useGetUserBalance = (
     ...config,
     enabled: (config?.enabled ?? true) === true && queriesEnabled,
   });
+};
+
+export const useUpdatePersonalSpendLimitMutation = (
+  options?: UseMutationOptions<t.TBalanceResponse, Error, t.TUpdatePersonalSpendLimitRequest>,
+): UseMutationResult<t.TBalanceResponse, Error, t.TUpdatePersonalSpendLimitRequest, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation<t.TBalanceResponse, Error, t.TUpdatePersonalSpendLimitRequest>(
+    [MutationKeys.updatePersonalSpendLimit],
+    (payload) => dataService.updatePersonalSpendLimit(payload),
+    {
+      ...options,
+      onSuccess: (data, ...args) => {
+        queryClient.setQueryData<t.TBalanceResponse>([QueryKeys.balance], data);
+        options?.onSuccess?.(data, ...args);
+      },
+    },
+  );
 };
 
 export const useGetSearchEnabledQuery = (

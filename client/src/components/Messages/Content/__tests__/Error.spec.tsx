@@ -853,6 +853,16 @@ describe('Error — token balance and context budget', () => {
     expect(screen.getByText(/^model-25 —/)).toBeInTheDocument();
   });
 
+  it('shows a short personal spend limit message', () => {
+    renderError({
+      type: ViolationTypes.PERSONAL_SPEND_LIMIT,
+      balance: 5000,
+      tokenCost: 100,
+    });
+
+    expect(screen.getByText(catalog.com_error_personal_spend_limit)).toBeInTheDocument();
+  });
+
   it('formats input length and offers the standard context next steps', () => {
     renderError({ type: ErrorTypes.INPUT_LENGTH, info: '214500 / 128000' }, providerMessage);
 

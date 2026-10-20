@@ -31,6 +31,12 @@ export interface IBalance extends Document {
   /** Sum of `reservations` amounts, maintained by the same writes */
   reservedCredits?: number;
   pendingRefill?: IBalancePendingRefill;
+  /** User toggle: personal spend limit is enforced only when true */
+  personalSpendEnabled?: boolean;
+  /** Personal cap for the current balance allotment; cleared when the balance refills/resets */
+  personalSpendLimit?: number | null;
+  /** Credits spent under the personal cap in the current allotment; reset on refill/reset */
+  personalSpendUsed?: number;
 }
 
 /** Plain data fields for creating or updating a balance record (no Mongoose Document methods) */
@@ -43,6 +49,9 @@ export interface IBalanceUpdate {
   refillAmount?: number;
   refillMode?: BalanceRefillMode;
   lastRefill?: Date;
+  personalSpendEnabled?: boolean;
+  personalSpendLimit?: number | null;
+  personalSpendUsed?: number;
 }
 
 /** Holds credits against a user's balance for the lifetime of one in-flight request */
@@ -79,8 +88,12 @@ export interface BalanceReservationRelease {
   amount: number;
 }
 
+export type BalanceReservationDenialReason = 'insufficient_credits' | 'personal_spend_limit';
+
 export interface BalanceReservationResult {
   reserved: boolean;
   /** Credits not held by other in-flight requests, after any auto-refill */
   balance: number;
+  /** Set when `reserved` is false so callers can map the failure to the right violation */
+  reason?: BalanceReservationDenialReason;
 }

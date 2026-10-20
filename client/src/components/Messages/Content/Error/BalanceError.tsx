@@ -1,3 +1,4 @@
+import { ViolationTypes } from 'librechat-data-provider';
 import type { ErrorRendererProps, JsonValue } from './parts';
 import { ErrorBody, ErrorDetails, formatNumber, readNumber, readString } from './parts';
 import { useBalanceDisplay } from '~/hooks/useBalanceSummary';
@@ -38,12 +39,21 @@ function readGeneration(generation: JsonValue): GenerationRow | null {
 export default function BalanceError({ json }: ErrorRendererProps) {
   const localize = useLocalize();
   const { display, currency } = useBalanceDisplay();
+  const type = readString(json, 'type');
   const balance = readNumber(json, 'balance');
   const tokenCost = readNumber(json, 'tokenCost');
   const promptTokens = readNumber(json, 'promptTokens');
   const generations = Array.isArray(json.generations)
     ? json.generations.map(readGeneration).filter((row): row is GenerationRow => row != null)
     : [];
+
+  if (type === ViolationTypes.PERSONAL_SPEND_LIMIT) {
+    return (
+      <ErrorBody>
+        <p>{localize('com_error_personal_spend_limit')}</p>
+      </ErrorBody>
+    );
+  }
 
   /** Same figures the balance summary shows: money for `currency`, none at all for `percent` */
   let summary = localize('com_error_limit_reached');

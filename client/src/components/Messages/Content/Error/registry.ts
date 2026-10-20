@@ -72,6 +72,7 @@ export const errorRenderers: Record<string, ComponentType<ErrorRendererProps>> =
   [ErrorTypes.FINAL_CONTEXT_OVERFLOW]: ContextError,
   [ErrorTypes.COMPACTION_SKIPPED]: ContextError,
   [ViolationTypes.TOKEN_BALANCE]: BalanceError,
+  [ViolationTypes.PERSONAL_SPEND_LIMIT]: BalanceError,
   [ViolationTypes.MESSAGE_LIMIT]: LimitError,
   [ViolationTypes.CONCURRENT]: LimitError,
   [ViolationTypes.FILE_UPLOAD_LIMIT]: LimitError,

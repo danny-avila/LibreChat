@@ -4881,6 +4881,10 @@ export enum ViolationTypes {
    */
   TOKEN_BALANCE = 'token_balance',
   /**
+   * Personal lifetime spend limit violation.
+   */
+  PERSONAL_SPEND_LIMIT = 'personal_spend_limit',
+  /**
    * An issued ban.
    */
   BAN = 'ban',

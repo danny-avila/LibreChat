@@ -56,6 +56,7 @@ import ImageResize from '../SettingsTabs/Chat/ImageResize';
 import Passkeys from '../SettingsTabs/Account/Passkeys';
 import { showThinkingAtom } from '~/store/showThinking';
 import ProviderKeys from '../SettingsTabs/ProviderKeys';
+import PersonalSpendLimit from './PersonalSpendLimit';
 import { showLiaAtom } from '~/components/Lia/store';
 import { autoScrollAtom } from '~/store/autoScroll';
 import Avatar from '../SettingsTabs/Account/Avatar';
@@ -856,6 +857,15 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_ui_settings_label_auto_refill',
     show: (ctx) => ctx.balanceEnabled,
     Component: AutoRefill,
+  },
+  {
+    id: 'personalSpendLimit',
+    tab: ACCOUNT,
+    section: 'billing',
+    labelKey: 'com_ui_settings_label_personal_spend_limit',
+    keywords: ['personal', 'spend', 'limit', 'budget', 'cap'],
+    show: (ctx) => ctx.balanceEnabled,
+    Component: PersonalSpendLimit,
   },
   // Account · Danger zone
   {

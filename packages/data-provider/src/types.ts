@@ -1266,6 +1266,17 @@ export type TBalanceResponse = {
   lastRefill?: Date | string;
   refillAmount?: number;
   refillMode?: BalanceRefillMode;
+  /** User toggle: personal spend limit is enforced only when true */
+  personalSpendEnabled?: boolean;
+  /** Personal cap for the current balance allotment; cleared when the balance refills/resets */
+  personalSpendLimit?: number | null;
+  /** Credits spent under the personal cap in the current allotment */
+  personalSpendUsed?: number;
+};
+
+export type TUpdatePersonalSpendLimitRequest = {
+  personalSpendEnabled?: boolean;
+  personalSpendLimit?: number | null;
 };
 
 /* -------------------------------------------------------------------------- */

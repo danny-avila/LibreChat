@@ -618,7 +618,10 @@ function classifyScheduledFailure(error, aborted = false) {
   if (aborted || error?.code === 'SCHEDULE_NO_LONGER_ACTIVE') {
     return { status: 'interrupted', error: error?.message };
   }
-  if (error?.message?.includes(ViolationTypes.TOKEN_BALANCE)) {
+  if (
+    error?.message?.includes(ViolationTypes.TOKEN_BALANCE) ||
+    error?.message?.includes(ViolationTypes.PERSONAL_SPEND_LIMIT)
+  ) {
     return { status: 'skipped_balance' };
   }
   return { status: 'error', error: error?.message || 'Generation failed' };

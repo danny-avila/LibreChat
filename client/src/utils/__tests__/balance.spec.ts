@@ -67,6 +67,32 @@ describe('summarizeBalance', () => {
   it('drops an unreadable last-refill date instead of inventing one', () => {
     expect(summarizeBalance(refilling({ lastRefill: 'not a date' })).nextRefill).toBeNull();
   });
+
+  it('does not map personal budget when the toggle is off', () => {
+    const summary = summarizeBalance({
+      tokenCredits: 5_000,
+      autoRefillEnabled: false,
+      personalSpendEnabled: false,
+      personalSpendLimit: 1_000,
+      personalSpendUsed: 200,
+    });
+    expect(summary.personalLimit).toBeNull();
+    expect(summary.personalUsed).toBeNull();
+    expect(summary.personalRemaining).toBeNull();
+  });
+
+  it('maps personal remaining only when enabled with a finite limit', () => {
+    const summary = summarizeBalance({
+      tokenCredits: 5_000,
+      autoRefillEnabled: false,
+      personalSpendEnabled: true,
+      personalSpendLimit: 1_000,
+      personalSpendUsed: 250,
+    });
+    expect(summary.personalLimit).toBe(1_000);
+    expect(summary.personalUsed).toBe(250);
+    expect(summary.personalRemaining).toBe(750);
+  });
 });
 
 describe('formatBalanceAmount', () => {

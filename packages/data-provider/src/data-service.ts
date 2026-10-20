@@ -297,6 +297,12 @@ export function getUserBalance(): Promise<t.TBalanceResponse> {
   return request.get(endpoints.balance());
 }
 
+export function updatePersonalSpendLimit(
+  payload: t.TUpdatePersonalSpendLimitRequest,
+): Promise<t.TBalanceResponse> {
+  return request.patch(endpoints.balancePersonalLimit(), payload);
+}
+
 export const login = (payload: t.TLoginUser): Promise<t.TLoginResponse> => {
   return request.post(endpoints.login(), payload);
 };
