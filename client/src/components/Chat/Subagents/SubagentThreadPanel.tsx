@@ -284,7 +284,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       taskView?.status === 'interrupted' ||
       taskView?.status === 'cancelled');
   const priorTerminalRef = useRef(false);
-  useSubagentActivityStream(selection, !durableTerminal || eventTaskRunning);
+  const contentStream = useSubagentActivityStream(selection, !durableTerminal || eventTaskRunning);
 
   useEffect(() => {
     if (selection.event == null) return;
@@ -1522,6 +1522,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           parentAuthor={isSelfSpawn && selection.event == null ? childAuthor : parentAuthor}
           conversationId={threadId || selection.parentConversationId}
           interactive={selection.host === 'conversation' && selection.durable == null}
+          recovery={selection.durable == null ? undefined : {
+            parentConversationId: selection.parentConversationId,
+            threadId,
+            selectedTaskId: taskId,
+            ready: contentStream?.isReady === true,
+          }}
           stateByTask={conversationStateByTask}
           controllableTaskId={
             controlAvailable && !controlPending ? selection.durable?.taskId : undefined

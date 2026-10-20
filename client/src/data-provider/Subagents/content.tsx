@@ -1,0 +1,115 @@
+import { createContext, useContext, useEffect, useMemo } from 'react';
+import { atom, useStore } from 'jotai';
+import { atomFamily } from 'jotai/utils';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, dataService, hasToolCallPreview } from 'librechat-data-provider';
+import type { SubagentTaskContentSnapshot, ToolCallPartResponse } from 'librechat-data-provider';
+import type { UseQueryOptions } from '@tanstack/react-query';
+import type { ToolContentQuery } from '~/components/Chat/Messages/Content/disclosure';
+import type { RecoveredContent } from '~/components/Chat/Subagents/recovery';
+import { recoverTaskContent, recoveredToolPart } from '~/components/Chat/Subagents/recovery';
+import { isLiveSubagentStatus } from '~/components/Chat/Subagents/status';
+import { ACTIVE_THREAD_REFRESH_MS } from './queries';
+
+export type TaskContentScope = {
+  parentConversationId: string;
+  threadId: string;
+  taskId: string;
+};
+
+export const TaskContentScopeContext = createContext<TaskContentScope | null>(null);
+export const subagentTaskContentKey = (scope: TaskContentScope) =>
+  [QueryKeys.subagentTaskContent, scope.parentConversationId, scope.threadId, scope.taskId] as const;
+
+const streams = atomFamily((_key: string) => atom<RecoveredContent | null>(null));
+
+type ContentError = { response?: { status?: number; data?: { code?: string } } };
+const responseStatus = (error: unknown): number | undefined =>
+  (error as ContentError | null)?.response?.status;
+const responseCode = (error: unknown): string | undefined =>
+  (error as ContentError | null)?.response?.data?.code;
+export const isLegacyContentUnavailable = (error: unknown): boolean =>
+  responseStatus(error) === 404 ||
+  (responseStatus(error) === 409 && responseCode(error) === 'SUBAGENT_CONTENT_UNAVAILABLE');
+
+export function useSubagentTaskContentQuery(
+  scope: TaskContentScope,
+  options: UseQueryOptions<SubagentTaskContentSnapshot> = {},
+) {
+  const store = useStore();
+  const identity = JSON.stringify(subagentTaskContentKey(scope));
+  const stream = useMemo(() => streams(identity), [identity]);
+  useEffect(() => () => streams.remove(identity), [identity]);
+  const query = useQuery<SubagentTaskContentSnapshot>(
+    subagentTaskContentKey(scope),
+    async () => {
+      const before = store.get(stream);
+      const load = async (afterSequence?: number, cursor?: string) => {
+        const response = await dataService.getSubagentTaskContent(
+          scope.parentConversationId, scope.threadId, scope.taskId, afterSequence, cursor,
+        );
+        if (response.taskId !== scope.taskId || response.threadId !== scope.threadId ||
+          response.parentConversationId !== scope.parentConversationId) {
+          throw new Error('subagent_content_identity_mismatch');
+        }
+        return response;
+      };
+      let next: RecoveredContent;
+      try {
+        next = await recoverTaskContent(before, load);
+      } catch (error) {
+        const code = responseCode(error);
+        if (code !== 'SUBAGENT_CONTENT_AHEAD' && code !== 'SUBAGENT_CONTENT_GAP') throw error;
+        next = await recoverTaskContent(null, load);
+      }
+      const current = store.get(stream);
+      if (current != null && (current.snapshot.throughSequence > next.snapshot.throughSequence ||
+        current.snapshot.revision > next.snapshot.revision)) return current.snapshot;
+      store.set(stream, next);
+      return next.snapshot;
+    },
+    {
+      enabled: scope.parentConversationId !== '' && scope.threadId !== '' && scope.taskId !== '',
+      retry: (attempt, error) => !isLegacyContentUnavailable(error) && attempt < 2,
+      refetchOnWindowFocus: true,
+      refetchInterval: (snapshot, query) =>
+        !isLegacyContentUnavailable(query.state.error) &&
+        (snapshot == null || isLiveSubagentStatus(snapshot.status)) ? ACTIVE_THREAD_REFRESH_MS : false,
+      ...options,
+    },
+  );
+  return { ...query, isUnavailable: isLegacyContentUnavailable(query.error) };
+}
+
+/** Uses the parent-authorized task endpoint, never the child's private message route. */
+export const useSubagentToolContentQuery: ToolContentQuery = (params, options, revision = '') => {
+  const scope = useContext(TaskContentScopeContext);
+  const queryClient = useQueryClient();
+  return useQuery<ToolCallPartResponse>(
+    [...subagentTaskContentKey(scope ?? { parentConversationId: '', threadId: '', taskId: '' }),
+      'part', params.toolCallId, params.stepId, params.agentId, params.partIndex, revision],
+    async () => {
+      if (scope == null) throw new Error('subagent_content_scope_required');
+      const cached = queryClient.getQueryData<SubagentTaskContentSnapshot>(subagentTaskContentKey(scope));
+      let part = cached == null ? null : recoveredToolPart(cached, params);
+      if (cached != null && cached.messageId !== params.messageId) {
+        throw new Error('subagent_content_identity_mismatch');
+      }
+      if (part == null || hasToolCallPreview(part.tool_call)) {
+        const full = await recoverTaskContent(null, (afterSequence, cursor) =>
+          dataService.getSubagentTaskContent(scope.parentConversationId, scope.threadId, scope.taskId, afterSequence, cursor));
+        if (full.snapshot.messageId !== params.messageId) throw new Error('subagent_content_identity_mismatch');
+        part = recoveredToolPart(full.snapshot, params);
+      }
+      if (part == null || hasToolCallPreview(part.tool_call)) throw new Error('subagent_content_part_unavailable');
+      return { conversationId: params.conversationId, messageId: params.messageId, ...part };
+    },
+    {
+      staleTime: Infinity,
+      retry: 1,
+      refetchOnWindowFocus: false,
+      ...options,
+      enabled: scope != null && options?.enabled !== false,
+    },
+  );
+};

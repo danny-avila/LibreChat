@@ -794,3 +794,24 @@ describe('useSubagentActivityStream', () => {
     expect(streams).toHaveLength(0);
   });
 });
+
+it('treats content watermarks as invalidation only after the subscribed ready boundary', () => {
+  const { result } = renderHook(() => useSubagentActivityStream(selection), { wrapper });
+  const stream = streams.at(-1)!;
+  expect(result.current.isReady).toBe(false);
+  act(() => stream.emit('message', { ready: true, contentRecovery: true }));
+  expect(result.current.isReady).toBe(true);
+  mockInvalidateQueries.mockClear();
+  act(() => stream.emit('message', {
+    event: 'subagent_content_available', data: { taskId: 'task?1', revision: 3, throughSequence: 118 },
+  }));
+  expect(mockInvalidateQueries).toHaveBeenCalledWith(
+    [QueryKeys.subagentTaskContent, 'parent conversation', 'child/thread', 'task?1'],
+    { exact: true }, { cancelRefetch: false },
+  );
+  mockInvalidateQueries.mockClear();
+  act(() => stream.emit('message', {
+    event: 'subagent_content_available', data: { taskId: 'other-task', revision: 9, throughSequence: 119 },
+  }));
+  expect(mockInvalidateQueries).not.toHaveBeenCalled();
+});

@@ -1,14 +1,16 @@
 import { useContext, useMemo, useState } from 'react';
 import { Radio } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
-import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@librechat/client';
+import { Alert, Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@librechat/client';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { ToolContentQuery } from '~/components/Chat/Messages/Content/disclosure';
+import type { TaskContentScope } from '~/data-provider/Subagents/content';
 import type { MessagePartsHost } from '~/hooks/Chat/contract';
 import type { ChildConversationTurn } from './adapters';
 import type { TranslationKeys } from '~/hooks';
 import type { TurnAuthor } from './author';
+import { TaskContentScopeContext, useSubagentTaskContentQuery, useSubagentToolContentQuery } from '~/data-provider/Subagents/content';
 import SystemEventHeader, {
   SystemEventIcon,
   systemEventHeaderClasses,
@@ -29,6 +31,11 @@ import { ChatContext } from '~/Providers/ChatContext';
 import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+
+type ConversationRecovery = Omit<TaskContentScope, 'taskId'> & {
+  selectedTaskId: string;
+  ready: boolean;
+};
 
 const RESUME_AUTHOR_HEADER = <ResumeAuthorHeader />;
 const ignoreMessage: ReturnType<MessagePartsHost['useMessagesAsk']> = () => undefined;
@@ -207,7 +214,9 @@ function ChildMessage({
   detailState,
   onLoadDetails,
   toolContentQuery,
+  notice,
 }: {
+  notice?: ReactNode;
   toolContentQuery?: ToolContentQuery;
   turn: ChildConversationTurn;
   state: 'ready' | 'loading' | 'error';
@@ -278,6 +287,7 @@ function ChildMessage({
       isCreatedByUser={false}
       fullWidth={fullWidth}
     >
+      {notice}
       <AuthorContext.Provider value={messageAuthor}>
         <ErrorSourceProvider message={message}>
           <SubagentActivityContent
@@ -307,6 +317,60 @@ function ChildMessage({
   );
 }
 
+function RecoveredChildMessage({
+  recovery,
+  ...props
+}: React.ComponentProps<typeof ChildMessage> & { recovery?: ConversationRecovery }) {
+  const localize = useLocalize();
+  const scope = useMemo<TaskContentScope>(
+    () => ({
+      parentConversationId: recovery?.parentConversationId ?? '',
+      threadId: recovery?.threadId ?? '',
+      taskId: props.turn.taskId,
+    }),
+    [recovery?.parentConversationId, recovery?.threadId, props.turn.taskId],
+  );
+  const recovered = useSubagentTaskContentQuery(scope, {
+    enabled: recovery != null &&
+      (props.turn.taskId !== recovery.selectedTaskId || recovery.ready ||
+        !isLiveSubagentStatus(props.turn.activity.status)),
+  });
+  const turn = useMemo(() => {
+    const snapshot = recovered.data;
+    if (snapshot == null) return props.turn;
+    return {
+      ...props.turn,
+      activity: {
+        ...props.turn.activity,
+        messageId: snapshot.messageId,
+        content: snapshot.content,
+        status: snapshot.status,
+        activityTruncated: snapshot.throughSequence < snapshot.targetThroughSequence ||
+          (!isLiveSubagentStatus(snapshot.status) && snapshot.recovery === 'partial'),
+      },
+    };
+  }, [recovered.data, props.turn]);
+  const notice = recovered.isError && !recovered.isUnavailable ? (
+    <Alert variant="error" className="mb-2 flex items-center gap-2">
+      <span>{localize('com_ui_conversation_load_error')}</span>
+      <Button variant="ghost" size="sm" onClick={() => void recovered.refetch()}>
+        {localize('com_ui_retry')}
+      </Button>
+    </Alert>
+  ) : undefined;
+  return (
+    <TaskContentScopeContext.Provider value={scope}>
+      <ChildMessage
+        {...props}
+        turn={turn}
+        state={recovered.data == null ? props.state : 'ready'}
+        toolContentQuery={useSubagentToolContentQuery}
+        notice={notice}
+      />
+    </TaskContentScopeContext.Provider>
+  );
+}
+
 export default function SubagentConversation({
   turns,
   author,
@@ -319,7 +383,9 @@ export default function SubagentConversation({
   onLoadTurnDetails,
   interactive = false,
   toolContentQueries,
+  recovery,
 }: {
+  recovery?: ConversationRecovery;
   /** Task-authorized preview hooks, backed by the recovery API rather than child message reads. */
   toolContentQueries?: ReadonlyMap<string, ToolContentQuery>;
   turns: ChildConversationTurn[];
@@ -340,6 +406,7 @@ export default function SubagentConversation({
   const parentChat = useContext(ChatContext);
   const host = useMessagePartsHost();
   const contentHost = useMemo(() => ({ ...host, useMessagesAsk: useNoMessagesAsk }), [host]);
+  const Message = recovery == null ? ChildMessage : RecoveredChildMessage;
   return (
     <ChatContext.Provider value={interactive ? parentChat : null}>
       <MessagePartsHostProvider host={contentHost}>
@@ -354,8 +421,9 @@ export default function SubagentConversation({
                 <TriggerMessage turn={turn} fullWidth={fullWidth} parentAuthor={parentAuthor} />
               </div>
               <div className="px-4">
-                <ChildMessage
+                <Message
                   turn={turn}
+                  recovery={recovery}
                   author={author}
                   conversationId={conversationId}
                   fullWidth={fullWidth}

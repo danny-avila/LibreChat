@@ -1,0 +1,200 @@
+import { createStreamState, reduceStep } from '@librechat/chat';
+import { ContentTypes, EModelEndpoint, StepEvents, StepTypes } from 'librechat-data-provider';
+import type {
+  EventSubmission,
+  SubagentTaskContentResponse,
+  SubagentTaskContentSnapshot,
+  TMessage,
+  FullToolCall,
+} from 'librechat-data-provider';
+import type { StreamState, StepContext } from '@librechat/chat';
+
+export type RecoveredContent = {
+  snapshot: SubagentTaskContentSnapshot;
+  stream: StreamState;
+};
+
+export const recoveredMessage = (snapshot: SubagentTaskContentSnapshot): TMessage => ({
+  messageId: snapshot.messageId,
+  parentMessageId: snapshot.parentMessageId,
+  conversationId: snapshot.threadId,
+  sender: snapshot.sender,
+  isCreatedByUser: false,
+  text: '',
+  content: snapshot.content,
+});
+
+/** Null requests a fresh snapshot. Only committed task frames enter the normal pure reducer. */
+export function reduceRecoveredContent(
+  previous: RecoveredContent | null,
+  response: SubagentTaskContentResponse,
+): RecoveredContent | null {
+  if (
+    previous != null &&
+    (previous.snapshot.taskId !== response.taskId ||
+      previous.snapshot.threadId !== response.threadId ||
+      previous.snapshot.messageId !== response.messageId)
+  ) {
+    return null;
+  }
+  if (
+    previous != null &&
+    (response.revision < previous.snapshot.revision ||
+      response.throughSequence < previous.snapshot.throughSequence)
+  ) {
+    return previous;
+  }
+  if (response.mode === 'snapshot') {
+    const stream = createStreamState();
+    stream.messages.set(response.messageId, recoveredMessage(response));
+    for (const step of response.runSteps) {
+      stream.steps.set(step.id, { ...step, runId: response.messageId });
+      if (step.stepDetails.type === StepTypes.TOOL_CALLS) {
+        for (const call of step.stepDetails.tool_calls ?? []) {
+          if (call.id) stream.toolCallIds.set(step.id, call.id);
+        }
+      }
+    }
+    return { snapshot: response, stream };
+  }
+  if (previous != null &&
+    response.throughSequence <= previous.snapshot.throughSequence &&
+    response.revision <= previous.snapshot.revision &&
+    response.status === previous.snapshot.status) return previous;
+  if (previous == null || response.afterSequence !== previous.snapshot.throughSequence) return null;
+  if (
+    response.revision === previous.snapshot.revision &&
+    response.throughSequence === previous.snapshot.throughSequence &&
+    response.status === previous.snapshot.status
+  ) {
+    return previous;
+  }
+  const source = previous.stream;
+  const stream: StreamState = {
+    ...source,
+    messages: new Map(source.messages),
+    steps: new Map(source.steps),
+    toolCallIds: new Map(source.toolCallIds),
+    firstFragmentByCall: new Map(source.firstFragmentByCall),
+    firstFragmentByStep: new Map(source.firstFragmentByStep),
+    dispatchedByCall: new Map(source.dispatchedByCall),
+    completedByCall: new Map(source.completedByCall),
+    pendingDeltas: new Map([...source.pendingDeltas].map(([key, events]) => [key, events.slice()])),
+  };
+  const initialResponse = recoveredMessage(previous.snapshot);
+  const userMessage: TMessage = {
+    messageId: response.parentMessageId,
+    parentMessageId: null,
+    conversationId: response.threadId,
+    isCreatedByUser: true,
+    text: '',
+  };
+  let messages = [userMessage, initialResponse];
+  const submission: EventSubmission = {
+    userMessage,
+    initialResponse,
+    messages,
+    conversation: { conversationId: response.threadId },
+    endpointOption: { endpoint: EModelEndpoint.agents },
+    isTemporary: false,
+  };
+  const context: StepContext = {
+    submission,
+    getMessages: () => messages,
+    setMessages: (next) => {
+      messages = next;
+    },
+  };
+  let through = response.afterSequence;
+  for (const { sequence, frame } of response.events) {
+    if (sequence <= response.afterSequence) continue;
+    if (sequence <= through || sequence > response.throughSequence) return null;
+    through = sequence;
+    if (frame.event === StepEvents.ON_RUN_STEP) {
+      reduceStep(stream, { ...frame, data: { ...frame.data, runId: response.messageId } }, context);
+    } else if (frame.event === StepEvents.ON_RUN_STEP_COMPLETED) {
+      if (frame.data.result != null) {
+        reduceStep(stream, { event: frame.event, data: { result: frame.data.result } }, context);
+      }
+    } else {
+      reduceStep(stream, frame, context);
+    }
+  }
+  const message = stream.messages.get(response.messageId);
+  if (message == null) return null;
+  const { events: _events, afterSequence: _afterSequence, mode: _mode, ...identity } = response;
+  return {
+    stream,
+    snapshot: {
+      ...identity,
+      mode: 'snapshot',
+      content: message.content ?? [],
+      runSteps: Array.from(stream.steps.values()),
+    },
+  };
+}
+
+export const recoveredToolPart = (
+  snapshot: SubagentTaskContentSnapshot,
+  params: { partIndex: number; toolCallId?: string; stepId?: string; agentId?: string },
+) => {
+  const matches = (index: number) => {
+    const part = snapshot.content[index];
+    if (part?.type !== ContentTypes.TOOL_CALL) return false;
+    const call = part.tool_call;
+    return (
+      (params.toolCallId == null || call.id === params.toolCallId) &&
+      (params.stepId == null || call.stepId === params.stepId) &&
+      (params.agentId == null || part.agentId === params.agentId)
+    );
+  };
+  let index = matches(params.partIndex) ? params.partIndex : -1;
+  if (index < 0 && params.toolCallId != null) {
+    for (let candidate = 0; candidate < snapshot.content.length; candidate++) {
+      if (!matches(candidate)) continue;
+      if (index >= 0) return null;
+      index = candidate;
+    }
+  }
+  const part = snapshot.content[index];
+  return part?.type === ContentTypes.TOOL_CALL
+    ? { partIndex: index, tool_call: part.tool_call as FullToolCall }
+    : null;
+};
+
+
+export type TaskContentLoader = (
+  afterSequence?: number,
+  cursor?: string,
+) => Promise<SubagentTaskContentResponse>;
+
+/** Drain the sampled target before publishing it or asking for a newer suffix. */
+export async function recoverTaskContent(
+  previous: RecoveredContent | null,
+  load: TaskContentLoader,
+): Promise<RecoveredContent> {
+  let response = await load(previous?.snapshot.throughSequence);
+  let next = reduceRecoveredContent(previous, response);
+  if (next == null) {
+    response = await load();
+    next = reduceRecoveredContent(null, response);
+  }
+  const target = response.targetThroughSequence;
+  const seen = new Set<string>();
+  while (response.nextCursor != null) {
+    const cursor = response.nextCursor;
+    if (seen.has(cursor)) throw new Error('subagent_content_cursor_repeated');
+    seen.add(cursor);
+    const through = response.throughSequence;
+    response = await load(undefined, cursor);
+    if (response.targetThroughSequence !== target || response.throughSequence <= through) {
+      throw new Error('subagent_content_cursor_mismatch');
+    }
+    next = reduceRecoveredContent(next, response);
+    if (next == null) throw new Error('subagent_content_snapshot_required');
+  }
+  if (next == null || next.snapshot.throughSequence < target) {
+    throw new Error('subagent_content_snapshot_incomplete');
+  }
+  return next;
+}
