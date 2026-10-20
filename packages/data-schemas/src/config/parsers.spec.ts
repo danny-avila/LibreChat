@@ -63,6 +63,9 @@ describe('redactMessage', () => {
     expect(redactMessage('https://example.test/?api_key=secretvalue&next=true')).toBe(
       'https://example.test/?api_key=[REDACTED]&next=true',
     );
+    expect(redactMessage('https://example.test/?input=x&appid=secretvalue&limit=1')).toBe(
+      'https://example.test/?input=x&appid=[REDACTED]&limit=1',
+    );
   });
 
   it('masks email addresses in messages', () => {
@@ -857,6 +860,7 @@ describe('redactFormat', () => {
   it('redacts values under sensitive splat metadata keys', () => {
     const metadata = {
       apiKey: 'secretvalue',
+      appid: 'secretvalue',
       authorization: 'secretvalue',
       nested: { token: 'secretvalue' },
       safe: 'secretvalue',
@@ -873,6 +877,7 @@ describe('redactFormat', () => {
     const splat = info[SPLAT_SYMBOL] as Array<typeof metadata>;
 
     expect(splat[0].apiKey).toBe('[REDACTED]');
+    expect(splat[0].appid).toBe('[REDACTED]');
     expect(splat[0].authorization).toBe('[REDACTED]');
     expect(splat[0].nested.token).toBe('[REDACTED]');
     expect(splat[0]['x-api-key']).toBe('[REDACTED]');
