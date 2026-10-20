@@ -4239,6 +4239,18 @@ describe('Chat', () => {
       );
     });
 
+    it('ignores a late status read for a generation whose own stream ended it', async () => {
+      const { chat, stream } = setup();
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push(finalEvent());
+      await sent;
+
+      chat.restorePendingAction({ ...pausedAction, expiresAt: Date.now() + 60_000 }, 100);
+
+      expect(chat.pendingAction).toBeUndefined();
+    });
+
     it('ignores a late status read for a late start a stop already ended', async () => {
       let deliver: ((result: { status: 'stream'; stream: ChatStream }) => void) | undefined;
       const late = createStream({ streamId: 'convo-1', generationCreatedAt: 300 });
