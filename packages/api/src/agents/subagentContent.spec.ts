@@ -68,7 +68,10 @@ it('reconstructs earlier text after more than a replay window of public deltas',
     update('run_step', {
       id: 'text',
       index: 0,
-      stepDetails: { type: 'message_creation', message_creation: { message_id: 'reply' } },
+      stepDetails: {
+        type: 'message_creation',
+        message_creation: { message_id: 'reply', phase: 'commentary' },
+      },
     }),
     0,
   );
@@ -93,6 +96,7 @@ it('reconstructs earlier text after more than a replay window of public deltas',
       }),
     ]),
   );
+  expect(result.value.content[0]).toMatchObject({ phase: 'commentary' });
   expect(result.value.throughSequence).toBe(150);
 });
 
@@ -211,4 +215,42 @@ it('bounds a blocked capture backlog without blocking child execution or claimin
   expect(
     batches.reduce((size, batch) => size + Buffer.byteLength(batch.eventsJson), 0),
   ).toBeLessThan(1024);
+});
+
+it('retries the exact frozen batch before admitting later events into a new revision', async () => {
+  const { methods } = memoryStorage();
+  const attempts: Array<{ revision: number; eventsJson: string }> = [];
+  const fragments = new Map<number, string>();
+  let fail = true;
+  const journal = new SubagentContentJournal({
+    scope,
+    flushMs: 60_000,
+    batchBytes: 1_000_000,
+    append: async (input) => {
+      attempts.push({ revision: input.revision, eventsJson: input.eventsJson });
+      const prior = fragments.get(input.revision);
+      if (prior != null && prior !== input.eventsJson) throw new Error('Conflicting revision');
+      fragments.set(input.revision, input.eventsJson);
+      if (fail) {
+        fail = false;
+        throw new Error('Lost append acknowledgment');
+      }
+      return methods.appendSubagentContentBatch(input);
+    },
+    notify: async () => undefined,
+    onError: () => undefined,
+  });
+  journal.record(
+    update('message_delta', { id: 's', delta: { content: [{ type: 'text', text: 'first' }] } }),
+    0,
+  );
+  await expect(journal.flush()).rejects.toThrow('Lost append acknowledgment');
+  journal.record(
+    update('message_delta', { id: 's', delta: { content: [{ type: 'text', text: 'second' }] } }),
+    1,
+  );
+  await expect(journal.close()).resolves.toEqual({ ok: true });
+  expect(attempts).toHaveLength(3);
+  expect(attempts[1]).toEqual(attempts[0]);
+  expect(attempts[2].revision).toBe(2);
 });

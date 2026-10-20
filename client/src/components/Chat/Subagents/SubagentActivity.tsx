@@ -81,7 +81,7 @@ function SubagentControlHistory({
           control.status === 'applied' &&
           content.some(
             (part) =>
-              part.type === ContentTypes.STEER &&
+              part?.type === ContentTypes.STEER &&
               part.steerId != null &&
               (part.steerId === control.controlId || part.steerId === control.invocationId),
           )

@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { createContentAggregator } from '@librechat/agents';
+import { createContentAggregator, GraphEvents } from '@librechat/agents';
 import {
   subagentActivityConfigSchema,
   StepEvents,
@@ -29,6 +29,14 @@ import type { ServerRequest } from '~/types';
 import { toWireRunSteps } from '~/stream/interfaces/IJobStore';
 import { createToolTimingAdapter } from './toolTiming';
 import { getSafeErrorMetadata } from '~/utils/errors';
+
+const CONTENT_GRAPH_EVENTS = {
+  [StepEvents.ON_RUN_STEP]: GraphEvents.ON_RUN_STEP,
+  [StepEvents.ON_MESSAGE_DELTA]: GraphEvents.ON_MESSAGE_DELTA,
+  [StepEvents.ON_REASONING_DELTA]: GraphEvents.ON_REASONING_DELTA,
+  [StepEvents.ON_RUN_STEP_DELTA]: GraphEvents.ON_RUN_STEP_DELTA,
+  [StepEvents.ON_RUN_STEP_COMPLETED]: GraphEvents.ON_RUN_STEP_COMPLETED,
+};
 
 /** This boundary accepts only events already intended for the public main-chat stream. */
 export function subagentContentFrame(update: SubagentUpdateEvent): SubagentContentFrame | null {
@@ -91,6 +99,14 @@ export class SubagentContentJournal {
   private observedSequence = -1;
   private notification?: Promise<void>;
   private pendingNotification?: SubagentContentWatermark;
+  private staged?: {
+    count: number;
+    bytes: number;
+    revision: number;
+    fromSequence: number;
+    throughSequence: number;
+    eventsJson: string;
+  };
 
   constructor(private readonly options: JournalOptions) {
     this.maxPendingBytes =
@@ -162,35 +178,44 @@ export class SubagentContentJournal {
 
   private async drain(): Promise<SubagentContentAppendResult> {
     while (this.pending.length > 0) {
-      let count = 0;
-      let bytes = 2;
-      for (const entry of this.pending) {
-        if (count > 0 && bytes + entry.bytes + 1 > this.options.batchBytes) break;
-        bytes += entry.bytes + 1;
-        count++;
+      if (this.staged == null) {
+        let count = 0;
+        let bytes = 2;
+        for (const entry of this.pending) {
+          if (count > 0 && bytes + entry.bytes + 1 > this.options.batchBytes) break;
+          bytes += entry.bytes + 1;
+          count++;
+        }
+        const batch = this.pending.slice(0, count);
+        this.staged = {
+          count,
+          bytes: batch.reduce((total, entry) => total + entry.bytes, 0),
+          revision: this.revision + 1,
+          fromSequence: this.committedSequence + 1,
+          throughSequence: batch[count - 1].sequence,
+          eventsJson: `[${batch.flatMap((entry) => (entry.json == null ? [] : [entry.json])).join(',')}]`,
+        };
       }
-      const batch = this.pending.slice(0, count);
-      const throughSequence = batch[count - 1].sequence;
-      const revision = this.revision + 1;
-      const eventsJson = `[${batch.flatMap((entry) => (entry.json == null ? [] : [entry.json])).join(',')}]`;
+      const { count, bytes, ...batch } = this.staged;
       const result = await this.options.append({
         ...this.options.scope,
         leaseToken: this.options.leaseToken,
-        revision,
-        fromSequence: this.committedSequence + 1,
-        throughSequence,
-        eventsJson,
+        ...batch,
       });
       if (!result.ok) {
         this.closed = true;
         return result;
       }
       this.pending.splice(0, count);
-      this.pendingBytes -= batch.reduce((total, entry) => total + entry.bytes, 0);
-      this.revision = revision;
-      this.committedSequence = throughSequence;
-      /** Notification failure cannot roll back an acknowledged durable batch. */
-      this.notify({ taskId: this.options.scope.taskId, revision, throughSequence });
+      this.pendingBytes -= bytes;
+      this.revision = batch.revision;
+      this.committedSequence = batch.throughSequence;
+      this.staged = undefined;
+      this.notify({
+        taskId: this.options.scope.taskId,
+        revision: batch.revision,
+        throughSequence: batch.throughSequence,
+      });
     }
     return { ok: true };
   }
@@ -326,7 +351,19 @@ export async function readSubagentContent(
         frame.event !== StepEvents.ON_TOOL_PREPARATION &&
         frame.event !== StepEvents.ON_TOOL_CALLS_DISPATCHED
       ) {
-        aggregator.aggregateContent(frame as Parameters<typeof aggregator.aggregateContent>[0]);
+        aggregator.aggregateContent({
+          event: CONTENT_GRAPH_EVENTS[frame.event],
+          data: frame.data,
+        } as Parameters<typeof aggregator.aggregateContent>[0]);
+      }
+      if (frame.event === StepEvents.ON_MESSAGE_DELTA) {
+        const step = aggregator.stepMap.get(frame.data.id);
+        const part = step == null ? undefined : aggregator.contentParts[step.index];
+        if (part?.type === ContentTypes.TEXT && step?.stepDetails.type === 'message_creation') {
+          const creation = step.stepDetails.message_creation;
+          const phase = creation != null && 'phase' in creation ? creation.phase : undefined;
+          if (phase === 'commentary' || phase === 'final_answer') part.phase = phase;
+        }
       }
       timing.child(aggregator, { phase: frame.event.slice(3), data: frame.data });
     }

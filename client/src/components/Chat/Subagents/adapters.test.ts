@@ -3,6 +3,7 @@ import type {
   SubagentThreadView,
   SubagentUpdateEvent,
   TMessageContentParts,
+  FullToolCall,
 } from 'librechat-data-provider';
 import type { ChildConversationTurn } from './adapters';
 import {
@@ -741,32 +742,29 @@ describe('standard content compatibility', () => {
   });
 
   it('removes public approval payloads without dropping other standard metadata', () => {
-    const withApproval = [
+    const nested: FullToolCall = {
+      id: 'nested',
+      name: 'bash',
+      args: '{}',
+      output: '',
+      approval: { actionId: 'private-nested-action', allowed_decisions: ['approve', 'reject'] },
+    };
+    const tool: FullToolCall = {
+      id: 'tool',
+      name: 'bash',
+      args: '{}',
+      output: '',
+      stepId: 'step',
+      approval: { actionId: 'private-action', allowed_decisions: ['approve', 'reject'] },
+      subagent_content: [{ type: ContentTypes.TOOL_CALL, tool_call: nested }],
+    };
+    const withApproval: TMessageContentParts[] = [
       {
         type: ContentTypes.TOOL_CALL,
         agentId: 'child',
-        tool_call: {
-          id: 'tool',
-          name: 'bash',
-          args: '{}',
-          output: '',
-          stepId: 'step',
-          approval: { actionId: 'private-action' },
-          subagent_content: [
-            {
-              type: ContentTypes.TOOL_CALL,
-              tool_call: {
-                id: 'nested',
-                name: 'bash',
-                args: '{}',
-                output: '',
-                approval: { actionId: 'private-nested-action' },
-              },
-            },
-          ],
-        },
+        tool_call: tool,
       },
-    ] as TMessageContentParts[];
+    ];
     const result = adaptLivePersistedActivity({
       title: 'Child',
       progress: null,
@@ -780,4 +778,21 @@ describe('standard content compatibility', () => {
     expect(result.content?.[0]).toMatchObject({ agentId: 'child', tool_call: { stepId: 'step' } });
     expect(JSON.stringify(withApproval)).toContain('private-action');
   });
+});
+
+it('keeps sparse public content positions while removing nested approval data', () => {
+  const sparse = new Array<TMessageContentParts>(2);
+  sparse[1] = { type: ContentTypes.TEXT, text: 'Retained text' };
+  const content: TMessageContentParts[] = JSON.parse(JSON.stringify(sparse));
+  const activity = adaptLivePersistedActivity({
+    title: 'Child',
+    progress: null,
+    persistedContent: content,
+    initialProgress: 1,
+    isSubmitting: false,
+    approvalVisibility: 'hidden',
+  });
+  expect(activity.content).toBe(content);
+  expect(activity.content?.[0]).toBeNull();
+  expect(activity.content?.[1]).toMatchObject({ text: 'Retained text' });
 });

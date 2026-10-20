@@ -2756,6 +2756,11 @@ describe('subagent activity policy', () => {
       endpoints: { agents: { subagentActivity: {} } },
     });
     expect(parsed.endpoints?.agents?.subagentActivity).toEqual({
+      contentRecoveryEnabled: false,
+      contentPageBytes: 262_144,
+      contentFlushMs: 250,
+      contentBatchBytes: 65_536,
+      contentPendingBytes: 8_388_608,
       replayTtlMs: 300_000,
       publicationTimeoutMs: 1_000,
       retryAttempts: 3,
@@ -2771,6 +2776,11 @@ describe('subagent activity policy', () => {
       endpoints: {
         agents: {
           subagentActivity: {
+            contentRecoveryEnabled: true,
+            contentPageBytes: 524_288,
+            contentFlushMs: 500,
+            contentBatchBytes: 131_072,
+            contentPendingBytes: 16_777_216,
             replayTtlMs: 3_600_000,
             publicationTimeoutMs: 5_000,
             retryAttempts: 2,

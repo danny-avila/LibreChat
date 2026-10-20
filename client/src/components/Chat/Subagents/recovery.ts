@@ -150,7 +150,7 @@ export const recoveredToolPart = (
   const matches = (index: number) => {
     const part = snapshot.content[index];
     if (part?.type !== ContentTypes.TOOL_CALL) return false;
-    const call = part.tool_call;
+    const call = part.tool_call as FullToolCall;
     return (
       (params.toolCallId == null || call.id === params.toolCallId) &&
       (params.stepId == null || call.stepId === params.stepId) &&

@@ -31,7 +31,11 @@ afterEach(async () => {
       store.destroyActivityStream();
     }),
   );
-  await Promise.all(Object.values(mongoose.models).map((model) => model.deleteMany({})));
+  await Promise.all(
+    ['Conversation', 'Message', 'SubagentContent'].map((name) =>
+      mongoose.models[name].deleteMany({}),
+    ),
+  );
 });
 afterAll(async () => {
   await mongoose.disconnect();
@@ -100,9 +104,10 @@ function appFor(scope: SubagentContentScope, user: string | null = scope.user, t
     }
     next();
   });
+  const handler = createSubagentTaskContentHandler(methods);
   app.get(
     '/api/convos/:parentConversationId/subagents/:threadId/tasks/:taskId/content',
-    createSubagentTaskContentHandler(methods),
+    (req, res) => handler(req as ServerRequest, res),
   );
   const url = `/api/convos/${scope.parentConversationId}/subagents/${scope.conversationId}/tasks/${scope.taskId}/content`;
   return { app, url };

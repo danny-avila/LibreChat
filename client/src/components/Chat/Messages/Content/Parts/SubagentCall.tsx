@@ -1,7 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { useSetAtom } from 'jotai';
 import { ChevronRight, Users } from 'lucide-react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
 import type {
   PartMetadata,
   TAttachment,
@@ -313,7 +313,14 @@ export default function SubagentCall({
       approvalVisibility: 'hidden',
     });
     const hasRenderableFallback =
-      (fallbackActivity.content?.length ?? 0) > 0 ||
+      fallbackActivity.content?.some((part) => {
+        if (part == null) return false;
+        if (part.type === ContentTypes.ACTIVITY_LABEL) return Boolean(part.activity_label?.trim());
+        if (part.type === ContentTypes.TEXT) {
+          return typeof part.text === 'string' ? part.text.length > 0 : Boolean(part.text?.value);
+        }
+        return true;
+      }) ||
       fallbackActivity.items.some(
         (item) =>
           (item.type !== 'writing' || item.text.length > 0) &&

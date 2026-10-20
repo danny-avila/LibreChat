@@ -101,6 +101,7 @@ const contentPartsToActivity = (
   approvalVisibility: 'visible' | 'hidden',
 ): ChildActivityItem[] =>
   parts.flatMap((part, index): ChildActivityItem[] => {
+    if (part == null) return [];
     if (part.type === ContentTypes.TEXT) {
       const textPart = part as {
         text: string;
@@ -319,16 +320,18 @@ const standardContent = (
         const index = parent.index - 1;
         const part = parent.result[index];
         if (part.type === ContentTypes.TOOL_CALL) {
-          replace(parent, index, {
-            ...part,
-            tool_call: { ...part.tool_call, subagent_content: frame.result },
-          } as TMessageContentParts);
+          const toolCall: FullToolCall = {
+            ...(part.tool_call as FullToolCall),
+            subagent_content: frame.result,
+          };
+          replace(parent, index, { ...part, tool_call: toolCall });
         }
       }
       continue;
     }
     const index = frame.index++;
     const part = frame.source[index];
+    if (part == null) continue;
     if (part.type === ContentTypes.THINK && part.think === REDACTED_REASONING_MARKER) {
       replace(frame, index, { ...part, think: '', reasoning_unavailable: true });
       continue;

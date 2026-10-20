@@ -3607,7 +3607,7 @@ describe('SubagentThreadPanel', () => {
       </Root>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_load_more' }));
     await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(2));
     expect(mockGetSubagentThread).toHaveBeenCalledWith(
       'parent-conversation',
@@ -3649,7 +3649,7 @@ describe('SubagentThreadPanel', () => {
         <SubagentThreadPanel selection={selection} />
       </Root>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_load_more' }));
 
     mockUseSubagentThreadQuery.mockReturnValue({
       data: {
@@ -3705,9 +3705,7 @@ describe('SubagentThreadPanel', () => {
 
     expect(screen.queryByText('Displaced result')).not.toBeInTheDocument();
     await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }),
-      ).toBeEnabled(),
+      expect(screen.getByRole('button', { name: 'com_ui_load_more' })).toBeEnabled(),
     );
   });
 
@@ -3739,11 +3737,9 @@ describe('SubagentThreadPanel', () => {
       </Root>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_load_more' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeEnabled());
-    expect(
-      screen.queryByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_load_more' })).not.toBeInTheDocument();
   });
 
   it('shows a compact inaccessible-history boundary when no recovery cursor exists', () => {
@@ -3776,9 +3772,7 @@ describe('SubagentThreadPanel', () => {
     expect(
       screen.getByRole('status', { name: 'com_ui_subagent_thread_history_truncated' }),
     ).toHaveTextContent('•••');
-    expect(
-      screen.queryByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_load_more' })).not.toBeInTheDocument();
   });
 
   it('preserves an unrecoverable boundary while loading later cursor pages', async () => {
@@ -3816,7 +3810,7 @@ describe('SubagentThreadPanel', () => {
       </Root>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_load_more' }));
     await waitFor(() =>
       expect(mockGetSubagentThread).toHaveBeenLastCalledWith(
         'parent-conversation',
@@ -3825,7 +3819,7 @@ describe('SubagentThreadPanel', () => {
         'older:assistant',
       ),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_load_more' }));
     await waitFor(() =>
       expect(mockGetSubagentThread).toHaveBeenLastCalledWith(
         'parent-conversation',
@@ -4029,7 +4023,7 @@ describe('SubagentThreadPanel', () => {
         <SubagentThreadPanel selection={selectionA} />
       </Root>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_load_more' }));
     rerender(
       <Root>
         <SubagentThreadPanel selection={selectionB} />
@@ -4041,11 +4035,9 @@ describe('SubagentThreadPanel', () => {
       </Root>,
     );
     await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }),
-      ).toBeEnabled(),
+      expect(screen.getByRole('button', { name: 'com_ui_load_more' })).toBeEnabled(),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_load_more' }));
     await waitFor(() => expect(screen.getByText('Fresh older result')).toBeInTheDocument());
 
     await act(async () => {
@@ -4120,7 +4112,7 @@ describe('SubagentThreadPanel', () => {
         <SubagentThreadPanel selection={selection} />
       </Root>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_load_more' }));
     await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(3));
 
     latestView = {
@@ -4141,7 +4133,7 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByText('New result')).toBeInTheDocument();
     expect(screen.getByText('Newest result')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_load_more' }));
     await waitFor(() =>
       expect(mockGetSubagentThread).toHaveBeenLastCalledWith(
         'parent-conversation',
@@ -4164,7 +4156,7 @@ describe('SubagentThreadPanel', () => {
     );
     await waitFor(() => expect(screen.getAllByTestId('conversation-turn')).toHaveLength(7));
 
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_load_more' }));
     await waitFor(() =>
       expect(mockGetSubagentThread).toHaveBeenLastCalledWith(
         'parent-conversation',
@@ -4212,9 +4204,7 @@ describe('SubagentThreadPanel', () => {
       expect.stringContaining('Final live result'),
       expect.stringContaining('Ultimate live result'),
     ]);
-    expect(
-      screen.queryByRole('button', { name: 'com_ui_subagent_load_earlier_activity' }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_load_more' })).not.toBeInTheDocument();
   });
 
   it('does not accumulate displaced latest-window turns before history is requested', async () => {

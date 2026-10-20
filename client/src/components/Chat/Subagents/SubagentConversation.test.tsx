@@ -322,10 +322,44 @@ describe('standard conversation content', () => {
   it.each([false, true])(
     'never binds normal send effects, interactive approval scope=%s',
     (interactive) => {
-      const parent = {
-        conversation: { conversationId: 'parent' },
+      const parent: ChatContract = {
+        index: 0,
+        conversation: {
+          conversationId: 'parent',
+          title: null,
+          endpoint: null,
+          createdAt: '2026-10-20T00:00:00.000Z',
+          updatedAt: '2026-10-20T00:00:00.000Z',
+        },
+        setConversation: () => undefined,
+        newConversation: () => undefined,
+        preset: null,
+        setPreset: () => undefined,
+        optionSettings: {},
+        setOptionSettings: () => undefined,
+        messagesKey: 'parent',
+        getMessages: () => [],
+        setMessages: () => undefined,
+        setSiblingIdx: () => undefined,
+        latestMessageId: undefined,
+        latestMessageDepth: undefined,
+        useLiveAttachments: () => ({}),
         ask: mockParentAsk,
-      } as ChatContract;
+        regenerate: () => undefined,
+        isSubmitting: false,
+        setIsSubmitting: () => undefined,
+        handleRegenerate: () => undefined,
+        handleContinue: () => undefined,
+        stopGenerating: async () => undefined,
+        handleStopGenerating: () => undefined,
+        abortScroll: false,
+        setAbortScroll: () => undefined,
+        files: new Map(),
+        setFiles: () => undefined,
+        filesLoading: false,
+        setFilesLoading: () => undefined,
+        feedbackEnabled: false,
+      };
       render(
         <ChatSurfaceHarness>
           <ChatContext.Provider value={parent}>

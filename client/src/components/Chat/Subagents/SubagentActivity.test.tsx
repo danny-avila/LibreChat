@@ -59,10 +59,11 @@ jest.mock('~/components/Chat/Messages/Content/ContentParts', () => ({
     mockContentParts({ content, messageId, ...props });
     const { useState } = jest.requireActual<typeof import('react')>('react');
     const [expandedTool, setExpandedTool] = useState<string | null>(null);
-    const tools = content.filter((part) => part.type === 'tool_call');
+    const tools = content.filter((part) => part?.type === 'tool_call');
     return (
       <div data-testid="regular-content-parts" data-message-id={messageId}>
         {content.map((part, index) => {
+          if (part == null) return null;
           if (part.type === 'text') {
             return (
               <div key={index} data-phase={part.phase}>
@@ -708,4 +709,35 @@ it('does not claim delivery or application before the server confirms it', () =>
     />,
   );
   expect(screen.getByTestId('steer-receipt')).toHaveAttribute('data-receipt-state', 'sending');
+});
+
+it('preserves empty recovered slots when rendering applied control receipts', () => {
+  const sparse = new Array<TMessageContentParts>(2);
+  sparse[1] = {
+    type: ContentTypes.TOOL_CALL,
+    tool_call: { id: 'retained', name: 'retained', args: '{}', output: 'Done', progress: 1 },
+  };
+  const content: TMessageContentParts[] = JSON.parse(JSON.stringify(sparse));
+  render(
+    <SubagentActivity
+      activity={{
+        ...base,
+        content,
+        controls: [
+          {
+            invocationId: 'applied-sparse',
+            controlId: 'guidance',
+            action: 'steer',
+            status: 'applied',
+            createdAt: '2026-10-20T00:00:00.000Z',
+            updatedAt: '2026-10-20T00:00:00.000Z',
+            message: 'Continue',
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getAllByTestId('regular-content-parts').length).toBeGreaterThan(0);
+  expect(mockContentParts.mock.calls[0][0].content[0]).toBeNull();
+  expect(mockContentParts.mock.calls[0][0].content[1].tool_call.id).toBe('retained');
 });

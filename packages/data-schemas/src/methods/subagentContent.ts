@@ -34,6 +34,28 @@ const scopeFilter = (scope: SubagentContentScope) => ({
  * This is a storage encoding, not a content-retention limit. */
 const FRAGMENT_CHARS = 128 * 1024;
 
+/** BSON string fragments must not divide a supplementary Unicode character. */
+export function fragmentSubagentContent(payload: string): string[] {
+  const fragments: string[] = [];
+  let start = 0;
+  while (start < payload.length) {
+    let end = Math.min(start + FRAGMENT_CHARS, payload.length);
+    const previous = payload.charCodeAt(end - 1);
+    const next = payload.charCodeAt(end);
+    if (
+      end < payload.length &&
+      previous >= 0xd800 &&
+      previous <= 0xdbff &&
+      next >= 0xdc00 &&
+      next <= 0xdfff
+    )
+      end--;
+    fragments.push(payload.slice(start, end));
+    start = end;
+  }
+  return fragments;
+}
+
 export function createSubagentContentMethods(mongoose: typeof import('mongoose')): {
   appendSubagentContentBatch: (
     input: SubagentContentScope & SubagentContentBatch & { leaseToken?: string },
@@ -95,7 +117,8 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
     }
     const Model = contentModel();
     const digest = createHash('sha256').update(eventsJson).digest('hex');
-    const fragments = Math.ceil(eventsJson.length / FRAGMENT_CHARS);
+    const payloads = fragmentSubagentContent(eventsJson);
+    const fragments = payloads.length;
     const base = {
       ...scope,
       revision,
@@ -125,7 +148,7 @@ export function createSubagentContentMethods(mongoose: typeof import('mongoose')
           $setOnInsert: {
             ...base,
             fragment,
-            payload: eventsJson.slice(fragment * FRAGMENT_CHARS, (fragment + 1) * FRAGMENT_CHARS),
+            payload: payloads[fragment],
           },
         },
         upsert: true,
