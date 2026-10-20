@@ -4172,6 +4172,97 @@ describe('Chat', () => {
       await expect(chat.stop()).resolves.toEqual({ status: 'unaddressable' });
       await retry;
     });
+
+    it('keeps a generation stoppable when a subscriber throws on one of its frames', async () => {
+      const { chat, stream, transport } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      let thrown = false;
+      chat.subscribe(() => {
+        if (!thrown && chat.status === 'streaming') {
+          thrown = true;
+          throw new Error('listener failed');
+        }
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push(stepEvent);
+      await sent;
+
+      expect(stream.closed()).toBe(true);
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ streamId: 'convo-1', generationCreatedAt: 100 }),
+      );
+    });
+
+    it('keeps a lost start unaddressable when a reattachment fails before the server answers', async () => {
+      const failure = () => Object.assign(new Error('Network Error'), { code: 'ERR_NETWORK' });
+      const { chat, transport } = setup();
+      transport.sendMessages.mockRejectedValueOnce(failure());
+      await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+
+      transport.reconnectToStream.mockRejectedValueOnce(failure());
+      await chat.resumeStream();
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+    });
+
+    it('ends a retry the server attached to the dropped generation by the stop in flight for it', async () => {
+      let answer: ((result: ChatAbortResult) => void) | undefined;
+      const { chat, stream, transport, onFinish } = setup();
+      transport.abort.mockImplementation(
+        () =>
+          new Promise<ChatAbortResult>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      const stopped = chat.stop();
+      await flush();
+
+      const attached = createStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      transport.sendMessages.mockResolvedValueOnce({ status: 'stream', stream: attached });
+      const retry = chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] });
+      await flush();
+      answer?.({ success: true });
+      await flush();
+      attached.close();
+      await expect(stopped).resolves.toEqual({ status: 'stopped' });
+      await retry;
+
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isAbort: true, isDisconnect: false }),
+      );
+    });
+
+    it('ignores a late status read for a late start a stop already ended', async () => {
+      let deliver: ((result: { status: 'stream'; stream: ChatStream }) => void) | undefined;
+      const late = createStream({ streamId: 'convo-1', generationCreatedAt: 300 });
+      const { chat, transport } = setup();
+      transport.sendMessages.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            deliver = resolve;
+          }),
+      );
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      await chat.stop();
+      await sent;
+      deliver?.({ status: 'stream', stream: late });
+      await flush();
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ generationCreatedAt: 300 }),
+      );
+
+      chat.restorePendingAction({ ...pausedAction, expiresAt: Date.now() + 60_000 }, 300);
+
+      expect(chat.pendingAction).toBeUndefined();
+    });
   });
 
   describe('ids a turn reports', () => {

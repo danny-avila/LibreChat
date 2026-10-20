@@ -882,13 +882,20 @@ export class Chat {
       /** Nothing names it; the stop already reported it unaddressable to the caller. */
       return;
     }
-    void this.abortOnServer(target).catch((error: unknown) =>
-      this.disposed
-        ? undefined
-        : this.callHost(
-            this.init.onError,
-            error instanceof Error ? error : new Error(String(error)),
-          ),
+    void this.abortOnServer(target).then(
+      () => {
+        /** Like any confirmed stop, so a late status read of its pause is ignored. */
+        if (generationCreatedAt != null) {
+          this.stoppedGenerations.add(generationCreatedAt);
+        }
+      },
+      (error: unknown) =>
+        this.disposed
+          ? undefined
+          : this.callHost(
+              this.init.onError,
+              error instanceof Error ? error : new Error(String(error)),
+            ),
     );
   }
 
@@ -1341,6 +1348,15 @@ export class Chat {
       let stream: ChatStream | null = null;
       if (result.status === 'stream') {
         stream = result.stream;
+        const { generationCreatedAt } = stream;
+        if (
+          generationCreatedAt != null &&
+          generationCreatedAt === dropped?.target.generationCreatedAt
+        ) {
+          /** The server attached the start to the dropped generation, whose record it continues. */
+          active.generation = dropped.generation;
+          active.inheritedGeneration = generationCreatedAt;
+        }
       } else if (result.status === 'replaced') {
         const generationCreatedAt = result.generationCreatedAt ?? undefined;
         /** The target is recorded before anyone hears of the reconnect, so a stop can reach it. */
@@ -1429,6 +1445,8 @@ export class Chat {
       }
     }
     let outcome: Outcome | undefined;
+    /** Set while this chat handles an event, whose failure leaves the generation running. */
+    let handling = false;
     try {
       this.setConnection('live');
       for await (const event of stream) {
@@ -1437,9 +1455,11 @@ export class Chat {
         }
         await this.executor.run(() => {
           if (!signal.aborted) {
+            handling = true;
             /** Recorded first, so a host that stops from the event's own callbacks names the run. */
             this.track(active, event);
             outcome = this.apply(event);
+            handling = false;
           }
         });
         if (outcome) {
@@ -1447,7 +1467,15 @@ export class Chat {
         }
       }
     } catch (error) {
-      outcome = this.toOutcome(error, active);
+      outcome =
+        handling && !signal.aborted
+          ? {
+              kind: 'error',
+              error: error instanceof Error ? error : new Error(String(error)),
+              /** The chat drops the stream, not the server the run, so a stop still reaches it. */
+              disconnect: true,
+            }
+          : this.toOutcome(error, active);
     } finally {
       stream.close();
     }
