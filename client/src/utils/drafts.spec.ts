@@ -1373,6 +1373,52 @@ describe('logical composer lifetime', () => {
     window.history.replaceState({}, '', '/');
   });
 
+  it('retires the old scope when the same host is registered on a changed project route', () => {
+    window.history.replaceState({}, '', '/c/new?projectId=project-a');
+    const host = {};
+    const releaseOld = registerComposerDraft(23, Constants.NEW_CONVO, 'new:23', host);
+    const oldOwner = captureComposerDraft(23, Constants.NEW_CONVO);
+    const oldLaunch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(oldLaunch, 23);
+    window.history.replaceState({}, '', '/c/new?projectId=project-b');
+    releaseOld();
+    const releaseNew = registerComposerDraft(23, Constants.NEW_CONVO, 'new:23', host);
+    const owner = captureComposerDraft(23, Constants.NEW_CONVO);
+    expect(oldOwner()).toBe(false);
+    expect(owner()).toBe(true);
+    expect(adoptComposerConversation(oldLaunch, 'wrong-project', 23)).toBe(false);
+    releaseNew();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('reuses registered ownership after passive query cleanup and acknowledged route adoption', () => {
+    window.history.replaceState({}, '', '/c/new?prompt=hello&projectId=project');
+    const host = {};
+    const release = registerComposerDraft(24, Constants.NEW_CONVO, 'new:24', host);
+    const owner = captureComposerDraft(24, Constants.NEW_CONVO);
+    consumeComposerQuery(
+      24,
+      Constants.NEW_CONVO,
+      '/c/new',
+      'prompt=hello&projectId=project',
+      'projectId=project',
+    );
+    window.history.replaceState({}, '', '/c/new?projectId=project');
+    release();
+    const releaseCleaned = registerComposerDraft(24, Constants.NEW_CONVO, 'pending:24', host);
+    expect(owner()).toBe(true);
+    const launch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(launch, 24);
+    expect(adoptComposerConversation(launch, 'assigned-project', 24)).toBe(true);
+    window.history.replaceState({}, '', '/c/assigned-project?projectId=project');
+    releaseCleaned();
+    const releaseAssigned = registerComposerDraft(24, 'assigned-project', 'assigned-project', host);
+    expect(owner()).toBe(true);
+    expect(owner.conversationId()).toBe('assigned-project');
+    releaseAssigned();
+    window.history.replaceState({}, '', '/');
+  });
+
   it('rejects an acknowledgement from a launch superseded by New Chat', () => {
     const release = registerComposerDraft(8, Constants.NEW_CONVO, 'pending:8', {});
     const submissionConversation = { conversationId: Constants.NEW_CONVO };

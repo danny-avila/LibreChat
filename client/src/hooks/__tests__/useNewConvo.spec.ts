@@ -10,6 +10,7 @@ import {
   setFilesDraft,
   getAskAnswerDraftId,
   bindComposerLaunch,
+  captureComposerDraft,
   adoptComposerConversation,
 } from '~/utils/drafts';
 import { beginFileSearchUpload, transferFileSearchPreference } from '~/hooks/Files/search';
@@ -287,6 +288,93 @@ describe('useNewConvo reset cleanup', () => {
       expect(localStorage.getItem(targetKey)).toBe(JSON.stringify(order !== 'later-disable'));
     },
   );
+
+  it.each(
+    ['remove', 'replace'].flatMap((change) =>
+      [undefined, 'file_search'].map((resource) => ({ change, resource })),
+    ),
+  )('accepts a fresh $resource upload after project $change', async ({ change, resource }) => {
+    const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
+    mockSaveDrafts = false;
+    mockFiles.clear();
+    mockConfigPending = false;
+    mockPreparationGate = undefined;
+    window.history.replaceState({}, '', '/c/new?projectId=project-a');
+    global.URL.createObjectURL = jest.fn(() => 'blob:project-change');
+    global.URL.revokeObjectURL = jest.fn();
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, cacheTime: Infinity },
+        mutations: { retry: false },
+      },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client }, children);
+    const { result, rerender, unmount } = renderHook(
+      ({ projectId }: { projectId: string | null }) => {
+        const [files, setFiles] = useAtom(filesFamily(2));
+        useAutoSave({ index: 2, conversationId: 'new', files, setFiles });
+        return {
+          files,
+          handler: useFileHandlingNoChatContext(undefined, {
+            index: 2,
+            files,
+            setFiles,
+            conversation: {
+              conversationId: 'new',
+              endpoint: EModelEndpoint.openAI,
+              chatProjectId: projectId,
+            } as TConversation,
+          }),
+        };
+      },
+      { wrapper, initialProps: { projectId: 'project-a' as string | null } },
+    );
+    const previousOwner = captureComposerDraft(2, 'new');
+    const previousLaunch = { conversationId: 'new' };
+    bindComposerLaunch(previousLaunch, 2);
+    act(() => {
+      const projectId = change === 'replace' ? 'project-b' : null;
+      window.history.replaceState({}, '', projectId ? `/c/new?projectId=${projectId}` : '/c/new');
+      rerender({ projectId });
+    });
+    expect(previousOwner()).toBe(false);
+    const currentOwner = captureComposerDraft(2, 'new');
+    expect(currentOwner()).toBe(true);
+    await act(async () => {
+      expect(
+        await result.current.handler.handleFiles(
+          [new File(['project'], 'project.txt', { type: 'text/plain' })],
+          resource,
+        ),
+      ).toBe(true);
+    });
+    const body = mockUploadFile.mock.calls[0][0] as FormData;
+    expect(body.get('tool_resource')).toBe(resource ?? null);
+    await act(async () => {
+      mockUploadOptions.onSuccess?.(
+        {
+          file_id: 'persisted-project-upload',
+          temp_file_id: body.get('file_id'),
+          filename: 'project.txt',
+          filepath: '/files/project.txt',
+          type: 'text/plain',
+          embedded: resource === 'file_search',
+        },
+        body,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 320));
+    });
+    expect(result.current.files.get(body.get('file_id') as string)?.progress).toBe(1);
+    expect(mockSetEphemeralAgent.mock.calls.length > 0).toBe(resource === 'file_search');
+    expect(adoptComposerConversation(previousLaunch, 'stale-project', 2)).toBe(false);
+    const launch = { conversationId: 'new' };
+    bindComposerLaunch(launch, 2);
+    expect(adoptComposerConversation(launch, 'fresh-project', 2)).toBe(true);
+    unmount();
+    client.clear();
+    window.history.replaceState({}, '', '/');
+  });
 
   it.each([false, true])(
     'completes the next first-ID upload after a same-route reset (saveDrafts: %s)',

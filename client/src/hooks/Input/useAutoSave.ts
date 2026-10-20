@@ -263,6 +263,7 @@ export const useAutoSave = ({
   const activeStorageId =
     currentConversationId === pendingDraftId ? pendingDraftId : conversationId;
   const composerHostRef = useRef({});
+  const composerRoute = window.location.pathname + window.location.search;
   useEffect(() => {
     if (!activeStorageId) return;
     return registerComposerDraft(
@@ -271,7 +272,7 @@ export const useAutoSave = ({
       activeStorageId,
       composerHostRef.current,
     );
-  }, [index, _conversationId, activeStorageId]);
+  }, [index, _conversationId, activeStorageId, composerRoute]);
 
   /** Snapshot before a URL prompt replaces text; user input resumes normal persistence. */
   const preserveText = useCallback(() => {

@@ -342,13 +342,15 @@ export const registerComposerDraft = (
   const previous = composerDraftScopes.get(index);
   const generation = getNewConversationDraftToken(index);
   const answerId = isAskAnswerDraftId(draftId) ? draftId : null;
+  const route = composerRoute();
   const scope =
     host &&
     previous != null &&
     (previous.host === host || (!previous.active && previous.sourceId != null)) &&
     previous.generation === generation &&
     previous.conversationId === conversationId &&
-    previous.answerId === answerId
+    previous.answerId === answerId &&
+    (previous.route === route || previous.assignedRoute === route)
       ? previous
       : {
           conversationId,
@@ -358,7 +360,7 @@ export const registerComposerDraft = (
           generation,
           answerId,
           active: true,
-          route: composerRoute(),
+          route,
           assignments: new Set<(sourceId: string, targetId: string) => void>(),
         };
   const registration = {};
