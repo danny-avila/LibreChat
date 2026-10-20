@@ -39,6 +39,7 @@ import {
 import {
   beginFileSearchUpload,
   captureFileSearchUpload,
+  canRestoreFileSearchUpload,
   cancelFileSearchUpload,
   completeFileSearchUpload,
 } from './search';
@@ -149,7 +150,9 @@ export const hasInFlightUpload = (fileId: string, conversationId?: string): bool
   const recovery = uploadErrorCallbacks.get(fileId);
   return (
     recovery != null &&
-    (conversationId == null || recovery.fileSearch?.context.conversationId === conversationId)
+    (conversationId == null ||
+      (recovery.fileSearch?.context.conversationId === conversationId &&
+        canRestoreFileSearchUpload(fileId, conversationId, recovery.fileSearch.context)))
   );
 };
 

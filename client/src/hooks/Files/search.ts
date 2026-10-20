@@ -112,17 +112,6 @@ function readIntent(fileId: string): Intent | null {
       Number.isFinite(value.createdAt) &&
       !isTimestampExpired(value.createdAt)
     ) {
-      if (value.conversationId === Constants.NEW_CONVO) {
-        const generation = value.newChatGeneration;
-        if (
-          !generation ||
-          !Number.isInteger(generation.index) ||
-          generation.index < 0 ||
-          generation.revision !== getNewConversationDraftRevision(generation.index)
-        ) {
-          return null;
-        }
-      }
       intent = value;
     }
   } catch {
@@ -131,8 +120,40 @@ function readIntent(fileId: string): Intent | null {
   return intent;
 }
 
+/** Unknown attachments remain restorable; explicit uploads must still own their destination. */
+export function canRestoreFileSearchUpload(
+  fileId: string,
+  conversationId: string,
+  context?: FileSearchUploadContext,
+): boolean {
+  const intent = context ?? readIntent(fileId);
+  const owner = assignments.get(fileId)?.owner ?? (context ? owners.get(context) : undefined);
+  if (
+    owner &&
+    (owner.conversationId() !== conversationId || (!owner() && !owner.retainsFile(fileId)))
+  ) {
+    return false;
+  }
+  if (!intent) return true;
+  if (intent.conversationId !== conversationId) return owner == null;
+  if (conversationId !== Constants.NEW_CONVO) return true;
+  const generation = intent.newChatGeneration;
+  return (
+    generation != null &&
+    Number.isInteger(generation.index) &&
+    generation.index >= 0 &&
+    generation.revision === getNewConversationDraftRevision(generation.index) &&
+    (intent.projectId === undefined ||
+      intent.projectId === new URLSearchParams(window.location.search).get('projectId'))
+  );
+}
+
 export function hasPendingFileSearchUpload(fileId: string, conversationId: string): boolean {
-  return readIntent(fileId)?.conversationId === conversationId;
+  const intent = readIntent(fileId);
+  return (
+    intent?.conversationId === conversationId &&
+    canRestoreFileSearchUpload(fileId, conversationId, intent)
+  );
 }
 
 /** Completes only an explicit upload intent, never an arbitrary embedded attachment. */
@@ -141,22 +162,35 @@ export function completeFileSearchUpload(
   conversationId: string,
   choiceRevision?: string | null,
 ): boolean {
+  const owner = assignments.get(fileId)?.owner;
   let intent = readIntent(fileId);
   intent ??=
-    choiceRevision === undefined ? null : { conversationId, choiceRevision, createdAt: Date.now() };
+    choiceRevision === undefined
+      ? null
+      : {
+          conversationId,
+          choiceRevision,
+          createdAt: Date.now(),
+          newChatGeneration:
+            conversationId === Constants.NEW_CONVO
+              ? (owner?.newChatGeneration ?? {
+                  index: 0,
+                  revision: getNewConversationDraftRevision(0),
+                })
+              : undefined,
+        };
   if (!intent) {
-    if (!assignments.has(fileId)) cancelFileSearchUpload(fileId);
+    if (owner && !owner() && !owner.retainsFile(fileId)) {
+      owner.discardFile(fileId);
+      cancelFileSearchUpload(fileId);
+    } else if (!owner) cancelFileSearchUpload(fileId);
     return false;
   }
   if (intent.conversationId !== conversationId) {
     return false;
   }
-  const owner = assignments.get(fileId)?.owner;
-  const changedProject =
-    conversationId === Constants.NEW_CONVO &&
-    intent.projectId !== undefined &&
-    intent.projectId !== new URLSearchParams(window.location.search).get('projectId');
-  if (changedProject || (owner && !owner() && !owner.retainsFile(fileId))) {
+  if (!canRestoreFileSearchUpload(fileId, conversationId, intent)) {
+    owner?.discardFile(fileId);
     cancelFileSearchUpload(fileId);
     return false;
   }

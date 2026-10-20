@@ -1521,6 +1521,37 @@ describe('logical composer lifetime', () => {
     },
   );
 
+  it('discards a retired upload only from its pane and leaves fresh attachments intact', () => {
+    const release = registerComposerDraft(35, Constants.NEW_CONVO, 'pending:35', {});
+    const owner = captureComposerDraft(35, Constants.NEW_CONVO);
+    for (const id of ['new:35', 'pending:35', 'new:36', 'saved-unrelated']) {
+      setFilesDraft(id, { fileIds: ['retired-upload', 'fresh-file'], pendingPastes: {} });
+    }
+    renewNewConversationDraftToken(35);
+    owner.discardFile('retired-upload');
+    expect(getFilesDraft('new:35').fileIds).toEqual(['fresh-file']);
+    expect(getFilesDraft('pending:35').fileIds).toEqual(['fresh-file']);
+    expect(getFilesDraft('new:36').fileIds).toEqual(['retired-upload', 'fresh-file']);
+    expect(getFilesDraft('saved-unrelated').fileIds).toEqual(['retired-upload', 'fresh-file']);
+    release();
+  });
+
+  it("never prunes a retired upload from another live tab's draft", () => {
+    const release = registerComposerDraft(37, Constants.NEW_CONVO, 'new:37', {});
+    const owner = captureComposerDraft(37, Constants.NEW_CONVO);
+    markTabLive('foreign-retained-upload');
+    setFilesDraft('new:37', {
+      fileIds: ['foreign-file'],
+      pendingPastes: {},
+      tabId: 'foreign-retained-upload',
+    });
+    renewNewConversationDraftToken(37);
+    owner.discardFile('foreign-file');
+    expect(getFilesDraft('new:37').fileIds).toEqual(['foreign-file']);
+    expect(getFilesDraft('new:37').tabId).toBe('foreign-retained-upload');
+    release();
+  });
+
   it('keeps reset revisions pane-local and stable until an explicit reset', () => {
     const first = getNewConversationDraftRevision(31);
     expect(getNewConversationDraftRevision(31)).toBe(first);

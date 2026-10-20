@@ -8,6 +8,7 @@ import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import {
   setFilesDraft,
+  getFilesDraft,
   registerComposerDraft,
   getAskAnswerDraftId,
   bindComposerLaunch,
@@ -739,6 +740,126 @@ describe('useNewConvo reset cleanup', () => {
     client.clear();
     window.history.replaceState({}, '', '/');
   });
+
+  it.each(
+    ['reset', 'live', 'saved'].flatMap((origin) =>
+      ['cache-first', 'success-first', 'batched'].map((order) => ({ origin, order })),
+    ),
+  )(
+    'restores only owned uploads after composer replacement ($origin, $order)',
+    async ({ origin, order }) => {
+      const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
+      mockSaveDrafts = true;
+      mockFiles.clear();
+      mockConfigPending = false;
+      const conversationId = origin === 'saved' ? 'saved-cache-origin' : 'new';
+      mockPreviousConversation = { conversationId, endpoint: EModelEndpoint.openAI };
+      window.history.replaceState({}, '', `/c/${conversationId}`);
+      global.URL.createObjectURL = jest.fn(() => 'blob:reset-cache');
+      global.URL.revokeObjectURL = jest.fn();
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false, cacheTime: Infinity } },
+      });
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(QueryClientProvider, { client }, children);
+      const composer = renderHook(
+        ({ conversationId, tick }) => {
+          const [files, setFiles] = useAtom(filesFamily(2));
+          useAutoSave({ index: 2, conversationId, files, setFiles });
+          return {
+            files,
+            tick,
+            handler: useFileHandlingNoChatContext(undefined, {
+              index: 2,
+              files,
+              setFiles,
+              conversation: { conversationId, endpoint: EModelEndpoint.openAI } as TConversation,
+            }),
+          };
+        },
+        { wrapper, initialProps: { conversationId, tick: 0 } },
+      );
+      await act(async () => {
+        await composer.result.current.handler.handleFiles(
+          [new File(['search'], 'reset-cache.txt', { type: 'text/plain' })],
+          'file_search',
+        );
+      });
+      const body = mockUploadFile.mock.calls[0][0] as FormData;
+      const fileId = body.get('file_id') as string;
+      const options = mockUploadOptions;
+      expect(getFilesDraft(origin === 'saved' ? conversationId : 'new:2').fileIds).toContain(
+        fileId,
+      );
+      const persisted = {
+        file_id: 'reset-cache-persisted',
+        temp_file_id: fileId,
+        filepath: '/files/reset-cache',
+        filename: 'reset-cache.txt',
+        type: 'text/plain',
+        bytes: 6,
+        embedded: true,
+        llmDeliveryPath: 'none',
+      };
+      const next = renderHook(() => useNewConvo(2), { wrapper });
+      const reset = () => {
+        if (origin === 'live') return;
+        window.history.replaceState({}, '', '/c/new');
+        next.result.current.newConversation({ preset: { endpoint: EModelEndpoint.openAI } });
+        composer.rerender({ conversationId: 'new', tick: 1 });
+      };
+      const cache = () => {
+        mockFileList = [persisted];
+        composer.rerender({ conversationId: 'new', tick: 2 });
+      };
+      if (order === 'batched') {
+        await act(async () => {
+          reset();
+          options.onSuccess?.(persisted, body);
+          cache();
+        });
+      } else {
+        act(reset);
+        if (order === 'cache-first') {
+          act(cache);
+          act(() => options.onSuccess?.(persisted, body));
+        } else {
+          act(() => options.onSuccess?.(persisted, body));
+          act(cache);
+        }
+      }
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 320));
+      });
+      if (origin === 'live') {
+        expect(composer.result.current.files.get(fileId)?.progress).toBe(1);
+        expect(mockSetEphemeralAgent).toHaveBeenCalledWith('new', expect.any(Function));
+      } else {
+        expect(composer.result.current.files.size).toBe(0);
+        expect(getFilesDraft('new:2').fileIds).not.toContain(fileId);
+        expect(mockSetEphemeralAgent).not.toHaveBeenCalledWith('new', expect.anything());
+      }
+      if (origin === 'saved') {
+        composer.unmount();
+        window.history.replaceState({}, '', `/c/${conversationId}`);
+        const restored = renderHook(
+          () => {
+            const [files, setFiles] = React.useState<Map<string, ExtendedFile>>(new Map());
+            useAutoSave({ index: 2, conversationId, files, setFiles });
+            return files;
+          },
+          { wrapper },
+        );
+        expect(restored.result.current.get(fileId)?.progress).toBe(1);
+        expect(mockSetEphemeralAgent).toHaveBeenCalledWith(conversationId, expect.any(Function));
+        restored.unmount();
+      }
+      next.unmount();
+      composer.unmount();
+      client.clear();
+      window.history.replaceState({}, '', '/');
+    },
+  );
 
   it.each(['bootstrap', 'metadata', 'reset'])(
     'preserves logical composer ownership only for passive initialization (%s)',

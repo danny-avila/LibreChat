@@ -8,6 +8,7 @@ import type { PendingTextAttachmentDraft } from '~/utils';
 import type { ExtendedFile } from '~/common';
 import {
   applyPendingPastesToDraft,
+  captureComposerDraft,
   clearDraft,
   clearAllDrafts,
   getDraft,
@@ -27,7 +28,12 @@ import {
   setDraft,
   setFilesDraft,
 } from '~/utils';
-import { completeFileSearchUpload, hasPendingFileSearchUpload } from '~/hooks/Files/search';
+import {
+  completeFileSearchUpload,
+  hasPendingFileSearchUpload,
+  canRestoreFileSearchUpload,
+  cancelFileSearchUpload,
+} from '~/hooks/Files/search';
 import { isPastedTextFileMarked, markPastedTextFile } from '~/utils/files';
 import { hasInFlightUpload } from '~/hooks/Files/useFileHandling';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
@@ -124,7 +130,10 @@ export const useAutoSave = ({
         return [];
       }
 
+      const ownsDraft = captureComposerDraft(index, _conversationId ?? Constants.NEW_CONVO);
+      const ownerId = ownsDraft.conversationId();
       const activeFileIds = new Set(filesRef.current.keys());
+      const rejectedFileIds: string[] = [];
       const fileIdsToKeep: string[] = [];
       const pendingPastes = { ...filesDraft.pendingPastes };
       const pastedTextIds = [...(filesDraft.pastedTextIds ?? [])];
@@ -143,6 +152,11 @@ export const useAutoSave = ({
         }
       }
       filesDraft.fileIds.forEach((fileId) => {
+        if (!canRestoreFileSearchUpload(fileId, ownerId)) {
+          rejectedFileIds.push(fileId);
+          delete pendingPastes[fileId];
+          return;
+        }
         const fileData = filesById.get(fileId);
         const tempFileData = filesByTempId.get(fileId);
         const { fileToRecover, fileIdToRecover } = fileData
@@ -173,6 +187,7 @@ export const useAutoSave = ({
           }
           delete pendingPastes[fileId];
           setFiles((currentFiles) => {
+            if (!ownsDraft()) return currentFiles;
             /** The same entry may still be live in the composer — this path also
              * runs when the upload that created it writes the file cache. Layer
              * the persisted record over it instead of replacing it: the local
@@ -224,9 +239,10 @@ export const useAutoSave = ({
         pastedTextIds: pastedTextIds.filter((pastedId) => keptIdentities.has(pastedId)),
         pendingPastes,
       });
+      rejectedFileIds.forEach(cancelFileSearchUpload);
       return pastesToRecover;
     },
-    [fileList, setFiles, _conversationId, setEphemeralAgent],
+    [index, fileList, setFiles, _conversationId, setEphemeralAgent],
   );
 
   const restoreText = useCallback(
@@ -588,6 +604,9 @@ export const useAutoSave = ({
     // It ensures that the file drafts are kept up-to-date and can be restored
     // when the conversation is revisited.
     const draftStorageId = currentConversationId ?? conversationId;
+    if (currentDraft && currentDraft.conversationId !== (_conversationId ?? Constants.NEW_CONVO)) {
+      return;
+    }
 
     if (!saveDrafts || draftStorageId == null || draftStorageId === '') {
       return;

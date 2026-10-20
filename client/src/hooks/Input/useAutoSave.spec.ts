@@ -39,6 +39,7 @@ import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
 import { hasInFlightUpload } from '~/hooks/Files/useFileHandling';
+import { beginFileSearchUpload } from '~/hooks/Files/search';
 import {
   encodeBase64,
   clearDraft,
@@ -48,6 +49,7 @@ import {
   getFilesDraft,
   setDraft,
   setFilesDraft,
+  renewNewConversationDraftToken,
 } from '~/utils';
 import { markPastedTextFile } from '~/utils/files';
 import { useAutoSave } from '~/hooks';
@@ -1004,6 +1006,36 @@ describe('useAutoSave — file cache updates', () => {
       attached: false,
     });
     expect(restored?.file).toBeInstanceOf(File);
+  });
+
+  it('rejects a restored file-map updater after its new-chat generation retires', () => {
+    const setFiles = jest.fn();
+    setFilesDraft('new:38', { fileIds: ['client-temp-id'], pendingPastes: {} });
+    const host = renderHook(() => {
+      (useGetFiles as jest.Mock).mockReturnValue({ data: [persistedRecord] });
+      return useAutoSave({ index: 38, conversationId: 'new', files: new Map(), setFiles });
+    });
+    expect(applySetFiles(setFiles, new Map()).get('client-temp-id')?.progress).toBe(1);
+    renewNewConversationDraftToken(38);
+    expect(applySetFiles(setFiles, new Map()).size).toBe(0);
+    host.unmount();
+  });
+
+  it('prunes a retired new-chat intent before cache recovery without live callbacks', () => {
+    beginFileSearchUpload('client-temp-id', 'new');
+    setFilesDraft('new', { fileIds: ['client-temp-id'], pendingPastes: {} });
+    renewNewConversationDraftToken();
+    const setFiles = jest.fn();
+    const host = renderHook(() => {
+      (useGetFiles as jest.Mock).mockReturnValue({
+        data: [{ ...persistedRecord, embedded: true }],
+      });
+      return useAutoSave({ conversationId: 'new', files: new Map(), setFiles });
+    });
+    expect(applySetFiles(setFiles, new Map()).size).toBe(0);
+    expect(getFilesDraft('new').fileIds).toEqual([]);
+    expect(mockSetDraftEphemeralAgent).not.toHaveBeenCalled();
+    host.unmount();
   });
 
   it('marks a file restored from a draft alone as attached', () => {

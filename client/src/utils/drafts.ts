@@ -538,6 +538,7 @@ export type CapturedComposerDraft = (() => boolean) & {
   newChatGeneration?: Readonly<{ index: number; revision: string }>;
   conversationId: () => string;
   retainsFile: (fileId: string) => boolean;
+  discardFile: (fileId: string) => void;
   onAssignment: (listener: (sourceId: string, targetId: string) => void) => () => void;
 };
 
@@ -567,6 +568,19 @@ export const captureComposerDraft = (
         if (!scope || scope.conversationId === Constants.NEW_CONVO) return false;
         const draft = getFilesDraft(scope.draftId);
         return isFilesDraftOwnedByThisTab(draft) && draft.fileIds.includes(fileId);
+      },
+      discardFile: (fileId: string) => {
+        const draftIds = new Set([scope?.draftId ?? getConversationDraftId(index, conversationId)]);
+        if (conversationId === Constants.NEW_CONVO) {
+          draftIds.add(getNewConversationDraftId(index));
+          draftIds.add(getPendingDraftId(index));
+        }
+        for (const id of draftIds) {
+          const draft = getFilesDraft(id);
+          if (isFilesDraftOwnedByThisTab(draft) && draft.fileIds.includes(fileId)) {
+            removePendingTextAttachmentDraft({ id, fileId, removeFile: true });
+          }
+        }
       },
       onAssignment: (listener: (sourceId: string, targetId: string) => void) => {
         scope?.assignments.add(listener);
