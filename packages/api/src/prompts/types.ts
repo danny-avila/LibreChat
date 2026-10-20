@@ -218,31 +218,15 @@ export interface PromptSourceAdapter {
 }
 
 /**
- * The native adapter additionally performs every operation that is keyed by revision ID
- * rather than by group. Mutations are optional: a source that cannot perform one leaves
- * it out, and the service returns an `unsupported` result. The service also guards
- * `savePrompt`, `makePromptProduction` and `deletePrompt` against an external group,
- * returning `read_only` before any of these are called.
+ * All local group and native-revision operations: the group-keyed storage methods and the
+ * revision-keyed native methods. Three mutations, `savePrompt`, `makePromptProduction` and
+ * `deletePrompt`, are optional: a store that cannot perform one leaves it out, and the
+ * service returns an `unsupported` result. The service returns `read_only` for an
+ * external group before calling `savePrompt`, `makePromptProduction`, `deletePrompt`,
+ * `updatePromptGroup` or `deletePromptGroup` on a caller's request; the `importSourceGroup`
+ * rollback deletes the external group it created without that check.
  */
-export interface NativePromptAdapter extends PromptSourceAdapter {
-  getPrompt(promptId: string): Promise<PromptRecord | null>;
-  getPrompts(groupId: string): Promise<readonly PromptRecord[]>;
-  createPromptGroup(input: CreatePromptGroupInput): Promise<PromptCreationResult>;
-  savePrompt?(input: AddPromptRevisionInput): Promise<{ readonly prompt: PromptRecord }>;
-  /** Throws when the revision does not exist. */
-  makePromptProduction?(promptId: string): Promise<TMakePromptProductionResponse>;
-  deletePrompt?(input: {
-    readonly groupId: string;
-    readonly promptId: string;
-  }): Promise<TDeletePromptResponse>;
-}
-
-/**
- * Local catalog operations that do not depend on the content source. The service guards
- * `updatePromptGroup` and `deletePromptGroup` against an external group, returning
- * `read_only` before either reaches here.
- */
-export interface PromptCatalogStore {
+export interface PromptStore {
   getPromptGroup(groupId: string): Promise<PromptGroupRecord | null>;
   getListPromptGroupsByAccess(
     input: Pick<PromptListInput, 'accessibleIds' | 'name' | 'category' | 'limit' | 'after'>,
@@ -257,9 +241,19 @@ export interface PromptCatalogStore {
    *  Returns a typed failure for a duplicate-key race or a document validation
    *  failure; any other failure throws. */
   createSourceGroup(input: ImportSourceGroupInput): Promise<CreateSourceGroupResult>;
+  getPrompt(promptId: string): Promise<PromptRecord | null>;
+  getPrompts(groupId: string): Promise<readonly PromptRecord[]>;
+  createPromptGroup(input: CreatePromptGroupInput): Promise<PromptCreationResult>;
+  savePrompt?(input: AddPromptRevisionInput): Promise<{ readonly prompt: PromptRecord }>;
+  /** Throws when the revision does not exist. */
+  makePromptProduction?(promptId: string): Promise<TMakePromptProductionResponse>;
+  deletePrompt?(input: {
+    readonly groupId: string;
+    readonly promptId: string;
+  }): Promise<TDeletePromptResponse>;
 }
 
-/** The data-schemas prompt methods the native adapter and catalog store use. */
+/** The data-schemas methods the prompt store and `createPromptService` use. */
 export interface PromptDatabase {
   getPromptGroup(filter: { _id: string }): Promise<object | null>;
   getPrompt(filter: { _id: string }): Promise<object | null>;
@@ -308,15 +302,10 @@ export interface PromptDatabase {
 }
 
 export interface PromptServiceAdapters {
-  /**
-   * The content source for a group whose `source` is `native`, and for every operation
-   * keyed by revision ID rather than by group (`createPromptGroup`, `getPrompt`,
-   * `savePrompt`, `makePromptProduction`, `deletePrompt`), which stay native-only.
-   */
-  readonly native: NativePromptAdapter;
-  /** The content source for a group whose `source` is `langfuse`. */
-  readonly langfuse: PromptSourceAdapter;
-  readonly catalog: PromptCatalogStore;
+  /** All local group and native-revision storage. */
+  readonly store: PromptStore;
+  /** The content source per `PromptGroupSource`, resolving a selection only. */
+  readonly sources: Record<PromptGroupSource, PromptSourceAdapter>;
   readonly grantCreatorOwnership: (input: {
     readonly userId: string;
     readonly groupId: string;

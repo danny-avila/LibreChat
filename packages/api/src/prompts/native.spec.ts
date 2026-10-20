@@ -2,7 +2,8 @@ import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createModels, createMethods } from '@librechat/data-schemas';
 import type { PromptDatabase, PromptGroupRecord, PromptRecord } from './types';
-import { createNativePromptAdapter, createPromptCatalogStore } from './native';
+import { createNativePromptAdapter } from './native';
+import { createPromptStore } from './store';
 
 let mongo: MongoMemoryServer;
 let db: PromptDatabase;
@@ -20,22 +21,20 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  const adapter = createNativePromptAdapter(db);
-  const created = await adapter.createPromptGroup({
+  const store = createPromptStore(db);
+  const created = await store.createPromptGroup({
     prompt: { prompt: 'Production prompt', type: 'text' },
     group: { name: 'Native group' },
     author,
     authorName: 'Author',
   });
   production = created.prompt as PromptRecord;
-  ({ prompt: draft } = (await adapter.savePrompt?.({
+  ({ prompt: draft } = await store.savePrompt({
     groupId: production.groupId,
     prompt: { prompt: 'Draft prompt', type: 'chat' },
     author,
-  })) as { prompt: PromptRecord });
-  group = (await createPromptCatalogStore(db).getPromptGroup(
-    production.groupId,
-  )) as PromptGroupRecord;
+  }));
+  group = (await store.getPromptGroup(production.groupId)) as PromptGroupRecord;
 });
 
 afterEach(async () => {
@@ -50,25 +49,8 @@ afterAll(async () => {
 });
 
 describe('createNativePromptAdapter', () => {
-  it('returns records with string IDs', () => {
-    expect(group).toEqual(
-      expect.objectContaining({
-        _id: production.groupId,
-        author,
-        source: 'native',
-        productionId: production._id,
-        productionPrompt: expect.objectContaining({
-          _id: production._id,
-          groupId: production.groupId,
-        }),
-      }),
-    );
-    expect(typeof draft._id).toBe('string');
-    expect(draft).toEqual(expect.objectContaining({ groupId: group._id, author, type: 'chat' }));
-  });
-
   it('resolves Production from the group inlined revision without reading it again', async () => {
-    const adapter = createNativePromptAdapter(db);
+    const adapter = createNativePromptAdapter(createPromptStore(db));
     const readPrompt = jest.spyOn(db, 'getPrompt');
 
     await expect(
@@ -87,7 +69,7 @@ describe('createNativePromptAdapter', () => {
   });
 
   it('reads the Production revision when the group has no inlined revision', async () => {
-    const adapter = createNativePromptAdapter(db);
+    const adapter = createNativePromptAdapter(createPromptStore(db));
     const readPrompt = jest.spyOn(db, 'getPrompt');
     const { productionPrompt: _productionPrompt, ...groupWithoutInlinedRevision } = group;
 
@@ -101,7 +83,7 @@ describe('createNativePromptAdapter', () => {
   });
 
   it('resolves an exact revision from a loaded revision without another read', async () => {
-    const adapter = createNativePromptAdapter(db);
+    const adapter = createNativePromptAdapter(createPromptStore(db));
     const readPrompt = jest.spyOn(db, 'getPrompt');
 
     await expect(
@@ -124,7 +106,7 @@ describe('createNativePromptAdapter', () => {
   });
 
   it('reads an exact revision when the loaded revision is a different revision', async () => {
-    const adapter = createNativePromptAdapter(db);
+    const adapter = createNativePromptAdapter(createPromptStore(db));
     const readPrompt = jest.spyOn(db, 'getPrompt');
 
     await expect(
@@ -138,7 +120,7 @@ describe('createNativePromptAdapter', () => {
   });
 
   it('returns unavailable_selection for a missing revision or group with no Production', async () => {
-    const adapter = createNativePromptAdapter(db);
+    const adapter = createNativePromptAdapter(createPromptStore(db));
 
     await expect(
       adapter.resolvePrompt({
@@ -161,7 +143,7 @@ describe('createNativePromptAdapter', () => {
   });
 
   it('does not resolve a revision belonging to another group', async () => {
-    const adapter = createNativePromptAdapter(db);
+    const adapter = createNativePromptAdapter(createPromptStore(db));
     const otherGroup = { ...group, _id: new Types.ObjectId().toString() };
 
     await expect(
@@ -182,7 +164,7 @@ describe('createNativePromptAdapter', () => {
   });
 
   it('returns unsupported_selection for a version selection', async () => {
-    const adapter = createNativePromptAdapter(db);
+    const adapter = createNativePromptAdapter(createPromptStore(db));
 
     await expect(
       adapter.resolvePrompt({ group, selection: { type: 'version', version: 1 } }),
@@ -193,14 +175,12 @@ describe('createNativePromptAdapter', () => {
   });
 
   it('resolves a stored revision without a type as text', async () => {
-    const adapter = createNativePromptAdapter(db);
+    const adapter = createNativePromptAdapter(createPromptStore(db));
     await mongoose.models.Prompt.collection.updateMany(
       { groupId: new Types.ObjectId(group._id) },
       { $unset: { type: '' } },
     );
-    const loaded = (await createPromptCatalogStore(db).getPromptGroup(
-      group._id,
-    )) as PromptGroupRecord;
+    const loaded = (await createPromptStore(db).getPromptGroup(group._id)) as PromptGroupRecord;
 
     await expect(
       adapter.resolvePrompt({ group: loaded, selection: { type: 'production' } }),
@@ -211,144 +191,5 @@ describe('createNativePromptAdapter', () => {
         selection: { type: 'exact', promptId: draft._id },
       }),
     ).resolves.toMatchObject({ ok: true, value: { promptId: draft._id, type: 'text' } });
-  });
-
-  it('returns null for an absent revision', async () => {
-    const adapter = createNativePromptAdapter(db);
-    const missing = new Types.ObjectId().toString();
-
-    await expect(adapter.getPrompt(missing)).resolves.toBeNull();
-  });
-
-  it('returns the group revisions newest first', async () => {
-    const adapter = createNativePromptAdapter(db);
-    await mongoose.models.Prompt.collection.updateOne(
-      { _id: new Types.ObjectId(draft._id) },
-      { $set: { createdAt: new Date(Date.now() + 1000) } },
-    );
-
-    const revisions = await adapter.getPrompts(group._id);
-
-    expect(revisions.map((revision) => revision._id)).toEqual([draft._id, production._id]);
-  });
-
-  it('promotes a revision and throws for a missing revision', async () => {
-    const adapter = createNativePromptAdapter(db);
-
-    await adapter.makePromptProduction?.(draft._id);
-
-    await expect(createPromptCatalogStore(db).getPromptGroup(group._id)).resolves.toMatchObject({
-      productionId: draft._id,
-    });
-    await expect(adapter.makePromptProduction?.(new Types.ObjectId().toString())).rejects.toThrow(
-      'Prompt not found',
-    );
-  });
-
-  it('returns a string group ID when deleting the last revision deletes the group', async () => {
-    const adapter = createNativePromptAdapter(db);
-
-    await expect(
-      adapter.deletePrompt?.({ groupId: group._id, promptId: draft._id }),
-    ).resolves.toEqual({ prompt: 'Prompt deleted successfully' });
-    await expect(
-      adapter.deletePrompt?.({ groupId: group._id, promptId: production._id }),
-    ).resolves.toEqual({
-      prompt: 'Prompt deleted successfully',
-      promptGroup: { message: 'Prompt group deleted successfully', id: group._id },
-    });
-  });
-});
-
-describe('createPromptCatalogStore', () => {
-  it('returns a group with string IDs through getPromptGroup', async () => {
-    const catalog = createPromptCatalogStore(db);
-
-    await expect(catalog.getPromptGroup(production.groupId)).resolves.toEqual(group);
-  });
-
-  it('returns null for a missing group', async () => {
-    const catalog = createPromptCatalogStore(db);
-
-    await expect(catalog.getPromptGroup(new Types.ObjectId().toString())).resolves.toBeNull();
-  });
-
-  describe('findSourceGroup and createSourceGroup', () => {
-    const identity = {
-      sourceDestination: 'us',
-      sourceProjectId: 'project-1',
-      sourcePromptName: 'synced-prompt',
-    };
-
-    it('returns null for an identity with no stored group', async () => {
-      const catalog = createPromptCatalogStore(db);
-
-      await expect(catalog.findSourceGroup(identity)).resolves.toBeNull();
-    });
-
-    it('creates a source group and then finds it by identity', async () => {
-      const catalog = createPromptCatalogStore(db);
-
-      const created = await catalog.createSourceGroup({
-        identity,
-        name: 'Synced prompt',
-        author,
-        authorName: 'Langfuse Sync',
-      });
-
-      expect(created).toEqual({ ok: true, value: { _id: expect.any(String) } });
-      await expect(catalog.findSourceGroup(identity)).resolves.toEqual({
-        _id: created.ok ? created.value._id : undefined,
-      });
-    });
-
-    it('returns a duplicate error for a second insert with the same identity', async () => {
-      const catalog = createPromptCatalogStore(db);
-      await catalog.createSourceGroup({
-        identity,
-        name: 'Synced prompt',
-        author,
-        authorName: 'Langfuse Sync',
-      });
-
-      const result = await catalog.createSourceGroup({
-        identity,
-        name: 'Synced prompt again',
-        author,
-        authorName: 'Langfuse Sync',
-      });
-
-      expect(result).toEqual({ ok: false, error: { code: 'duplicate' } });
-    });
-
-    it('returns an invalid error with a cause for an empty name', async () => {
-      const catalog = createPromptCatalogStore(db);
-
-      const result = await catalog.createSourceGroup({
-        identity,
-        name: '',
-        author,
-        authorName: 'Langfuse Sync',
-      });
-
-      expect(result).toEqual({
-        ok: false,
-        error: { code: 'invalid', cause: expect.any(Error) },
-      });
-    });
-
-    it('rethrows a non-Mongo, non-validation error', async () => {
-      const catalog = createPromptCatalogStore(db);
-      jest.spyOn(db, 'createLangfusePromptGroup').mockRejectedValueOnce(new Error('unavailable'));
-
-      await expect(
-        catalog.createSourceGroup({
-          identity,
-          name: 'Synced prompt',
-          author,
-          authorName: 'Langfuse Sync',
-        }),
-      ).rejects.toThrow('unavailable');
-    });
   });
 });
