@@ -16,15 +16,22 @@ import Markdown from './Markdown';
  * This file lives outside `__tests__/` and is named `.bench.tsx` so the default
  * jest run skips it; execute it explicitly with:
  *
- *   node node_modules/jest/bin/jest.js --runInBand --coverage=false \
+ *   cd client
+ *   npx jest --maxWorkers=2 --coverage=false \
  *     --testMatch '**\/MarkdownBlocks.bench.tsx'
  *
- * Two metrics are reported:
- *  - codeBlockRenders: deterministic structural metric — how many times code
+ * Three metrics are reported:
+ *  - pipelineInvocations: full ReactMarkdown renders, including every plugin.
+ *  - codeBlockRenders: deterministic structural metric, how many times code
  *    blocks render across the whole stream (the memoization win, noise-free).
  *  - totalMs: summed React Profiler actualDuration (wall-clock; jsdom absolute
  *    numbers are not browser-accurate, but the OLD/NEW ratio is indicative).
  */
+
+jest.mock('react-markdown', () => ({
+  __esModule: true,
+  default: jest.fn(jest.requireActual('react-markdown').default),
+}));
 
 jest.mock('~/components/Messages/Content/CodeBlock', () => ({
   __esModule: true,
@@ -32,6 +39,16 @@ jest.mock('~/components/Messages/Content/CodeBlock', () => ({
 }));
 
 const codeBlockMock = CodeBlock as unknown as jest.Mock;
+const markdownMock = jest.mocked(ReactMarkdown);
+
+type RenderProps = { content: string; streaming?: boolean };
+type Measurement = {
+  totalMs: number;
+  codeBlockRenders: number;
+  pipelineInvocations: number;
+  streamingCodeBlockRenders: number;
+  streamingPipelineInvocations: number;
+};
 
 const LANGS = ['python', 'javascript', 'typescript', 'bash', 'json', 'sql', 'go', 'rust'];
 
@@ -87,10 +104,10 @@ const OldMarkdown = ({ content }: { content: string }) => (
 );
 
 /** The per-block renderer a streaming message uses, without the fade. */
-const NewMarkdown = ({ content }: { content: string }) => (
+const NewMarkdown = ({ content, streaming = true }: RenderProps) => (
   <MarkdownBlocks
     content={content}
-    streaming={true}
+    streaming={streaming}
     remarkPlugins={getRemarkPlugins()}
     rehypePlugins={getRehypePlugins()}
     components={getMarkdownComponents()}
@@ -109,25 +126,27 @@ const streamingContext = {
   isLatestMessage: true,
 };
 
-const FadeMarkdown = ({ content }: { content: string }) => (
-  <MessageContext.Provider value={streamingContext}>
+const FadeMarkdown = ({ content, streaming = true }: RenderProps) => (
+  <MessageContext.Provider value={{ ...streamingContext, isSubmitting: streaming }}>
     <Markdown content={content} isLatestMessage={true} />
   </MessageContext.Provider>
 );
 
 const measure = (
-  Component: React.ComponentType<{ content: string }>,
+  Component: React.ComponentType<RenderProps>,
   prefixes: string[],
-): { totalMs: number; codeBlockRenders: number } => {
+  finish = false,
+): Measurement => {
   codeBlockMock.mockClear();
+  markdownMock.mockClear();
   let totalMs = 0;
   const onRender = (_id: string, _phase: string, actualDuration: number) => {
     totalMs += actualDuration;
   };
-  const tree = (content: string) => (
+  const tree = (content: string, streaming = true) => (
     <Profiler id="bench" onRender={onRender}>
       <AppStores>
-        <Component content={content} />
+        <Component content={content} streaming={streaming} />
       </AppStores>
     </Profiler>
   );
@@ -135,7 +154,18 @@ const measure = (
   for (let i = 1; i < prefixes.length; i += 1) {
     rerender(tree(prefixes[i]));
   }
-  const result = { totalMs, codeBlockRenders: codeBlockMock.mock.calls.length };
+  const streamingCodeBlockRenders = codeBlockMock.mock.calls.length;
+  const streamingPipelineInvocations = markdownMock.mock.calls.length;
+  if (finish) {
+    rerender(tree(prefixes[prefixes.length - 1], false));
+  }
+  const result = {
+    totalMs,
+    codeBlockRenders: codeBlockMock.mock.calls.length,
+    pipelineInvocations: markdownMock.mock.calls.length,
+    streamingCodeBlockRenders,
+    streamingPipelineInvocations,
+  };
   unmount();
   return result;
 };
@@ -183,6 +213,27 @@ describe('splitMarkdownIntoBlocks streaming benchmark (full re-parse vs incremen
 });
 
 describe('Markdown streaming benchmark (OLD whole-message vs NEW per-block)', () => {
+  it.each([
+    ['paragraph', 'A single **growing** paragraph with `inline` code. '.repeat(30)],
+    ['code fence', '```typescript\n' + 'const x = computeSomething();\n'.repeat(30)],
+  ])('avoids full-pipeline invocations for one growing %s', (_label, content) => {
+    const prefixes = makePrefixes(content, 80);
+    const old = measure(OldMarkdown, prefixes);
+    const streaming = measure(NewMarkdown, prefixes);
+    const finished = measure(NewMarkdown, prefixes, true);
+    const faded = measure(FadeMarkdown, prefixes, true);
+
+    console.log(
+      `${_label} full-pipeline invocations: OLD ${old.pipelineInvocations}, ` +
+        `LITE ${streaming.pipelineInvocations}, FINISHED ${finished.pipelineInvocations}, ` +
+        `FADE FINISHED ${faded.pipelineInvocations}`,
+    );
+    expect(old.pipelineInvocations).toBe(prefixes.length);
+    expect(streaming.pipelineInvocations).toBe(0);
+    expect(finished.pipelineInvocations).toBe(1);
+    expect(faded.pipelineInvocations).toBe(1);
+  });
+
   it('reports render cost across a simulated stream', () => {
     const content = buildMessage(12);
     const steps = 80;
@@ -194,30 +245,40 @@ describe('Markdown streaming benchmark (OLD whole-message vs NEW per-block)', ()
     measure(NewMarkdown, prefixes);
     measure(FadeMarkdown, prefixes);
 
-    const old: Array<{ totalMs: number; codeBlockRenders: number }> = [];
-    const neu: Array<{ totalMs: number; codeBlockRenders: number }> = [];
-    const fade: Array<{ totalMs: number; codeBlockRenders: number }> = [];
+    const old: Measurement[] = [];
+    const neu: Measurement[] = [];
+    const fade: Measurement[] = [];
     for (let i = 0; i < iterations; i += 1) {
-      old.push(measure(OldMarkdown, prefixes));
-      neu.push(measure(NewMarkdown, prefixes));
-      fade.push(measure(FadeMarkdown, prefixes));
+      old.push(measure(OldMarkdown, prefixes, true));
+      neu.push(measure(NewMarkdown, prefixes, true));
+      fade.push(measure(FadeMarkdown, prefixes, true));
     }
 
     const minMs = (rs: Array<{ totalMs: number }>) => Math.min(...rs.map((r) => r.totalMs));
     const oldMs = minMs(old);
     const newMs = minMs(neu);
     const fadeMs = minMs(fade);
-    const oldRenders = old[0].codeBlockRenders;
-    const newRenders = neu[0].codeBlockRenders;
-    const fadeRenders = fade[0].codeBlockRenders;
+    const oldRenders = old[0].streamingCodeBlockRenders;
+    const newRenders = neu[0].streamingCodeBlockRenders;
+    const fadeRenders = fade[0].streamingCodeBlockRenders;
 
     console.log(
       [
         '',
+        'full-pipeline invocations while streaming:',
+        `  OLD: ${old[0].streamingPipelineInvocations}`,
+        `  NEW: ${neu[0].streamingPipelineInvocations}`,
+        `  NEW + fade: ${fade[0].streamingPipelineInvocations}`,
+        '',
+        'full-pipeline invocations (including stream completion):',
+        `  OLD: ${old[0].pipelineInvocations}`,
+        `  NEW: ${neu[0].pipelineInvocations}`,
+        `  NEW + fade: ${fade[0].pipelineInvocations}`,
+        '',
         '================ Markdown streaming benchmark ================',
         `message size: ${content.length} chars, stream steps: ${steps}, iterations: ${iterations}`,
         '',
-        `code-block renders over the stream (structural, noise-free):`,
+        `code-block renders before completion (structural, noise-free):`,
         `  OLD (whole-message): ${oldRenders}`,
         `  NEW (per-block)    : ${newRenders}`,
         `  NEW + fade         : ${fadeRenders}`,
@@ -236,6 +297,10 @@ describe('Markdown streaming benchmark (OLD whole-message vs NEW per-block)', ()
     // The fade plugin must not disturb block memoization: code blocks render
     // exactly as often as without it.
     expect(fadeRenders).toBe(newRenders);
+    expect(fade[0].streamingPipelineInvocations).toBe(neu[0].streamingPipelineInvocations);
+    expect(neu[0].pipelineInvocations).toBeLessThan(old[0].pipelineInvocations);
+    // Ending animation re-runs finalized blocks to remove their fade spans.
+    expect(fade[0].pipelineInvocations).toBeLessThan(old[0].pipelineInvocations);
 
     // Sanity: the per-block renderer must not render code blocks MORE than the
     // whole-message renderer. The real win is asserted separately below.
@@ -278,8 +343,8 @@ describe('Markdown streaming benchmark (OLD whole-message vs NEW per-block)', ()
         `min of ${iterations} mounts, summed Profiler actualDuration; jsdom`,
         ...rows.map(
           (r) =>
-            `  ${r.chars} chars: OLD ${r.oldMs.toFixed(1)} ms | PER-BLOCK ${r.perBlockMs.toFixed(1)} ms | ` +
-            `SETTLED ${r.settledMs.toFixed(1)} ms (${(r.perBlockMs / r.settledMs).toFixed(2)}x faster than per-block)`,
+            `  ${r.chars} chars: OLD ${r.oldMs.toFixed(1)} ms | STREAMING ${r.perBlockMs.toFixed(1)} ms | ` +
+            `SETTLED ${r.settledMs.toFixed(1)} ms (${(r.perBlockMs / r.settledMs).toFixed(2)}x vs streaming)`,
         ),
         '==========================================================================',
         '',

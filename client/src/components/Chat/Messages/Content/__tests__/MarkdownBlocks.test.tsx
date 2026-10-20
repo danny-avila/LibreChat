@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { getRemarkPlugins, getRehypePlugins, getMarkdownComponents } from '../markdownConfig';
 import { MessageContext, ArtifactProvider, CodeBlockProvider } from '~/Providers';
 import { splitMarkdownIntoBlocks } from '../splitMarkdown';
+import MarkdownBlocks from '../MarkdownBlocks';
 import Markdown from '../Markdown';
 
 /**
@@ -238,14 +239,14 @@ describe('MarkdownBlocks code-block index parity', () => {
 
   it('keeps indices correct across a simulated stream (no drift under memoization)', () => {
     const oldC = streamThrough(OldMarkdown, MIXED);
-    const newC = streamThrough(StreamingMarkdown, MIXED);
+    const newC = streamThrough(StreamingMarkdown, `${MIXED}\n\nStill growing`);
 
     expect(indicesIn(oldC)).toEqual(EXPECTED);
     expect(indicesIn(newC)).toEqual(EXPECTED);
   });
 
   it('streamed indices match a fresh direct render (stable for stored execution results)', () => {
-    const streamed = streamThrough(StreamingMarkdown, MIXED);
+    const { container: streamed } = streamAndFinish(MIXED);
     const { container: fresh } = render(
       <TestProviders>
         <SettledMarkdown content={MIXED} />
@@ -336,7 +337,7 @@ describe('MarkdownBlocks finished and streamed messages', () => {
     expect(settledC.innerHTML).toBe(oldC.innerHTML);
   });
 
-  it('splits the message that is generating, so only its last block re-parses', () => {
+  it('splits the message that is generating to identify its lightweight tail', () => {
     render(
       <TestProviders>
         <StreamingMarkdown content={PROSE} />
@@ -346,7 +347,7 @@ describe('MarkdownBlocks finished and streamed messages', () => {
     expect(splitSpy).toHaveBeenCalledWith(PROSE);
   });
 
-  it('keeps a streamed message split once it finishes, so no block remounts', () => {
+  it('keeps formatted blocks mounted when finishing promotes the lightweight tail', () => {
     const view = (content: string, submitting: boolean) => (
       <TestProviders>
         <LiveMarkdown content={content} submitting={submitting} />
@@ -362,7 +363,7 @@ describe('MarkdownBlocks finished and streamed messages', () => {
 
     rerender(view(MIXED, false));
 
-    expect(mockCodeBlockMounts.count).toBe(mountsWhileStreaming);
+    expect(mockCodeBlockMounts.count).toBe(mountsWhileStreaming + 1);
     expect(splitSpy).not.toHaveBeenCalled();
     expect(indicesIn(container)).toEqual(EXPECTED);
   });
@@ -370,7 +371,8 @@ describe('MarkdownBlocks finished and streamed messages', () => {
   /**
    * Moving to per-block rendering remounts the message once, since the two paths
    * build different trees; it happens as generation starts, so the fade baseline
-   * is set on the blocks it mounts. After that the message never remounts again.
+   * is set on the blocks it mounts. The tail mounts its formatted contents only
+   * after another block starts or generation ends.
    */
   it('moves a finished message to per-block rendering once when it starts generating again', () => {
     const view = (content: string, submitting: boolean) => (
@@ -385,7 +387,7 @@ describe('MarkdownBlocks finished and streamed messages', () => {
 
     rerender(view(opening, true));
     expect(splitSpy).toHaveBeenCalledWith(opening);
-    expect(mockCodeBlockMounts.count).toBe(mountsAtOpen * 2);
+    expect(mockCodeBlockMounts.count).toBe(mountsAtOpen * 2 - 1);
 
     // A generation that stops before producing anything must not move it back.
     rerender(view(opening, false));
@@ -420,6 +422,100 @@ describe('MarkdownBlocks finished and streamed messages', () => {
     rerender(view(MIXED.replace('Some `inline` code here.', 'Some edited `inline` code.')));
     expect(mockCodeBlockMounts.count).toBe(mountsAtOpen * 2);
     expect(indicesIn(container)).toEqual(EXPECTED);
+  });
+});
+
+describe('MarkdownBlocks lightweight streaming tail', () => {
+  it.each([
+    ['paragraph', 'Text with **bold**\n  and <script>alert(1)</script>'],
+    ['code', '```python\nprint(1)\nprint(2)'],
+    ['math', '$$\nx^2 + y^2'],
+    ['table', '| a | b |\n| - | - |\n| 1 | 2 |'],
+    ['document references', 'See [docs][d].\n\n[d]: https://example.com'],
+  ])('skips both plugin pipelines for a growing %s tail', (_label, content) => {
+    const remarkRun = jest.fn();
+    const rehypeRun = jest.fn();
+    const view = (text: string, streaming: boolean) => (
+      <TestProviders>
+        <MarkdownBlocks
+          content={text}
+          streaming={streaming}
+          remarkPlugins={[...getRemarkPlugins(), () => remarkRun]}
+          rehypePlugins={[...getRehypePlugins(), () => rehypeRun]}
+          components={getMarkdownComponents()}
+        />
+      </TestProviders>
+    );
+    const { container, rerender } = render(view(content, true));
+    const extended = `${content}more`;
+    rerender(view(extended, true));
+
+    expect(container.querySelector('.whitespace-pre-wrap')?.textContent).toBe(extended);
+    expect(container.querySelector('script')).toBeNull();
+    expect(remarkRun).not.toHaveBeenCalled();
+    expect(rehypeRun).not.toHaveBeenCalled();
+
+    rerender(view(extended, false));
+    expect(container.querySelector('div.whitespace-pre-wrap')).toBeNull();
+    expect(remarkRun).toHaveBeenCalledTimes(1);
+    expect(rehypeRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('promotes a closed block once, keeps it mounted, and baselines its fade', () => {
+    const remarkRun = jest.fn();
+    const view = (content: string, streaming = true) => (
+      <TestProviders>
+        <MarkdownBlocks
+          content={content}
+          streaming={streaming}
+          remarkPlugins={[...getRemarkPlugins(), () => remarkRun]}
+          rehypePlugins={getRehypePlugins()}
+          components={getMarkdownComponents()}
+          animate={streaming}
+        />
+      </TestProviders>
+    );
+    const { container, rerender } = render(view('First **bold**'));
+    expect(container.querySelector('[data-lc-fade]')).toBeNull();
+    const content = 'First **bold**\n\nSecond `inline`';
+    rerender(view(content));
+
+    const first = container.querySelector('p');
+    expect(first?.querySelector('strong')?.textContent).toBe('bold');
+    expect(first?.querySelector('[data-lc-fade]')).toBeNull();
+    expect(remarkRun).toHaveBeenCalledTimes(1);
+
+    rerender(view(`${content} growing`));
+    expect(container.querySelector('p')).toBe(first);
+    expect(remarkRun).toHaveBeenCalledTimes(1);
+
+    rerender(view(`${content} growing`, false));
+    expect(container.querySelector('[data-lc-fade]')).toBeNull();
+    const { container: oldC } = render(
+      <TestProviders>
+        <OldMarkdown content={`${content} growing`} />
+      </TestProviders>,
+    );
+    expect(normalizeHtml(container.innerHTML)).toBe(normalizeHtml(oldC.innerHTML));
+  });
+
+  it('still fades newly received finalized blocks while leaving the tail plain', () => {
+    const { container } = render(
+      <TestProviders>
+        <MarkdownBlocks
+          content={'# New heading\n\nStill **growing**'}
+          streaming={true}
+          remarkPlugins={getRemarkPlugins()}
+          rehypePlugins={getRehypePlugins()}
+          components={getMarkdownComponents()}
+          animate={true}
+        />
+      </TestProviders>,
+    );
+    expect(container.querySelector('h1 [data-lc-fade]')).not.toBeNull();
+    const tail = container.querySelector('.whitespace-pre-wrap');
+    expect(tail?.textContent).toBe('Still **growing**');
+    expect(tail?.querySelector('span')).toBeNull();
   });
 });
 

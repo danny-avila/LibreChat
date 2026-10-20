@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useState, useLayoutEffect } from 'react';
+import React, { memo, useRef, useMemo, useState, useLayoutEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { PluggableList } from 'unified';
 import type { ElementType } from 'react';
@@ -17,6 +17,7 @@ type SharedProps = {
 
 type MarkdownBlockProps = SharedProps & {
   content: string;
+  streamingLite: boolean;
   codeBaseIndex: number;
   artifactBaseIndex: number;
   mermaidBaseIndex: number;
@@ -27,11 +28,12 @@ type MarkdownBlockProps = SharedProps & {
  * seeded with the running index of executable code blocks and artifacts in
  * earlier blocks. Memoized on `content` and the base indices: a completed block
  * whose source slice and bases are unchanged across streamed tokens skips both
- * re-parsing and re-rendering, so only the final, still-growing block re-parses.
+ * re-parsing and re-rendering. The still-growing tail renders as plain text.
  */
 const MarkdownBlock = memo(
   function MarkdownBlock({
     content,
+    streamingLite,
     codeBaseIndex,
     artifactBaseIndex,
     mermaidBaseIndex,
@@ -41,25 +43,37 @@ const MarkdownBlock = memo(
     animate = false,
     hydrated = false,
   }: MarkdownBlockProps) {
-    // One fade-plugin instance per block: its closure tracks this block's
+    const wasStreamingLite = useRef(false);
+    // One fade-plugin instance per formatted block: its closure tracks this block's
     // character offsets so only newly streamed words animate. When `animate`
     // flips off at stream end, the plain plugin array renders the settled
     // block without wrapper spans. Classification is staged during render and
     // published after React commits, so abandoned renders leave no trace.
+    // A tail that becomes formatted has already been visible as plain text, so
+    // baseline its first run instead of flashing those words again.
     // `hydrated` only matters at plugin creation (its first run), so it is
     // deliberately absent from the memo comparator and the useMemo deps.
     const fade = useMemo(
-      () => (animate ? createFadePlugin(hydrated) : null),
+      () =>
+        animate && !streamingLite ? createFadePlugin(hydrated || wasStreamingLite.current) : null,
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      [animate],
+      [animate, streamingLite],
     );
     const blockRehypePlugins = useMemo(
       () => (fade == null ? rehypePlugins : [...rehypePlugins, fade.plugin]),
       [fade, rehypePlugins],
     );
     useLayoutEffect(() => {
+      wasStreamingLite.current = streamingLite;
       fade?.commit();
     });
+    if (streamingLite) {
+      return (
+        <div className="whitespace-pre-wrap" dir="auto">
+          {content}
+        </div>
+      );
+    }
     return (
       <ArtifactProvider baseIndex={artifactBaseIndex}>
         <CodeBlockProvider baseIndex={codeBaseIndex} mermaidBaseIndex={mermaidBaseIndex}>
@@ -78,6 +92,7 @@ const MarkdownBlock = memo(
   },
   (prev, next) =>
     prev.content === next.content &&
+    prev.streamingLite === next.streamingLite &&
     prev.codeBaseIndex === next.codeBaseIndex &&
     prev.artifactBaseIndex === next.artifactBaseIndex &&
     prev.mermaidBaseIndex === next.mermaidBaseIndex &&
@@ -143,7 +158,8 @@ const toWholeMessage = (content: string): BlockEntry[] =>
  * Renders a message's markdown.
  *
  * While the message streams, each top-level block renders and memoizes on its
- * own, so only the last, still-growing block re-parses on each token. Each
+ * own. The last, still-growing block uses plain text until another block starts
+ * or streaming stops, avoiding the full plugin pipeline on each token. Each
  * block's executable code and artifact indices stay in document order through
  * per-block providers seeded with prefix-summed base indices.
  *
@@ -154,9 +170,9 @@ const toWholeMessage = (content: string): BlockEntry[] =>
  *
  * Once the message generates or its content changes, it moves to the split for
  * good. Code and artifact blocks capture their index at mount, and per block only
- * the blocks a change touches re-render, so finishing an answer never remounts its
- * blocks and neither do repeated edits such as artifact saves. The move itself
- * remounts the message once.
+ * the blocks a change touches re-render. Finishing an answer promotes its plain
+ * tail to markdown while keeping formatted blocks mounted, as do repeated edits
+ * such as artifact saves. The move itself remounts the message once.
  */
 const MarkdownBlocks = memo(function MarkdownBlocks({
   content,
@@ -182,10 +198,11 @@ const MarkdownBlocks = memo(function MarkdownBlocks({
 
   return (
     <>
-      {blocks.map((block) => (
+      {blocks.map((block, index) => (
         <MarkdownBlock
           key={block.key}
           content={block.raw}
+          streamingLite={streaming && index === blocks.length - 1}
           codeBaseIndex={block.codeBaseIndex}
           artifactBaseIndex={block.artifactBaseIndex}
           mermaidBaseIndex={block.mermaidBaseIndex}
