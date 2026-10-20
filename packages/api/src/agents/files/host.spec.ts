@@ -78,6 +78,7 @@ function harness(
     setup?: TFile[];
     rootFiles?: TFile[];
     rootSeed?: CodeEnvFile[];
+    peer?: { codeSessionKey?: string; executionRouteKey?: string };
     hasEntityEmbeddings?: jest.Mock;
     adoptLegacySearchEmbeddings?: jest.Mock;
     getCodeFileInfo?: NonNullable<ProvisionCallbackDeps['getCodeFileInfo']>;
@@ -115,27 +116,34 @@ function harness(
           : undefined,
       subagents: { enabled: true, shareFiles: true, allowSelf: false, agent_ids: ['worker'] },
     }) as Agent;
+  const rootAgentIds = options.peer ? ['parent', 'peer'] : ['parent'];
   const contexts = new Map<string, RunFileToolContext>(
-    ['parent', 'worker'].map((id) => [
+    [...rootAgentIds, 'worker'].map((id) => [
       id,
       {
         agent: agent(id),
         codeEnvAvailable: true,
-        primedCodeFiles: id === 'parent' ? options.rootSeed : undefined,
+        primedCodeFiles: id !== 'worker' ? options.rootSeed : undefined,
         // Base initialization may contain historical runtime resources. Only persisted
         // setup membership and this run's manifest may reach an execution host.
         tool_resources: {
           execute_code: {
             files:
-              id === 'parent' ? (options.rootFiles ?? [file('historical')]) : [file('historical')],
+              id !== 'worker' ? (options.rootFiles ?? [file('historical')]) : [file('historical')],
           },
         },
         codeExecutionContext: {
           baseUrl: 'https://code.example',
           executionProfile: 'stateful',
-          executionRouteKey: 'managed-worker',
+          executionRouteKey:
+            id === 'peer'
+              ? (options.peer?.executionRouteKey ?? 'managed-worker')
+              : 'managed-worker',
           environmentType: 'managed',
-          codeSessionKey: 'base-agent-session',
+          codeSessionKey:
+            id === 'peer'
+              ? (options.peer?.codeSessionKey ?? 'base-agent-session')
+              : 'base-agent-session',
           runtimeSessionHint: 'base-agent-session',
           statefulSessions: true,
         },
@@ -254,7 +262,7 @@ function harness(
     },
   });
   const deps = spy.mock.calls[spy.mock.calls.length - 1][0];
-  host.session.activate('run', 'conversation', ['parent']);
+  host.session.activate('run', 'conversation', rootAgentIds);
   const signal = new AbortController().signal;
   const prepare = (context = identity(), suppliedSignal = signal) =>
     host.session.prepare({
@@ -816,6 +824,88 @@ describe('run file execution host', () => {
           expect(
             merged?.files.map((file) => [file.id, file.storage_session_id, file.name]),
           ).toEqual([[secondRef.file_id, secondRef.storage_session_id, 'results.csv']]);
+        }
+      } finally {
+        await h.host.session.close();
+      }
+    },
+  );
+
+  it.each([
+    { projectCode: false, peer: {}, shared: true },
+    { projectCode: true, peer: {}, shared: true },
+    { projectCode: false, peer: { codeSessionKey: 'peer-session' }, shared: false },
+    { projectCode: false, peer: { executionRouteKey: 'peer-route' }, shared: false },
+  ])(
+    'preserves a peer seed only in the same code partition (project code=$projectCode, shared=$shared)',
+    async ({ projectCode, peer, shared }) => {
+      const upload = file('upload', {
+        filename: 'results.csv',
+        conversationId: 'conversation',
+        createdAt: new Date(Date.now() - 60_000),
+        metadata: {
+          codeEnvRefs: {
+            'managed-worker': {
+              kind: 'user',
+              id: 'user',
+              file_id: 'upload-remote',
+              storage_session_id: 'upload-store',
+              sandboxFilename: 'results.csv',
+            },
+          },
+        },
+      });
+      const seed: CodeEnvFile[] = [
+        {
+          id: 'upload-remote',
+          resource_id: 'user',
+          kind: 'user',
+          storage_session_id: 'upload-store',
+          name: 'results.csv',
+        },
+      ];
+      const h = harness({ inputs: [], rootFiles: [upload], rootSeed: seed, peer });
+      h.req.config!.projects = configSchema.parse({
+        version: '1.3.9',
+        projects: { codeExecution: projectCode },
+      }).projects;
+      for (const id of ['parent', 'peer']) {
+        h.contexts.get(id)!.provisionState = {
+          codeEnvFiles: [],
+          vectorDBFiles: [],
+          aliveFileIds: new Set([upload.file_id]),
+          agentScopedFileIds: new Set(),
+        };
+      }
+      try {
+        const initial = await selectCodeFiles({
+          files: [upload],
+          routeKey: 'managed-worker',
+          getFileInfo: async () => ({ lastModified: new Date().toISOString() }),
+        });
+        expect(initial.selected.map((file) => [file.file.file_id, file.sandboxName])).toEqual([
+          ['upload', 'results.csv'],
+        ]);
+        await h.prepare();
+        await h.publishOutput(identity(), 'results');
+        const delivered = await h.host.provision(['bash_tool'], 'parent', h.signal);
+        const prior = { session_id: 'root', files: seed };
+        const mounted = mergeCodeFilesIntoContext(prior, delivered) ?? prior;
+        if (shared) {
+          expect(delivered?.[0]?.replaces).toBeUndefined();
+          expect(mounted.files).toEqual(seed);
+          const peerListing = await h.host.session.list('peer');
+          expect(peerListing.files).toEqual([]);
+          const peerFiles = await h.host.provision(['bash_tool'], 'peer', h.signal);
+          expect(peerFiles).toBeUndefined();
+          expect((mergeCodeFilesIntoContext(mounted, peerFiles) ?? mounted).files).toEqual(seed);
+        } else {
+          expect(delivered?.[0]?.replaces).toEqual([
+            { id: 'upload-remote', storage_session_id: 'upload-store' },
+          ]);
+          expect(mounted.files.map((file) => [file.id, file.name])).toEqual([
+            ['results', 'results.csv'],
+          ]);
         }
       } finally {
         await h.host.session.close();

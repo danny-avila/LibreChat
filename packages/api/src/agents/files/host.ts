@@ -811,6 +811,26 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
         context?.codeExecutionContext?.executionRouteKey ??
         context?.codeExecutionContext?.executionProfile ??
         'default';
+      const sharedPeerSeeds = new Set<string>();
+      if (context) {
+        const sessionKey = context.codeSessionKey ?? context.codeExecutionContext?.codeSessionKey;
+        for (const [peerId, peer] of contexts) {
+          const peerRoute =
+            peer.codeExecutionContext?.executionRouteKey ??
+            peer.codeExecutionContext?.executionProfile ??
+            'default';
+          if (
+            peerId === agentId ||
+            peer.codeEnvAvailable !== true ||
+            peerRoute !== route ||
+            (peer.codeSessionKey ?? peer.codeExecutionContext?.codeSessionKey) !== sessionKey
+          )
+            continue;
+          for (const refKey of rootCodeFiles.get(peerId)?.keys() ?? []) {
+            sharedPeerSeeds.add(refKey);
+          }
+        }
+      }
       if (context?.codeEnvAvailable === true && state && toolNames.some(isCodeFileToolName)) {
         const queuedIds = new Set(state.codeEnvFiles.map((file) => file.file_id));
         for (const file of [
@@ -867,6 +887,16 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
             turnRef ? seeded?.get(codeRefKey(turnRef)) : undefined,
           ]) {
             if (!previous) continue;
+            // A shared session still owes peers the input their initial prompt named.
+            if (
+              sharedPeerSeeds.has(
+                codeRefKey({
+                  file_id: previous.id,
+                  storage_session_id: previous.storage_session_id,
+                }),
+              )
+            )
+              continue;
             const losers = supersededFiles.get(previous.name) ?? [];
             losers.push(previous);
             supersededFiles.set(previous.name, losers);
