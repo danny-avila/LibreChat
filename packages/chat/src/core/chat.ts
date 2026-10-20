@@ -1575,13 +1575,17 @@ export class Chat {
     }
     this.resuming = action.actionId;
     try {
-      const result = await resume.call(this.init.transport, {
-        ...this.init.resumeSelection?.(),
-        ...resolution,
-        conversationId: action.conversationId ?? this.pausedConversationId() ?? this.id,
-        generationCreatedAt,
-        actionId: action.actionId,
-      });
+      /** Disposal releases the submit; a late answer then finds nothing to change. */
+      const result = await untilAborted(
+        resume.call(this.init.transport, {
+          ...this.init.resumeSelection?.(),
+          ...resolution,
+          conversationId: action.conversationId ?? this.pausedConversationId() ?? this.id,
+          generationCreatedAt,
+          actionId: action.actionId,
+        }),
+        this.lifetime.signal,
+      );
       this.resumed.add(action.actionId);
       /** A pause stopped or replaced while the request was in flight is no longer this one's. */
       if (this.action?.actionId !== action.actionId) {

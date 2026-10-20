@@ -324,6 +324,34 @@ describe('Chat', () => {
     });
   });
 
+  it('releases an answer still waiting on its resume when the chat is disposed', async () => {
+    const { chat, stream, transport } = setup({
+      resumeSelection: () => ({ endpoint: 'agents' }),
+    });
+    transport.resume.mockImplementationOnce(() => new Promise<never>(() => undefined));
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push({
+      type: 'pending_action',
+      data: {
+        actionId: 'action-1',
+        streamId: 'convo-1',
+        conversationId: 'convo-1',
+        createdAt: 1,
+        expiresAt: Date.now() + 60_000,
+        payload: { type: 'ask_user_question', question: { question: 'Which?' }, tool_call_id: 'a' },
+      } as Agents.PendingAction,
+    });
+    await flush();
+    const answered = chat.addToolOutput({ toolCallId: 'a', output: 'Yes' });
+    await flush();
+
+    chat.dispose();
+
+    await expect(answered).rejects.toThrow('The chat was disposed');
+    await sent;
+  });
+
   it('streams a turn whose first frame is a pause', async () => {
     const { chat, stream } = setup();
     const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
@@ -2207,8 +2235,8 @@ describe('Chat', () => {
       const answered = chat.addToolOutput({ toolCallId: 'ask-1', output: 'Blue' });
       await flush();
       chat.dispose();
+      await expect(answered).rejects.toThrow('The chat was disposed');
       accept?.();
-      await answered;
       await flush();
 
       expect(transport.reconnectToStream).not.toHaveBeenCalled();
