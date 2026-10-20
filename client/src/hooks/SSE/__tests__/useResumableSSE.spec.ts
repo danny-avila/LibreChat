@@ -504,7 +504,9 @@ describe('useResumableSSE', () => {
   it('adopts the acknowledged composer before hydrating a resumable submission', async () => {
     window.history.replaceState({}, '', '/c/new?prompt=hello');
     const release = registerComposerDraft(0, Constants.NEW_CONVO, Constants.PENDING_CONVO, {});
-    const submission = buildSubmission({ conversation: { conversationId: Constants.NEW_CONVO } });
+    const submission = buildSubmission({
+      conversation: { conversationId: String(Constants.NEW_CONVO) },
+    });
     bindComposerLaunch(submission.conversation, 0);
     const captured = captureComposerDraft(0, Constants.NEW_CONVO);
     const helpers = buildChatHelpers();
