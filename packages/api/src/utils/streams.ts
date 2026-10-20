@@ -1,17 +1,36 @@
 import { pipeline } from 'node:stream';
 import type { Readable, Writable } from 'node:stream';
 
+/** The client went away mid-response: a cancellation, not an upstream failure. */
+export class ClientDisconnectedError extends Error {
+  name = 'AbortError';
+
+  constructor() {
+    super('Client disconnected');
+  }
+}
+
+export function isClientDisconnect(error: unknown): error is ClientDisconnectedError {
+  return error instanceof ClientDisconnectedError;
+}
+
 /**
  * Streams `source` into `res` and ends it. An upstream failure tears the response down instead
- * of surfacing as an uncaught stream error, and a client disconnect destroys the upstream.
+ * of surfacing as an uncaught stream error, and a client disconnect destroys the upstream
+ * without reaching `onError`, since nothing failed.
  */
 export function pipeToResponse(
   source: Readable,
   res: Writable,
   onError?: (error: Error) => void,
 ): void {
+  let clientLeft = false;
+  /** Registered before `pipeline`, so it runs before the upstream is torn down in response. */
+  res.once('close', () => {
+    clientLeft = !res.writableFinished && !source.destroyed;
+  });
   pipeline(source, res, (error) => {
-    if (error) {
+    if (error && !clientLeft) {
       onError?.(error);
     }
   });
@@ -46,7 +65,7 @@ export function pipeSegment(
     /** A client that left while the previous segment was being fetched already emitted close. */
     if (res.destroyed || res.writableEnded) {
       source.destroy();
-      reject(new Error('Client disconnected'));
+      reject(new ClientDisconnectedError());
       return;
     }
     const cleanup = (): void => {
@@ -72,7 +91,7 @@ export function pipeSegment(
     const onClose = (): void => {
       cleanup();
       source.destroy();
-      reject(new Error('Client disconnected'));
+      reject(new ClientDisconnectedError());
     };
     source.on('end', onEnd);
     source.on('error', onError);
