@@ -13,6 +13,7 @@ import type { AppConfig, IConversation, IMessage } from '~/types';
 import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { fitBoundAppSnapshots, hasBoundAppSnapshots } from './appSnapshots';
+import { prepareSubagentContentDeletion } from './subagentContent';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { tenantStorage } from '~/config/tenantContext';
 import logger from '~/config/winston';
@@ -4147,12 +4148,9 @@ export function createMessageMethods(
         | Model<ISubagentContentChunk>
         | undefined;
       if (SubagentContent != null) {
-        /** Owner/conversation deletion must remain retryable after the messages
-         * have gone, including cleanup retries following a storage outage. */
         if (wholeScope) {
-          const result = await Message.deleteMany(filter);
-          await SubagentContent.deleteMany(filter);
-          return result;
+          await prepareSubagentContentDeletion(mongoose, filter);
+          return await Message.deleteMany(filter);
         }
         const scopes = new Map<
           string,

@@ -929,8 +929,159 @@ describe('selective task content deletion', () => {
     },
   );
 
+  it.each([undefined, 'tenant-a'])(
+    'does not report successful conversation deletion before journal cleanup succeeds (%s)',
+    async (tenantId) => {
+      const scope = await seedTask(tenantId);
+      const unrelated = await seedTask(tenantId);
+      const Content = mongoose.models.SubagentContent;
+      const Conversation = mongoose.models.Conversation;
+      const journalDelete = Content.collection.deleteMany.bind(Content.collection);
+      const conversationDelete = Conversation.collection.deleteMany.bind(Conversation.collection);
+      let successfulCleanup = false;
+      const cleanup = jest
+        .spyOn(Content.collection, 'deleteMany')
+        .mockRejectedValueOnce(new Error('journal temporarily unavailable'))
+        .mockImplementation(async (...args) => {
+          const result = await journalDelete(...args);
+          successfulCleanup = true;
+          return result;
+        });
+      const deleting = jest
+        .spyOn(Conversation.collection, 'deleteMany')
+        .mockImplementation(async (...args) => {
+          expect(successfulCleanup).toBe(true);
+          expect(await Content.countDocuments(journalFilter(scope))).toBe(0);
+          return conversationDelete(...args);
+        });
+      try {
+        const result = await methods.deleteConvos(scope.user, {
+          conversationId: scope.conversationId,
+        });
+        expect(result.deletedCount).toBe(1);
+        expect(result.messages.acknowledged).toBe(true);
+        expect(cleanup.mock.calls.length).toBeGreaterThanOrEqual(2);
+        expect(await mongoose.models.Message.countDocuments(sourceFilter(scope, 'both'))).toBe(0);
+        expect(await Content.countDocuments(journalFilter(scope))).toBe(0);
+        expect(await Content.countDocuments(journalFilter(unrelated))).toBe(2);
+        expect(
+          await Conversation.countDocuments({
+            user: unrelated.user,
+            conversationId: unrelated.conversationId,
+          }),
+        ).toBe(1);
+      } finally {
+        cleanup.mockRestore();
+        deleting.mockRestore();
+      }
+    },
+  );
+
+  it.each(['revocation', 'journal', 'conversation'] as const)(
+    'keeps a failed %s barrier discoverable for a direct conversation retry',
+    async (failure) => {
+      const scope = await seedTask();
+      const Message = mongoose.models.Message;
+      const Conversation = mongoose.models.Conversation;
+      const Content = mongoose.models.SubagentContent;
+      const injectFailure = {
+        revocation: () => jest.spyOn(Message.collection, 'updateMany'),
+        journal: () => jest.spyOn(Content.collection, 'deleteMany'),
+        conversation: () => jest.spyOn(Conversation.collection, 'deleteMany'),
+      };
+      const failed = injectFailure[failure]().mockRejectedValue(new Error('erasure unavailable'));
+      try {
+        await expect(
+          methods.deleteConvos(scope.user, { conversationId: scope.conversationId }),
+        ).rejects.toThrow('erasure unavailable');
+        expect(
+          await Conversation.countDocuments({
+            user: scope.user,
+            conversationId: scope.conversationId,
+          }),
+        ).toBe(1);
+        expect(await Message.countDocuments(sourceFilter(scope, 'both'))).toBe(2);
+        expect(await Content.countDocuments(journalFilter(scope))).toBe(
+          failure === 'conversation' ? 0 : 2,
+        );
+        failed.mockRestore();
+        const result = await methods.deleteConvos(scope.user, {
+          conversationId: scope.conversationId,
+        });
+        expect(result.deletedCount).toBe(1);
+        expect(result.messages.deletedCount).toBe(2);
+        expect(await Content.countDocuments(journalFilter(scope))).toBe(0);
+        expect(await Message.countDocuments(sourceFilter(scope, 'both'))).toBe(0);
+      } finally {
+        failed.mockRestore();
+      }
+    },
+  );
+
+  it('retries a committed journal deletion whose acknowledgement was lost before deleting topology', async () => {
+    const scope = await seedTask();
+    const collection = mongoose.models.SubagentContent.collection;
+    const original = collection.deleteMany.bind(collection);
+    const failed = jest.spyOn(collection, 'deleteMany').mockImplementationOnce(async (...args) => {
+      await original(...args);
+      throw new Error('journal acknowledgement lost');
+    });
+    try {
+      const result = await methods.deleteConvos(scope.user, {
+        conversationId: scope.conversationId,
+      });
+      expect(result.deletedCount).toBe(1);
+      expect(result.messages.deletedCount).toBe(2);
+      expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(0);
+      expect(await mongoose.models.Message.countDocuments(sourceFilter(scope, 'both'))).toBe(0);
+    } finally {
+      failed.mockRestore();
+    }
+  });
+
+  it('preserves a failed descendant wave for root retry without losing journal scope', async () => {
+    const scope = await seedTask();
+    const Content = mongoose.models.SubagentContent;
+    const original = Content.collection.deleteMany.bind(Content.collection);
+    const failed = jest
+      .spyOn(Content.collection, 'deleteMany')
+      .mockImplementation(async (...args) => {
+        const query = JSON.stringify(args[0]);
+        if (query.includes(scope.conversationId)) throw new Error('child journal unavailable');
+        return original(...args);
+      });
+    try {
+      await expect(
+        methods.deleteConvos(scope.user, { conversationId: scope.parentConversationId }),
+      ).rejects.toThrow('child journal unavailable');
+      expect(
+        await mongoose.models.Conversation.countDocuments({
+          user: scope.user,
+          conversationId: scope.parentConversationId,
+        }),
+      ).toBe(0);
+      expect(
+        await mongoose.models.Conversation.countDocuments({
+          user: scope.user,
+          conversationId: scope.conversationId,
+        }),
+      ).toBe(1);
+      expect(await mongoose.models.Message.countDocuments(sourceFilter(scope, 'both'))).toBe(2);
+      expect(await Content.countDocuments(journalFilter(scope))).toBe(2);
+      failed.mockRestore();
+      const result = await methods.deleteConvos(scope.user, {
+        conversationId: scope.parentConversationId,
+      });
+      expect(result.conversationIds).toEqual([scope.parentConversationId, scope.conversationId]);
+      expect(await Content.countDocuments(journalFilter(scope))).toBe(0);
+      expect(await mongoose.models.Message.countDocuments(sourceFilter(scope, 'both'))).toBe(0);
+    } finally {
+      failed.mockRestore();
+    }
+  });
+
   it.each(['owner', 'conversation'] as const)(
-    'keeps whole-%s journal cleanup retryable after sources are gone',
+    'keeps whole-%s sources until journal cleanup succeeds',
     async (selection) => {
       const scope = await seedTask();
       const filter = {
@@ -942,9 +1093,9 @@ describe('selective task content deletion', () => {
         .mockRejectedValueOnce(new Error('journal unavailable'));
       try {
         await expect(methods.deleteMessages(filter)).rejects.toThrow('journal unavailable');
-        expect(await mongoose.models.Message.countDocuments(sourceFilter(scope, 'both'))).toBe(0);
+        expect(await mongoose.models.Message.countDocuments(sourceFilter(scope, 'both'))).toBe(2);
         expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(2);
-        await expect(methods.deleteMessages(filter)).resolves.toMatchObject({ deletedCount: 0 });
+        await expect(methods.deleteMessages(filter)).resolves.toMatchObject({ deletedCount: 2 });
         expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(0);
       } finally {
         failed.mockRestore();

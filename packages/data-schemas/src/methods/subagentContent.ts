@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Model } from 'mongoose';
+import type { FilterQuery, Model } from 'mongoose';
 import type { ISubagentContentChunk } from '~/models/subagentContent';
 import type { IConversation, IMessage } from '~/types';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
@@ -29,6 +29,21 @@ const scopeFilter = (scope: SubagentContentScope) => ({
   ...scope,
   ...tenantFilter(scope.tenantId),
 });
+
+/** Preserve source/topology records when erasure fails, and fence admitted appends first. */
+export async function prepareSubagentContentDeletion(
+  mongoose: typeof import('mongoose'),
+  filter: Pick<FilterQuery<IMessage>, 'user' | 'tenantId' | 'conversationId'>,
+): Promise<void> {
+  const Content = mongoose.models.SubagentContent as Model<ISubagentContentChunk> | undefined;
+  if (Content == null) return;
+  const Message = mongoose.models.Message as Model<IMessage>;
+  await Message.updateMany(
+    { ...filter, 'subagentContent.version': 1 },
+    { $set: { 'subagentContent.deleted': true } },
+  );
+  await Content.deleteMany(filter);
+}
 
 /** Fragments keep even a single large tool body well below Mongo's BSON ceiling.
  * This is a storage encoding, not a content-retention limit. */
