@@ -229,6 +229,7 @@ describe('useFileHandling', () => {
   });
   beforeEach(() => {
     jest.clearAllMocks();
+    localStorage.clear();
     mockValidateFiles.mockImplementation(() => true);
     mockPartitionUploads.mockImplementation(jest.requireActual('~/utils/files').partitionUploads);
     mockValidateFileSizes.mockImplementation(jest.requireActual('~/utils/files').validateFileSizes);
@@ -1668,6 +1669,26 @@ describe('useFileHandling', () => {
       expect(mockEphemeralAgent.file_search).toBe(true);
     });
 
+    it('retains only activation when New Chat keeps the upload as a draft', async () => {
+      const { clearUploadRecovery } = await import('../useFileHandling');
+      const onSuccess = jest.fn();
+      const onAbort = jest.fn();
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+      await act(async () => {
+        await result.current.handleFiles([document()], EToolResources.file_search, {
+          onSuccess,
+          onAbort,
+        });
+      });
+      const body = mockMutate.mock.calls[0][0] as FormData;
+      act(() => clearUploadRecovery(body.get('file_id') as string, true));
+      expect(onAbort).toHaveBeenCalledTimes(1);
+      act(() => succeed(body));
+      expect(mockEphemeralAgent.file_search).toBe(true);
+      expect(onSuccess).not.toHaveBeenCalled();
+    });
+
     it('activates only the originating conversation after navigation', async () => {
       mockConversation = { conversationId: 'origin', endpoint: 'openAI' };
       const useFileHandling = await loadHook();
@@ -1713,8 +1734,9 @@ describe('useFileHandling', () => {
         mockDownloadedFiles = mode === 'empty' ? [] : [document()];
         if (mode === 'rejected') mockValidateFiles.mockReturnValueOnce(false);
         if (mode === 'download failure') mockDownloadError = new Error('download failed');
-        const { useSharePointFileHandlingNoChatContext } =
-          await import('../useSharePointFileHandling');
+        const { useSharePointFileHandlingNoChatContext } = await import(
+          '../useSharePointFileHandling'
+        );
         const { result } = renderHook(() =>
           useSharePointFileHandlingNoChatContext(
             { toolResource: EToolResources.file_search },

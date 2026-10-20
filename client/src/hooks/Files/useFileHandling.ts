@@ -35,6 +35,7 @@ import {
   removePreviewEntry,
   validateFileDuplicates,
 } from '~/utils';
+import { beginFileSearchUpload, cancelFileSearchUpload, completeFileSearchUpload } from './search';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useAgentUploadTarget from '~/hooks/Agents/useAgentUploadTarget';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
@@ -90,16 +91,25 @@ export type UploadLifecycleCallbacks = {
 };
 
 const noop = () => {};
-const uploadErrorCallbacks = new Map<string, UploadLifecycleCallbacks>();
+type UploadRecovery = UploadLifecycleCallbacks & { onFileSearchSuccess?: () => void };
+const uploadErrorCallbacks = new Map<string, UploadRecovery>();
 
-const takeUploadRecovery = (fileId: string): UploadLifecycleCallbacks | undefined => {
+const takeUploadRecovery = (fileId: string): UploadRecovery | undefined => {
   const callbacks = uploadErrorCallbacks.get(fileId);
   uploadErrorCallbacks.delete(fileId);
   return callbacks;
 };
 
-export const clearUploadRecovery = (fileId: string) => {
-  takeUploadRecovery(fileId)?.onAbort?.(fileId);
+export const clearUploadRecovery = (fileId: string, retainFileSearch = false) => {
+  const recovery = takeUploadRecovery(fileId);
+  if (retainFileSearch) {
+    if (recovery?.onFileSearchSuccess) {
+      uploadErrorCallbacks.set(fileId, { onFileSearchSuccess: recovery.onFileSearchSuccess });
+    }
+  } else {
+    cancelFileSearchUpload(fileId);
+  }
+  recovery?.onAbort?.(fileId);
 };
 
 export const hasInFlightUpload = (fileId: string): boolean => uploadErrorCallbacks.has(fileId);
@@ -275,7 +285,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
          * the attachment stays below `progress: 1` and the send button never
          * re-enables. Reconcile against the id we own. */
         const fileId = (body.get('file_id') as string | null) ?? data.temp_file_id;
-        takeUploadRecovery(fileId)?.onSuccess?.(fileId);
+        const recovery = takeUploadRecovery(fileId);
+        recovery?.onFileSearchSuccess?.();
+        recovery?.onSuccess?.(fileId);
         clearUploadTimer(fileId);
         if (agent_id) {
           queryClient.refetchQueries([QueryKeys.agent, agent_id]);
@@ -325,6 +337,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         console.log('upload error', error);
         const file_id = body.get('file_id') as string;
         const uploadLifecycle = takeUploadRecovery(file_id);
+        cancelFileSearchUpload(file_id);
         const tool_resource = body.get('tool_resource');
         if (tool_resource === EToolResources.execute_code) {
           setEphemeralAgent((prev) => ({
@@ -356,19 +369,30 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   ) => {
     /* Capture the originating conversation's setter, not the mutation observer's
      * current conversation. Removal clears this callback before any late success. */
-    const callbacks =
+    let callbacks: UploadRecovery | undefined = uploadLifecycle;
+    if (
       isConversationUpload &&
       !isAssistantsEndpoint(endpointType ?? endpoint) &&
       formData.get('tool_resource') === EToolResources.file_search &&
       isEphemeralAgentId(formData.get('agent_id') as string | null)
-        ? {
-            ...uploadLifecycle,
-            onSuccess: (id: string) => {
-              setEphemeralAgent((prev) => ({ ...prev, [EToolResources.file_search]: true }));
-              uploadLifecycle?.onSuccess?.(id);
-            },
+    ) {
+      const conversationId = conversation?.conversationId ?? Constants.NEW_CONVO;
+      const intent = beginFileSearchUpload(file_id, conversationId);
+      callbacks = {
+        ...uploadLifecycle,
+        onFileSearchSuccess: () => {
+          if (
+            completeFileSearchUpload(
+              file_id,
+              conversationId,
+              intent.persisted ? undefined : intent.requestedAt,
+            )
+          ) {
+            setEphemeralAgent((prev) => ({ ...prev, [EToolResources.file_search]: true }));
           }
-        : uploadLifecycle;
+        },
+      };
+    }
     if (callbacks) {
       uploadErrorCallbacks.set(file_id, callbacks);
       callbacks.onStart?.(file_id);

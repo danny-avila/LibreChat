@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import debounce from 'lodash/debounce';
-import { SetterOrUpdater } from 'recoil';
+import { useSetRecoilState } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
+import type { SetterOrUpdater } from 'recoil';
 import type { PendingTextAttachmentDraft } from '~/utils';
 import type { ExtendedFile } from '~/common';
 import {
@@ -26,6 +27,8 @@ import {
 import { isPastedTextFileMarked, markPastedTextFile } from '~/utils/files';
 import { hasInFlightUpload } from '~/hooks/Files/useFileHandling';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
+import { completeFileSearchUpload } from '~/hooks/Files/search';
+import { ephemeralAgentByConvoId } from '~/store';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
 
@@ -55,6 +58,9 @@ export const useAutoSave = ({
   // setting for auto-save
   const { setValue } = useChatFormContext();
   const { saveDrafts } = useChatSettings();
+  const setEphemeralAgent = useSetRecoilState(
+    ephemeralAgentByConvoId(_conversationId ?? Constants.NEW_CONVO),
+  );
   const pendingDraftId = getPendingDraftId(index);
   const conversationDraftId =
     _conversationId === Constants.NEW_CONVO ? getNewConversationDraftId(index) : _conversationId;
@@ -140,6 +146,15 @@ export const useAutoSave = ({
             };
 
         if (fileToRecover) {
+          if (
+            fileToRecover.embedded === true &&
+            completeFileSearchUpload(
+              fileToRecover.temp_file_id || fileIdToRecover,
+              _conversationId ?? Constants.NEW_CONVO,
+            )
+          ) {
+            setEphemeralAgent((previous) => ({ ...previous, file_search: true }));
+          }
           fileIdsToKeep.push(fileId);
           if (pendingPastes[fileId] != null && !pastedTextIds.includes(fileId)) {
             /** Consuming the paste record here, so its id moves to the persistent provenance
@@ -191,7 +206,7 @@ export const useAutoSave = ({
       });
       return pastesToRecover;
     },
-    [fileList, setFiles],
+    [fileList, setFiles, _conversationId, setEphemeralAgent],
   );
 
   const restoreText = useCallback(

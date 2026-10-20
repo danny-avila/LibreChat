@@ -1,7 +1,8 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { render } from '@testing-library/react';
+import { render, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { beginFileSearchUpload, completeFileSearchUpload } from '~/hooks/Files/search';
 import BadgeRowProvider, { useBadgeRowContext } from '../BadgeRowContext';
 
 /**
@@ -64,14 +65,29 @@ function renderProvider() {
       </RecoilRoot>
     </QueryClientProvider>
   );
-  const { rerender } = render(<Tree marker={0} />);
+  const { rerender, unmount } = render(<Tree marker={0} />);
   return {
     getValue: () => value,
+    unmount,
     retype: (marker: number) => rerender(<Tree marker={marker} />),
   };
 }
 
 describe('BadgeRowProvider', () => {
+  it('recovers completed explicit uploads on reload without overriding a later disable', () => {
+    localStorage.clear();
+    beginFileSearchUpload('upload-id', 'convo-badge-row');
+    expect(completeFileSearchUpload('upload-id', 'convo-badge-row')).toBe(true);
+    const first = renderProvider();
+    expect(first.getValue()?.fileSearch.isToolEnabled).toBe(true);
+    act(() => first.getValue()?.fileSearch.setToggleState(false));
+    first.unmount();
+    const reloaded = renderProvider();
+    expect(reloaded.getValue()?.fileSearch.isToolEnabled).toBe(false);
+    reloaded.unmount();
+    localStorage.clear();
+  });
+
   it('hands consumers the same value across a parent re-render', () => {
     const { getValue, retype } = renderProvider();
     const first = getValue();

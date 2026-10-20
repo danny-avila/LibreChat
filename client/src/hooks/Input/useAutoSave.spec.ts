@@ -1,9 +1,12 @@
+const mockSetDraftEphemeralAgent = jest.fn();
+
 jest.mock('recoil', () => ({
   ...jest.requireActual('recoil'),
   useRecoilValue: jest.fn(),
+  useSetRecoilState: () => mockSetDraftEphemeralAgent,
 }));
 
-jest.mock('~/store', () => ({}));
+jest.mock('~/store', () => ({ ephemeralAgentByConvoId: (id: string) => id }));
 
 jest.mock('~/Providers/ChatSettingsContext', () => ({
   useChatSettings: () => ({ saveDrafts: true }),

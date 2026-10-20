@@ -1,11 +1,20 @@
 import { getDefaultStore } from 'jotai';
 import { filesFamily } from '@librechat/chat/react';
 import { renderHook, act } from '@testing-library/react';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
+import { Constants, LocalStorageKeys, EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
+import { clearUploadRecovery } from '~/hooks/Files/useFileHandling';
+import { beginFileSearchUpload } from '~/hooks/Files/search';
+import { useAutoSave } from '~/hooks/Input/useAutoSave';
+import { setTimestamp } from '~/utils/timestamps';
+import { setFilesDraft } from '~/utils/drafts';
 
 const mockDeleteFiles = jest.fn();
+let mockSaveDrafts = false;
+let mockPreviousConversation: { conversationId: string; endpoint: EModelEndpoint } | null = null;
+let mockFileList: object[] = [];
+const mockSetEphemeralAgent = jest.fn();
 const mockRemoveTabAttachmentPresence = jest.fn();
 const mockCollectForeignAttachmentClaims = jest.fn(
   (_excludeDraftIds: string[], _excludeOwnPane?: number | 'tab') => new Set(mockForeignClaims),
@@ -36,7 +45,7 @@ jest.mock('react-router-dom', () => ({
 }));
 
 jest.mock('~/Providers/ChatSettingsContext', () => ({
-  useChatSettings: () => ({ saveDrafts: false }),
+  useChatSettings: () => ({ saveDrafts: mockSaveDrafts }),
 }));
 
 jest.mock('recoil', () => ({
@@ -46,7 +55,7 @@ jest.mock('recoil', () => ({
     }
     return null;
   },
-  useSetRecoilState: () => jest.fn(),
+  useSetRecoilState: (key: string) => (update: unknown) => mockSetEphemeralAgent(key, update),
   useRecoilCallback: () => jest.fn(),
 }));
 jest.mock('librechat-data-provider/react-query', () => ({
@@ -58,6 +67,7 @@ jest.mock('librechat-data-provider', () => ({
 }));
 
 jest.mock('~/utils', () => ({
+  ...jest.requireActual('~/utils/drafts'),
   updateLastSelectedModel: jest.fn(),
   getLocalStorageItems: () => ({}),
   getDefaultModelSpec: () => ({}),
@@ -84,6 +94,7 @@ jest.mock('~/data-provider', () => ({
   useDeleteFilesMutation: () => ({ mutateAsync: mockDeleteFiles }),
   useGetEndpointsQuery: () => ({ data: {} }),
   useGetStartupConfig: () => ({ data: {} }),
+  useGetFiles: () => ({ data: mockFileList }),
 }));
 
 jest.mock('../Conversations/useNavigateToConvo', () => ({
@@ -92,19 +103,26 @@ jest.mock('../Conversations/useNavigateToConvo', () => ({
 }));
 jest.mock('../Conversations/useGetConversation', () => ({
   __esModule: true,
-  default: () => () => null,
+  default: () => () => mockPreviousConversation,
 }));
 jest.mock('../Assistants/useAssistantListMap', () => ({
   __esModule: true,
   default: () => ({}),
 }));
-jest.mock('../Files/useFileHandling', () => ({ clearUploadRecovery: jest.fn() }));
+jest.mock('../Files/useFileHandling', () => {
+  const actual = jest.requireActual('../Files/useFileHandling');
+  return { ...actual, clearUploadRecovery: jest.fn(actual.clearUploadRecovery) };
+});
 jest.mock('../Agents', () => ({ useApplyModelSpecEffects: () => jest.fn() }));
 jest.mock('../Audio', () => ({ usePauseGlobalAudio: () => ({ pauseGlobalAudio: jest.fn() }) }));
-jest.mock('~/Providers', () => ({ useAgentsMapContext: () => ({}) }));
+jest.mock('~/Providers', () => ({
+  useAgentsMapContext: () => ({}),
+  useChatFormContext: () => ({ setValue: jest.fn() }),
+}));
 jest.mock('~/hooks', () => ({ useHasAccess: () => true }));
 jest.mock('~/store', () => ({
   __esModule: true,
+  ephemeralAgentByConvoId: (id: string) => id,
   default: {
     defaultPreset: 'defaultPreset',
     saveBadgesState: 'saveBadgesState',
@@ -164,6 +182,10 @@ describe('clearInheritedAgentWorkspace', () => {
 describe('useNewConvo reset cleanup', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    localStorage.clear();
+    mockSaveDrafts = false;
+    mockPreviousConversation = null;
+    mockFileList = [];
     mockDeleteFiles.mockResolvedValue({});
     mockForeignClaims.clear();
     mockMarkedPasteIds.clear();
@@ -186,6 +208,90 @@ describe('useNewConvo reset cleanup', () => {
       getDefaultStore().set(filesFamily(index), mockFiles as Map<string, ExtendedFile>);
     }
   });
+
+  it.each(['retained', 'discarded', 'disabled', 'unrelated', 'other-conversation'])(
+    'restores File Search only for a retained explicit upload (%s)',
+    (mode) => {
+      mockSaveDrafts = mode !== 'discarded';
+      mockPreviousConversation = {
+        conversationId: 'origin-conversation',
+        endpoint: EModelEndpoint.openAI,
+      };
+      mockFiles.clear();
+      mockFiles.set('pending-search', {
+        file_id: 'pending-search',
+        attached: false,
+        progress: 0.2,
+      });
+      setFilesDraft('origin-conversation', { fileIds: ['pending-search'], pendingPastes: {} });
+      if (mode !== 'unrelated') {
+        const now = Date.now();
+        const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+        beginFileSearchUpload(
+          'pending-search',
+          mode === 'other-conversation' ? 'other-conversation' : 'origin-conversation',
+        );
+        if (mode === 'disabled') {
+          clock.mockReturnValue(now + 1);
+          const preference = `${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}origin-conversation`;
+          localStorage.setItem(preference, 'false');
+          setTimestamp(preference);
+        }
+        clock.mockRestore();
+      }
+      const next = renderHook(() => useNewConvo());
+      act(() => next.result.current.newConversation());
+      expect(clearUploadRecovery).toHaveBeenCalledWith('pending-search', mockSaveDrafts);
+      expect(getDefaultStore().get(filesFamily(0)).size).toBe(0);
+      next.unmount();
+
+      // Persistence finishes after leaving; restoration reads the real saved draft and file cache.
+      mockSaveDrafts = true;
+      mockFileList = [
+        {
+          file_id: 'persisted-search',
+          temp_file_id: 'pending-search',
+          filepath: '/files/search.txt',
+          filename: 'search.txt',
+          bytes: 5,
+          type: 'text/plain',
+          embedded: true,
+          llmDeliveryPath: 'none',
+        },
+      ];
+      const setFiles = jest.fn();
+      const restored = renderHook(() =>
+        useAutoSave({
+          conversationId: 'origin-conversation',
+          files: new Map(),
+          setFiles,
+        }),
+      );
+      const files = setFiles.mock.calls.reduce(
+        (current, [update]) => (typeof update === 'function' ? update(current) : update),
+        new Map(),
+      );
+      expect(files.get('pending-search')).toMatchObject({
+        file_id: 'persisted-search',
+        progress: 1,
+        llmDeliveryPath: 'none',
+      });
+      if (mode === 'retained') {
+        expect(mockSetEphemeralAgent).toHaveBeenCalledWith(
+          'origin-conversation',
+          expect.any(Function),
+        );
+        const update = mockSetEphemeralAgent.mock.calls.at(-1)?.[1];
+        expect(update({ web_search: true })).toEqual({ web_search: true, file_search: true });
+        expect(
+          localStorage.getItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}origin-conversation`),
+        ).toBe('true');
+      } else {
+        expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+      }
+      restored.unmount();
+    },
+  );
 
   it('does not delete a file claimed by another tab but deletes an unclaimed file', () => {
     mockForeignClaims.add('claimed-file');

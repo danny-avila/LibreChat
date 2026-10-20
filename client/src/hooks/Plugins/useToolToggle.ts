@@ -68,14 +68,15 @@ export function useToolToggle({
     return toolValue === true;
   }, [toolValue]);
 
-  // Sync to localStorage with timestamps when ephemeralAgent changes
+  // Timestamp changes to this tool, not unrelated fields on the agent.
+  const storedToolValue = ephemeralAgent?.[toolKey];
   useEffect(() => {
-    const value = ephemeralAgent?.[toolKey];
+    const value = storedToolValue;
     if (value !== undefined) {
       localStorage.setItem(storageKey, JSON.stringify(value));
       setTimestamp(storageKey);
     }
-  }, [ephemeralAgent, toolKey, storageKey]);
+  }, [storedToolValue, storageKey]);
 
   /** Admin-configured default: pin this tool when its key is listed in `defaultPinnedTools`.
    *  Only seeds the initial state — a user's stored pin preference always takes precedence. */

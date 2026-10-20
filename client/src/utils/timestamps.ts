@@ -27,6 +27,12 @@ export function setTimestamp(key: string): void {
   localStorage.setItem(`${key}${TIMESTAMP_SUFFIX}`, Date.now().toString());
 }
 
+export function getTimestamp(key: string): number | null {
+  const raw = localStorage.getItem(`${key}${TIMESTAMP_SUFFIX}`);
+  const timestamp = raw == null ? NaN : Number(raw);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 /**
  * Get a value from localStorage, checking if it has a valid timestamp
  * Returns null if the value is too old or has no timestamp

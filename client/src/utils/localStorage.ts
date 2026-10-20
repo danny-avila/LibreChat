@@ -1,4 +1,7 @@
-import { LocalStorageKeys, TConversation } from 'librechat-data-provider';
+import { LocalStorageKeys } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
+
+export const FILE_SEARCH_UPLOAD_PREFIX = 'file-search-upload:';
 
 export function getLocalStorageItems() {
   const items = {
@@ -34,7 +37,8 @@ export function clearComposerDraftStorage() {
   Object.keys(localStorage).forEach((key) => {
     if (
       key.startsWith(LocalStorageKeys.FILES_DRAFT) ||
-      key.startsWith(LocalStorageKeys.TEXT_DRAFT)
+      key.startsWith(LocalStorageKeys.TEXT_DRAFT) ||
+      key.startsWith(FILE_SEARCH_UPLOAD_PREFIX)
     ) {
       localStorage.removeItem(key);
     }

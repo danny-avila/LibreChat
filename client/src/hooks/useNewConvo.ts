@@ -39,6 +39,7 @@ import {
   renewNewConversationDraftToken,
   getNewConversationDraftId,
   getPendingDraftId,
+  getFilesDraft,
   isPastedTextFileMarked,
   loadPendingDiscardIds,
   storePendingDiscardIds,
@@ -388,10 +389,26 @@ const useNewConvo = (index = 0) => {
         !modelsData &&
         !keepComposerState
       ) {
+        const sourceDraftId =
+          !prevConversation?.conversationId ||
+          prevConversation.conversationId === Constants.NEW_CONVO
+            ? getNewConversationDraftId(index)
+            : prevConversation.conversationId;
+        const retainedUploadIds = new Set(
+          saveDrafts
+            ? [
+                ...getFilesDraft(sourceDraftId).fileIds,
+                ...getFilesDraft(getPendingDraftId(index)).fileIds,
+              ]
+            : [],
+        );
         const filesToDelete = Array.from(files.entries()).flatMap(([fileId, file]) => {
-          clearUploadRecovery(fileId);
+          const retainFileSearch = [fileId, file.file_id, file.temp_file_id].some(
+            (id) => id != null && retainedUploadIds.has(id),
+          );
+          clearUploadRecovery(fileId, retainFileSearch);
           if (file.temp_file_id && file.temp_file_id !== fileId) {
-            clearUploadRecovery(file.temp_file_id);
+            clearUploadRecovery(file.temp_file_id, retainFileSearch);
           }
 
           /** A generated paste is this composer's own upload and goes with it, even when that
