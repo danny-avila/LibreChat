@@ -767,6 +767,32 @@ describe('S3 CRUD', () => {
       expect(putInput.Body).toEqual(Buffer.from('decoded'));
     });
 
+    it('rejects instead of crashing when the response body fails mid-stream', async () => {
+      (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        headers: {
+          get: (name: string) => (name.toLowerCase() === 'content-type' ? 'image/png' : null),
+        },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(Buffer.from('partial'));
+            controller.error(new Error('socket reset'));
+          },
+        }),
+        arrayBuffer: jest.fn(),
+      });
+
+      const { saveURLToS3WithMetadata } = await import('../crud');
+      await expect(
+        saveURLToS3WithMetadata({
+          userId: 'user123',
+          URL: 'https://example.com/image.jpg',
+          fileName: 'downloaded.jpg',
+        }),
+      ).rejects.toThrow('socket reset');
+      expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(0);
+    });
+
     it('throws error on non-ok response', async () => {
       (global.fetch as unknown as jest.Mock).mockResolvedValueOnce({
         ok: false,

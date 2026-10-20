@@ -32,6 +32,7 @@ const {
   applyForcedRetention,
   prepareToolCallPreviews,
   createToolCallPartHandler,
+  createSubagentAttachmentCallsHandler,
   rejectToolCallPreviewWrites,
   withMessageToolCallPreviews,
 } = require('@librechat/api');
@@ -68,6 +69,11 @@ const filterFeedbackContent = createContentFilter({
 });
 const toolCallPreviewDeps = { getAppConfig };
 const readToolCallPart = createToolCallPartHandler({
+  getMessages: db.getMessages,
+  validate: (req) => createMessageRequestValidation(req, { activeJobMessageRead: true }),
+  sendValidationResponse: (res, result) => sendValidationResponse(res, result),
+});
+const readSubagentAttachmentCalls = createSubagentAttachmentCallsHandler({
   getMessages: db.getMessages,
   validate: (req) => createMessageRequestValidation(req, { activeJobMessageRead: true }),
   sendValidationResponse: (res, result) => sendValidationResponse(res, result),
@@ -632,6 +638,7 @@ router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) =
 });
 
 router.get('/:conversationId/:messageId/parts/:partIndex', readToolCallPart);
+router.get('/:conversationId/:messageId/subagent-calls', readSubagentAttachmentCalls);
 
 router.put('/:conversationId/:messageId', messageMutationMiddleware, async (req, res) => {
   try {

@@ -2,6 +2,7 @@ import { memo, useRef, useMemo, useEffect, useCallback, useContext, Fragment } f
 import { useStore } from 'jotai';
 import { Constants, ContentTypes, Tools } from 'librechat-data-provider';
 import type {
+  SubagentAttachmentFile,
   TMessageContentParts,
   SearchResultData,
   TAttachment,
@@ -9,6 +10,7 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import type { ReasoningDisclosures, ToolDisclosures } from './disclosure';
+import type { NestedCall } from '~/components/Chat/Subagents/attachments';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import type { ActivityPhaseSegment } from '~/utils/activityLabels';
 import type { MCPAppResourceOccurrence } from '~/utils/mcpApps';
@@ -16,6 +18,7 @@ import {
   assignNestedAttachments,
   useLiveSubagentToolCalls,
   SubagentAttachmentsContext,
+  useStoredSubagentHints,
   selectExactlyNestedAttachments,
   selectUnclaimedAttachments,
 } from '~/components/Chat/Subagents/attachments';
@@ -136,6 +139,7 @@ const buildToolCallStepOwners = (
 const collectMessageContent = (
   content: Array<TMessageContentParts | undefined> | undefined,
   attachments: TAttachment[] | undefined,
+  nested: Pick<ReadonlyMap<TMessageContentParts, TAttachment[]>, 'get'>,
   contentIndexOffset = 0,
   contentIndices?: ReadonlyArray<number>,
 ): {
@@ -166,7 +170,10 @@ const collectMessageContent = (
       getPartStepId(part),
       getSiblingStepIds(part, ownersByToolCallId),
     );
-    for (const attachment of routed ?? []) {
+    /** A subagent's child-call Apps render beside the subagent row, like its
+     *  own, so regrouping the row while it streams never remounts them. */
+    const owned = nested.get(part);
+    for (const attachment of owned == null ? (routed ?? []) : [...(routed ?? []), ...owned]) {
       if (
         attachment.type === Tools.ui_resources &&
         !collected.has(attachment) &&
@@ -238,8 +245,10 @@ const collectClaimedAttachments = (
   content: Array<TMessageContentParts | undefined> | undefined,
   attachments: TAttachment[],
   reserved: ReadonlySet<TAttachment>,
-): ReadonlySet<TAttachment> => {
+): { claimed: ReadonlySet<TAttachment>; exact: ReadonlySet<TAttachment> } => {
   const claimed = new Set<TAttachment>();
+  /** Claimed by a part carrying the file's full scope, not only by a part missing some of it. */
+  const exact = new Set<TAttachment>();
   const attachmentMap = mapAttachments(attachments);
   const owners = buildToolCallStepOwners(content);
   for (const part of content ?? []) {
@@ -253,13 +262,17 @@ const collectClaimedAttachments = (
       getSiblingStepIds(part, owners),
     );
     for (const attachment of accepted ?? []) {
-      if (reserved.has(attachment) && !carriesScopeOf(part, attachment)) {
+      const scoped = carriesScopeOf(part, attachment);
+      if (reserved.has(attachment) && !scoped) {
         continue;
       }
       claimed.add(attachment);
+      if (scoped) {
+        exact.add(attachment);
+      }
     }
   }
-  return claimed;
+  return { claimed, exact };
 };
 
 /** Whether the part carries every agent and step scope the attachment does. */
@@ -269,6 +282,28 @@ const carriesScopeOf = (part: TMessageContentParts, attachment: TAttachment): bo
     (agentId == null || getPartAgentId(part) === agentId) &&
     (stepId == null || getPartStepId(part) === stepId)
   );
+};
+
+/**
+ * The subagent call part each tool attachment no top-level part accepts goes to, given the child
+ * calls each subagent part holds outside its stored transcript. `inDoubt` lists the files no call
+ * owns under their full scope, top-level or nested: one taken only by a call missing some of its
+ * scope may belong to a child call of a transcript the preview left out.
+ */
+const routeNestedAttachments = (
+  content: Array<TMessageContentParts | undefined> | undefined,
+  attachments: TAttachment[],
+  calls: ReadonlyMap<number, NestedCall[]>,
+) => {
+  const reserved = selectExactlyNestedAttachments(content, attachments, calls);
+  const { claimed, exact } = collectClaimedAttachments(content, attachments, reserved);
+  const unclaimed = selectUnclaimedAttachments(attachments, claimed);
+  const nested = assignNestedAttachments(content, unclaimed, calls);
+  const inDoubt = attachments.filter(
+    (attachment) =>
+      attachment.toolCallId != null && !exact.has(attachment) && !reserved.has(attachment),
+  );
+  return { nested, inDoubt };
 };
 
 const PartWithContext = memo(function PartWithContext({
@@ -1399,15 +1434,64 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
     previousIdentity.isSubmitting = isSubmitting;
   }
   const appRenderScope = appRenderIdentity.current!.scope;
+  const liveSubagentToolCalls = useLiveSubagentToolCalls(
+    props.content,
+    attachments,
+    messageId,
+    props.contentIndices,
+    props.contentIndexOffset ?? 0,
+  );
+  const inlineAttachments = useMemo(
+    () => partitionWorkspaceChanges(attachments).inlineAttachments,
+    [attachments],
+  );
+  const liveRouting = useMemo(
+    () => routeNestedAttachments(props.content, inlineAttachments, liveSubagentToolCalls),
+    [props.content, inlineAttachments, liveSubagentToolCalls],
+  );
+  /** A file no part owns under its full scope may belong to a child call of a previewed subagent
+   *  run whose transcript was left out, such as one a background task delivered after this load. */
+  const filesInDoubt = useMemo(() => {
+    const files = new Map<string, SubagentAttachmentFile>();
+    for (const file of liveRouting.inDoubt) {
+      const { toolCallId, agentId, stepId } = file as SubagentAttachmentFile;
+      const entry = {
+        toolCallId,
+        ...(agentId != null ? { agentId } : {}),
+        ...(stepId != null ? { stepId } : {}),
+      };
+      files.set(JSON.stringify(entry), entry);
+    }
+    return [...files.keys()].sort().map((key) => files.get(key) as SubagentAttachmentFile);
+  }, [liveRouting]);
+  const storedSubagentHints = useStoredSubagentHints(
+    props.content,
+    filesInDoubt,
+    conversationId,
+    messageId,
+  );
+  /** Assigned once for the whole message: the bodies an MCP App or a phase
+   *  splits it into each see a slice, and must agree on every file's owner. */
+  const nestedAttachments = useMemo(() => {
+    if (storedSubagentHints.size === 0) {
+      return liveRouting.nested;
+    }
+    const calls = new Map(liveSubagentToolCalls);
+    for (const [index, stored] of storedSubagentHints) {
+      calls.set(index, [...(calls.get(index) ?? []), ...stored]);
+    }
+    return routeNestedAttachments(props.content, inlineAttachments, calls).nested;
+  }, [props.content, inlineAttachments, liveRouting, liveSubagentToolCalls, storedSubagentHints]);
   const messageContent = useMemo(
     () =>
       collectMessageContent(
         props.content,
         attachments,
+        nestedAttachments,
         props.contentIndexOffset,
         props.contentIndices,
       ),
-    [props.content, attachments, props.contentIndexOffset, props.contentIndices],
+    [props.content, attachments, nestedAttachments, props.contentIndexOffset, props.contentIndices],
   );
   const suppressedAppAttachments = useMemo<ReadonlySet<TAttachment>>(
     () => new Set(messageContent.attachments),
@@ -1530,31 +1614,6 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
    *  value at every markdown block in the message. */
   const attachmentsByName = useMemo(() => buildAttachmentsByName(attachments), [attachments]);
   const media = useMemo(() => ({ attachmentsByName }), [attachmentsByName]);
-  const liveSubagentToolCalls = useLiveSubagentToolCalls(
-    props.content,
-    attachments,
-    messageId,
-    props.contentIndices,
-    props.contentIndexOffset ?? 0,
-  );
-  const unclaimedAttachments = useMemo(() => {
-    const { inlineAttachments } = partitionWorkspaceChanges(attachments);
-    const reserved = selectExactlyNestedAttachments(
-      props.content,
-      inlineAttachments,
-      liveSubagentToolCalls,
-    );
-    return selectUnclaimedAttachments(
-      inlineAttachments,
-      collectClaimedAttachments(props.content, inlineAttachments, reserved),
-    );
-  }, [props.content, attachments, liveSubagentToolCalls]);
-  /** Assigned once for the whole message: the bodies an MCP App or a phase
-   *  splits it into each see a slice, and must agree on every file's owner. */
-  const nestedAttachments = useMemo(
-    () => assignNestedAttachments(props.content, unclaimedAttachments, liveSubagentToolCalls),
-    [props.content, unclaimedAttachments, liveSubagentToolCalls],
-  );
   return (
     <MessageContext.Provider value={messageContext}>
       <MediaContext.Provider value={media}>
