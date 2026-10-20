@@ -609,7 +609,7 @@
   },
   "client/src/components/Conversations/ProjectsSection.tsx": {
     "shadcn/no-restyle": {
-      "count": 7
+      "count": 6
     }
   },
   "client/src/components/Conversations/RenameForm.tsx": {

@@ -408,7 +408,7 @@ export default function LangfuseConnection() {
         </div>
         <div
           data-testid="langfuse-connection-status"
-          className={`ml-auto flex max-w-full shrink-0 items-start justify-end gap-1.5 text-right text-xs sm:max-w-[50%] ${connectionStatusTextClass}`}
+          className={`ms-auto flex max-w-full shrink-0 items-start justify-end gap-1.5 text-end text-xs sm:max-w-[50%] ${connectionStatusTextClass}`}
           aria-live="polite"
           title={connectionStatusTitle}
         >
@@ -442,7 +442,7 @@ export default function LangfuseConnection() {
         {secretConfigured && !isEditingPublicKey && (
           <button
             type="button"
-            className="border-border-light hover:border-border-medium focus-visible:ring-ring-primary w-full rounded-lg border px-3 py-2 text-left focus-visible:ring-2 focus-visible:outline-hidden"
+            className="border-border-light hover:border-border-medium focus-visible:ring-ring-primary w-full rounded-lg border px-3 py-2 text-start focus-visible:ring-2 focus-visible:outline-hidden"
             aria-label={`${localize('com_ui_edit')} ${localize('com_ui_langfuse_public_key')}`}
             disabled={busy}
             onClick={() => setIsEditingPublicKey(true)}
@@ -486,7 +486,7 @@ export default function LangfuseConnection() {
         {secretConfigured && !isEditingSecretKey && (
           <button
             type="button"
-            className="border-border-light hover:border-border-medium focus-visible:ring-ring-primary w-full rounded-lg border px-3 py-2 text-left focus-visible:ring-2 focus-visible:outline-hidden"
+            className="border-border-light hover:border-border-medium focus-visible:ring-ring-primary w-full rounded-lg border px-3 py-2 text-start focus-visible:ring-2 focus-visible:outline-hidden"
             aria-label={`${localize('com_ui_edit')} ${localize('com_ui_langfuse_secret_key')}`}
             disabled={busy}
             onClick={() => setIsEditingSecretKey(true)}

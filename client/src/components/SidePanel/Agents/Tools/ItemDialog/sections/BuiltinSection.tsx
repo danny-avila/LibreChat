@@ -95,7 +95,7 @@ function MemoryConfig({ value, onChange }: MemoryConfigProps) {
           onCheckedChange={(checked) =>
             onChange(checked === true ? MemoryScope.agent : MemoryScope.user)
           }
-          className="relative float-left mr-2 inline-flex cursor-pointer"
+          className="relative float-start me-2 inline-flex cursor-pointer"
           value={isolated.toString()}
           aria-labelledby="memory-scope-label"
         />
