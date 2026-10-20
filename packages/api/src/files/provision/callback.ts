@@ -14,6 +14,7 @@ import {
 } from '~/utils/code';
 import { createCodeApiRateLimitBudget, isCodeApiRateLimitError } from '~/utils';
 import { getTurnCodeEnvRef, saveCodeFileReference } from '../code/references';
+import { getCodeExecutionRouteKey } from '~/agents/execution';
 import { isImportedProjectFile } from '../code/destinations';
 import { checkCodeFileActive } from '../code/priming';
 import { planCodeFileUploads } from '../code/queued';
@@ -212,10 +213,18 @@ export function createProvisionFilesCallback({
 
     /** Two agents may resolve different code deployments, where the same file genuinely
      *  needs uploading to each, so the destination is part of the sharing key. */
-    const codeRouteKey =
-      ctx.codeExecutionContext?.executionRouteKey ??
-      ctx.codeExecutionContext?.executionProfile ??
-      'default';
+    const codeRouteKey = getCodeExecutionRouteKey(ctx.codeExecutionContext);
+    const probeOptions = getCodeApiUploadOptions(req, codeRouteKey);
+    const probe = async (ref: CodeEnvRef) => {
+      const info = await withCodeApiUploadSlot({
+        registry: req.app?.locals?.codeApiUploadRegistry ?? probeRegistry,
+        ...probeOptions,
+        signal,
+        task: async () => getCodeFileInfo?.(ref, ctx.codeExecutionContext ?? {}, signal),
+      });
+      signal?.throwIfAborted();
+      return info;
+    };
     const shareKey = (resource: string, file: TFile, destination = '') =>
       file.file_id
         ? `${resource}:${file.file_id}:${entityIdForFile(file) ?? ''}:${destination}`
@@ -296,16 +305,7 @@ export function createProvisionFilesCallback({
                 ? getTurnCodeEnvRef(req, codeRouteKey, file, sandboxFilename)
                 : undefined;
               if (existingRef) {
-                const { scope, concurrency } = getCodeApiUploadOptions(req, codeRouteKey);
-                const info = await withCodeApiUploadSlot({
-                  registry: req.app?.locals?.codeApiUploadRegistry ?? probeRegistry,
-                  scope,
-                  concurrency,
-                  signal,
-                  task: async () =>
-                    getCodeFileInfo?.(existingRef, ctx.codeExecutionContext ?? {}, signal),
-                });
-                signal?.throwIfAborted();
+                const info = await probe(existingRef);
                 if (checkCodeFileActive(info?.lastModified)) {
                   return {
                     refs: mergeCodeEnvRef(file.metadata, existingRef),
@@ -320,16 +320,7 @@ export function createProvisionFilesCallback({
                   canonicalRef.sandboxFilename === sandboxFilename) &&
                 isImportedProjectFile(file, provisionState.project)
               ) {
-                const { scope, concurrency } = getCodeApiUploadOptions(req, codeRouteKey);
-                const info = await withCodeApiUploadSlot({
-                  registry: req.app?.locals?.codeApiUploadRegistry ?? probeRegistry,
-                  scope,
-                  concurrency,
-                  signal,
-                  task: async () =>
-                    getCodeFileInfo?.(canonicalRef, ctx.codeExecutionContext ?? {}, signal),
-                });
-                signal?.throwIfAborted();
+                const info = await probe(canonicalRef);
                 const storedName = canonicalRef.sandboxFilename ?? info?.originalFilename;
                 if (checkCodeFileActive(info?.lastModified)) {
                   if (storedName === sandboxFilename) {

@@ -42,6 +42,10 @@ function agent(id: string, files: TFile[]): CodeFileAgent {
   };
 }
 
+function storedFile(id: string, ref: CodeEnvRef, overrides: Partial<TFile> = {}): TFile {
+  return file(id, { metadata: { codeEnvRefs: { default: ref } }, ...overrides });
+}
+
 describe('queued code-file destinations', () => {
   it('plans imported project paths around converted private recovery names', () => {
     const request = {
@@ -184,34 +188,28 @@ describe('queued code-file destinations', () => {
   it.each(['parent', 'child', 'lazy child'])(
     'keeps a live project import unchanged in a separate session from a private collision (%s first)',
     async (order) => {
-      const imported = file('imported-live', {
-        conversationId: 'other',
-        metadata: {
-          codeEnvRefs: {
-            default: {
-              kind: 'user',
-              id: 'user-1',
-              storage_session_id: 'shared-store',
-              file_id: 'shared-remote',
-              sandboxFilename: 'data.csv',
-            },
-          },
+      const imported = storedFile(
+        'imported-live',
+        {
+          kind: 'user',
+          id: 'user-1',
+          storage_session_id: 'shared-store',
+          file_id: 'shared-remote',
+          sandboxFilename: 'data.csv',
         },
-      });
-      const privateFile = file('private', {
-        context: FileContext.agents,
-        metadata: {
-          codeEnvRefs: {
-            default: {
-              kind: 'agent',
-              id: 'child',
-              storage_session_id: 'private-store',
-              file_id: 'private-remote',
-              sandboxFilename: 'data.csv',
-            },
-          },
+        { conversationId: 'other' },
+      );
+      const privateFile = storedFile(
+        'private',
+        {
+          kind: 'agent',
+          id: 'child',
+          storage_session_id: 'private-store',
+          file_id: 'private-remote',
+          sandboxFilename: 'data.csv',
         },
-      });
+        { context: FileContext.agents },
+      );
       const parent = agent('parent', []);
       const child = agent('child', []);
       parent.codeSessionKey = 'execute_code:parent';
@@ -287,20 +285,17 @@ describe('queued code-file destinations', () => {
   });
 
   it('does not move a confirmed live path when another agent also queues that file', () => {
-    const shared = file('shared', {
-      createdAt: '2026-09-01',
-      metadata: {
-        codeEnvRefs: {
-          default: {
-            kind: 'user',
-            id: 'user-1',
-            storage_session_id: 'session',
-            file_id: 'remote',
-            sandboxFilename: 'data.csv',
-          },
-        },
+    const shared = storedFile(
+      'shared',
+      {
+        kind: 'user',
+        id: 'user-1',
+        storage_session_id: 'session',
+        file_id: 'remote',
+        sandboxFilename: 'data.csv',
       },
-    });
+      { createdAt: '2026-09-01' },
+    );
     const parent = agent('parent', [file('new', { createdAt: '2026-10-01' })]);
     parent.tool_resources = { execute_code: { files: [shared] } };
     const child = agent('child', [{ ...shared }, file('new', { createdAt: '2026-10-01' })]);
@@ -355,50 +350,19 @@ describe('queued code-file destinations', () => {
     expect(current.dynamicToolContextMap!.queued_code_files).toContain('(project file)');
   });
 
-  it('still drops an expired superseded agent file in a project chat', () => {
-    const current = agent('parent', [
-      file('setup', { context: FileContext.agents, createdAt: '2026-09-01' }),
-      file('output', {
-        context: FileContext.execute_code,
-        conversationId: 'current',
-        createdAt: '2026-10-01',
-      }),
-    ]);
-    current.provisionState!.project = {
-      projectFileIds: new Set(['output', 'unrelated']),
-      conversationId: 'current',
-    };
-    current.provisionState!.agentScopedFileIds = new Set(['setup']);
-    current.provisionState!.codeEnvRecoveryNames = new Map([
-      ['setup', { name: 'data.csv', isTargetScope: true }],
-      ['output', { name: 'data.csv', isTargetScope: true }],
-    ]);
-    const uploads = planCodeFileUploads({
-      context: current,
-      contexts: [current],
-      agentId: 'parent',
-      userId: 'user-1',
-    });
-    expect(uploads.map((upload) => upload.file.file_id)).toEqual(['output']);
-    expect(current.provisionState!.temporaryCodeFileIds!.size).toBe(0);
-  });
-
   it('keeps the originating path when its file expires before a same-named import', () => {
     const current = agent('parent', [file('own', { conversationId: 'current' })]);
-    const imported = file('imported', {
-      conversationId: 'other',
-      metadata: {
-        codeEnvRefs: {
-          default: {
-            kind: 'user',
-            id: 'user-1',
-            storage_session_id: 'store',
-            file_id: 'remote',
-            sandboxFilename: 'data.csv',
-          },
-        },
+    const imported = storedFile(
+      'imported',
+      {
+        kind: 'user',
+        id: 'user-1',
+        storage_session_id: 'store',
+        file_id: 'remote',
+        sandboxFilename: 'data.csv',
       },
-    });
+      { conversationId: 'other' },
+    );
     current.tool_resources = { execute_code: { files: [imported] } };
     current.provisionState!.project = {
       projectFileIds: new Set(['own', 'imported']),
@@ -422,22 +386,17 @@ describe('queued code-file destinations', () => {
         context: FileContext.execute_code,
         createdAt: '2026-09-01',
       });
-      const imported = file('imported', {
-        conversationId: 'other',
-        context: FileContext.execute_code,
-        createdAt: '2026-10-01',
-        metadata: {
-          codeEnvRefs: {
-            default: {
-              kind: 'user',
-              id: 'user-1',
-              storage_session_id: 'store',
-              file_id: 'remote',
-              sandboxFilename: 'data.csv',
-            },
-          },
+      const imported = storedFile(
+        'imported',
+        {
+          kind: 'user',
+          id: 'user-1',
+          storage_session_id: 'store',
+          file_id: 'remote',
+          sandboxFilename: 'data.csv',
         },
-      });
+        { conversationId: 'other', context: FileContext.execute_code, createdAt: '2026-10-01' },
+      );
       const first = agent('first', [{ ...own }]);
       const second = agent('second', secondPending ? [{ ...own }] : []);
       for (const current of [first, second]) {

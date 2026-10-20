@@ -10,8 +10,7 @@ cache: true
 # Chat Projects: shared file tools and the ceilings a single project may reach. Every field is optional and
 # defaults to the value shown, which is the behavior when the block is absent.
 projects:
-  # Make project files available to permitted Run Code tools in every project chat.
-  # Data files are not indexed. Run Code outputs created in project chats are added automatically.
+  # Share project files with Run Code and save its outputs automatically; data files stay unindexed.
   codeExecution: false
   # Reference files that may be attached to one project (maximum 500).
   maxFiles: 50

@@ -9,7 +9,7 @@ import {
 import type { CodeEnvFile, SubagentExecutionContext } from '@librechat/agents';
 import type { Agent, CodeEnvRef, TFile } from 'librechat-data-provider';
 import type { ProvisionCallbackDeps } from '~/files/provision/callback';
-import type { RunFileSessionDeps } from './session';
+import type { RunFileSession, RunFileSessionDeps } from './session';
 import type { RunFileToolContext } from './host';
 import type { ServerRequest } from '~/types';
 import { getTurnCodeEnvRef, saveCodeFileReference } from '~/files/code/references';
@@ -71,6 +71,8 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
+
+const sessions = new Set<RunFileSession>();
 
 function harness(
   options: {
@@ -288,6 +290,7 @@ function harness(
     if (!artifact) throw new Error('Expected staged artifact');
     return host.session.publish('worker', context, artifact.artifact_id, [], signal);
   };
+  sessions.add(host.session);
   return {
     host,
     deps,
@@ -314,62 +317,83 @@ function harness(
   };
 }
 
-describe('run file execution host', () => {
-  afterEach(() => jest.restoreAllMocks());
-
-  it.each([false, true])(
-    'reuses seeded root files when metadata checks fail (project code=%s)',
-    async (projectCode) => {
-      const live = file('live', {
-        filename: 'results.csv',
-        metadata: {
-          codeEnvRefs: {
-            'managed-worker': {
-              kind: 'user',
-              id: 'user',
-              file_id: 'live-remote',
-              storage_session_id: 'live-store',
-              sandboxFilename: 'results.csv',
-            },
-          },
+function storedFile(
+  id: string,
+  ref: Partial<CodeEnvRef> & { kind?: 'user' | 'agent' } = {},
+  overrides: Partial<TFile> = {},
+): TFile {
+  return file(id, {
+    metadata: {
+      codeEnvRefs: {
+        'managed-worker': {
+          kind: 'user',
+          id: 'user',
+          file_id: `${id}-remote`,
+          storage_session_id: `${id}-store`,
+          ...ref,
         },
-      });
-      const h = harness({
-        inputs: [],
-        setup: [],
-        rootFiles: [live],
-        rootSeed: [
-          {
-            id: 'live-remote',
-            resource_id: 'user',
-            kind: 'user',
-            storage_session_id: 'live-store',
-            name: 'results.csv',
-          },
-        ],
-        getCodeFileInfo: async () => null,
-      });
-      h.req.config!.projects = configSchema.parse({
-        version: '1.3.9',
-        projects: { codeExecution: projectCode },
-      }).projects;
-      const root = h.contexts.get('parent')!;
-      root.provisionState = {
-        codeEnvFiles: [],
-        vectorDBFiles: [],
-        aliveFileIds: new Set([live.file_id]),
-        agentScopedFileIds: new Set(),
-      };
-      h.provisionToCodeEnv.mockRejectedValue(new Error('Code API unavailable'));
-      await h.host.session.prepareTools('parent', undefined, h.signal, 'snapshot');
-      expect(await h.host.provisionPrepared(['bash_tool'], 'parent', h.signal)).toBeUndefined();
-      expect(await h.host.provisionPrepared(['bash_tool'], 'parent', h.signal)).toBeUndefined();
-      expect(h.getCodeFileInfo).not.toHaveBeenCalled();
-      expect(h.provisionToCodeEnv).not.toHaveBeenCalled();
-      expect(h.updateCodeEnvRef).not.toHaveBeenCalled();
-      await h.host.session.close();
+      },
     },
-  );
+    ...overrides,
+  });
+}
+
+function seedFile(id: string, name: string): CodeEnvFile {
+  return {
+    id: `${id}-remote`,
+    storage_session_id: `${id}-store`,
+    name,
+    kind: 'user',
+    resource_id: 'user',
+  };
+}
+
+function configureProject(h: ReturnType<typeof harness>, ids?: string[], enabled = true): void {
+  h.req.config!.projects = configSchema.parse({
+    version: '1.3.9',
+    projects: { codeExecution: enabled },
+  }).projects;
+  h.req.body = { conversationId: 'conversation' };
+  if (ids)
+    h.req.chatProjectContext = {
+      projectId: 'project',
+      contextRevision: 0,
+      instructions: '',
+      resources: [],
+      file_ids: ids,
+    };
+}
+
+function projectMount(
+  h: ReturnType<typeof harness>,
+  canonical: TFile,
+  options: { live?: boolean; path?: string; mounts?: [string, string][] } = {},
+) {
+  const { live = false, path = canonical.filename, mounts = [] } = options;
+  h.req.chatProjectFiles = [canonical];
+  const source = h.contexts.get('worker')!;
+  const project = getProjectCodeScope(h.req, source.codeExecutionContext!.codeSessionKey)!;
+  project.sessionPlan!.destinations.set(canonical.file_id, path);
+  for (const [id, name] of mounts) project.sessionPlan!.mountedNames.set(id, name);
+  project.sessionPlan!.frozen = true;
+  source.tool_resources = { execute_code: { files: live ? [canonical] : [] } };
+  source.provisionState = {
+    codeEnvFiles: live ? [] : [canonical],
+    vectorDBFiles: [],
+    aliveFileIds: new Set(live ? [canonical.file_id] : []),
+    agentScopedFileIds: new Set(mounts.map(([id]) => id)),
+    codeEnvDestinations: new Map([[canonical.file_id, path], ...mounts]),
+    project: { ...project, projectFileIds: new Set([canonical.file_id]) },
+  };
+  return { source, project };
+}
+
+describe('run file execution host', () => {
+  afterEach(async () => {
+    await Promise.all([...sessions].map((session) => session.close()));
+    sessions.clear();
+    jest.restoreAllMocks();
+  });
 
   it.each([
     { projectCode: false, privateUpload: false },
@@ -381,33 +405,22 @@ describe('run file execution host', () => {
     async ({ projectCode, privateUpload }) => {
       const uploadContext = privateUpload ? FileContext.agents : FileContext.message_attachment;
       const records = ['upload', 'output'].map((id, index) =>
-        file(id, {
-          filename: 'results.csv',
-          conversationId: 'conversation',
-          context: index === 1 ? FileContext.execute_code : uploadContext,
-          createdAt: new Date(index + 1),
-          metadata: {
-            codeEnvRefs: {
-              'managed-worker': {
-                kind: index === 0 && privateUpload ? 'agent' : 'user',
-                id: index === 0 && privateUpload ? 'parent' : 'user',
-                file_id: `${id}-remote`,
-                storage_session_id: `${id}-store`,
-                sandboxFilename: 'results.csv',
-              },
-            },
+        storedFile(
+          id,
+          {
+            kind: index === 0 && privateUpload ? 'agent' : 'user',
+            id: index === 0 && privateUpload ? 'parent' : 'user',
+            sandboxFilename: 'results.csv',
           },
-        }),
+          {
+            filename: 'results.csv',
+            conversationId: 'conversation',
+            context: index === 1 ? FileContext.execute_code : uploadContext,
+            createdAt: new Date(index + 1),
+          },
+        ),
       );
-      const seed: CodeEnvFile[] = [
-        {
-          id: 'output-remote',
-          resource_id: 'user',
-          kind: 'user',
-          storage_session_id: 'output-store',
-          name: 'results.csv',
-        },
-      ];
+      const seed: CodeEnvFile[] = [seedFile('output', 'results.csv')];
       const h = harness({
         inputs: [],
         setup: [],
@@ -416,11 +429,8 @@ describe('run file execution host', () => {
         getCodeFileInfo: async (ref) =>
           ref.file_id === 'output-remote' ? null : { lastModified: new Date().toISOString() },
       });
-      h.req.config!.projects = configSchema.parse({
-        version: '1.3.9',
-        projects: { codeExecution: projectCode },
-      }).projects;
-      h.req.body = { conversationId: 'conversation' };
+      configureProject(h, undefined, projectCode);
+
       const privateFileIds = new Set(privateUpload ? ['upload'] : []);
       const initial = await selectCodeFiles({
         files: records,
@@ -437,23 +447,20 @@ describe('run file execution host', () => {
         agentScopedFileIds: privateFileIds,
       };
       h.provisionToCodeEnv.mockRejectedValue(new Error('Code API unavailable'));
-      try {
-        await h.host.session.prepareTools('parent', undefined, h.signal, 'snapshot');
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const delivered = await h.host.provisionPrepared(['bash_tool'], 'parent', h.signal);
-          expect(delivered).toBeUndefined();
-          const prior = { session_id: 'root', files: seed };
-          const merged = mergeCodeFilesIntoContext(prior, delivered) ?? prior;
-          expect(merged.files).toEqual(seed);
-        }
-        expect(h.getCodeFileInfo.mock.calls.every(([ref]) => ref.file_id === 'upload-remote')).toBe(
-          true,
-        );
-        expect(h.provisionToCodeEnv).not.toHaveBeenCalled();
-        expect(h.updateCodeEnvRef).not.toHaveBeenCalled();
-      } finally {
-        await h.host.session.close();
+
+      await h.host.session.prepareTools('parent', undefined, h.signal, 'snapshot');
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const delivered = await h.host.provisionPrepared(['bash_tool'], 'parent', h.signal);
+        expect(delivered).toBeUndefined();
+        const prior = { session_id: 'root', files: seed };
+        const merged = mergeCodeFilesIntoContext(prior, delivered) ?? prior;
+        expect(merged.files).toEqual(seed);
       }
+      expect(h.getCodeFileInfo.mock.calls.every(([ref]) => ref.file_id === 'upload-remote')).toBe(
+        true,
+      );
+      expect(h.provisionToCodeEnv).not.toHaveBeenCalled();
+      expect(h.updateCodeEnvRef).not.toHaveBeenCalled();
     },
   );
 
@@ -461,31 +468,17 @@ describe('run file execution host', () => {
     'reuses the raw name of a seeded generated output (project code=%s)',
     async (projectCode) => {
       const rawName = 'my results.csv';
-      const output = file('output', {
-        filename: sanitizeArtifactPath(rawName),
-        conversationId: 'conversation',
-        context: FileContext.execute_code,
-        metadata: {
-          codeEnvRefs: {
-            'managed-worker': {
-              kind: 'user',
-              id: 'user',
-              file_id: 'output-remote',
-              storage_session_id: 'output-store',
-            },
-          },
-        },
-      });
-      expect(output.filename).not.toBe(rawName);
-      const seed: CodeEnvFile[] = [
+      const output = storedFile(
+        'output',
+        {},
         {
-          id: 'output-remote',
-          resource_id: 'user',
-          kind: 'user',
-          storage_session_id: 'output-store',
-          name: rawName,
+          filename: sanitizeArtifactPath(rawName),
+          conversationId: 'conversation',
+          context: FileContext.execute_code,
         },
-      ];
+      );
+      expect(output.filename).not.toBe(rawName);
+      const seed: CodeEnvFile[] = [seedFile('output', rawName)];
       const h = harness({
         inputs: [],
         setup: [],
@@ -493,18 +486,7 @@ describe('run file execution host', () => {
         rootSeed: seed,
         getCodeFileInfo: async () => null,
       });
-      h.req.config!.projects = configSchema.parse({
-        version: '1.3.9',
-        projects: { codeExecution: projectCode },
-      }).projects;
-      h.req.body = { conversationId: 'conversation' };
-      h.req.chatProjectContext = {
-        projectId: 'project',
-        contextRevision: 0,
-        instructions: '',
-        resources: [],
-        file_ids: [output.file_id],
-      };
+      configureProject(h, [output.file_id], projectCode);
       const root = h.contexts.get('parent')!;
       const project = getProjectCodeScope(h.req, root.codeExecutionContext!.codeSessionKey);
       root.provisionState = {
@@ -516,27 +498,24 @@ describe('run file execution host', () => {
       };
       const canonical = structuredClone(output);
       h.provisionToCodeEnv.mockRejectedValue(new Error('Code API unavailable'));
-      try {
-        await h.host.session.prepareTools('parent', undefined, h.signal, 'snapshot');
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const delivered = await h.host.provisionPrepared(['bash_tool'], 'parent', h.signal);
-          expect(delivered).toBeUndefined();
-          const prior = { session_id: 'root', files: seed };
-          expect((mergeCodeFilesIntoContext(prior, delivered) ?? prior).files).toEqual(seed);
-        }
-        if (projectCode) {
-          expect(project?.sessionPlan?.mountedNames.get(output.file_id)).toBe(rawName);
-          expect((await h.host.session.list('parent')).code_file_context).toContain(
-            `/mnt/data/${rawName}`,
-          );
-        }
-        expect(h.getCodeFileInfo).not.toHaveBeenCalled();
-        expect(h.provisionToCodeEnv).not.toHaveBeenCalled();
-        expect(h.updateCodeEnvRef).not.toHaveBeenCalled();
-        expect(output).toEqual(canonical);
-      } finally {
-        await h.host.session.close();
+
+      await h.host.session.prepareTools('parent', undefined, h.signal, 'snapshot');
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const delivered = await h.host.provisionPrepared(['bash_tool'], 'parent', h.signal);
+        expect(delivered).toBeUndefined();
+        const prior = { session_id: 'root', files: seed };
+        expect((mergeCodeFilesIntoContext(prior, delivered) ?? prior).files).toEqual(seed);
       }
+      if (projectCode) {
+        expect(project?.sessionPlan?.mountedNames.get(output.file_id)).toBe(rawName);
+        expect((await h.host.session.list('parent')).code_file_context).toContain(
+          `/mnt/data/${rawName}`,
+        );
+      }
+      expect(h.getCodeFileInfo).not.toHaveBeenCalled();
+      expect(h.provisionToCodeEnv).not.toHaveBeenCalled();
+      expect(h.updateCodeEnvRef).not.toHaveBeenCalled();
+      expect(output).toEqual(canonical);
     },
   );
 
@@ -544,46 +523,21 @@ describe('run file execution host', () => {
     const h = harness({
       inputs: [],
       setup: [],
-      rootSeed: [
-        {
-          id: 'output-remote',
-          resource_id: 'user',
-          kind: 'user',
-          storage_session_id: 'output-store',
-          name: 'results.csv',
-        },
-      ],
+      rootSeed: [seedFile('output', 'results.csv')],
     });
-    h.req.config!.projects = configSchema.parse({
-      version: '1.3.9',
-      projects: { codeExecution: true },
-    }).projects;
-    h.req.chatProjectContext = {
-      projectId: 'project',
-      contextRevision: 0,
-      instructions: '',
-      resources: [],
-      file_ids: ['upload', 'output'],
-    };
-    h.req.body = { conversationId: 'conversation' };
+    configureProject(h, ['upload', 'output'], true);
+
     const records = ['upload', 'output'].map((id, index) =>
-      file(id, {
-        filename: 'results.csv',
-        conversationId: 'conversation',
-        context: index === 0 ? FileContext.message_attachment : FileContext.execute_code,
-        createdAt: new Date(index + 1),
-        metadata: {
-          codeEnvRefs: {
-            'managed-worker': {
-              kind: 'user',
-              id: 'user',
-              file_id: `${id}-remote`,
-              storage_session_id: `${id}-store`,
-              sandboxFilename: 'results.csv',
-            },
-          },
+      storedFile(
+        id,
+        { sandboxFilename: 'results.csv' },
+        {
+          filename: 'results.csv',
+          conversationId: 'conversation',
+          context: index === 0 ? FileContext.message_attachment : FileContext.execute_code,
+          createdAt: new Date(index + 1),
         },
-      }),
+      ),
     );
     h.req.chatProjectFiles = structuredClone(records);
     const root = h.contexts.get('parent')!;
@@ -642,23 +596,16 @@ describe('run file execution host', () => {
 
   it('replaces only the recovered record among same-named stored files', async () => {
     const records = ['upload', 'output'].map((id, index) =>
-      file(id, {
-        filename: 'results.csv',
-        conversationId: 'conversation',
-        createdAt: new Date(index + 1),
-        context: index === 0 ? FileContext.message_attachment : FileContext.execute_code,
-        metadata: {
-          codeEnvRefs: {
-            'managed-worker': {
-              kind: 'user',
-              id: 'user',
-              file_id: `${id}-remote`,
-              storage_session_id: `${id}-store`,
-              sandboxFilename: 'results.csv',
-            },
-          },
+      storedFile(
+        id,
+        { sandboxFilename: 'results.csv' },
+        {
+          filename: 'results.csv',
+          conversationId: 'conversation',
+          createdAt: new Date(index + 1),
+          context: index === 0 ? FileContext.message_attachment : FileContext.execute_code,
         },
-      }),
+      ),
     );
     const h = harness({
       inputs: [],
@@ -676,21 +623,18 @@ describe('run file execution host', () => {
       aliveFileIds: new Set(['upload', 'output']),
       agentScopedFileIds: new Set(),
     };
-    try {
-      const delivered = await h.host.provision(['bash_tool'], 'parent', h.signal);
-      expect(delivered).toEqual([
-        expect.objectContaining({
-          id: 'remote-output',
-          name: 'results.csv',
-          replaces: [{ id: 'output-remote', storage_session_id: 'output-store' }],
-        }),
-      ]);
-      expect(h.provisionToCodeEnv.mock.calls.map(([params]) => params.file.file_id)).toEqual([
-        'output',
-      ]);
-    } finally {
-      await h.host.session.close();
-    }
+
+    const delivered = await h.host.provision(['bash_tool'], 'parent', h.signal);
+    expect(delivered).toEqual([
+      expect.objectContaining({
+        id: 'remote-output',
+        name: 'results.csv',
+        replaces: [{ id: 'output-remote', storage_session_id: 'output-store' }],
+      }),
+    ]);
+    expect(h.provisionToCodeEnv.mock.calls.map(([params]) => params.file.file_id)).toEqual([
+      'output',
+    ]);
   });
 
   it.each([
@@ -700,46 +644,22 @@ describe('run file execution host', () => {
   ])(
     'delivers a newer publication over a seeded upload (project code=$projectCode, project chat=$projectChat)',
     async ({ projectCode, projectChat }) => {
-      const upload = file('upload', {
-        filename: 'results.csv',
-        conversationId: 'conversation',
-        createdAt: new Date(Date.now() - 60_000),
-        metadata: {
-          codeEnvRefs: {
-            'managed-worker': {
-              kind: 'user',
-              id: 'user',
-              file_id: 'upload-remote',
-              storage_session_id: 'upload-store',
-              sandboxFilename: 'results.csv',
-            },
-          },
-        },
-      });
-      const seed: CodeEnvFile[] = [
+      const upload = storedFile(
+        'upload',
+        { sandboxFilename: 'results.csv' },
         {
-          id: 'upload-remote',
-          resource_id: 'user',
-          kind: 'user',
-          storage_session_id: 'upload-store',
-          name: 'results.csv',
+          filename: 'results.csv',
+          conversationId: 'conversation',
+          createdAt: new Date(Date.now() - 60_000),
         },
-      ];
+      );
+      const seed: CodeEnvFile[] = [seedFile('upload', 'results.csv')];
       const h = harness({ inputs: [], rootFiles: [upload], rootSeed: seed });
-      h.req.config!.projects = configSchema.parse({
-        version: '1.3.9',
-        projects: { codeExecution: projectCode },
-      }).projects;
-      h.req.body = { conversationId: 'conversation' };
+      configureProject(h, undefined, projectCode);
+
       const root = h.contexts.get('parent')!;
       if (projectChat) {
-        h.req.chatProjectContext = {
-          projectId: 'project',
-          contextRevision: 0,
-          instructions: '',
-          resources: [],
-          file_ids: [],
-        };
+        configureProject(h, []);
       }
       const project = getProjectCodeScope(h.req, root.codeExecutionContext!.codeSessionKey);
       if (project?.sessionPlan) {
@@ -753,80 +673,77 @@ describe('run file execution host', () => {
         agentScopedFileIds: new Set(),
         project,
       };
-      try {
-        await h.prepare();
-        await h.publishOutput(identity(), 'results');
-        await h.host.session.list('parent');
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const delivered = await h.host.provision(['bash_tool'], 'parent', h.signal);
-          const prior = { session_id: 'root', files: seed };
-          const merged = mergeCodeFilesIntoContext(prior, delivered) ?? prior;
-          if (projectChat) {
-            expect(delivered).toHaveLength(1);
-            expect(delivered?.[0]?.name).toMatch(/^results-.+\.csv$/);
-            expect(delivered?.[0]?.replaces).not.toContainEqual({
-              id: 'upload-remote',
-              storage_session_id: 'upload-store',
-            });
-            expect(merged.files.map((file) => file.name)).toEqual([
-              'results.csv',
-              delivered?.[0]?.name,
-            ]);
-          } else {
-            expect(delivered).toEqual([
-              expect.objectContaining({
-                id: 'results',
-                name: 'results.csv',
-                replaces: [{ id: 'upload-remote', storage_session_id: 'upload-store' }],
-              }),
-            ]);
-            expect(merged.files.map((file) => [file.id, file.name])).toEqual([
-              ['results', 'results.csv'],
-            ]);
-          }
-        }
-        if (!projectChat) {
-          const second = identity('second');
-          await h.prepare(second);
-          await h.publishOutput(second, 'next-results', 'results.csv');
-          const secondPublication = h.saved[1]!;
-          secondPublication.createdAt = new Date(Date.now() + 1_000);
-          const firstPublication = h.saved[0]!;
-          const firstRef = firstPublication.metadata!.codeEnvRefs!['managed-worker']!;
-          const secondRef = secondPublication.metadata!.codeEnvRefs!['managed-worker']!;
-          const delivered = await h.host.provision(['bash_tool'], 'parent', h.signal);
+
+      await h.prepare();
+      await h.publishOutput(identity(), 'results');
+      await h.host.session.list('parent');
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const delivered = await h.host.provision(['bash_tool'], 'parent', h.signal);
+        const prior = { session_id: 'root', files: seed };
+        const merged = mergeCodeFilesIntoContext(prior, delivered) ?? prior;
+        if (projectChat) {
+          expect(delivered).toHaveLength(1);
+          expect(delivered?.[0]?.name).toMatch(/^results-.+\.csv$/);
+          expect(delivered?.[0]?.replaces).not.toContainEqual({
+            id: 'upload-remote',
+            storage_session_id: 'upload-store',
+          });
+          expect(merged.files.map((file) => file.name)).toEqual([
+            'results.csv',
+            delivered?.[0]?.name,
+          ]);
+        } else {
           expect(delivered).toEqual([
             expect.objectContaining({
-              id: secondRef.file_id,
-              storage_session_id: secondRef.storage_session_id,
+              id: 'results',
               name: 'results.csv',
-              replaces: expect.arrayContaining([
-                { id: firstRef.file_id, storage_session_id: firstRef.storage_session_id },
-                { id: 'upload-remote', storage_session_id: 'upload-store' },
-              ]),
+              replaces: [{ id: 'upload-remote', storage_session_id: 'upload-store' }],
             }),
           ]);
-          const merged = mergeCodeFilesIntoContext(
-            {
-              session_id: 'root',
-              files: [
-                {
-                  id: firstRef.file_id,
-                  storage_session_id: firstRef.storage_session_id,
-                  name: 'results.csv',
-                  kind: 'user',
-                  resource_id: 'user',
-                },
-              ],
-            },
-            delivered,
-          );
-          expect(
-            merged?.files.map((file) => [file.id, file.storage_session_id, file.name]),
-          ).toEqual([[secondRef.file_id, secondRef.storage_session_id, 'results.csv']]);
+          expect(merged.files.map((file) => [file.id, file.name])).toEqual([
+            ['results', 'results.csv'],
+          ]);
         }
-      } finally {
-        await h.host.session.close();
+      }
+      if (!projectChat) {
+        const second = identity('second');
+        await h.prepare(second);
+        await h.publishOutput(second, 'next-results', 'results.csv');
+        const secondPublication = h.saved[1]!;
+        secondPublication.createdAt = new Date(Date.now() + 1_000);
+        const firstPublication = h.saved[0]!;
+        const firstRef = firstPublication.metadata!.codeEnvRefs!['managed-worker']!;
+        const secondRef = secondPublication.metadata!.codeEnvRefs!['managed-worker']!;
+        const delivered = await h.host.provision(['bash_tool'], 'parent', h.signal);
+        expect(delivered).toEqual([
+          expect.objectContaining({
+            id: secondRef.file_id,
+            storage_session_id: secondRef.storage_session_id,
+            name: 'results.csv',
+            replaces: expect.arrayContaining([
+              { id: firstRef.file_id, storage_session_id: firstRef.storage_session_id },
+              { id: 'upload-remote', storage_session_id: 'upload-store' },
+            ]),
+          }),
+        ]);
+        const merged = mergeCodeFilesIntoContext(
+          {
+            session_id: 'root',
+            files: [
+              {
+                id: firstRef.file_id,
+                storage_session_id: firstRef.storage_session_id,
+                name: 'results.csv',
+                kind: 'user',
+                resource_id: 'user',
+              },
+            ],
+          },
+          delivered,
+        );
+        expect(merged?.files.map((file) => [file.id, file.storage_session_id, file.name])).toEqual([
+          [secondRef.file_id, secondRef.storage_session_id, 'results.csv'],
+        ]);
       }
     },
   );
@@ -839,36 +756,18 @@ describe('run file execution host', () => {
   ])(
     'preserves a peer seed only in the same code partition (project code=$projectCode, shared=$shared)',
     async ({ projectCode, peer, shared }) => {
-      const upload = file('upload', {
-        filename: 'results.csv',
-        conversationId: 'conversation',
-        createdAt: new Date(Date.now() - 60_000),
-        metadata: {
-          codeEnvRefs: {
-            'managed-worker': {
-              kind: 'user',
-              id: 'user',
-              file_id: 'upload-remote',
-              storage_session_id: 'upload-store',
-              sandboxFilename: 'results.csv',
-            },
-          },
-        },
-      });
-      const seed: CodeEnvFile[] = [
+      const upload = storedFile(
+        'upload',
+        { sandboxFilename: 'results.csv' },
         {
-          id: 'upload-remote',
-          resource_id: 'user',
-          kind: 'user',
-          storage_session_id: 'upload-store',
-          name: 'results.csv',
+          filename: 'results.csv',
+          conversationId: 'conversation',
+          createdAt: new Date(Date.now() - 60_000),
         },
-      ];
+      );
+      const seed: CodeEnvFile[] = [seedFile('upload', 'results.csv')];
       const h = harness({ inputs: [], rootFiles: [upload], rootSeed: seed, peer });
-      h.req.config!.projects = configSchema.parse({
-        version: '1.3.9',
-        projects: { codeExecution: projectCode },
-      }).projects;
+      configureProject(h, undefined, projectCode);
       for (const id of ['parent', 'peer']) {
         h.contexts.get(id)!.provisionState = {
           codeEnvFiles: [],
@@ -877,145 +776,43 @@ describe('run file execution host', () => {
           agentScopedFileIds: new Set(),
         };
       }
-      try {
-        const initial = await selectCodeFiles({
-          files: [upload],
-          routeKey: 'managed-worker',
-          getFileInfo: async () => ({ lastModified: new Date().toISOString() }),
-        });
-        expect(initial.selected.map((file) => [file.file.file_id, file.sandboxName])).toEqual([
-          ['upload', 'results.csv'],
+
+      const initial = await selectCodeFiles({
+        files: [upload],
+        routeKey: 'managed-worker',
+        getFileInfo: async () => ({ lastModified: new Date().toISOString() }),
+      });
+      expect(initial.selected.map((file) => [file.file.file_id, file.sandboxName])).toEqual([
+        ['upload', 'results.csv'],
+      ]);
+      await h.prepare();
+      await h.publishOutput(identity(), 'results');
+      const delivered = await h.host.provision(['bash_tool'], 'parent', h.signal);
+      const prior = { session_id: 'root', files: seed };
+      const mounted = mergeCodeFilesIntoContext(prior, delivered) ?? prior;
+      if (shared) {
+        expect(delivered?.[0]?.replaces).toBeUndefined();
+        expect(mounted.files).toEqual(seed);
+        const peerListing = await h.host.session.list('peer');
+        expect(peerListing.files).toEqual([]);
+        const peerFiles = await h.host.provision(['bash_tool'], 'peer', h.signal);
+        expect(peerFiles).toBeUndefined();
+        expect((mergeCodeFilesIntoContext(mounted, peerFiles) ?? mounted).files).toEqual(seed);
+      } else {
+        expect(delivered?.[0]?.replaces).toEqual([
+          { id: 'upload-remote', storage_session_id: 'upload-store' },
         ]);
-        await h.prepare();
-        await h.publishOutput(identity(), 'results');
-        const delivered = await h.host.provision(['bash_tool'], 'parent', h.signal);
-        const prior = { session_id: 'root', files: seed };
-        const mounted = mergeCodeFilesIntoContext(prior, delivered) ?? prior;
-        if (shared) {
-          expect(delivered?.[0]?.replaces).toBeUndefined();
-          expect(mounted.files).toEqual(seed);
-          const peerListing = await h.host.session.list('peer');
-          expect(peerListing.files).toEqual([]);
-          const peerFiles = await h.host.provision(['bash_tool'], 'peer', h.signal);
-          expect(peerFiles).toBeUndefined();
-          expect((mergeCodeFilesIntoContext(mounted, peerFiles) ?? mounted).files).toEqual(seed);
-        } else {
-          expect(delivered?.[0]?.replaces).toEqual([
-            { id: 'upload-remote', storage_session_id: 'upload-store' },
-          ]);
-          expect(mounted.files.map((file) => [file.id, file.name])).toEqual([
-            ['results', 'results.csv'],
-          ]);
-        }
-      } finally {
-        await h.host.session.close();
+        expect(mounted.files.map((file) => [file.id, file.name])).toEqual([
+          ['results', 'results.csv'],
+        ]);
       }
     },
   );
 
-  it('mounts every announced path when a child receives a same-named publication and upload', async () => {
-    const input = file('input', {
-      filename: 'results.csv',
-      metadata: {
-        codeEnvRefs: {
-          'managed-worker': {
-            kind: 'user',
-            id: 'user',
-            file_id: 'input-remote',
-            storage_session_id: 'input-store',
-            sandboxFilename: 'results.csv',
-          },
-        },
-      },
-    });
-    const h = harness({ inputs: [input], setup: [] });
-    h.req.config!.projects = configSchema.parse({
-      version: '1.3.9',
-      projects: { codeExecution: true },
-    }).projects;
-    h.req.config!.endpoints!.agents!.fileSharing!.allowSiblingSharing = true;
-    h.req.chatProjectContext = {
-      projectId: 'project',
-      contextRevision: 0,
-      instructions: '',
-      resources: [],
-      file_ids: ['project-file'],
-    };
-    h.req.body = { conversationId: 'conversation' };
-    const canonical = file('project-file', {
-      filename: 'other.csv',
-      conversationId: 'other',
-      metadata: {
-        codeEnvRefs: {
-          'managed-worker': {
-            kind: 'user',
-            id: 'user',
-            file_id: 'project-remote',
-            storage_session_id: 'project-store',
-            sandboxFilename: 'other.csv',
-          },
-        },
-      },
-    });
-    h.req.chatProjectFiles = [canonical];
-    const source = h.contexts.get('worker')!;
-    const project = getProjectCodeScope(h.req, source.codeExecutionContext!.codeSessionKey)!;
-    project.sessionPlan!.destinations.set(canonical.file_id, 'other.csv');
-    project.sessionPlan!.frozen = true;
-    source.tool_resources = { execute_code: { files: [] } };
-    source.provisionState = {
-      codeEnvFiles: [canonical],
-      vectorDBFiles: [],
-      aliveFileIds: new Set(),
-      agentScopedFileIds: new Set(),
-      codeEnvDestinations: new Map([[canonical.file_id, 'other.csv']]),
-      project: { ...project, projectFileIds: new Set([canonical.file_id]) },
-    };
-    const producer = identity('producer');
-    const reader = identity('reader');
-    await h.prepare(producer);
-    await h.host.session.capture('worker', producer, 'produce', {
-      session_id: 'private-producer',
-      files: [{ id: 'results', name: 'results.csv' }],
-    });
-    const artifact = (await h.host.session.list('worker', producer)).artifacts[0];
-    const published = await h.host.session.publish(
-      'worker',
-      producer,
-      artifact.artifact_id,
-      ['worker'],
-      h.signal,
-    );
-    const prepared = await h.prepare(reader);
-    const listing = await h.host.session.list('worker', reader, h.signal);
-    const delivered = await h.host.provision(['bash_tool'], 'worker', h.signal, reader);
-    const names = new Set(delivered?.map((entry) => `/mnt/data/${entry.name}`));
-    expect(listing.files.map((entry) => entry.file_id)).toEqual(
-      expect.arrayContaining(['input', published.file_id]),
-    );
-    for (const entry of listing.files) {
-      expect(entry.code_path).toBeDefined();
-      expect(names.has(entry.code_path!)).toBe(true);
-      expect(String(prepared.messages?.[0].content)).toContain(entry.code_path!);
-    }
-    expect(names.size).toBe(3);
-    await h.host.session.close();
-  });
-
   it('keeps authorized project inputs and their advertised paths in isolated child sessions', async () => {
     const h = harness({ inputs: [], setup: [file('worker-setup', { filename: 'results.csv' })] });
-    h.req.config!.projects = configSchema.parse({
-      version: '1.3.9',
-      projects: { codeExecution: true },
-    }).projects;
-    h.req.chatProjectContext = {
-      projectId: 'project',
-      contextRevision: 0,
-      instructions: '',
-      resources: [],
-      file_ids: ['project-file', 'unadmitted-project'],
-    };
-    h.req.body = { conversationId: 'conversation' };
+    configureProject(h, ['project-file', 'unadmitted-project'], true);
+
     const ref = {
       kind: 'user' as const,
       id: 'user',
@@ -1023,18 +820,17 @@ describe('run file execution host', () => {
       storage_session_id: 'project-store',
       sandboxFilename: 'results.csv',
     };
-    const canonical = file('project-file', {
+    const canonical = storedFile('project-file', ref, {
       filename: 'results.csv',
       conversationId: 'other',
-      metadata: { codeEnvRefs: { 'managed-worker': ref } },
     });
-    h.req.chatProjectFiles = [canonical, file('unadmitted-project')];
-    const source = h.contexts.get('worker')!;
-    const project = getProjectCodeScope(h.req, source.codeExecutionContext!.codeSessionKey)!;
-    project.sessionPlan!.destinations.set(canonical.file_id, 'results-project.csv');
-    project.sessionPlan!.mountedNames.set('worker-setup', 'results.csv');
+    const { source, project } = projectMount(h, canonical, {
+      live: true,
+      path: 'results-project.csv',
+      mounts: [['worker-setup', 'results.csv']],
+    });
+    h.req.chatProjectFiles!.push(file('unadmitted-project'));
     project.sessionPlan!.mountedNames.set('historical', 'private.csv');
-    project.sessionPlan!.frozen = true;
     source.tool_resources = {
       execute_code: {
         files: [
@@ -1054,65 +850,49 @@ describe('run file execution host', () => {
         ],
       },
     };
-    source.provisionState = {
-      codeEnvFiles: [],
-      vectorDBFiles: [],
-      aliveFileIds: new Set([canonical.file_id]),
-      agentScopedFileIds: new Set(['worker-setup']),
-      codeEnvDestinations: new Map([
-        [canonical.file_id, 'results-project.csv'],
-        ['worker-setup', 'results.csv'],
-      ]),
-      project: { ...project, projectFileIds: new Set([canonical.file_id]) },
-    };
     const executions = [identity('first'), identity('second')];
-    try {
-      await Promise.all(executions.map((execution) => h.prepare(execution)));
-      for (const execution of executions) {
-        const context = h.host.getContext('worker', execution)!;
-        expect(context.provisionState?.codeEnvFiles.map((file) => file.file_id).sort()).toEqual([
-          'project-file',
-          'worker-setup',
-        ]);
-        expect(context.provisionState?.project?.projectFileIds).toEqual(new Set(['project-file']));
-        const plan = context.provisionState?.project?.sessionPlan;
-        expect(plan?.destinations.get(canonical.file_id)).toBe('results-project.csv');
-        expect(plan?.mountedNames.has('historical')).toBe(false);
-        expect(plan).not.toBe(project.sessionPlan);
-        expect(h.req.projectCodeSessions?.get(context.codeSessionKey!)).toBe(plan);
-        const mounted = await h.host.provision(
-          [Constants.EXECUTE_CODE, EToolResources.file_search],
-          'worker',
-          h.signal,
-          execution,
-        );
-        expect(mounted?.map((file) => file.name).sort()).toEqual(
-          ['results-project.csv', 'results.csv'].sort(),
-        );
-      }
-      expect(
-        h.host.getContext('worker', executions[0])?.provisionState?.project?.sessionPlan,
-      ).not.toBe(h.host.getContext('worker', executions[1])?.provisionState?.project?.sessionPlan);
-      expect(
-        h.provisionToCodeEnv.mock.calls.filter(
-          ([input]) => input.file.file_id === canonical.file_id,
-        ),
-      ).toHaveLength(1);
-      expect(
-        h.provisionToCodeEnv.mock.calls
-          .filter(([input]) => input.file.file_id === canonical.file_id)
-          .every(([input]) => input.entity_id == null),
-      ).toBe(true);
-      expect(h.updateCodeEnvRef.mock.calls).toHaveLength(2);
-      expect(h.provisionToVectorDB.mock.calls.map(([input]) => input.file.file_id)).toEqual([
-        'worker-setup',
+
+    await Promise.all(executions.map((execution) => h.prepare(execution)));
+    for (const execution of executions) {
+      const context = h.host.getContext('worker', execution)!;
+      expect(context.provisionState?.codeEnvFiles.map((file) => file.file_id).sort()).toEqual([
+        'project-file',
         'worker-setup',
       ]);
-      expect(h.req.chatProjectFiles[0].metadata?.codeEnvRefs?.['managed-worker']).toEqual(ref);
-      expect(source.provisionState.project?.sessionPlan).toBe(project.sessionPlan);
-    } finally {
-      await h.host.session.close();
+      expect(context.provisionState?.project?.projectFileIds).toEqual(new Set(['project-file']));
+      const plan = context.provisionState?.project?.sessionPlan;
+      expect(plan?.destinations.get(canonical.file_id)).toBe('results-project.csv');
+      expect(plan?.mountedNames.has('historical')).toBe(false);
+      expect(plan).not.toBe(project.sessionPlan);
+      expect(h.req.projectCodeSessions?.get(context.codeSessionKey!)).toBe(plan);
+      const mounted = await h.host.provision(
+        [Constants.EXECUTE_CODE, EToolResources.file_search],
+        'worker',
+        h.signal,
+        execution,
+      );
+      expect(mounted?.map((file) => file.name).sort()).toEqual(
+        ['results-project.csv', 'results.csv'].sort(),
+      );
     }
+    expect(
+      h.host.getContext('worker', executions[0])?.provisionState?.project?.sessionPlan,
+    ).not.toBe(h.host.getContext('worker', executions[1])?.provisionState?.project?.sessionPlan);
+    expect(
+      h.provisionToCodeEnv.mock.calls.filter(([input]) => input.file.file_id === canonical.file_id),
+    ).toHaveLength(1);
+    expect(
+      h.provisionToCodeEnv.mock.calls
+        .filter(([input]) => input.file.file_id === canonical.file_id)
+        .every(([input]) => input.entity_id == null),
+    ).toBe(true);
+    expect(h.updateCodeEnvRef.mock.calls).toHaveLength(2);
+    expect(h.provisionToVectorDB.mock.calls.map(([input]) => input.file.file_id)).toEqual([
+      'worker-setup',
+      'worker-setup',
+    ]);
+    expect(h.req.chatProjectFiles![0].metadata?.codeEnvRefs?.['managed-worker']).toEqual(ref);
+    expect(source.provisionState!.project?.sessionPlan).toBe(project.sessionPlan);
   });
 
   it.each([
@@ -1130,10 +910,9 @@ describe('run file execution host', () => {
         file_id: 'original-setup',
         ...(named ? { sandboxFilename: 'results.csv' } : {}),
       };
-      const setup = file('worker-setup', {
+      const setup = storedFile('worker-setup', setupRef, {
         filename: 'results.csv',
         context: FileContext.agents,
-        metadata: { codeEnvRefs: { 'managed-worker': setupRef } },
       });
       let expired = false;
       const h = harness({
@@ -1147,48 +926,28 @@ describe('run file execution host', () => {
           originalFilename: ref.sandboxFilename ?? 'results.csv',
         }),
       });
-      h.req.config!.projects = configSchema.parse({
-        version: '1.3.9',
-        projects: { codeExecution: true },
-      }).projects;
-      h.req.body = { conversationId: 'conversation' };
-      h.req.chatProjectContext = {
-        projectId: 'project',
-        contextRevision: 0,
-        instructions: '',
-        resources: [],
-        file_ids: ['project-file'],
-      };
-      const canonical = file('project-file', {
-        filename: 'results.csv',
-        conversationId: 'other',
-        metadata: {
-          codeEnvRefs: {
-            'managed-worker': {
-              kind: 'user',
-              id: 'user',
-              storage_session_id: 'project-storage',
-              file_id: 'original-project',
-              sandboxFilename: 'results.csv',
-            },
-          },
+      configureProject(h, ['project-file']);
+      const canonical = storedFile(
+        'project-file',
+        {
+          storage_session_id: 'project-storage',
+          file_id: 'original-project',
+          sandboxFilename: 'results.csv',
         },
-      });
-      h.req.chatProjectFiles = [canonical];
-      const source = h.contexts.get('worker')!;
-      const project = getProjectCodeScope(h.req, source.codeExecutionContext!.codeSessionKey)!;
+        {
+          filename: 'results.csv',
+          conversationId: 'other',
+        },
+      );
       const setupName = temporary ? 'results-private.csv' : 'results.csv';
-      project.sessionPlan!.destinations.set(canonical.file_id, 'results-project.csv');
-      project.sessionPlan!.mountedNames.set(setup.file_id, setupName);
-      project.sessionPlan!.frozen = true;
-      source.tool_resources = { execute_code: { files: [setup, canonical] } };
-      source.provisionState = {
-        codeEnvFiles: [],
-        vectorDBFiles: [],
-        aliveFileIds: new Set([setup.file_id, canonical.file_id]),
-        agentScopedFileIds: new Set([setup.file_id]),
-        project,
-      };
+      projectMount(h, canonical, {
+        live: true,
+        path: 'results-project.csv',
+        mounts: [[setup.file_id, setupName]],
+      });
+      const source = h.contexts.get('worker')!;
+      source.tool_resources!.execute_code!.files!.unshift(setup);
+      source.provisionState!.aliveFileIds.add(setup.file_id);
       if (temporary) {
         await saveCodeFileReference({
           req: h.req,
@@ -1201,77 +960,70 @@ describe('run file execution host', () => {
           },
         });
       }
-      try {
-        await h.prepare();
-        const context = h.host.getContext('worker', identity())!;
-        expect(context.provisionState?.codeEnvFiles.map((file) => file.file_id)).toEqual([
-          canonical.file_id,
-        ]);
-        const first = await h.host.provisionPrepared(
-          [Constants.BASH_TOOL],
-          'worker',
-          h.signal,
-          identity(),
-        );
-        expect(first).toHaveLength(2);
-        expect(first).toContainEqual(
-          expect.objectContaining({
-            id: temporary ? 'initial-setup-alias' : setupRef.file_id,
-            name: setupName,
-            kind: 'agent',
-            resource_id: 'worker',
-          }),
-        );
-        expect(first?.map((file) => file.name).sort()).toEqual(
-          [setupName, 'results-project.csv'].sort(),
-        );
-        expect(h.provisionToCodeEnv.mock.calls.map(([params]) => params.file.file_id)).toEqual([
-          canonical.file_id,
-        ]);
 
-        expired = true;
-        const recovered = await h.host.provision(
-          [Constants.BASH_TOOL],
-          'worker',
-          h.signal,
-          identity(),
-        );
-        expect(recovered).toHaveLength(2);
-        expect(recovered).toContainEqual(
-          expect.objectContaining({
-            id: 'remote-worker-setup',
-            name: setupName,
-            replaces: expect.arrayContaining([
-              {
-                id: temporary ? 'initial-setup-alias' : setupRef.file_id,
-                storage_session_id: setupRef.storage_session_id,
-              },
-            ]),
-          }),
-        );
-        const refreshed = mergeCodeFilesIntoContext(
-          { session_id: 'existing-child', files: first },
-          recovered,
-        );
-        expect(refreshed?.session_id).toBe('existing-child');
-        expect(refreshed?.files.find((entry) => entry.name === setupName)?.id).toBe(
-          'remote-worker-setup',
-        );
-        expect(
-          h.provisionToCodeEnv.mock.calls.filter(
-            ([params]) => params.file.file_id === setup.file_id,
-          ),
-        ).toEqual([[expect.objectContaining({ entity_id: 'worker', sandboxFilename: setupName })]]);
-        expect(
-          h.updateCodeEnvRef.mock.calls.filter(([update]) => update.file_id === setup.file_id),
-        ).toHaveLength(temporary ? 0 : 1);
-        expect(setup.metadata?.codeEnvRefs?.['managed-worker']).toEqual(setupRef);
-        expect(canonical.metadata?.codeEnvRefs?.['managed-worker']?.file_id).toBe(
-          'original-project',
-        );
-      } finally {
-        await h.host.session.close();
-      }
+      await h.prepare();
+      const context = h.host.getContext('worker', identity())!;
+      expect(context.provisionState?.codeEnvFiles.map((file) => file.file_id)).toEqual([
+        canonical.file_id,
+      ]);
+      const first = await h.host.provisionPrepared(
+        [Constants.BASH_TOOL],
+        'worker',
+        h.signal,
+        identity(),
+      );
+      expect(first).toHaveLength(2);
+      expect(first).toContainEqual(
+        expect.objectContaining({
+          id: temporary ? 'initial-setup-alias' : setupRef.file_id,
+          name: setupName,
+          kind: 'agent',
+          resource_id: 'worker',
+        }),
+      );
+      expect(first?.map((file) => file.name).sort()).toEqual(
+        [setupName, 'results-project.csv'].sort(),
+      );
+      expect(h.provisionToCodeEnv.mock.calls.map(([params]) => params.file.file_id)).toEqual([
+        canonical.file_id,
+      ]);
+
+      expired = true;
+      const recovered = await h.host.provision(
+        [Constants.BASH_TOOL],
+        'worker',
+        h.signal,
+        identity(),
+      );
+      expect(recovered).toHaveLength(2);
+      expect(recovered).toContainEqual(
+        expect.objectContaining({
+          id: 'remote-worker-setup',
+          name: setupName,
+          replaces: expect.arrayContaining([
+            {
+              id: temporary ? 'initial-setup-alias' : setupRef.file_id,
+              storage_session_id: setupRef.storage_session_id,
+            },
+          ]),
+        }),
+      );
+      const refreshed = mergeCodeFilesIntoContext(
+        { session_id: 'existing-child', files: first },
+        recovered,
+      );
+      expect(refreshed?.session_id).toBe('existing-child');
+      expect(refreshed?.files.find((entry) => entry.name === setupName)?.id).toBe(
+        'remote-worker-setup',
+      );
+      expect(
+        h.provisionToCodeEnv.mock.calls.filter(([params]) => params.file.file_id === setup.file_id),
+      ).toEqual([[expect.objectContaining({ entity_id: 'worker', sandboxFilename: setupName })]]);
+      expect(
+        h.updateCodeEnvRef.mock.calls.filter(([update]) => update.file_id === setup.file_id),
+      ).toHaveLength(temporary ? 0 : 1);
+      expect(setup.metadata?.codeEnvRefs?.['managed-worker']).toEqual(setupRef);
+      expect(canonical.metadata?.codeEnvRefs?.['managed-worker']?.file_id).toBe('original-project');
     },
   );
 
@@ -1286,35 +1038,31 @@ describe('run file execution host', () => {
     const h = harness({
       inputs: [],
       setup: [
-        file('worker-setup', {
+        storedFile('worker-setup', ref, {
           context: FileContext.agents,
           filename: 'setup.csv',
-          metadata: { codeEnvRefs: { 'managed-worker': ref } },
         }),
       ],
     });
-    try {
-      await h.prepare();
-      const mounted = await h.host.provisionPrepared(
-        [Constants.BASH_TOOL],
-        'worker',
-        h.signal,
-        identity(),
-      );
-      expect(mounted).toEqual([
-        {
-          id: ref.file_id,
-          resource_id: 'worker',
-          storage_session_id: ref.storage_session_id,
-          name: 'setup.csv',
-          kind: 'agent',
-        },
-      ]);
-      expect(h.provisionToCodeEnv).not.toHaveBeenCalled();
-      expect(h.updateCodeEnvRef).not.toHaveBeenCalled();
-    } finally {
-      await h.host.session.close();
-    }
+
+    await h.prepare();
+    const mounted = await h.host.provisionPrepared(
+      [Constants.BASH_TOOL],
+      'worker',
+      h.signal,
+      identity(),
+    );
+    expect(mounted).toEqual([
+      {
+        id: ref.file_id,
+        resource_id: 'worker',
+        storage_session_id: ref.storage_session_id,
+        name: 'setup.csv',
+        kind: 'agent',
+      },
+    ]);
+    expect(h.provisionToCodeEnv).not.toHaveBeenCalled();
+    expect(h.updateCodeEnvRef).not.toHaveBeenCalled();
   });
 
   it.each([false, true])(
@@ -1324,19 +1072,9 @@ describe('run file execution host', () => {
         inputs: [file('input', { bytes: 600_000 })],
         setup: withSetup ? [file('worker-setup', { bytes: 200_000 })] : [],
       });
-      h.req.config!.projects = configSchema.parse({
-        version: '1.3.9',
-        projects: { codeExecution: true },
-      }).projects;
+      configureProject(h, ['project-file']);
       h.req.config!.fileConfig = { endpoints: { openAI: { totalSizeLimit: 1 } } };
-      h.req.chatProjectContext = {
-        projectId: 'project',
-        contextRevision: 0,
-        instructions: '',
-        resources: [],
-        file_ids: ['project-file'],
-      };
-      h.req.body = { conversationId: 'conversation' };
+
       const source = h.contexts.get('worker')!;
       source.provisionState = {
         codeEnvFiles: [file('project-file', { bytes: 600_000 })],
@@ -1345,160 +1083,69 @@ describe('run file execution host', () => {
         agentScopedFileIds: new Set(),
         project: { projectFileIds: new Set(['project-file']), conversationId: 'conversation' },
       };
-      try {
-        await h.prepare();
-        const context = h.host.getContext('worker', identity())!;
-        expect(context.provisionState?.codeEnvFiles.map((file) => file.file_id).sort()).toEqual(
-          withSetup ? ['input', 'worker-setup'] : ['input'],
-        );
-        const mounted = await h.host.provision(
-          [Constants.EXECUTE_CODE],
-          'worker',
-          h.signal,
-          identity(),
-        );
-        expect(mounted).toHaveLength(withSetup ? 2 : 1);
-        expect(
-          h.provisionToCodeEnv.mock.calls.some(([input]) => input.file.file_id === 'project-file'),
-        ).toBe(false);
-        if (withSetup) expect(h.loadFiles).toHaveBeenCalledTimes(1);
-      } finally {
-        await h.host.session.close();
-      }
+
+      await h.prepare();
+      const context = h.host.getContext('worker', identity())!;
+      expect(context.provisionState?.codeEnvFiles.map((file) => file.file_id).sort()).toEqual(
+        withSetup ? ['input', 'worker-setup'] : ['input'],
+      );
+      const mounted = await h.host.provision(
+        [Constants.EXECUTE_CODE],
+        'worker',
+        h.signal,
+        identity(),
+      );
+      expect(mounted).toHaveLength(withSetup ? 2 : 1);
+      expect(
+        h.provisionToCodeEnv.mock.calls.some(([input]) => input.file.file_id === 'project-file'),
+      ).toBe(false);
+      if (withSetup) expect(h.loadFiles).toHaveBeenCalledTimes(1);
     },
   );
 
-  it('reserves the real storage name of a generated run file before project imports', async () => {
-    const generated = file('generated', {
-      filename: 'my_results-081045.csv',
-      conversationId: 'conversation',
-      metadata: {
-        codeEnvRefs: {
-          'managed-worker': {
-            kind: 'user',
-            id: 'user',
-            storage_session_id: 'original-store',
-            file_id: 'original-output',
-          },
-        },
-      },
-    });
-    const h = harness({
-      inputs: [generated],
-      setup: [],
-      getCodeFileInfo: async (ref) => ({
-        lastModified: new Date().toISOString(),
-        originalFilename:
-          ref.file_id === 'original-output' ? 'my results.csv' : ref.sandboxFilename,
-      }),
-    });
-    h.req.config!.projects = configSchema.parse({
-      version: '1.3.9',
-      projects: { codeExecution: true },
-    }).projects;
-    h.req.chatProjectContext = {
-      projectId: 'project',
-      contextRevision: 0,
-      instructions: '',
-      resources: [],
-      file_ids: ['project-file'],
-    };
-    h.req.body = { conversationId: 'conversation' };
-    const source = h.contexts.get('worker')!;
-    const project = getProjectCodeScope(h.req, source.codeExecutionContext!.codeSessionKey)!;
-    const imported = file('project-file', { filename: 'my results.csv', conversationId: 'other' });
-    source.tool_resources = {};
-    source.provisionState = {
-      codeEnvFiles: [imported],
-      vectorDBFiles: [],
-      aliveFileIds: new Set(),
-      agentScopedFileIds: new Set(),
-      project: { ...project, projectFileIds: new Set([imported.file_id]) },
-    };
-    try {
-      const result = await h.prepare();
-      const context = h.host.getContext('worker', identity())!;
-      expect(
-        context.provisionState?.project?.sessionPlan?.mountedNames.get(generated.file_id),
-      ).toBe('my results.csv');
-      expect(result.messages?.[0].content).toContain('"code_path":"/mnt/data/my results.csv"');
-      expect(h.getCodeFileInfo).toHaveBeenCalledTimes(1);
-    } finally {
-      await h.host.session.close();
-    }
-  });
-
   it.each([
-    ['child', false, 'results.csv'],
-    ['child', true, 'results.csv'],
-    ['child', false, 'my results.csv'],
-    ['child', true, 'my results.csv'],
-    ['root', false, 'results.csv'],
-    ['root', true, 'results.csv'],
-    ['root', false, 'my results.csv'],
-    ['root', true, 'my results.csv'],
-    ['budget', true, 'results.csv'],
-    ['budget', true, 'my results.csv'],
+    ['child', false],
+    ['child', true],
+    ['root', false],
+    ['root', true],
+    ['budget', true],
   ])(
-    'announces a published file path before code execution (receiver: %s, already prepared: %s, name: %s)',
-    async (receiver, existingChild, rawName) => {
+    'announces a published file path before code execution (receiver: %s, already prepared: %s)',
+    async (receiver, existingChild) => {
+      const rawName = 'my results.csv';
       const overBudget = receiver === 'budget';
       const isRoot = receiver === 'root';
-      const h = harness({ inputs: [], setup: [], publicationBytes: overBudget ? 600_000 : 12 });
-      h.req.config!.projects = configSchema.parse({
-        version: '1.3.9',
-        projects: { codeExecution: true },
-      }).projects;
+      const input = storedFile('input', { sandboxFilename: rawName }, { filename: rawName });
+      const h = harness({
+        inputs: overBudget ? [] : [input],
+        setup: [],
+        publicationBytes: overBudget ? 600_000 : 12,
+      });
+      configureProject(h, ['project-file']);
       h.req.config!.endpoints!.agents!.fileSharing!.allowSiblingSharing = !isRoot;
       if (overBudget) {
         h.req.config!.fileConfig = { endpoints: { openAI: { totalSizeLimit: 1 } } };
       }
-      h.req.chatProjectContext = {
-        projectId: 'project',
-        contextRevision: 0,
-        instructions: '',
-        resources: [],
-        file_ids: ['project-file'],
-      };
-      h.req.body = { conversationId: 'conversation' };
-      const canonical = file('project-file', {
-        filename: rawName,
-        bytes: overBudget ? 600_000 : 12,
-        conversationId: 'other',
-        metadata: {
-          codeEnvRefs: {
-            'managed-worker': {
-              kind: 'user',
-              id: 'user',
-              file_id: 'project-remote',
-              storage_session_id: 'project-store',
-              sandboxFilename: rawName,
-            },
-          },
+
+      const canonical = storedFile(
+        'project-file',
+        {
+          file_id: 'project-remote',
+          storage_session_id: 'project-store',
+          sandboxFilename: rawName,
         },
-      });
-      h.req.chatProjectFiles = [canonical];
-      const source = h.contexts.get('worker')!;
-      const project = getProjectCodeScope(
-        h.req,
-        source.codeSessionKey ?? source.codeExecutionContext!.codeSessionKey,
-      )!;
-      project.sessionPlan!.destinations.set(canonical.file_id, rawName);
-      project.sessionPlan!.frozen = true;
-      source.tool_resources = { execute_code: { files: [] } };
-      source.provisionState = {
-        codeEnvFiles: [canonical],
-        vectorDBFiles: [],
-        aliveFileIds: new Set(),
-        agentScopedFileIds: new Set(),
-        codeEnvDestinations: new Map([[canonical.file_id, rawName]]),
-        project: { ...project, projectFileIds: new Set([canonical.file_id]) },
-      };
+        {
+          filename: rawName,
+          bytes: overBudget ? 600_000 : 12,
+          conversationId: 'other',
+        },
+      );
+      const { source } = projectMount(h, canonical);
       if (isRoot) {
         const root = h.contexts.get('parent')!;
         root.tool_resources = { execute_code: { files: [canonical] } };
         root.provisionState = {
-          ...source.provisionState,
+          ...source.provisionState!,
           codeEnvFiles: [],
           aliveFileIds: new Set([canonical.file_id]),
         };
@@ -1506,101 +1153,105 @@ describe('run file execution host', () => {
       const producer = identity('producer');
       const reader = isRoot ? undefined : identity('reader');
       const receivingAgentId = isRoot ? 'parent' : 'worker';
-      try {
-        await h.prepare(producer);
-        if (existingChild) {
-          if (!isRoot) await h.prepare(reader);
-          await h.host.provision([Constants.EXECUTE_CODE], receivingAgentId, h.signal, reader);
-        }
-        await h.host.session.capture('worker', producer, 'produce-results', {
-          session_id: 'private-producer',
-          files: [{ id: 'results', name: rawName }],
-        });
-        const artifact = (await h.host.session.list('worker', producer)).artifacts[0];
-        const published = await h.host.session.publish(
-          'worker',
-          producer,
-          artifact.artifact_id,
-          isRoot ? [] : ['worker'],
-          h.signal,
-        );
-        let initialMessage: string | undefined;
-        if (!existingChild && !isRoot) {
-          const result = await h.prepare(reader);
-          initialMessage = String(result.messages?.[0].content);
-        }
-        const listing = await h.host.session.list(receivingAgentId, reader, h.signal);
-        const entry = listing.files.find((file) => file.file_id === published.file_id)!;
-        expect(entry.filename).toBe(sanitizeArtifactPath(rawName));
-        expect(entry.code_path).toBeDefined();
-        const delivered = await h.host.provision(
-          [Constants.EXECUTE_CODE],
-          receivingAgentId,
-          h.signal,
-          reader,
-        );
-        const context = h.host.getContext(receivingAgentId, reader)!;
-        const publicationPath = context.provisionState!.project!.sessionPlan!.mountedNames.get(
-          published.file_id,
-        )!;
-        const projectPath = context.provisionState!.project!.sessionPlan!.destinations.get(
-          canonical.file_id,
-        )!;
-        const mounted = await selectCodeFiles({
-          // primeFiles reads canonical database records, not this actor's temporary copies.
-          files: (context.tool_resources?.execute_code?.files ?? []).map((file) =>
-            file.file_id === published.file_id ? published : file,
-          ),
-          privateFileIds: context.provisionState!.agentScopedFileIds,
-          project: context.provisionState!.project,
-          getTurnRef: (file, destination) =>
-            getTurnCodeEnvRef(h.req, 'managed-worker', file, destination),
-          routeKey: 'managed-worker',
-          getFileInfo: (ref) =>
-            h.getCodeFileInfo(ref, context.codeExecutionContext ?? {}, h.signal),
-        });
-        expect(entry.code_path).toBe(`/mnt/data/${publicationPath}`);
-        expect(publicationPath).not.toBe(projectPath);
-        expect(mounted.selected).toContainEqual(
-          expect.objectContaining({
-            file: expect.objectContaining({ file_id: published.file_id }),
-            sandboxName: publicationPath,
-            sourceRef: expect.objectContaining({
-              file_id: delivered?.find((file) => file.name === publicationPath)?.id,
-            }),
-            temporary: existingChild || isRoot,
-          }),
-        );
-        if (overBudget) {
-          expect(context.provisionState?.project?.projectFileIds).toEqual(new Set());
-          expect(listing.code_file_context).toBeUndefined();
-          expect(mounted.selected).toHaveLength(1);
-        } else {
-          expect(listing.code_file_context).toContain(`/mnt/data/${projectPath}`);
-          if (!isRoot) {
-            expect(context.dynamicToolContextMap?.queued_code_files).toContain(
-              `/mnt/data/${projectPath}`,
-            );
-          }
-        }
-        if (existingChild || isRoot) {
-          expect(projectPath).toBe(rawName);
-        } else {
-          expect(publicationPath).toBe(rawName);
-          expect(initialMessage).toContain(`"code_path":"/mnt/data/${publicationPath}"`);
-          expect(initialMessage).toContain(`/mnt/data/${projectPath}`);
-          expect(initialMessage).toContain('replace any earlier file-path notes');
-        }
-        expect(canonical.metadata?.codeEnvRefs?.['managed-worker']?.sandboxFilename).toBe(rawName);
-        expect(published.metadata?.codeEnvRefs?.['managed-worker']).toEqual({
-          kind: 'user',
-          id: 'user',
-          storage_session_id: 'private-producer',
-          file_id: 'results',
-        });
-      } finally {
-        await h.host.session.close();
+
+      await h.prepare(producer);
+      if (existingChild) {
+        if (!isRoot) await h.prepare(reader);
+        await h.host.provision([Constants.EXECUTE_CODE], receivingAgentId, h.signal, reader);
       }
+      await h.host.session.capture('worker', producer, 'produce-results', {
+        session_id: 'private-producer',
+        files: [{ id: 'results', name: rawName }],
+      });
+      const artifact = (await h.host.session.list('worker', producer)).artifacts[0];
+      const published = await h.host.session.publish(
+        'worker',
+        producer,
+        artifact.artifact_id,
+        isRoot ? [] : ['worker'],
+        h.signal,
+      );
+      let initialMessage: string | undefined;
+      if (!existingChild && !isRoot) {
+        const result = await h.prepare(reader);
+        initialMessage = String(result.messages?.[0].content);
+      }
+      const listing = await h.host.session.list(receivingAgentId, reader, h.signal);
+      const entry = listing.files.find((file) => file.file_id === published.file_id)!;
+      expect(entry.filename).toBe(sanitizeArtifactPath(rawName));
+      expect(entry.code_path).toBeDefined();
+      const delivered = await h.host.provision(
+        [Constants.EXECUTE_CODE],
+        receivingAgentId,
+        h.signal,
+        reader,
+      );
+      const context = h.host.getContext(receivingAgentId, reader)!;
+      if (!overBudget) {
+        const paths = new Set(delivered?.map((file) => `/mnt/data/${file.name}`));
+        expect(paths.size).toBe(3);
+        for (const file of listing.files) {
+          expect(paths.has(file.code_path!)).toBe(true);
+          if (initialMessage) expect(initialMessage).toContain(file.code_path!);
+        }
+      }
+      const publicationPath = context.provisionState!.project!.sessionPlan!.mountedNames.get(
+        published.file_id,
+      )!;
+      const projectPath = context.provisionState!.project!.sessionPlan!.destinations.get(
+        canonical.file_id,
+      )!;
+      const mounted = await selectCodeFiles({
+        // primeFiles reads canonical database records, not this actor's temporary copies.
+        files: (context.tool_resources?.execute_code?.files ?? []).map((file) =>
+          file.file_id === published.file_id ? published : file,
+        ),
+        privateFileIds: context.provisionState!.agentScopedFileIds,
+        project: context.provisionState!.project,
+        getTurnRef: (file, destination) =>
+          getTurnCodeEnvRef(h.req, 'managed-worker', file, destination),
+        routeKey: 'managed-worker',
+        getFileInfo: (ref) => h.getCodeFileInfo(ref, context.codeExecutionContext ?? {}, h.signal),
+      });
+      expect(entry.code_path).toBe(`/mnt/data/${publicationPath}`);
+      expect(publicationPath).not.toBe(projectPath);
+      expect(mounted.selected).toContainEqual(
+        expect.objectContaining({
+          file: expect.objectContaining({ file_id: published.file_id }),
+          sandboxName: publicationPath,
+          sourceRef: expect.objectContaining({
+            file_id: delivered?.find((file) => file.name === publicationPath)?.id,
+          }),
+          temporary: existingChild || isRoot,
+        }),
+      );
+      if (overBudget) {
+        expect(context.provisionState?.project?.projectFileIds).toEqual(new Set());
+        expect(listing.code_file_context).toBeUndefined();
+        expect(mounted.selected).toHaveLength(1);
+      } else {
+        expect(listing.code_file_context).toContain(`/mnt/data/${projectPath}`);
+        if (!isRoot) {
+          expect(context.dynamicToolContextMap?.queued_code_files).toContain(
+            `/mnt/data/${projectPath}`,
+          );
+        }
+      }
+      if (isRoot || overBudget) {
+        expect(projectPath).toBe(rawName);
+      } else if (!existingChild) {
+        expect(publicationPath).toBe(rawName);
+        expect(initialMessage).toContain(`"code_path":"/mnt/data/${publicationPath}"`);
+        expect(initialMessage).toContain(`/mnt/data/${projectPath}`);
+        expect(initialMessage).toContain('replace any earlier file-path notes');
+      }
+      expect(canonical.metadata?.codeEnvRefs?.['managed-worker']?.sandboxFilename).toBe(rawName);
+      expect(published.metadata?.codeEnvRefs?.['managed-worker']).toEqual({
+        kind: 'user',
+        id: 'user',
+        storage_session_id: 'private-producer',
+        file_id: 'results',
+      });
     },
   );
 

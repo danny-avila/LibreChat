@@ -249,9 +249,9 @@ export function createCodeExecutionRouteKey(
 }
 
 export function getCodeExecutionRouteKey(
-  context: Pick<CodeExecutionContext, 'executionProfile' | 'executionRouteKey'>,
+  context?: Partial<Pick<CodeExecutionContext, 'executionProfile' | 'executionRouteKey'>> | null,
 ): string {
-  return context.executionRouteKey ?? context.executionProfile;
+  return context?.executionRouteKey ?? context?.executionProfile ?? 'default';
 }
 
 export function normalizeStatefulCodeEnvironment(

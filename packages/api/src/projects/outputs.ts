@@ -51,13 +51,9 @@ export function createProjectOutputSaver({ addGeneratedProjectFile, logger }: Ou
         if (resources.length === new Set(context.file_ids).size) {
           const resource = toCanonicalProjectResource(canonicalFile, true);
           const existingIndex = resources.findIndex((entry) => entry.file_id === resource.file_id);
-          const updatedResources = [...resources];
-          if (existingIndex < 0) {
-            updatedResources.push(resource);
-          } else {
-            updatedResources[existingIndex] = resource;
-          }
-          resources = updatedResources;
+          const updated = [...resources];
+          updated[existingIndex < 0 ? updated.length : existingIndex] = resource;
+          resources = updated;
         }
         context.contextRevision = project.contextRevision ?? 0;
         context.file_ids = [...(project.file_ids ?? [])];

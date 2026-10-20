@@ -37,14 +37,19 @@ import {
   withCodeApiUploadSlot,
   getCodeApiUploadOptions,
 } from '~/utils/code';
-import { resolveResendToolResources, partitionCommittedFiles } from '~/agents/initialize';
+import {
+  sumUniqueBytes,
+  partitionCommittedFiles,
+  resolveResendToolResources,
+} from '~/agents/initialize';
+import { getCodeFileSessionKey, prepareQueuedCodeFileContext } from '~/files/code/queued';
 import { isCodeArtifactToolOutput, isCodeFileToolName } from '~/agents/tools';
 import { createProvisionFilesCallback } from '~/files/provision/callback';
 import { assertModelBoundContent } from '~/middleware/modelBoundContent';
 import { addFileToResource, primeResources } from '~/agents/resources';
 import { mergeCodeFilesIntoContext } from '~/agents/codeFilesSession';
 import { filterFilesByEndpointRuntimeConfig } from '~/files/filter';
-import { prepareQueuedCodeFileContext } from '~/files/code/queued';
+import { getCodeExecutionRouteKey } from '~/agents/execution';
 import { getCodeEnvUploadFilename } from '~/files/code/form';
 import { getTurnCodeEnvRef } from '~/files/code/references';
 import { createRunFileSession } from './session';
@@ -267,10 +272,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
       for (const name of plan.destinations.values()) reserveCodeDestination(claimed, name);
       for (const name of plan.mountedNames.values()) reserveCodeDestination(claimed, name);
     }
-    const route =
-      context.codeExecutionContext?.executionRouteKey ??
-      context.codeExecutionContext?.executionProfile ??
-      'default';
+    const route = getCodeExecutionRouteKey(context.codeExecutionContext);
     const requiredCodeFiles = sortCodeFilesByDestinationPriority(
       [...files.values()],
       state.agentScopedFileIds,
@@ -363,10 +365,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
       if (!context || !state?.project) return undefined;
       const paths = new Map<string, string>();
       let note = '';
-      const route =
-        context.codeExecutionContext?.executionRouteKey ??
-        context.codeExecutionContext?.executionProfile ??
-        'default';
+      const route = getCodeExecutionRouteKey(context.codeExecutionContext);
       for (const file of [
         ...state.codeEnvFiles,
         ...(context.tool_resources?.execute_code?.files ?? []),
@@ -649,22 +648,14 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
             }
           },
           screenProjectFiles: (candidates, persistedFiles) => {
-            const required = new Map(
-              [...currentFiles, ...persistedFiles].map((file) => [file.file_id, file]),
-            );
-            const { committed, pending } = partitionCommittedFiles(
-              [...candidates],
-              [...required.values()],
-            );
+            const required = [...persistedFiles, ...currentFiles];
+            const { committed, pending } = partitionCommittedFiles([...candidates], required);
             projectFiles = committed.concat(
               filterFilesByEndpointRuntimeConfig(req.config, {
                 files: pending,
                 endpoint: source.agent!.endpoint ?? source.agent!.provider ?? 'agents',
                 preserveTextSources: true,
-                consumedBytes: [...required.values()].reduce(
-                  (total, file) => total + file.bytes,
-                  0,
-                ),
+                consumedBytes: sumUniqueBytes(required),
               }),
             );
             assertModelBoundContent({ filters: req.config?.filters, files: projectFiles });
@@ -807,23 +798,17 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
         });
         replacedRefs.set(fileId, refs);
       };
-      const route =
-        context?.codeExecutionContext?.executionRouteKey ??
-        context?.codeExecutionContext?.executionProfile ??
-        'default';
+      const route = getCodeExecutionRouteKey(context?.codeExecutionContext);
       const sharedPeerSeeds = new Set<string>();
       if (context) {
-        const sessionKey = context.codeSessionKey ?? context.codeExecutionContext?.codeSessionKey;
+        const sessionKey = getCodeFileSessionKey(context);
         for (const [peerId, peer] of contexts) {
-          const peerRoute =
-            peer.codeExecutionContext?.executionRouteKey ??
-            peer.codeExecutionContext?.executionProfile ??
-            'default';
+          const peerRoute = getCodeExecutionRouteKey(peer.codeExecutionContext);
           if (
             peerId === agentId ||
             peer.codeEnvAvailable !== true ||
             peerRoute !== route ||
-            (peer.codeSessionKey ?? peer.codeExecutionContext?.codeSessionKey) !== sessionKey
+            getCodeFileSessionKey(peer) !== sessionKey
           )
             continue;
           for (const refKey of rootCodeFiles.get(peerId)?.keys() ?? []) {
@@ -966,7 +951,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
         const replaces = [...(fileId ? (replacedRefs.get(fileId)?.values() ?? []) : [])].filter(
           (ref) => ref.id !== file.id || ref.storage_session_id !== file.storage_session_id,
         );
-        return replaces?.length ? { ...file, replaces } : file;
+        return replaces.length ? { ...file, replaces } : file;
       });
     });
   }

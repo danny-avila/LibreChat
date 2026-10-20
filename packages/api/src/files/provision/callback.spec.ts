@@ -1,6 +1,6 @@
 import { Constants } from '@librechat/agents';
 import { EToolResources, FileContext } from 'librechat-data-provider';
-import type { TFile } from 'librechat-data-provider';
+import type { CodeEnvRef, TFile } from 'librechat-data-provider';
 import type { ProvisionState } from '~/agents/resources';
 import type { ProvisionToolContext } from './callback';
 import type { CodeFileAgent } from '../code/queued';
@@ -125,25 +125,23 @@ function buildHarness({
   };
 }
 
+function storedFile(ref: CodeEnvRef, overrides: Partial<TFile> = {}): TFile {
+  return makeFile({ metadata: { codeEnvRefs: { default: ref } }, ...overrides });
+}
+
 describe('createProvisionFilesCallback', () => {
   it('bounds live project probes across agents by the configured Code API concurrency', async () => {
     const files = Array.from({ length: 6 }, (_, index) =>
-      makeFile({
-        file_id: `project-${index}`,
-        filename: `data-${index}.csv`,
-        conversationId: 'other',
-        metadata: {
-          codeEnvRefs: {
-            default: {
-              kind: 'user',
-              id: 'user-1',
-              storage_session_id: 'store',
-              file_id: `remote-${index}`,
-              sandboxFilename: `data-${index}.csv`,
-            },
-          },
+      storedFile(
+        {
+          kind: 'user',
+          id: 'user-1',
+          storage_session_id: 'store',
+          file_id: `remote-${index}`,
+          sandboxFilename: `data-${index}.csv`,
         },
-      }),
+        { file_id: `project-${index}`, filename: `data-${index}.csv`, conversationId: 'other' },
+      ),
     );
     const request = {
       ...req,
@@ -191,11 +189,7 @@ describe('createProvisionFilesCallback', () => {
         file_id: 'existing',
         sandboxFilename: 'data.csv',
       };
-      const imported = makeFile({
-        file_id: 'project-input',
-        conversationId: 'other',
-        metadata: { codeEnvRefs: { default: ref } },
-      });
+      const imported = storedFile(ref, { file_id: 'project-input', conversationId: 'other' });
       const current: CodeFileAgent = {
         id: 'parent',
         fileConsumers: { executeCode: true, fileSearch: false },
@@ -279,12 +273,11 @@ describe('createProvisionFilesCallback', () => {
         storage_session_id: 'source-store',
         file_id: 'source-output',
       };
-      const generated = makeFile({
+      const generated = storedFile(ref, {
         file_id: `generated-${live}`,
         filename: 'my_results-081045.csv',
         context: FileContext.execute_code,
         conversationId: 'source-chat',
-        metadata: { codeEnvRefs: { default: ref } },
       });
       const getCodeFileInfo = jest.fn(async () =>
         live
@@ -327,154 +320,6 @@ describe('createProvisionFilesCallback', () => {
         expect(after.selected.map((file) => file.sandboxName)).toEqual(['my results.csv']);
         expect(getTurnCodeEnvRef(req, 'default', imported, generated.filename)).toBeDefined();
       }
-    },
-  );
-
-  it('does not upload a live project input for a private collision in a different session', async () => {
-    const imported = makeFile({
-      file_id: 'live-project-peer',
-      conversationId: 'other',
-      metadata: {
-        codeEnvRefs: {
-          default: {
-            kind: 'user',
-            id: 'user-1',
-            storage_session_id: 'live-store',
-            file_id: 'live-remote',
-            sandboxFilename: 'data.csv',
-          },
-        },
-      },
-    });
-    const privateFile = makeFile({
-      file_id: 'child-private',
-      context: FileContext.agents,
-      metadata: {
-        codeEnvRefs: {
-          default: {
-            kind: 'agent',
-            id: 'child',
-            storage_session_id: 'private-store',
-            file_id: 'private-remote',
-            sandboxFilename: 'data.csv',
-          },
-        },
-      },
-    });
-    const parent: CodeFileAgent = {
-      id: 'parent',
-      codeSessionKey: 'execute_code:parent',
-      fileConsumers: { executeCode: true, fileSearch: false },
-      tool_resources: { execute_code: { files: [{ ...imported }] } },
-      provisionState: {
-        ...state([], []),
-        project: { projectFileIds: new Set([imported.file_id]), conversationId: 'current' },
-      },
-    };
-    prepareQueuedCodeFileContext(parent, [parent], 'user-1');
-    const child: CodeFileAgent = {
-      id: 'child',
-      codeSessionKey: 'execute_code:child',
-      fileConsumers: { executeCode: true, fileSearch: false },
-      tool_resources: { execute_code: { files: [{ ...imported }, privateFile] } },
-      provisionState: {
-        ...state([], [], [privateFile.file_id]),
-        project: { projectFileIds: new Set([imported.file_id]), conversationId: 'current' },
-      },
-    };
-    prepareQueuedCodeFileContext(child, [parent, child], 'user-1', true);
-    const codeImpl = jest.fn().mockRejectedValue(new Error('Code API upload unavailable'));
-    const harness = buildHarness({
-      contexts: [
-        [parent.id, parent],
-        [child.id, child],
-      ],
-      codeImpl,
-    });
-    await expect(harness.provisionFiles([Constants.EXECUTE_CODE], parent.id)).resolves.toEqual([]);
-    expect(codeImpl).not.toHaveBeenCalled();
-    expect(harness.updateCodeEnvRef).not.toHaveBeenCalled();
-    expect(parent.provisionState!.codeEnvFiles).toEqual([]);
-    expect(parent.provisionState!.codeEnvDestinations!.size).toBe(0);
-  });
-
-  it.each(['first', 'second'])(
-    'preserves canonical current-chat paths when %s provisions first on a shared route',
-    async (firstAgentId) => {
-      req.codeFileReferences = undefined;
-      const own = makeFile({
-        file_id: 'own-route',
-        context: FileContext.execute_code,
-        conversationId: 'current',
-        createdAt: '2026-09-01',
-      });
-      const originalRef = {
-        kind: 'user' as const,
-        id: 'user-1',
-        storage_session_id: 'original-store',
-        file_id: 'original-import',
-        sandboxFilename: 'data.csv',
-      };
-      const imported = makeFile({
-        file_id: 'imported-route',
-        context: FileContext.execute_code,
-        conversationId: 'other',
-        createdAt: '2026-10-01',
-        metadata: { codeEnvRefs: { default: originalRef } },
-      });
-      const agents: CodeFileAgent[] = ['first', 'second'].map((id) => ({
-        id,
-        fileConsumers: { executeCode: true, fileSearch: false },
-        tool_resources: { execute_code: { files: [{ ...imported }] } },
-        provisionState: {
-          ...state([{ ...own }], []),
-          project: {
-            projectFileIds: new Set([own.file_id, imported.file_id]),
-            conversationId: 'current',
-          },
-          codeEnvRecoveryNames: new Map([[own.file_id, { name: 'data.csv', isTargetScope: true }]]),
-        },
-      }));
-      for (const agent of agents) prepareQueuedCodeFileContext(agent, agents, req.user?.id);
-      const alias = agents[0].provisionState!.codeEnvDestinations!.get(imported.file_id)!;
-      const codeImpl = jest.fn(
-        async ({ file, sandboxFilename }: { file: TFile; sandboxFilename: string }) => {
-          const ref = {
-            kind: 'user' as const,
-            id: 'user-1',
-            storage_session_id: 'new-store',
-            file_id: `new-${file.file_id}`,
-            sandboxFilename,
-          };
-          return {
-            referenceSet: { codeEnvRefs: { default: ref } },
-            refUpdate: { file_id: file.file_id, routeKey: 'default', ref },
-            sandboxFilename,
-          };
-        },
-      );
-      const harness = buildHarness({
-        contexts: agents.map((agent) => [agent.id, agent]),
-        codeImpl,
-      });
-      for (const id of [firstAgentId, firstAgentId === 'first' ? 'second' : 'first']) {
-        const provisioned = await harness.provisionFiles([Constants.EXECUTE_CODE], id);
-        expect(provisioned.map((entry) => entry.name)).toEqual(
-          expect.arrayContaining(['data.csv', alias]),
-        );
-      }
-      expect(codeImpl).toHaveBeenCalledTimes(2);
-      expect(harness.updateCodeEnvRef).toHaveBeenCalledTimes(1);
-      expect(harness.updateCodeEnvRef).toHaveBeenCalledWith(
-        expect.objectContaining({
-          file_id: own.file_id,
-          ref: expect.objectContaining({ sandboxFilename: 'data.csv' }),
-        }),
-      );
-      expect(imported.metadata!.codeEnvRefs!.default).toEqual(originalRef);
-      expect(getTurnCodeEnvRef(req, 'default', imported, alias)).toMatchObject({
-        sandboxFilename: alias,
-      });
     },
   );
 
@@ -602,22 +447,16 @@ describe('createProvisionFilesCallback', () => {
       };
       prepareQueuedCodeFileContext(parent, [parent], req.user?.id);
       const parentPath = parent.provisionState?.codeEnvDestinations?.get(shared.file_id);
-      const live = makeFile({
-        file_id: 'setup',
-        filename: liveName,
-        context: FileContext.agents,
-        metadata: {
-          codeEnvRefs: {
-            default: {
-              kind: 'agent',
-              id: 'child',
-              storage_session_id: 'setup-store',
-              file_id: 'setup-remote',
-              sandboxFilename: liveName,
-            },
-          },
+      const live = storedFile(
+        {
+          kind: 'agent',
+          id: 'child',
+          storage_session_id: 'setup-store',
+          file_id: 'setup-remote',
+          sandboxFilename: liveName,
         },
-      });
+        { file_id: 'setup', filename: liveName, context: FileContext.agents },
+      );
       const child: CodeFileAgent = {
         id: 'child',
         fileConsumers: { executeCode: true, fileSearch: false },

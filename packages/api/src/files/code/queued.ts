@@ -15,6 +15,7 @@ import {
   sortCodeFilesByDestinationPriority,
 } from './destinations';
 import { appendCodeFileContextLine, getCodeFileContextLine, getCodeFileLocation } from './priming';
+import { getCodeExecutionRouteKey } from '~/agents/execution';
 import { getCodeEnvUploadFilename } from './form';
 
 /** Shared file state used by prompt construction and lazy provisioning. */
@@ -40,15 +41,7 @@ interface CodeFileUpload {
   destination: string;
 }
 
-function routeKey(context: ProvisionToolContext): string {
-  return (
-    context.codeExecutionContext?.executionRouteKey ??
-    context.codeExecutionContext?.executionProfile ??
-    'default'
-  );
-}
-
-function sessionKey(context: ProvisionToolContext): string {
+export function getCodeFileSessionKey(context: ProvisionToolContext): string {
   return (
     context.codeSessionKey ?? context.codeExecutionContext?.codeSessionKey ?? Tools.execute_code
   );
@@ -84,7 +77,7 @@ function stageProjectImports(
       if (
         candidate !== context &&
         candidateState?.agentScopedFileIds.has(file.file_id) &&
-        sessionKey(candidate) !== sessionKey(context)
+        getCodeFileSessionKey(candidate) !== getCodeFileSessionKey(context)
       )
         continue;
       const name =
@@ -214,7 +207,8 @@ export function reserveProjectCodeSessions(
     const plan = context.provisionState?.project?.sessionPlan;
     if (!plan || visited.has(plan)) continue;
     visited.add(plan);
-    const files = (sessions.get(sessionKey(context)) as CodeSessionContext | undefined)?.files;
+    const files = (sessions.get(getCodeFileSessionKey(context)) as CodeSessionContext | undefined)
+      ?.files;
     for (const file of files ?? []) {
       if (file.name == null) continue;
       plan.mountedNames.set(JSON.stringify(['seed', file.storage_session_id, file.id]), file.name);
@@ -238,11 +232,11 @@ export function planCodeFileUploads({
 }): CodeFileUpload[] {
   const state = context.provisionState;
   if (!state) return [];
-  const route = routeKey(context);
+  const route = getCodeExecutionRouteKey(context.codeExecutionContext);
   const routeContexts = [...contexts].filter(
     (candidate) =>
-      routeKey(candidate) === route &&
-      (!state.project || sessionKey(candidate) === sessionKey(context)),
+      getCodeExecutionRouteKey(candidate.codeExecutionContext) === route &&
+      (!state.project || getCodeFileSessionKey(candidate) === getCodeFileSessionKey(context)),
   );
   if (!routeContexts.includes(context)) routeContexts.push(context);
   // Stage the whole session before any agent freezes names, including live-only agents.

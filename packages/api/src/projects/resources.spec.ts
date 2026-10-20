@@ -4,6 +4,8 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createModels, createMethods } from '@librechat/data-schemas';
 import { configSchema, FileContext, FileSources } from 'librechat-data-provider';
 import type { IChatProject, IMongoFile } from '@librechat/data-schemas';
+import type { CodeOutputStoredFile } from '~/files/code/publication';
+import type { ProjectOutputRequest } from './outputs';
 import {
   getChatProjectFileAvailability,
   listChatProjectFileViews,
@@ -11,6 +13,7 @@ import {
 } from './resources';
 import { getChatProjectContextKey, resolveChatProjectContext } from './context';
 import { hasResumeProjectContextChanged } from './resume';
+import { createProjectOutputSaver } from './outputs';
 
 let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let File: mongoose.Model<IMongoFile>;
@@ -412,4 +415,167 @@ describe('ChatProject resource hydration', () => {
       { file_id: 'missing', availability: 'unavailable' },
     ]);
   });
+});
+
+async function setupOutputs() {
+  const methods = createMethods(mongoose);
+  const userId = new mongoose.Types.ObjectId().toString();
+  const project = await methods.createChatProject(userId, { name: 'Shared analysis' });
+  const projectId = project._id!.toString();
+  await mongoose.models.Conversation.create({
+    user: userId,
+    conversationId: 'analysis-chat',
+    endpoint: 'agents',
+    chatProjectId: projectId,
+  });
+  const outputs: CodeOutputStoredFile[] = ['first', 'second'].map((file_id) => ({
+    file_id,
+    user: userId,
+    filename: `${file_id}.csv`,
+    filepath: `/uploads/${file_id}.csv`,
+    conversationId: 'analysis-chat',
+    source: FileSources.local,
+    context: FileContext.execute_code,
+    bytes: 10,
+    type: 'text/csv',
+    object: 'file',
+    embedded: false,
+    usage: 1,
+  }));
+  await mongoose.models.File.create(outputs);
+  const req: ProjectOutputRequest = {
+    user: { id: userId },
+    config: { projects: { codeExecution: true } },
+    chatProjectContext: {
+      projectId,
+      contextRevision: 0,
+      instructions: '',
+      file_ids: [],
+      resources: [],
+    },
+  };
+  const logger = { warn: jest.fn() };
+  return {
+    req,
+    outputs,
+    methods,
+    logger,
+    projectId,
+    save: createProjectOutputSaver({ ...methods, logger }),
+  };
+}
+
+it('serializes simultaneous outputs and leaves the approval snapshot compatible with a later turn', async () => {
+  const { req, outputs, methods, save } = await setupOutputs();
+  expect(await Promise.all(outputs.map((file) => save(req, file)))).toEqual([
+    { projectId: req.chatProjectContext!.projectId, status: 'added' },
+    { projectId: req.chatProjectContext!.projectId, status: 'added' },
+  ]);
+  const restored = await resolveChatProjectContext(
+    {
+      userId: req.user.id,
+      conversationId: 'analysis-chat',
+      codeExecution: true,
+    },
+    methods,
+  );
+  expect(getChatProjectContextKey(req.chatProjectContext)).toBe(getChatProjectContextKey(restored));
+  expect(restored?.resources.map((file) => file.file_id)).toEqual(['first', 'second']);
+  const resource = req.chatProjectContext?.resources[0];
+  if (resource?.availability !== 'ready') throw new Error('The output is unavailable');
+  expect(resource.file).not.toHaveProperty('text');
+  await mongoose.models.File.updateOne(
+    { file_id: outputs[0].file_id },
+    { $set: { bytes: 20, 'metadata.sourceDispatchedAt': Date.now() } },
+  );
+  expect(await save(req, outputs[0])).toEqual({
+    projectId: req.chatProjectContext!.projectId,
+    status: 'added',
+  });
+  const refreshed = await resolveChatProjectContext(
+    { userId: req.user.id, conversationId: 'analysis-chat', codeExecution: true },
+    methods,
+  );
+  expect(req.chatProjectContext?.resources.map((file) => file.file_id)).toEqual([
+    'first',
+    'second',
+  ]);
+  expect(getChatProjectContextKey(req.chatProjectContext)).toBe(
+    getChatProjectContextKey(refreshed),
+  );
+});
+
+it('does no project mutation with the capability disabled or outside a project', async () => {
+  const { req, outputs, methods, projectId, save } = await setupOutputs();
+  req.config!.projects!.codeExecution = false;
+  expect(await save(req, outputs[0])).toBeUndefined();
+  req.config!.projects!.codeExecution = true;
+  req.chatProjectContext = null;
+  expect(await save(req, outputs[0])).toBeUndefined();
+  expect((await methods.getChatProject(req.user.id, projectId))?.file_ids).toEqual([]);
+});
+
+it('keeps a guidance-only snapshot compatible after saving an output to a nonempty project', async () => {
+  const { req, outputs, methods, save, logger } = await setupOutputs();
+  await save(req, outputs[0]);
+  req.chatProjectContext = await resolveChatProjectContext(
+    {
+      userId: req.user.id,
+      conversationId: 'analysis-chat',
+      includeResources: false,
+      codeExecution: true,
+    },
+    methods,
+  );
+  expect(req.chatProjectContext?.file_ids).toEqual(['first']);
+  expect(req.chatProjectContext?.resources).toEqual([]);
+  expect(await save(req, outputs[1])).toEqual({
+    projectId: req.chatProjectContext!.projectId,
+    status: 'added',
+  });
+  const restored = await resolveChatProjectContext(
+    {
+      userId: req.user.id,
+      conversationId: 'analysis-chat',
+      includeResources: false,
+      codeExecution: true,
+    },
+    methods,
+  );
+  expect(req.chatProjectContext?.file_ids).toEqual(['first', 'second']);
+  expect(req.chatProjectContext?.resources).toEqual([]);
+  expect(getChatProjectContextKey(req.chatProjectContext)).toBe(getChatProjectContextKey(restored));
+  expect(logger.warn).not.toHaveBeenCalled();
+});
+
+it('preserves the chat output and translates an operational failure into a safe project-save code', async () => {
+  const { req, outputs, logger } = await setupOutputs();
+  const save = createProjectOutputSaver({
+    addGeneratedProjectFile: async () => {
+      throw new Error('secret token and submitted content');
+    },
+    logger,
+  });
+  expect(await save(req, outputs[0])).toEqual({
+    projectId: req.chatProjectContext!.projectId,
+    status: 'failed',
+    code: 'project_file_save_failed',
+  });
+  expect(logger.warn).toHaveBeenCalledWith(expect.any(String), { type: 'Error' });
+  expect(req.chatProjectContext?.file_ids).toEqual([]);
+  expect(await mongoose.models.File.exists({ file_id: outputs[0].file_id })).not.toBeNull();
+});
+
+it('does not accept a concurrent project edit into the running approval context', async () => {
+  const { req, outputs, methods, save } = await setupOutputs();
+  await methods.updateChatProject(req.user.id, req.chatProjectContext!.projectId, {
+    instructions: 'Changed by user',
+  });
+  expect(await save(req, outputs[0])).toEqual({
+    projectId: req.chatProjectContext!.projectId,
+    status: 'failed',
+    code: 'project_changed',
+  });
+  expect(req.chatProjectContext?.contextRevision).toBe(0);
+  expect(req.chatProjectContext?.file_ids).toEqual([]);
 });

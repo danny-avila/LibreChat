@@ -185,7 +185,7 @@ export function partitionCommittedFiles<T extends { file_id?: string }>(
   return { committed: alreadyCommitted, pending };
 }
 
-function sumUniqueBytes(files: Array<{ file_id?: string; bytes?: number }>): number {
+export function sumUniqueBytes(files: Array<{ file_id?: string; bytes?: number }>): number {
   const seen = new Set<string>();
   let total = 0;
   for (const file of files) {
