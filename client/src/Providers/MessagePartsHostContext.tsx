@@ -130,8 +130,7 @@ export const appMessagePartsHost: MessagePartsHost = {
   useShowThinking: () => useAtomValue(showThinkingAtom),
   useAutoExpandTools: () => useRecoilValue<boolean>(store.autoExpandTools),
   useLaTeXParsing: () => useRecoilValue<boolean>(store.LaTeXParsing),
-  useChatDirection: () =>
-    useRecoilValue<string>(store.chatDirection).toLowerCase() === 'rtl' ? 'rtl' : 'ltr',
+  useChatDirection: () => useRecoilValue(store.chatDirection),
   useUserTextPreferences: useAppUserTextPreferences,
   /* The atom rather than the auth context: AuthContextProvider mirrors the user into it, and the
    * public share route mounts outside that provider. */

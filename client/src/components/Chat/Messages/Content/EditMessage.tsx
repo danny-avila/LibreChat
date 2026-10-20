@@ -44,7 +44,7 @@ const EditMessage = ({
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
 
-  const isRTL = useChatDirection() === 'rtl';
+  const chatDirection = useChatDirection();
 
   const getAddedConvo = useGetAddedConvo();
 
@@ -273,8 +273,7 @@ const EditMessage = ({
           className={cn(
             'message-editor-text max-h-[65vh] min-h-24 w-full resize-y whitespace-pre-wrap',
             'border-border-medium bg-surface-tertiary-alt rounded-lg border break-words',
-            'text-text-primary px-3 py-2',
-            isRTL ? 'text-right' : 'text-left',
+            'text-text-primary px-3 py-2 text-start',
             'disabled:opacity-50 md:max-h-[75vh]',
           )}
           aria-label={localize('com_ui_message_input')}
@@ -284,7 +283,7 @@ const EditMessage = ({
               : 'Control+S Meta+S Escape'
           }
           disabled={isSubmitting || updateMessageMutation.isLoading}
-          dir={isRTL ? 'rtl' : 'ltr'}
+          dir={chatDirection}
         />
         {/* The actions wrap rather than hold one unbreakable row: on a 320px assistant
             turn the identity column and page padding leave less width than the three
