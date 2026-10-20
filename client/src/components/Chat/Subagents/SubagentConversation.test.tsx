@@ -576,9 +576,13 @@ it('does not render cached recovery after refreshed history revokes the retained
   expect(mockRecoveredQuery).toHaveBeenLastCalledWith(expect.any(Object), { enabled: false });
 });
 
-it.each(['running', 'completed'] as const)(
-  'strips root and nested approval payloads from %s recovered content without changing the cache',
-  (status) => {
+it.each(
+  (['running', 'completed'] as const).flatMap((status) =>
+    (['snapshot', 'live fallback', 'revoked cache'] as const).map((source) => ({ status, source })),
+  ),
+)(
+  'strips root and nested approvals from $status $source without changing the cache',
+  ({ status, source }) => {
     const nested: FullToolCall & PartMetadata = {
       id: 'nested',
       name: 'nested_tool',
@@ -611,14 +615,17 @@ it.each(['running', 'completed'] as const)(
     ];
     const cached = JSON.parse(JSON.stringify(content));
     mockRecoveredQuery.mockReturnValue({
-      data: {
-        messageId: 'task-1:assistant',
-        status,
-        recovery: 'complete',
-        content,
-        throughSequence: 1,
-        targetThroughSequence: 1,
-      },
+      data:
+        source === 'live fallback'
+          ? undefined
+          : {
+              messageId: 'task-1:assistant',
+              status,
+              recovery: 'complete',
+              content,
+              throughSequence: 1,
+              targetThroughSequence: 1,
+            },
     });
     render(
       <ChatSurfaceHarness>
@@ -631,7 +638,13 @@ it.each(['running', 'completed'] as const)(
             selectedTaskId: 'task-1',
             ready: true,
           }}
-          turns={[{ ...turns[0], contentRecoveryAvailable: true }]}
+          turns={[
+            {
+              ...turns[0],
+              contentRecoveryAvailable: source !== 'revoked cache',
+              activity: { ...turns[0].activity, status, content },
+            },
+          ]}
         />
       </ChatSurfaceHarness>,
     );

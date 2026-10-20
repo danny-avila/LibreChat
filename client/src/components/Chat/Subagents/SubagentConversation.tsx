@@ -350,7 +350,15 @@ function RecoveredChildMessage({
   });
   const turn = useMemo(() => {
     const snapshot = recovered.data;
-    if (snapshot == null || props.turn.contentRecoveryAvailable === false) return props.turn;
+    if (snapshot == null || props.turn.contentRecoveryAvailable === false) {
+      return {
+        ...props.turn,
+        activity: {
+          ...props.turn.activity,
+          content: standardContent(getActivityContent(props.turn.activity), 'hidden'),
+        },
+      };
+    }
     const preserveActivity = !snapshot.content.some(
       (part) => part != null && !isEmptyContentPart(part),
     );
