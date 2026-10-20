@@ -344,6 +344,21 @@ const isGone = (error: ChatTransportError): boolean =>
   error.response?.status === 404 ||
   error.response?.status === 410;
 
+/**
+ * A frame the chat failed to apply. A terminal frame still ended the generation, which the host
+ * reloads from what the server kept; any other leaves it running, so a stop still reaches it.
+ */
+const getApplyFailure = (event: ChatEvent, failure: unknown): Outcome => {
+  const error = failure instanceof Error ? failure : new Error(String(failure));
+  const terminal =
+    event.type === 'final' ||
+    event.type === 'abort' ||
+    (event.type === 'error' && event.status !== 0);
+  return terminal
+    ? { kind: 'error', error, disconnect: false, settled: {} }
+    : { kind: 'error', error, disconnect: true };
+};
+
 const isStreamAbort = (result: ChatAbortResult): result is ChatStreamAbortResult =>
   result != null && 'success' in result;
 
@@ -541,7 +556,7 @@ export class Chat {
   /** The generation a restored pause belongs to, which a reattachment to it continues. */
   private restored?: { createdAt: number; generation: Generation };
   /** A start that reached the transport and lost its response, with nothing to address it by. */
-  private unaddressed = false;
+  private unaddressed?: ActiveRequest;
   private readonly decisions = new Map<string, Agents.ToolApprovalResolution>();
   /** Pauses already resumed, whose replay by a reattached stream is stale. */
   private readonly resumed = new Set<string>();
@@ -689,7 +704,7 @@ export class Chat {
         (opened) => opened?.close(),
       );
       /** The server answered for the conversation, so a lost start is no longer the caller's. */
-      this.unaddressed = false;
+      this.unaddressed = undefined;
       if (!stream && generation.stopAnswered) {
         /** A stop still in flight decides how an empty reconnect ended. */
         await generation.stopAnswered;
@@ -887,6 +902,10 @@ export class Chat {
         /** Like any confirmed stop, so a late status read of its pause is ignored. */
         if (generationCreatedAt != null) {
           this.endedGenerations.add(generationCreatedAt);
+        }
+        /** The start it reported lost is now stopped; a newer lost start keeps its own marker. */
+        if (this.unaddressed === active) {
+          this.unaddressed = undefined;
         }
       },
       (error: unknown) =>
@@ -1121,7 +1140,7 @@ export class Chat {
       return;
     }
     /** A current status read names the running generation, which a stop then addresses. */
-    this.unaddressed = false;
+    this.unaddressed = undefined;
     if (this.detached && this.detached.target.generationCreatedAt !== generationCreatedAt) {
       /** The pause belongs to a newer generation than the one whose stream dropped. */
       this.detached = undefined;
@@ -1344,7 +1363,7 @@ export class Chat {
       const dropped = this.detached;
       this.detached = undefined;
       /** Likewise a lost start stays the caller's to stop until the server takes this one. */
-      this.unaddressed = false;
+      this.unaddressed = undefined;
       let stream: ChatStream | null = null;
       if (result.status === 'stream') {
         stream = result.stream;
@@ -1445,8 +1464,8 @@ export class Chat {
       }
     }
     let outcome: Outcome | undefined;
-    /** Set while this chat handles an event, whose failure leaves the generation running. */
-    let handling = false;
+    /** The event this chat is applying, whose failure is the chat's, not the generation's. */
+    let handling: ChatEvent | undefined;
     try {
       this.setConnection('live');
       for await (const event of stream) {
@@ -1455,11 +1474,11 @@ export class Chat {
         }
         await this.executor.run(() => {
           if (!signal.aborted) {
-            handling = true;
+            handling = event;
             /** Recorded first, so a host that stops from the event's own callbacks names the run. */
             this.track(active, event);
             outcome = this.apply(event);
-            handling = false;
+            handling = undefined;
           }
         });
         if (outcome) {
@@ -1469,12 +1488,7 @@ export class Chat {
     } catch (error) {
       outcome =
         handling && !signal.aborted
-          ? {
-              kind: 'error',
-              error: error instanceof Error ? error : new Error(String(error)),
-              /** The chat drops the stream, not the server the run, so a stop still reaches it. */
-              disconnect: true,
-            }
+          ? getApplyFailure(handling, error)
           : this.toOutcome(error, active);
     } finally {
       stream.close();
@@ -1607,7 +1621,7 @@ export class Chat {
         };
       } else if (active.sent && !active.generation.stopped) {
         /** The start may have reached the server, which answered nothing this chat can address. */
-        this.unaddressed = true;
+        this.unaddressed = active;
       }
     }
     /**
@@ -1622,8 +1636,12 @@ export class Chat {
        */
       this.action = undefined;
       this.decisions.clear();
-      const ended = active.stream?.generationCreatedAt ?? active.inheritedGeneration;
-      if (active.stream && ended != null) {
+      /** Including an attachment that found its generation already finished. */
+      const ended =
+        active.stream?.generationCreatedAt ??
+        active.inheritedGeneration ??
+        (active.reattach ? this.generationCreatedAt : undefined);
+      if ((active.stream || active.reattach) && ended != null) {
         this.endedGenerations.add(ended);
       }
     }

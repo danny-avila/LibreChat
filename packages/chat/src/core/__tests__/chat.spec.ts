@@ -4173,16 +4173,15 @@ describe('Chat', () => {
       await retry;
     });
 
-    it('keeps a generation stoppable when a subscriber throws on one of its frames', async () => {
-      const { chat, stream, transport } = setup({
-        resumeSelection: () => ({ endpoint: 'agents' }),
-      });
-      let thrown = false;
-      chat.subscribe(() => {
-        if (!thrown && chat.status === 'streaming') {
-          thrown = true;
-          throw new Error('listener failed');
+    it('keeps a generation stoppable when the host fails to apply one of its frames', async () => {
+      const applyEvent = jest.fn((event: ChatEvent) => {
+        if (event.type === 'step') {
+          throw new Error('apply failed');
         }
+      });
+      const { chat, stream, transport, onFinish } = setup({
+        applyEvent,
+        resumeSelection: () => ({ endpoint: 'agents' }),
       });
       const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
       await flush();
@@ -4190,10 +4189,33 @@ describe('Chat', () => {
       await sent;
 
       expect(stream.closed()).toBe(true);
+      expect(onFinish).toHaveBeenLastCalledWith(expect.objectContaining({ isDisconnect: true }));
       await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
       expect(transport.abort).toHaveBeenCalledWith(
         expect.objectContaining({ streamId: 'convo-1', generationCreatedAt: 100 }),
       );
+    });
+
+    it('ends a turn by its terminal frame when the host fails to apply it', async () => {
+      const applyEvent = jest.fn((event: ChatEvent) => {
+        if (event.type === 'final') {
+          throw new Error('apply failed');
+        }
+      });
+      const { chat, stream, transport, onFinish } = setup({
+        applyEvent,
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push(finalEvent());
+      await sent;
+
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isError: true, isDisconnect: false, isSettled: true }),
+      );
+      await expect(chat.stop()).resolves.toEqual({ status: 'idle' });
+      expect(transport.abort).not.toHaveBeenCalled();
     });
 
     it('keeps a lost start unaddressable when a reattachment fails before the server answers', async () => {
@@ -4249,6 +4271,46 @@ describe('Chat', () => {
       chat.restorePendingAction({ ...pausedAction, expiresAt: Date.now() + 60_000 }, 100);
 
       expect(chat.pendingAction).toBeUndefined();
+    });
+
+    it('ignores a late status read for a generation a reattachment found finished', async () => {
+      const { chat, stream, transport } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      transport.reconnectToStream.mockResolvedValueOnce(null);
+      await chat.resumeStream();
+
+      chat.restorePendingAction({ ...pausedAction, expiresAt: Date.now() + 60_000 }, 100);
+
+      expect(chat.pendingAction).toBeUndefined();
+    });
+
+    it('reports a lost start stopped once its late stream was stopped on the server', async () => {
+      let deliver: ((result: { status: 'stream'; stream: ChatStream }) => void) | undefined;
+      const late = createStream({ streamId: 'convo-1', generationCreatedAt: 300 });
+      const { chat, transport } = setup();
+      transport.sendMessages.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            deliver = resolve;
+          }),
+      );
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      await expect(chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+      await sent;
+
+      deliver?.({ status: 'stream', stream: late });
+      await flush();
+
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ generationCreatedAt: 300 }),
+      );
+      await expect(chat.stop()).resolves.toEqual({ status: 'idle' });
     });
 
     it('ignores a late status read for a late start a stop already ended', async () => {
