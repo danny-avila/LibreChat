@@ -12,8 +12,9 @@ import {
   captureComposerDraft,
   getActiveComposerDraftId,
 } from '~/utils/drafts';
+import { beginFileSearchUpload, completeFileSearchUpload } from '~/hooks/Files/search';
+import { setFileSearchChoice, getFileSearchChoice } from '~/utils/choices';
 import useCodeWorkspace from '~/hooks/Agents/useCodeWorkspace';
-import { setFileSearchChoice } from '~/utils/choices';
 import useEventHandlers from '../useEventHandlers';
 
 const mockStatus = jest.fn();
@@ -174,6 +175,49 @@ describe('created composer identity', () => {
       release();
       unmount();
       queryClient.clear();
+    },
+  );
+
+  it.each([false, true])(
+    'keeps a saved-chat upload preference on later acknowledgements (disabled later: %s)',
+    (disabledLater) => {
+      const { result, submission, createdData, unmount, queryClient } = setup();
+      window.history.replaceState({}, '', '/c/new');
+      const host = {};
+      const release = registerComposerDraft(0, Constants.NEW_CONVO, 'pending', host);
+      bindComposerLaunch(submission.conversation, 0);
+      localStorage.setItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}new`, 'false');
+      act(() => result.current.createdHandler(createdData, submission));
+      window.history.replaceState({}, '', '/c/saved-chat');
+      release();
+      const releaseSaved = registerComposerDraft(0, 'saved-chat', 'saved-chat', host);
+      setFileSearchChoice('saved-chat', false);
+      beginFileSearchUpload('saved-explicit-upload', 'saved-chat');
+      const revision = getFileSearchChoice('saved-chat')?.revision;
+      if (disabledLater) setFileSearchChoice('saved-chat', false);
+      expect(completeFileSearchUpload('saved-explicit-upload', 'saved-chat')).toBe(!disabledLater);
+      if (disabledLater)
+        localStorage.setItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}saved-chat`, 'false');
+      const next = {
+        ...submission,
+        conversation: result.current.conversation!,
+        ephemeralAgent: { file_search: !disabledLater },
+      };
+      bindComposerLaunch(next.conversation, 0);
+      act(() => result.current.createdHandler(createdData, next));
+      expect(mockApplyAgentTemplate).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          ephemeralAgent: expect.objectContaining({ file_search: !disabledLater }),
+        }),
+      );
+      expect(localStorage.getItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}saved-chat`)).toBe(
+        JSON.stringify(!disabledLater),
+      );
+      if (!disabledLater) expect(getFileSearchChoice('saved-chat')?.revision).toBe(revision);
+      releaseSaved();
+      unmount();
+      queryClient.clear();
+      window.history.replaceState({}, '', '/');
     },
   );
 

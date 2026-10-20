@@ -485,11 +485,12 @@ export const bindComposerLaunch = (
   if (conversation && scope?.active) composerLaunches.set(conversation, { index, scope });
 };
 
-/** Only an acknowledged submission may rename a logical new-chat composer. */
+/** Only an acknowledged submission may rename a composer; assignment effects run once. */
 export const adoptComposerConversation = (
   conversation: object | null | undefined,
   targetId: string,
   index: number,
+  onAssignment?: (sourceId: string, targetId: string) => void,
 ): boolean => {
   const launch = conversation ? composerLaunches.get(conversation) : undefined;
   const scope = launch?.scope;
@@ -518,6 +519,7 @@ export const adoptComposerConversation = (
   );
   scope.assignedRoute = assignedRoute.pathname + assignedRoute.search;
   scope.assignments.forEach((listener) => listener(sourceId, targetId));
+  onAssignment?.(sourceId, targetId);
   return true;
 };
 

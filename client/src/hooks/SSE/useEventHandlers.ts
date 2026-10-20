@@ -753,11 +753,17 @@ export default function useEventHandlers({
       }
 
       const { conversationId, parentMessageId } = userMessage;
-      const fileSearch =
-        conversationId &&
-        adoptComposerConversation(submission.conversation, conversationId, runIndex)
-          ? transferFileSearchPreference(Constants.NEW_CONVO, conversationId)
-          : undefined;
+      let fileSearch: boolean | undefined;
+      if (conversationId) {
+        adoptComposerConversation(
+          submission.conversation,
+          conversationId,
+          runIndex,
+          (sourceId, targetId) => {
+            fileSearch = transferFileSearchPreference(sourceId, targetId);
+          },
+        );
+      }
       lastAnnouncementTimeRef.current = Date.now();
       announcePolite({
         message: 'start',

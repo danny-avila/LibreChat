@@ -1552,6 +1552,30 @@ describe('logical composer lifetime', () => {
     release();
   });
 
+  it('notifies the identity assignment once while validating replays and later launches', () => {
+    window.history.replaceState({}, '', '/c/new');
+    const host = {};
+    const release = registerComposerDraft(39, Constants.NEW_CONVO, 'new:39', host);
+    const launch = { conversationId: Constants.NEW_CONVO };
+    bindComposerLaunch(launch, 39);
+    const assigned = jest.fn();
+    expect(adoptComposerConversation(launch, 'once-assigned', 39, assigned)).toBe(true);
+    expect(assigned).toHaveBeenCalledWith(Constants.NEW_CONVO, 'once-assigned');
+    expect(adoptComposerConversation(launch, 'once-assigned', 39, assigned)).toBe(true);
+    window.history.replaceState({}, '', '/c/once-assigned');
+    release();
+    const releaseSaved = registerComposerDraft(39, 'once-assigned', 'once-assigned', host);
+    const nextLaunch = { conversationId: 'once-assigned' };
+    bindComposerLaunch(nextLaunch, 39);
+    expect(adoptComposerConversation(nextLaunch, 'once-assigned', 39, assigned)).toBe(true);
+    expect(assigned).toHaveBeenCalledTimes(1);
+    window.history.replaceState({}, '', '/c/unrelated');
+    expect(adoptComposerConversation(nextLaunch, 'once-assigned', 39, assigned)).toBe(false);
+    expect(assigned).toHaveBeenCalledTimes(1);
+    releaseSaved();
+    window.history.replaceState({}, '', '/');
+  });
+
   it('keeps reset revisions pane-local and stable until an explicit reset', () => {
     const first = getNewConversationDraftRevision(31);
     expect(getNewConversationDraftRevision(31)).toBe(first);

@@ -295,7 +295,14 @@ export default function useResumableSSE(
       upsertConvoInAllQueries(queryClient, optimisticConversation);
 
       const hydrated = hydrateSubmissionMessages(currentSubmission, conversationId);
-      if (adoptComposerConversation(currentSubmission.conversation, conversationId, runIndex)) {
+      if (
+        adoptComposerConversation(
+          currentSubmission.conversation,
+          conversationId,
+          runIndex,
+          transferFileSearchPreference,
+        )
+      ) {
         bindComposerLaunch(hydrated.conversation, runIndex);
       }
       return hydrated;
@@ -1383,9 +1390,12 @@ export default function useResumableSSE(
             queueTitleGeneration(newStreamId);
           }
           if (isInitialNewConversation(submission)) {
-            if (adoptComposerConversation(submission.conversation, newStreamId, runIndex)) {
-              transferFileSearchPreference(Constants.NEW_CONVO, newStreamId);
-            }
+            adoptComposerConversation(
+              submission.conversation,
+              newStreamId,
+              runIndex,
+              transferFileSearchPreference,
+            );
             run.optimisticStreamIds.add(newStreamId);
             replaceNewConversationUrl(newStreamId);
           }
