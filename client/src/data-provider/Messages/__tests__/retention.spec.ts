@@ -63,9 +63,10 @@ describe('retainMessages', () => {
   it('releases an oversized history instead of keeping it for the warm-cache grace', () => {
     stop();
     stop = retainMessages(queryClient, { isPinned: () => false, maxBytes: 1024 });
-    queryClient.setQueryData([QueryKeys.messages, 'large'], [
-      { ...history('large')[0], text: 'x'.repeat(4096) },
-    ]);
+    queryClient.setQueryData(
+      [QueryKeys.messages, 'large'],
+      [{ ...history('large')[0], text: 'x'.repeat(4096) }],
+    );
     observe(queryClient, 'large')();
 
     jest.advanceTimersByTime(RELEASE_SETTLE_MS);
@@ -80,9 +81,10 @@ describe('retainMessages', () => {
     jest.advanceTimersByTime(RELEASE_SETTLE_MS);
     expect(isCached(queryClient, 'a')).toBe(true);
 
-    queryClient.setQueryData([QueryKeys.messages, 'a'], [
-      { ...history('a')[0], text: 'x'.repeat(4096) },
-    ]);
+    queryClient.setQueryData(
+      [QueryKeys.messages, 'a'],
+      [{ ...history('a')[0], text: 'x'.repeat(4096) }],
+    );
     jest.advanceTimersByTime(RELEASE_SETTLE_MS);
 
     expect(isCached(queryClient, 'a')).toBe(false);
@@ -92,9 +94,10 @@ describe('retainMessages', () => {
     stop();
     stop = retainMessages(queryClient, { isPinned: () => false, recent: 3, maxBytes: 1024 });
     for (const id of ['a', 'b', 'c']) {
-      queryClient.setQueryData([QueryKeys.messages, id], [
-        { ...history(id)[0], text: 'x'.repeat(300) },
-      ]);
+      queryClient.setQueryData(
+        [QueryKeys.messages, id],
+        [{ ...history(id)[0], text: 'x'.repeat(300) }],
+      );
       observe(queryClient, id)();
       jest.advanceTimersByTime(10);
     }

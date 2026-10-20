@@ -159,23 +159,38 @@ describe('useMessagesRetention', () => {
       messageId: 'large-2',
       text: 'x'.repeat(10_000),
     });
-    getMessagesByConvoId.mockImplementation(async (id: string) =>
-      id === 'large' ? largeHistory : history(id),
-    );
+    let finishRefresh: (() => void) | undefined;
+    const smallRefresh = new Promise<TMessage[]>((resolve) => {
+      finishRefresh = () => resolve(history('small'));
+    });
+    let smallFetches = 0;
+    getMessagesByConvoId.mockImplementation(async (id: string) => {
+      if (id === 'small' && ++smallFetches === 2) {
+        return smallRefresh;
+      }
+      return id === 'large' ? largeHistory : history(id);
+    });
     await open('small');
     await open('large');
     expect(isCached(queryClient, 'large')).toBe(true);
     const partsKey = [QueryKeys.toolCallPart, 'large', 'large-2', 'call'];
     queryClient.setQueryData(partsKey, { tool_call: { output: 'full output' } });
 
-    await open('small');
+    act(() => {
+      navigate('/c/small');
+    });
+    expect(screen.getByText('transcript of small')).toBeInTheDocument();
+    await waitFor(() => expect(fetchesOf('small')).toBe(2));
     elapse(RELEASE_SETTLE_MS);
 
     expect(screen.getByText('transcript of small')).toBeInTheDocument();
     expect(isCached(queryClient, 'large')).toBe(false);
     expect(isCached(queryClient, 'small')).toBe(true);
     expect(queryClient.getQueryData(partsKey)).toBeUndefined();
-    expect(fetchesOf('small')).toBe(1);
+    await act(async () => {
+      finishRefresh?.();
+      await smallRefresh;
+    });
     await open('large');
     expect(fetchesOf('large')).toBe(2);
   });
