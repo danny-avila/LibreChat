@@ -1258,9 +1258,10 @@ export class Chat {
         this.clearAction();
       }
     }
-    this.setConnection('live');
     let outcome: Outcome | undefined;
     try {
+      /** Inside the cleanup, so a host listener that throws here still closes the stream. */
+      this.setConnection('live');
       for await (const event of stream) {
         if (signal.aborted) {
           break;

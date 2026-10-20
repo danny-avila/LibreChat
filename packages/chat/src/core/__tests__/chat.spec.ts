@@ -206,6 +206,23 @@ describe('Chat', () => {
     expect(chat.connection).toBe('idle');
   });
 
+  it('closes the stream when a subscriber throws on the live connection', async () => {
+    const { chat, stream, onFinish } = setup();
+    let thrown = false;
+    chat.subscribe(() => {
+      if (!thrown && chat.connection === 'live') {
+        thrown = true;
+        throw new Error('listener failed');
+      }
+    });
+
+    await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+
+    expect(stream.closed()).toBe(true);
+    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isError: true }));
+    expect(chat.connection).toBe('idle');
+  });
+
   it('notifies subscribers of each change', async () => {
     const { chat, stream } = setup();
     const listener = jest.fn();
