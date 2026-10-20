@@ -874,6 +874,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         prompt,
         progress,
         persistedContent,
+        attachments: selection.attachments,
         isDetached: selection.durable != null,
         legacyOutput,
         // A detached parent tool step closes as soon as dispatch succeeds;
@@ -904,13 +905,16 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     const durable = adaptDurableThreadActivity(taskView, selection.durable.taskId);
     const useLiveItems =
       (durable.status === 'running' || durable.status === 'dispatched') &&
-      liveActivity.items.length > 0;
+      (liveActivity.content?.length ?? liveActivity.items.length) > 0;
     const mergedItems =
       !useLiveItems && durable.items.length > 0 ? durable.items : liveActivity.items;
     const merged = {
       ...durable,
       prompt: durable.prompt ?? liveActivity.prompt,
       items: mergedItems,
+      attachments: durable.attachments ?? liveActivity.attachments,
+      content:
+        !useLiveItems && durable.items.length > 0 ? durable.content : liveActivity.content,
     };
     if (
       transientControl == null ||
@@ -1375,11 +1379,15 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     panelState = storedPart.isError ? 'error' : 'loading';
   } else if (
     selection.durable != null &&
-    liveActivity.items.length === 0 &&
+    (liveActivity.content?.length ?? liveActivity.items.length) === 0 &&
     (isLoading || isReadinessPending)
   ) {
     panelState = 'loading';
-  } else if (selection.durable != null && liveActivity.items.length === 0 && isError) {
+  } else if (
+    selection.durable != null &&
+    (liveActivity.content?.length ?? liveActivity.items.length) === 0 &&
+    isError
+  ) {
     panelState = 'error';
   }
   const renderEventTask = (task: ParentSubagentTaskSummary) => {
@@ -1492,7 +1500,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
             >
               {historyState === 'loading'
                 ? localize('com_ui_loading')
-                : localize('com_ui_subagent_load_earlier_activity')}
+                : localize('com_ui_load_more')}
             </Button>
           </div>
         )}
@@ -1513,6 +1521,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           author={childAuthor}
           parentAuthor={isSelfSpawn && selection.event == null ? childAuthor : parentAuthor}
           conversationId={threadId || selection.parentConversationId}
+          interactive={selection.host === 'conversation' && selection.durable == null}
           stateByTask={conversationStateByTask}
           controllableTaskId={
             controlAvailable && !controlPending ? selection.durable?.taskId : undefined

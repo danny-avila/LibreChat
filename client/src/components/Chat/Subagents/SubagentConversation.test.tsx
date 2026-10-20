@@ -1,9 +1,39 @@
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type { ChatContract } from '~/hooks/Chat/contract';
 import type { ChildConversationTurn } from './adapters';
 import type { TurnAuthor } from './author';
 import SubagentConversation from './SubagentConversation';
+import { ChatContext } from '~/Providers/ChatContext';
 import { ChatSurfaceHarness } from 'test/harness';
+
+const mockCopyMessage = jest.fn();
+const mockPartScope = jest.fn();
+const mockParentAsk = jest.fn();
+
+jest.mock('~/Providers/MessagePartsHostContext', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  const Context = React.createContext({
+    useShowThinking: () => false,
+    useAutoExpandTools: () => false,
+    useMessagesAsk: () => mockParentAsk,
+  });
+  return {
+    MessagePartsHostProvider: ({ host, children }: {
+      host: React.ContextType<typeof Context>; children: React.ReactNode;
+    }) => <Context.Provider value={host}>{children}</Context.Provider>,
+    useMessagePartsHost: () => React.useContext(Context),
+  };
+});
+
+jest.mock('~/components/Chat/Messages/MinimalHoverButtons', () => ({
+  __esModule: true,
+  default: ({ message }: { message: TMessage }) => {
+    mockCopyMessage(message);
+    return <button type="button" aria-label="copy" />;
+  },
+}));
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -21,18 +51,24 @@ jest.mock('~/components/Chat/Messages/Content/ContentParts', () => ({
   }: {
     content: Array<Record<string, unknown>>;
     messageId: string;
-  }) => (
-    <div data-testid="shared-content-parts" data-message-id={messageId}>
-      {content.map((part, index) => (
-        <span key={index}>
-          {(part.text as string | undefined) ??
-            (part.think as string | undefined) ??
-            (part.tool_call as { name?: string } | undefined)?.name ??
-            ''}
-        </span>
-      ))}
-    </div>
-  ),
+  }) => {
+    const React = jest.requireActual<typeof import('react')>('react');
+    const { ChatContext } = jest.requireActual('~/Providers/ChatContext');
+    const { useMessagePartsHost } = jest.requireMock('~/Providers/MessagePartsHostContext');
+    mockPartScope(React.useContext(ChatContext), useMessagePartsHost().useMessagesAsk());
+    return (
+      <div data-testid="shared-content-parts" data-message-id={messageId}>
+        {content.map((part, index) => (
+          <span key={index}>
+            {(part.text as string | undefined) ??
+              (part.think as string | undefined) ??
+              (part.tool_call as { name?: string } | undefined)?.name ??
+              ''}
+          </span>
+        ))}
+      </div>
+    );
+  },
 }));
 
 jest.mock('~/components/Chat/Messages/Content/Container', () => ({
@@ -149,7 +185,7 @@ describe('SubagentConversation', () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByText('com_ui_subagent_activity_details_unavailable'),
-    ).not.toBeInTheDocument();
+    ).toBeInTheDocument();
     expect(screen.getByTestId('stream-elapsed')).toBeInTheDocument();
 
     fireEvent.click(
@@ -198,7 +234,7 @@ describe('SubagentConversation', () => {
       </ChatSurfaceHarness>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_show_full_activity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_load_more' }));
     expect(loadDetails).toHaveBeenCalledWith('task-1');
   });
 
@@ -237,5 +273,50 @@ describe('SubagentConversation', () => {
         name: /com_ui_subagent_trigger_external_event.*chess\.turn\.ready.*speed-chess.*2026-08-25T12:02:00.000Z/,
       }),
     ).toBeInTheDocument();
+  });
+});
+
+
+describe('standard conversation content', () => {
+  beforeEach(() => {
+    mockCopyMessage.mockClear();
+    mockPartScope.mockClear();
+    mockParentAsk.mockClear();
+  });
+
+  it('copies the standard message source through the normal safe-copy action', () => {
+    const content = [{ type: 'text', text: 'Authoritative answer', phase: 'final_answer' }, {
+      type: 'tool_call', tool_call: { id: 'tool', name: 'bash', args: 'private input', output: 'private output' },
+    }] as TMessageContentParts[];
+    render(
+      <ChatSurfaceHarness>
+        <SubagentConversation
+          turns={[{ ...turns[0], activity: { ...turns[0].activity, content, messageId: 'stable-response' } }]}
+          author={author} parentAuthor={parentAuthor}
+        />
+      </ChatSurfaceHarness>,
+    );
+    expect(mockCopyMessage).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: 'stable-response', content, text: '', isCreatedByUser: false,
+    }));
+    expect(mockCopyMessage.mock.calls.at(-1)?.[0].content).toBe(content);
+    expect(screen.queryByText('The release is ready.')).not.toBeInTheDocument();
+  });
+
+  it.each([false, true])('never binds normal send effects, interactive approval scope=%s', (interactive) => {
+    const parent = { conversation: { conversationId: 'parent' }, ask: mockParentAsk } as ChatContract;
+    render(
+      <ChatSurfaceHarness>
+        <ChatContext.Provider value={parent}>
+          <SubagentConversation
+            turns={[turns[0]]} author={author} parentAuthor={parentAuthor} interactive={interactive}
+          />
+        </ChatContext.Provider>
+      </ChatSurfaceHarness>,
+    );
+    const [context, ask] = mockPartScope.mock.calls.at(-1)!;
+    expect(context).toBe(interactive ? parent : null);
+    ask({ text: 'Do not send this through the parent' });
+    expect(mockParentAsk).not.toHaveBeenCalled();
   });
 });

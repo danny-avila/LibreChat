@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
-import { useAtomValue } from 'jotai';
+import { useContext, useMemo, useState } from 'react';
 import { Radio } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
 import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@librechat/client';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
+import type { ToolContentQuery } from '~/components/Chat/Messages/Content/disclosure';
+import type { MessagePartsHost } from '~/hooks/Chat/contract';
 import type { ChildConversationTurn } from './adapters';
 import type { TranslationKeys } from '~/hooks';
 import type { TurnAuthor } from './author';
@@ -12,16 +13,26 @@ import SystemEventHeader, {
   SystemEventIcon,
   systemEventHeaderClasses,
 } from '~/components/Chat/Messages/ui/SystemEvent';
-import { SubagentActivityContent, SubagentStatus } from './SubagentActivity';
+import { MessagePartsHostProvider, useMessagePartsHost } from '~/Providers/MessagePartsHostContext';
+import { SubagentActivityContent, SubagentStatus, getActivityContent } from './SubagentActivity';
+import ResumeAuthorHeader from '~/components/Chat/Messages/Content/Parts/ResumeAuthorHeader';
+import { useSearchResultsByTurn } from '~/hooks/Messages/useSearchResultsByTurn';
+import { ErrorSourceProvider } from '~/components/Messages/Content/Error/source';
+import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import { isAbnormalTerminalStatus, isLiveSubagentStatus } from './status';
 import { messageFooterClasses } from '~/components/Chat/Messages/styles';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import { ElapsedTimer } from '~/components/Chat/Messages/Elapsed';
-import { showThinkingAtom } from '~/store/showThinking';
+import { AuthorContext } from '~/Providers/AuthorContext';
+import { ChatContext } from '~/Providers/ChatContext';
 import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+
+const RESUME_AUTHOR_HEADER = <ResumeAuthorHeader />;
+const ignoreMessage: ReturnType<MessagePartsHost['useMessagesAsk']> = () => undefined;
+const useNoMessagesAsk: MessagePartsHost['useMessagesAsk'] = () => ignoreMessage;
 
 const TRIGGER_LABELS = {
   parent_dispatch: 'com_ui_subagent_trigger_parent_dispatch',
@@ -121,7 +132,7 @@ function TriggerMessage({
   fullWidth: boolean;
   parentAuthor: TurnAuthor;
 }) {
-  const showThinking = useAtomValue(showThinkingAtom);
+  const showThinking = useMessagePartsHost().useShowThinking();
   const localize = useLocalize();
   const label = localize(TRIGGER_LABELS[turn.trigger.kind]);
   const content = useMemo<TMessageContentParts[]>(
@@ -136,6 +147,17 @@ function TriggerMessage({
           ],
     [turn.trigger.summary],
   );
+  const message = useMemo<TMessage>(
+    () => ({
+      messageId: `${turn.taskId}:trigger`,
+      parentMessageId: null,
+      conversationId: null,
+      isCreatedByUser: true,
+      text: '',
+      content,
+    }),
+    [content, turn.taskId],
+  );
   if (turn.trigger.kind === 'external_event') {
     return <ExternalEventTrigger turn={turn} fullWidth={fullWidth} />;
   }
@@ -144,7 +166,7 @@ function TriggerMessage({
       id={`${turn.taskId}:trigger`}
       icon={parentAuthor.icon}
       label={parentAuthor.name}
-      footer={null}
+      footer={<MinimalHoverButtons message={message} />}
       timestamp={turn.trigger.createdAt}
       ariaLabel={label}
       headerPrefix=""
@@ -184,7 +206,9 @@ function ChildMessage({
   onCancelControl,
   detailState,
   onLoadDetails,
+  toolContentQuery,
 }: {
+  toolContentQuery?: ToolContentQuery;
   turn: ChildConversationTurn;
   state: 'ready' | 'loading' | 'error';
   author: TurnAuthor;
@@ -195,23 +219,38 @@ function ChildMessage({
   onLoadDetails?: () => void;
 }) {
   const localize = useLocalize();
-  const detailsLimited = turn.activity.activityTruncated === true;
+  const activity = turn.activity;
+  const content = useMemo(() => getActivityContent(activity), [activity]);
+  const message = useMemo<TMessage>(
+    () => ({
+      messageId: activity.messageId ?? `${turn.taskId}:assistant`,
+      parentMessageId: `${turn.taskId}:trigger`,
+      conversationId: conversationId ?? null,
+      isCreatedByUser: false,
+      text: '',
+      content,
+    }),
+    [content, conversationId, activity.messageId, turn.taskId],
+  );
+  const searchResults = useSearchResultsByTurn(activity.attachments);
+  const messageAuthor = useMemo(() => ({ icon: author.icon, label: author.name }), [author]);
+  const detailsLimited = activity.activityTruncated === true;
   let limitedNotice: ReactNode;
   if (detailsLimited && onLoadDetails != null && detailState !== 'unavailable') {
     limitedNotice = (
       <Button type="button" variant="ghost" size="sm" onClick={onLoadDetails}>
         {detailState === 'error'
           ? localize('com_ui_retry')
-          : localize('com_ui_subagent_show_full_activity')}
+          : localize('com_ui_load_more')}
       </Button>
     );
   } else {
     limitedNotice = localize('com_ui_subagent_activity_details_unavailable');
   }
   let footerContent: ReactNode = null;
-  if (isAbnormalTerminalStatus(turn.activity.status)) {
-    footerContent = <SubagentStatus activity={turn.activity} />;
-  } else if (isLiveSubagentStatus(turn.activity.status)) {
+  if (isAbnormalTerminalStatus(activity.status)) {
+    footerContent = <SubagentStatus activity={activity} />;
+  } else if (isLiveSubagentStatus(activity.status)) {
     const triggeredAt = turn.trigger.createdAt ?? turn.trigger.externalEvent?.occurredAt;
     const startedAt = triggeredAt == null ? NaN : Date.parse(triggeredAt);
     footerContent = <ElapsedTimer start={Number.isFinite(startedAt) ? startedAt : undefined} />;
@@ -221,11 +260,16 @@ function ChildMessage({
    *  upward, and the reading has to be sized by the same `text-xs` its main
    *  chat counterpart inherits rather than by the panel's body size. */
   const footer = (
-    <div className={cn('mt-1 flex justify-start gap-3', messageFooterClasses)}>{footerContent}</div>
+    <div className={cn('mt-1 flex justify-start gap-3', messageFooterClasses)}>
+      {footerContent}
+      {!isLiveSubagentStatus(activity.status) && (
+        <MinimalHoverButtons message={message} searchResults={searchResults} />
+      )}
+    </div>
   );
   return (
     <MessageRow
-      id={`${turn.taskId}:assistant`}
+      id={message.messageId}
       icon={author.icon}
       label={author.name}
       footer={footer}
@@ -234,15 +278,23 @@ function ChildMessage({
       isCreatedByUser={false}
       fullWidth={fullWidth}
     >
-      <SubagentActivityContent
-        activity={turn.activity}
-        activityId={`${turn.taskId}:assistant`}
-        state={state}
-        showPrompt={false}
-        conversationId={conversationId}
-        underHeaderIcon
-        onCancelControl={onCancelControl}
-      />
+      <AuthorContext.Provider value={messageAuthor}>
+        <ErrorSourceProvider message={message}>
+          <SubagentActivityContent
+            activity={activity}
+            activityId={message.messageId}
+            content={content}
+            authorHeader={RESUME_AUTHOR_HEADER}
+            searchResults={searchResults}
+            toolContentQuery={toolContentQuery}
+            state={state}
+            showPrompt={false}
+            conversationId={conversationId}
+            underHeaderIcon
+            onCancelControl={onCancelControl}
+          />
+        </ErrorSourceProvider>
+      </AuthorContext.Provider>
       {detailsLimited && detailState !== 'loading' && (
         <div className="text-text-secondary mt-2 text-xs">{limitedNotice}</div>
       )}
@@ -265,8 +317,14 @@ export default function SubagentConversation({
   onCancelControl,
   detailStateByTask,
   onLoadTurnDetails,
+  interactive = false,
+  toolContentQueries,
 }: {
+  /** Task-authorized preview hooks, backed by the recovery API rather than child message reads. */
+  toolContentQueries?: ReadonlyMap<string, ToolContentQuery>;
   turns: ChildConversationTurn[];
+  /** Only foreground children share their parent's live approval scope. */
+  interactive?: boolean;
   /** The child agent: every assistant turn's header. */
   author: TurnAuthor;
   /** The agent that briefs the child: every parent-written turn's header. */
@@ -279,39 +337,47 @@ export default function SubagentConversation({
   onLoadTurnDetails?: (taskId: string) => void;
 }) {
   const { maximizeChatSpace: fullWidth } = useChatSurface();
+  const parentChat = useContext(ChatContext);
+  const host = useMessagePartsHost();
+  const contentHost = useMemo(() => ({ ...host, useMessagesAsk: useNoMessagesAsk }), [host]);
   return (
-    <div className="flex flex-col gap-6 py-4" data-subagent-conversation>
-      {turns.map((turn) => (
-        <section
-          key={turn.taskId}
-          className="flex flex-col gap-4"
-          data-subagent-thread-turn={turn.taskId}
-        >
-          <div className="px-4">
-            <TriggerMessage turn={turn} fullWidth={fullWidth} parentAuthor={parentAuthor} />
-          </div>
-          <div className="px-4">
-            <ChildMessage
-              turn={turn}
-              author={author}
-              conversationId={conversationId}
-              fullWidth={fullWidth}
-              state={stateByTask?.get(turn.taskId) ?? 'ready'}
-              onCancelControl={
-                onCancelControl == null || turn.taskId !== controllableTaskId
-                  ? undefined
-                  : (controlId) => onCancelControl(turn.taskId, controlId)
-              }
-              detailState={detailStateByTask?.get(turn.taskId)}
-              onLoadDetails={
-                turn.activity.activityTruncated !== true || onLoadTurnDetails == null
-                  ? undefined
-                  : () => onLoadTurnDetails(turn.taskId)
-              }
-            />
-          </div>
-        </section>
-      ))}
-    </div>
+    <ChatContext.Provider value={interactive ? parentChat : null}>
+      <MessagePartsHostProvider host={contentHost}>
+        <div className="flex flex-col gap-6 py-4" data-subagent-conversation>
+          {turns.map((turn) => (
+            <section
+              key={turn.taskId}
+              className="flex flex-col gap-4"
+              data-subagent-thread-turn={turn.taskId}
+            >
+              <div className="px-4">
+                <TriggerMessage turn={turn} fullWidth={fullWidth} parentAuthor={parentAuthor} />
+              </div>
+              <div className="px-4">
+                <ChildMessage
+                  turn={turn}
+                  author={author}
+                  conversationId={conversationId}
+                  fullWidth={fullWidth}
+                  state={stateByTask?.get(turn.taskId) ?? 'ready'}
+                  onCancelControl={
+                    onCancelControl == null || turn.taskId !== controllableTaskId
+                      ? undefined
+                      : (controlId) => onCancelControl(turn.taskId, controlId)
+                  }
+                  toolContentQuery={toolContentQueries?.get(turn.taskId)}
+                  detailState={detailStateByTask?.get(turn.taskId)}
+                  onLoadDetails={
+                    turn.activity.activityTruncated !== true || onLoadTurnDetails == null
+                      ? undefined
+                      : () => onLoadTurnDetails(turn.taskId)
+                  }
+                />
+              </div>
+            </section>
+          ))}
+        </div>
+      </MessagePartsHostProvider>
+    </ChatContext.Provider>
   );
 }

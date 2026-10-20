@@ -312,11 +312,13 @@ export default function SubagentCall({
       runStepStatus,
       approvalVisibility: 'hidden',
     });
-    const hasRenderableFallback = fallbackActivity.items.some(
-      (item) =>
-        (item.type !== 'writing' || item.text.length > 0) &&
-        (item.type !== 'activity_label' || item.label.length > 0),
-    );
+    const hasRenderableFallback =
+      (fallbackActivity.content?.length ?? 0) > 0 ||
+      fallbackActivity.items.some(
+        (item) =>
+          (item.type !== 'writing' || item.text.length > 0) &&
+          (item.type !== 'activity_label' || item.label.length > 0),
+      );
     const hasParentContext = parentConversationId !== '' && parentMessageId !== '';
     const canOpenLiveForeground =
       isSharedConvo !== true && backgroundHandle == null && hasParentContext;
@@ -352,6 +354,7 @@ export default function SubagentCall({
       ...(prompt == null ? {} : { prompt }),
       ...(backgroundHandle == null ? { legacyOutput: output } : {}),
       ...(persistedContent == null ? {} : { persistedContent }),
+      ...(attachments == null ? {} : { attachments }),
       ...(contentPreview == null ? {} : { contentPreview }),
       initialProgress,
       isSubmitting,
@@ -366,6 +369,7 @@ export default function SubagentCall({
         : {}),
     }),
     [
+      attachments,
       backgroundHandle,
       canOpenDurablePanel,
       contentPreview,

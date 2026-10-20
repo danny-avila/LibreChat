@@ -8,6 +8,8 @@ import type {
   SubagentThreadStatus,
   SubagentThreadView,
   TMessageContentParts,
+  TAttachment,
+  FullToolCall,
 } from 'librechat-data-provider';
 import type { SubagentProgress } from './state';
 import { REDACTED_REASONING_MARKER } from './state';
@@ -60,6 +62,10 @@ export type ChildActivity = {
   prompt?: string;
   status: SubagentThreadStatus;
   items: ChildActivityItem[];
+  /** Standard parts bypass the legacy activity projection. */
+  content?: TMessageContentParts[];
+  messageId?: string;
+  attachments?: TAttachment[];
   controls?: Array<
     Omit<SubagentControlReceipt, 'status'> & {
       status: SubagentControlReceipt['status'] | 'submitted';
@@ -288,12 +294,66 @@ const liveStatus = ({
   return isSubmitting ? 'running' : 'cancelled';
 };
 
+/** Keep standard metadata and sharing; public nested transcripts must not expose approvals. */
+const standardContent = (
+  content: TMessageContentParts[],
+  approvalVisibility: 'visible' | 'hidden',
+): TMessageContentParts[] => {
+  type Frame = {
+    source: TMessageContentParts[];
+    result: TMessageContentParts[];
+    index: number;
+  };
+  const stack: Frame[] = [{ source: content, result: content, index: 0 }];
+  const replace = (frame: Frame, index: number, part: TMessageContentParts) => {
+    if (frame.result === frame.source) frame.result = frame.source.slice();
+    frame.result[index] = part;
+  };
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.index === frame.source.length) {
+      stack.pop();
+      const parent = stack[stack.length - 1];
+      if (parent == null) return frame.result;
+      if (frame.result !== frame.source) {
+        const index = parent.index - 1;
+        const part = parent.result[index];
+        if (part.type === ContentTypes.TOOL_CALL) {
+          replace(parent, index, {
+            ...part,
+            tool_call: { ...part.tool_call, subagent_content: frame.result },
+          } as TMessageContentParts);
+        }
+      }
+      continue;
+    }
+    const index = frame.index++;
+    const part = frame.source[index];
+    if (part.type === ContentTypes.THINK && part.think === REDACTED_REASONING_MARKER) {
+      replace(frame, index, { ...part, think: '', reasoning_unavailable: true });
+      continue;
+    }
+    if (part.type !== ContentTypes.TOOL_CALL || approvalVisibility !== 'hidden') continue;
+    const tool = part.tool_call as FullToolCall;
+    if (tool == null) continue;
+    if (tool.approval != null) {
+      const { approval: _approval, ...visibleTool } = tool;
+      replace(frame, index, { ...part, tool_call: visibleTool } as TMessageContentParts);
+    }
+    if (tool.subagent_content != null) {
+      stack.push({ source: tool.subagent_content, result: tool.subagent_content, index: 0 });
+    }
+  }
+  return content;
+};
+
 /** Adapts live SSE state, parent persistence, and legacy output at one seam. */
 export function adaptLivePersistedActivity(input: {
   title: string;
   prompt?: string;
   progress: SubagentProgress | null;
   persistedContent?: TMessageContentParts[];
+  attachments?: TAttachment[];
   legacyOutput?: string | null;
   initialProgress: number;
   isSubmitting: boolean;
@@ -307,10 +367,14 @@ export function adaptLivePersistedActivity(input: {
   const persistedItems = contentPartsToActivity(persisted, approvalVisibility);
   const liveItems = contentPartsToActivity(live, approvalVisibility);
   let items = persistedItems.length > 0 ? persistedItems : liveItems;
+  let content = persisted.length > 0 ? persisted : live;
   if (input.isDetached === true && input.progress?.coverage === 'suffix') {
     items = mergePersistedAndLiveActivity(persistedItems, liveItems);
-  } else if (input.isDetached === true && liveItems.length > 0) {
+    // A suffix without sequence-aligned standard recovery still needs the legacy bridge.
+    content = [];
+  } else if (input.isDetached === true && live.length > 0) {
     items = liveItems;
+    content = live;
   }
   if (items.length === 0 && input.legacyOutput != null && input.legacyOutput !== '') {
     items.push({ type: 'writing', text: input.legacyOutput });
@@ -320,7 +384,12 @@ export function adaptLivePersistedActivity(input: {
     ...(input.prompt == null ? {} : { prompt: input.prompt }),
     status: liveStatus(input),
     items,
+    ...(content.length === 0 ? {} : { content: standardContent(content, approvalVisibility) }),
     controls: [],
+    ...(input.progress?.coverage === 'suffix' || (input.progress?.droppedCount ?? 0) > 0
+      ? { activityTruncated: true }
+      : {}),
+    ...(input.attachments == null ? {} : { attachments: input.attachments }),
   };
 }
 
