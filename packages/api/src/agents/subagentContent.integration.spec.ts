@@ -23,6 +23,9 @@ beforeAll(async () => {
   createModels(mongoose);
   await mongoose.connect(mongo.getUri());
   methods = createMethods(mongoose);
+  await Promise.all(
+    ['Message', 'SubagentContent'].map((name) => mongoose.models[name].createIndexes()),
+  );
 });
 afterEach(async () => {
   await Promise.all(
@@ -842,7 +845,7 @@ describe('selective task content deletion', () => {
       const scope = await seedTask(tenantId);
       const neighbors = [
         { ...scope, taskId: randomUUID() },
-        { ...scope, conversationId: randomUUID() },
+        { ...scope, conversationId: randomUUID(), taskId: randomUUID() },
         { ...scope, user: 'another-owner' },
         { ...scope, tenantId: 'tenant-b' },
       ];
@@ -864,12 +867,25 @@ describe('selective task content deletion', () => {
           payload: 'retained',
         });
       }
+      const otherChildJournal = { ...scope, conversationId: randomUUID() };
+      await mongoose.models.SubagentContent.create({
+        ...otherChildJournal,
+        ...batch,
+        _id: randomUUID(),
+        fragment: 0,
+        fragments: 1,
+        digest: 'unrelated',
+        payload: 'retained',
+      });
       const missing = { ...sourceFilter(scope, 'assistant'), messageId: 'missing:assistant' };
       await expect(methods.deleteMessages(missing)).resolves.toMatchObject({ deletedCount: 0 });
       expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(2);
       await methods.deleteMessages(sourceFilter(scope, 'assistant'));
       expect(await mongoose.models.Message.countDocuments(sourceFilter(scope, 'user'))).toBe(1);
       expect(await mongoose.models.SubagentContent.countDocuments(journalFilter(scope))).toBe(0);
+      expect(
+        await mongoose.models.SubagentContent.countDocuments(journalFilter(otherChildJournal)),
+      ).toBe(1);
       for (const neighbor of neighbors) {
         const source = await mongoose.models.Message.findOne(sourceFilter(neighbor, 'assistant'))
           .select('+subagentContent')
