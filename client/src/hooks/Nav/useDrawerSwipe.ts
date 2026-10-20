@@ -34,6 +34,19 @@ const SETTLE_BUFFER_MS = 80;
 const drawerCoversPane = (drawer: HTMLElement): boolean =>
   (drawer.clientWidth || window.innerWidth) >= window.innerWidth;
 
+/**
+ * Which physical way "open" points: 1 when the drawer sits on the left (LTR),
+ * -1 when it sits on the right (RTL). Read from the drawer itself, the element
+ * anchored to the inline-start edge, and multiplied into every horizontal
+ * distance, velocity and transform so the gesture logic below reasons in
+ * logical terms (positive = toward open).
+ */
+const drawerSign = (drawer: HTMLElement): 1 | -1 =>
+  window.getComputedStyle(drawer).direction === 'rtl' ? -1 : 1;
+
+/** Fully offscreen past the drawer's inline-start edge. */
+const closedDrawerTransform = (sign: 1 | -1) => `translate3d(${-100 * sign}%, 0, 0)`;
+
 /** Same kick as the drawer/pane transforms: the scrim must not wait for the
  *  Recoil commit, which a large conversation can delay past the slide. */
 const setScrimOpacity = (open: boolean) => {
@@ -160,7 +173,9 @@ export function kickDrawerAnimation(next: boolean, applyState: () => void): Draw
 /**
  * Walks from `start` up to `boundary` looking for a horizontal scroller that
  * can still consume a pan in `direction` (1 = finger moving right, which
- * reveals content to the left, i.e. needs `scrollLeft > 0`). A rightward
+ * reveals content to the left, i.e. needs `scrollLeft > 0`). `direction` is
+ * physical on purpose: what a scroller can consume depends on where its
+ * content sits on screen, not on which way the drawer opens. A rightward
  * swipe inside a code block only defers to the block while it can actually
  * scroll that way — parked at its edge, the drawer may claim the drag.
  */
@@ -211,7 +226,10 @@ type Gesture = {
   touchId: number;
   startX: number;
   startY: number;
+  /** Logical travel: positive toward open, whichever side the drawer is on. */
   dx: number;
+  /** See `drawerSign`; captured at touchstart so one gesture never changes sides. */
+  sign: 1 | -1;
   width: number;
   reducedMotion: boolean;
   drawer: HTMLElement;
@@ -269,8 +287,8 @@ const dragTransforms = (gesture: Gesture): { drawer: string; pane: string } => {
     ? Math.min(Math.max(gesture.dx, 0), gesture.width)
     : Math.min(Math.max(gesture.dx, -gesture.width), 0) + gesture.width;
   return {
-    drawer: `translate3d(${progress - gesture.width}px, 0, 0)`,
-    pane: `translate3d(${progress}px, 0, 0)`,
+    drawer: `translate3d(${(progress - gesture.width) * gesture.sign}px, 0, 0)`,
+    pane: `translate3d(${progress * gesture.sign}px, 0, 0)`,
   };
 };
 
@@ -387,7 +405,9 @@ export default function useDrawerSwipe({
       const { drawer: drawerEl, pane: paneEl } = gesture;
       drawerEl.style.transition = MOBILE_DRAWER_TRANSITION;
       paneEl.style.transition = SIDEBAR_TRANSITION;
-      drawerEl.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
+      drawerEl.style.transform = next
+        ? 'translate3d(0, 0, 0)'
+        : closedDrawerTransform(gesture.sign);
       paneEl.style.transform = next ? MOBILE_PANE_SHIFT : 'translate3d(0, 0, 0)';
       markDrawerAnimationStart();
       notifyDrawerSlide(next);
@@ -470,7 +490,9 @@ export default function useDrawerSwipe({
         drawer.style.width = next
           ? MOBILE_DRAWER_WIDTH
           : `${drawer.getBoundingClientRect().width || window.innerWidth}px`;
-        drawer.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
+        drawer.style.transform = next
+          ? 'translate3d(0, 0, 0)'
+          : closedDrawerTransform(drawerSign(drawer));
         markDrawerAnimationStart();
         notifyDrawerSlide(next);
         setScrimOpacity(next);
@@ -519,6 +541,7 @@ export default function useDrawerSwipe({
         startX: touch.clientX,
         startY: touch.clientY,
         dx: 0,
+        sign: drawerSign(drawer),
         width: drawer.clientWidth || window.innerWidth,
         reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
         drawer,
@@ -560,18 +583,24 @@ export default function useDrawerSwipe({
         }
         return;
       }
-      const dx = touch.clientX - gesture.startX;
+      const physicalDx = touch.clientX - gesture.startX;
+      const dx = physicalDx * gesture.sign;
       const dy = touch.clientY - gesture.startY;
 
       if (gesture.phase === 'tracking') {
         const horizontal = Math.abs(dx) >= ACTIVATION_DISTANCE;
         const wins = Math.abs(dx) >= Math.abs(dy) * AXIS_LOCK_RATIO;
         if (horizontal && wins) {
-          const direction = dx > 0 ? 1 : -1;
-          const wrongWay = gesture.opening ? direction !== 1 : direction !== -1;
+          /** Opening travels away from the edge the drawer hides behind (the
+           *  inline start), closing travels back toward it. */
+          const wrongWay = gesture.opening ? dx <= 0 : dx >= 0;
           const blocker = wrongWay
             ? null
-            : findHorizontalScrollBlocker(event.target as Element | null, surface, direction);
+            : findHorizontalScrollBlocker(
+                event.target as Element | null,
+                surface,
+                physicalDx > 0 ? 1 : -1,
+              );
           if (wrongWay || blocker != null) {
             gesture.phase = 'dead';
             return;
@@ -636,7 +665,9 @@ export default function useDrawerSwipe({
        * velocity is only trusted when release follows the last move promptly. */
       const held = event.timeStamp - gesture.lastSample.t > VELOCITY_HOLD_MS;
       const velocity =
-        !held && elapsed > 0 ? (gesture.lastSample.x - gesture.prevSample.x) / elapsed : 0;
+        !held && elapsed > 0
+          ? ((gesture.lastSample.x - gesture.prevSample.x) * gesture.sign) / elapsed
+          : 0;
       const towardTarget = gesture.opening ? velocity : -velocity;
       const committed =
         progress >= gesture.width * COMMIT_DISTANCE_RATIO ||

@@ -187,9 +187,11 @@ function RootLayout() {
                 <Banner onHeightChange={setBannerHeight} />
                 <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
                   <div
-                    className="relative z-0 flex h-full w-full overflow-hidden"
+                    className="relative z-0 flex h-full w-full overflow-hidden rtl:[--mobile-drawer-sign:-1]"
                     /** The drawer and the pane both read this, so their travel
-                     *  cannot disagree about how far the drawer opens. */
+                     *  cannot disagree about how far the drawer opens. The sign
+                     *  above sends the pane the other way when the drawer opens
+                     *  from the right. */
                     style={
                       {
                         [MOBILE_DRAWER_WIDTH_VAR]: drawerStrip
