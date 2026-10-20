@@ -270,6 +270,7 @@ const processDeleteRequest = async ({ req, files }) => {
         source,
         deleteFile,
         getDeleteFile: (src) => getDeleteMethod({ source: src, deletionMethods }),
+        clearFileEmbeddings: db.clearFileEmbeddings,
         logger,
       }),
       promises,

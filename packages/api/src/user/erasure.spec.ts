@@ -114,8 +114,9 @@ function createDeps() {
     ...methods,
     openCheckpointDeletion: jest.fn(async () => checkpointDeletion),
     deleteSharedLinks: deleteAllSharedLinksWithCleanup,
-    deleteStoredFiles: jest.fn(async () => {
+    deleteStoredFiles: jest.fn(async (files) => {
       order.push('deleteStoredFiles');
+      return { deletedFileIds: files.map((file) => file.file_id), failedFileIds: [] };
     }),
     invalidateMCPServerTools: jest.fn(async () => undefined),
     disconnectMCPServer: jest.fn(async () => undefined),
@@ -452,18 +453,27 @@ describe('eraseUserData', () => {
     expect(order.indexOf('deleteStoredFiles')).toBeLessThan(order.indexOf('deleteUserKey'));
   });
 
-  it('still erases the account when the storage provider fails', async () => {
+  it.each(['reported', 'thrown', 'unreported'])('keeps anchors on %s failure', async (failure) => {
     const userId = new mongoose.Types.ObjectId();
-    const { skillId } = await seedUser(userId);
+    await seedUser(userId);
     const { deps } = createDeps();
-    (deps.deleteStoredFiles as jest.Mock).mockRejectedValueOnce(new Error('provider down'));
+    const removeKeys = jest.spyOn(deps, 'deleteUserKey');
+    if (failure === 'thrown') {
+      (deps.deleteStoredFiles as jest.Mock).mockRejectedValueOnce(new Error('provider down'));
+    } else {
+      (deps.deleteStoredFiles as jest.Mock).mockResolvedValueOnce({
+        deletedFileIds: [],
+        failedFileIds: failure === 'reported' ? [`file-a-${userId}`] : [],
+      });
+    }
+
+    await expect(eraseUserData({ userId: userId.toString() }, deps)).rejects.toThrow();
+    expect(await count('File', { user: userId })).toBe(2);
+    expect(removeKeys).not.toHaveBeenCalled();
+    expect(await count('MCPServer', { author: userId })).toBe(2);
 
     await eraseUserData({ userId: userId.toString() }, deps);
-
     expect(await count('File', { user: userId })).toBe(0);
-    expect(await methods.getSkillById(skillId)).toBeNull();
-    expect(await count('AclEntry', { principalId: userId })).toBe(0);
-    await finishSkillCleanup(skillId);
   });
 
   for (const modelName of ['Agent', 'PromptGroup']) {

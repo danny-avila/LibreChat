@@ -22,16 +22,22 @@ function setup(source: string = FileSources.local) {
     secondary === FileSources.vectordb ? vectors : code,
   );
   const logger = { warn: jest.fn() };
+  const clearFileEmbeddings = jest.fn().mockResolvedValue(true);
   const remove = createDeleteFileWithSecondaryStorage<typeof req, typeof file, typeof client>({
     source,
     deleteFile: primary,
     getDeleteFile,
+    clearFileEmbeddings,
     logger,
   });
-  return { primary, vectors, code, getDeleteFile, logger, remove };
+  return { primary, vectors, code, getDeleteFile, clearFileEmbeddings, logger, remove };
 }
 
 describe('createDeleteFileWithSecondaryStorage', () => {
+  beforeEach(() => {
+    file.embedded = true;
+    file.metadata = { codeEnvRef: { file_id: 'code-copy' } };
+  });
   it('waits for both secondaries before deleting the primary with its provider client', async () => {
     const { primary, vectors, code, remove } = setup(FileSources.openai);
     let finishCode: () => void = () => {};
@@ -178,6 +184,7 @@ describe('createDeleteFileWithSecondaryStorage', () => {
       source: FileSources.local,
       deleteFile: primary,
       getDeleteFile: () => code,
+      clearFileEmbeddings: jest.fn().mockResolvedValue(true),
       logger: { warn: jest.fn() },
     });
     await deleteMapped(req, mapped);
@@ -187,12 +194,70 @@ describe('createDeleteFileWithSecondaryStorage', () => {
     expect(mapped.tenantId).toBe('tenant-a');
   });
 
+  it.each(['primary', 'code'])('clears vectors on %s failure', async (failing) => {
+    const { primary, vectors, code, clearFileEmbeddings, remove } = setup();
+    const retained = {
+      ...file,
+      metadata: { ...file.metadata, embeddedEntities: ['agent-a', 'agent-b'], keep: true },
+    };
+    vectors.mockResolvedValue({ deleted: true });
+    const failure = new Error('provider down');
+    (failing === 'primary' ? primary : code).mockRejectedValue(failure);
+
+    await expect(remove(req, retained)).rejects.toBe(failure);
+    expect(clearFileEmbeddings).toHaveBeenCalledWith({
+      file_id: 'attachment',
+      userId: 'owner',
+      tenantId: 'tenant-a',
+      updatedAt: undefined,
+      embeddedEntities: ['agent-a', 'agent-b'],
+    });
+    expect(retained.embedded).toBe(false);
+    expect(retained.metadata).toEqual({ codeEnvRef: file.metadata.codeEnvRef, keep: true });
+    if (failing === 'code') expect(primary).not.toHaveBeenCalled();
+  });
+
+  it('does not reconcile skipped or failed vector requests', async () => {
+    const { primary, vectors, clearFileEmbeddings, remove } = setup();
+    vectors.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('rag down'));
+    primary.mockRejectedValue(new Error('unlink denied'));
+    await expect(remove(req, file)).rejects.toThrow('unlink denied');
+    await expect(remove(req, file)).rejects.toThrow('rag down');
+    expect(clearFileEmbeddings).not.toHaveBeenCalled();
+    expect(file.embedded).toBe(true);
+  });
+
+  it('keeps every retry reference when both secondaries fail', async () => {
+    const { primary, vectors, code, clearFileEmbeddings, remove } = setup();
+    vectors.mockRejectedValue(new Error('rag down'));
+    code.mockRejectedValue(new Error('code down'));
+    await expect(remove(req, file)).rejects.toThrow('rag down');
+    expect(clearFileEmbeddings).not.toHaveBeenCalled();
+    expect(primary).not.toHaveBeenCalled();
+    expect(file.metadata.codeEnvRef.file_id).toBe('code-copy');
+  });
+
+  it.each(['outage', 'conflict'])('retains primary on reconciliation %s', async (failure) => {
+    const { primary, vectors, clearFileEmbeddings, remove } = setup();
+    vectors.mockResolvedValue({ deleted: true });
+    if (failure === 'outage') {
+      clearFileEmbeddings.mockRejectedValue(new Error('resource not found'));
+    } else {
+      clearFileEmbeddings.mockResolvedValue(false);
+    }
+    await expect(remove(req, file)).rejects.toThrow('File embedding reconciliation failed');
+    expect(primary).not.toHaveBeenCalled();
+    expect(file.embedded).toBe(true);
+    expect(file.metadata.codeEnvRef.file_id).toBe('code-copy');
+  });
+
   it('only deletes primary storage for a file without secondary references', async () => {
     const { primary, getDeleteFile } = setup();
     const remove = createDeleteFileWithSecondaryStorage({
       source: FileSources.local,
       deleteFile: primary,
       getDeleteFile,
+      clearFileEmbeddings: jest.fn().mockResolvedValue(true),
       logger: { warn: jest.fn() },
     });
     await remove(req, {});

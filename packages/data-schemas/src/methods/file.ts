@@ -24,6 +24,14 @@ export type LegacySearchFileRef = {
   tenantId?: string;
 };
 
+export type ClearFileEmbeddingsParams = {
+  file_id: string;
+  userId: string;
+  tenantId?: string | null;
+  updatedAt?: Date | string;
+  embeddedEntities?: string[];
+};
+
 export const DEFAULT_AVAILABLE_PROJECT_FILES_LIMIT = 20;
 export const MAX_AVAILABLE_PROJECT_FILES_LIMIT = 50;
 
@@ -351,6 +359,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     ref: CodeEnvRef;
     legacyRef?: CodeEnvRef;
   }) => Promise<IMongoFile | null>;
+  clearFileEmbeddings: (data: ClearFileEmbeddingsParams) => Promise<boolean>;
   addFileEmbeddedEntity: (data: {
     file_id: string;
     entityId: string;
@@ -1209,6 +1218,28 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     ).lean<IMongoFile>();
   }
 
+  /** Clears only the embedding snapshot whose vector deletion was confirmed. */
+  async function clearFileEmbeddings(data: ClearFileEmbeddingsParams): Promise<boolean> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const query = withOwnerScope(
+      {
+        file_id: data.file_id,
+        updatedAt: data.updatedAt ?? { $exists: false },
+        $or: [
+          { embedded: true, 'metadata.embeddedEntities': data.embeddedEntities ?? null },
+          { embedded: false, 'metadata.embeddedEntities': { $exists: false } },
+        ],
+      },
+      { userId: data.userId, tenantId: data.tenantId },
+    );
+    const result = await File.updateOne(
+      query,
+      { $set: { embedded: false }, $unset: { 'metadata.embeddedEntities': '' } },
+      { timestamps: false },
+    );
+    return result.matchedCount === 1;
+  }
+
   /**
    * Records that a file has been embedded into one vector namespace, without disturbing
    * the namespaces already recorded. Agents that share a file record, as a duplicate does
@@ -1628,6 +1659,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     updateFile,
     updateFileCodeEnvRef,
     addFileEmbeddedEntity,
+    clearFileEmbeddings,
     adoptLegacySearchEmbeddings,
     updateFileUsage,
     deleteFile,

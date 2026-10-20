@@ -243,6 +243,7 @@ jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({ file_id: 'created-file-id' }),
   updateFileUsage: jest.fn(),
   deleteFiles: jest.fn(),
+  clearFileEmbeddings: jest.fn().mockResolvedValue(true),
   findFileById: jest.fn(),
   getConvo: jest.fn(),
   getExpiredFiles: jest.fn(),
@@ -2593,6 +2594,7 @@ describe('processFileURL', () => {
 describe('processDeleteRequest', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    db.clearFileEmbeddings.mockResolvedValue(true);
   });
 
   it('removes metadata when backing storage is already missing', async () => {
@@ -2781,6 +2783,46 @@ describe('processDeleteRequest', () => {
       file_ids: ['retry-file'],
     });
   });
+
+  it.each(['primary', 'code', 'persistence'])(
+    'keeps the retry anchor and agent association after %s failure', async (failure) => {
+      const primaryDelete = jest.fn().mockResolvedValue(undefined);
+      const codeDelete = jest.fn().mockResolvedValue(undefined);
+      const vectorDelete = jest.fn().mockResolvedValue({ deleted: true });
+      const methods = {
+        [FileSources.vectordb]: vectorDelete,
+        [FileSources.execute_code]: codeDelete,
+      };
+      getStrategyFunctions.mockImplementation((source) => ({
+        deleteFile: methods[source] ?? primaryDelete,
+      }));
+      if (failure === 'persistence') {
+        db.clearFileEmbeddings.mockRejectedValue(new Error('resource not found'));
+      } else {
+        (failure === 'primary' ? primaryDelete : codeDelete).mockRejectedValue(new Error('denied'));
+      }
+      const file = {
+        file_id: 'retained-agent-file',
+        source: FileSources.local,
+        embedded: true,
+        metadata: { embeddedEntities: ['agent-a'], codeEnvRef: { file_id: 'code-copy' } },
+      };
+      const req = {
+        body: { agent_id: 'agent-a', tool_resource: 'file_search' },
+        config: {},
+        user: { id: 'owner' },
+      };
+      expect(await processDeleteRequest({ req, files: [file] })).toEqual({
+        deletedFileIds: [],
+        failedFileIds: ['retained-agent-file'],
+      });
+      expect(db.deleteFiles).not.toHaveBeenCalled();
+      expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
+      expect(file.embedded).toBe(failure === 'persistence');
+      expect(file.metadata.codeEnvRef.file_id).toBe('code-copy');
+      if (failure !== 'primary') expect(primaryDelete).not.toHaveBeenCalled();
+    },
+  );
 
   it('keeps a failed agent file attached so the delete can be retried', async () => {
     const deleteFile = jest.fn().mockRejectedValue(new Error('rag unavailable'));

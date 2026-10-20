@@ -47,6 +47,97 @@ describe('File Methods', () => {
     await File.deleteMany({});
   });
 
+  describe('clearFileEmbeddings', () => {
+    const user = new mongoose.Types.ObjectId();
+    const updatedAt = new Date('2026-10-20T00:00:00Z');
+    const snapshot = {
+      file_id: 'retained-file',
+      userId: user.toString(),
+      tenantId: 'tenant-a',
+      updatedAt,
+      embeddedEntities: ['agent-a', 'agent-b'],
+    };
+    const seed = (overrides = {}) =>
+      File.collection.insertOne({
+        file_id: snapshot.file_id,
+        user,
+        tenantId: snapshot.tenantId,
+        updatedAt,
+        embedded: true,
+        metadata: {
+          embeddedEntities: snapshot.embeddedEntities,
+          codeEnvRef: { file_id: 'still-needed' },
+          destinationChosen: true,
+        },
+        ...overrides,
+      });
+
+    it('preserves code references, TTL and retry bookkeeping', async () => {
+      const expiredAt = new Date('2026-10-19');
+      await seed({ expiredAt, deletionAttempts: 3 });
+      expect(await fileMethods.clearFileEmbeddings(snapshot)).toBe(true);
+      expect(await fileMethods.clearFileEmbeddings(snapshot)).toBe(true);
+      const stored = await File.collection.findOne({ file_id: snapshot.file_id });
+      expect(stored?.embedded).toBe(false);
+      expect(stored?.metadata).toEqual({
+        codeEnvRef: { file_id: 'still-needed' },
+        destinationChosen: true,
+      });
+      expect(stored?.updatedAt).toEqual(updatedAt);
+      expect(stored?.expiredAt).toEqual(expiredAt);
+      expect(stored?.deletionAttempts).toBe(3);
+    });
+
+    it('does not change a concurrent embedding or a reused file record', async () => {
+      await seed({ updatedAt: new Date(updatedAt.getTime() + 1) });
+      expect(await fileMethods.clearFileEmbeddings(snapshot)).toBe(false);
+      const stored = await File.collection.findOne({ file_id: snapshot.file_id });
+      expect(stored?.embedded).toBe(true);
+      expect(stored?.metadata?.embeddedEntities).toEqual(snapshot.embeddedEntities);
+    });
+
+    it('does not discard a newly recorded namespace even when its timestamp matches', async () => {
+      await seed({ metadata: { embeddedEntities: ['agent-a', 'agent-b', 'agent-c'] } });
+      expect(await fileMethods.clearFileEmbeddings(snapshot)).toBe(false);
+      const stored = await File.collection.findOne({ file_id: snapshot.file_id });
+      expect(stored?.metadata?.embeddedEntities).toHaveLength(3);
+    });
+
+    it('matches the owner and tenant rather than a bare file id', async () => {
+      const first = await seed();
+      await seed({ user: new mongoose.Types.ObjectId() });
+      await seed({ tenantId: 'tenant-b' });
+      await seed({ tenantId: undefined });
+      expect(await fileMethods.clearFileEmbeddings(snapshot)).toBe(true);
+      const records = await File.collection.find({ file_id: snapshot.file_id }).toArray();
+      const clearedIds = records
+        .filter((record) => record.embedded === false)
+        .map((record) => record._id);
+      expect(clearedIds).toEqual([first.insertedId]);
+    });
+
+    it('clears legacy vector flags without an entity list', async () => {
+      await seed({ metadata: { destinationChosen: true } });
+      const legacy = { ...snapshot, embeddedEntities: undefined };
+      expect(await fileMethods.clearFileEmbeddings(legacy)).toBe(true);
+    });
+
+    it('propagates persistence failures instead of claiming reconciliation', async () => {
+      await seed();
+      const update = jest.spyOn(mongoose.models.File, 'updateOne').mockImplementationOnce(() => {
+        throw new Error('mongo unavailable');
+      });
+      try {
+        await expect(fileMethods.clearFileEmbeddings(snapshot)).rejects.toThrow(
+          'mongo unavailable',
+        );
+      } finally {
+        update.mockRestore();
+      }
+      expect((await File.collection.findOne({ file_id: snapshot.file_id }))?.embedded).toBe(true);
+    });
+  });
+
   describe('adoptLegacySearchEmbeddings', () => {
     const Agent = () => mongoose.models.Agent as mongoose.Model<unknown>;
     const author = new mongoose.Types.ObjectId();

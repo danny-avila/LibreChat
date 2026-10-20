@@ -10,6 +10,7 @@ import type { TAgentsEndpoint, TFile } from 'librechat-data-provider';
 import type { IUser, AppConfig } from '@librechat/data-schemas';
 import type { Request as ServerRequest } from 'express';
 import type { TGetFiles, TFilterFilesByAgentAccess } from './resources';
+import { createDeleteFileWithSecondaryStorage } from '../files/storage';
 import { primeResources } from './resources';
 
 // Mock logger
@@ -137,6 +138,52 @@ describe('primeResources', () => {
       expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toEqual([
         'shared-context-file',
       ]);
+    });
+
+    it.each(['primary', 'code'])('re-provisions saved files on %s failure', async (failure) => {
+      const file = sharedContextFile(['agent-a']);
+      file.metadata = {
+        ...file.metadata,
+        codeEnvRef: {
+          kind: 'agent',
+          id: 'agent-a',
+          storage_session_id: 'session',
+          file_id: 'code-copy',
+        },
+      };
+      const providerError = new Error('provider unavailable');
+      const primary = jest.fn().mockResolvedValue(undefined);
+      const code = jest.fn().mockResolvedValue(undefined);
+      (failure === 'primary' ? primary : code).mockRejectedValue(providerError);
+      const clearFileEmbeddings = jest.fn().mockResolvedValue(true);
+      const remove = createDeleteFileWithSecondaryStorage({
+        source: FileSources.local,
+        deleteFile: primary,
+        getDeleteFile: (source) =>
+          source === FileSources.vectordb ? async () => ({ deleted: true }) : code,
+        clearFileEmbeddings,
+        logger: { warn: jest.fn() },
+      });
+      await expect(remove({ user: { id: 'user1' } }, file)).rejects.toBe(providerError);
+      expect(file.embedded).toBe(false);
+      expect(file.metadata?.embeddedEntities).toBeUndefined();
+      expect(file.metadata?.codeEnvRef?.file_id).toBe('code-copy');
+      mockGetFiles.mockResolvedValue([file]);
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources: { [EToolResources.file_search]: { file_ids: [file.file_id] } },
+        agentId: 'agent-a',
+        enabledToolResources: new Set([EToolResources.file_search]),
+      });
+      expect(result.provisionState?.vectorDBFiles.map((candidate) => candidate.file_id)).toContain(
+        file.file_id,
+      );
+      expect(result.tool_resources?.file_search?.file_ids).toContain(file.file_id);
     });
 
     it('does not re-embed for the agent that already provisioned it', async () => {
