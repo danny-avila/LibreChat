@@ -42,10 +42,13 @@ async function dragSeparator(page: Page, separator: Locator, dx: number) {
   const rect = await box(separator);
   const x = rect.x + rect.width / 2;
   const y = rect.y + rect.height / 2;
+  /* react-resizable-panels captures the pointer on the first move, so that move has to
+   * stay on the separator the way a real pointer's would; a coarse first step can land
+   * inside an artifact iframe, which swallows the rest of the drag. */
+  const steps = Math.abs(dx);
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await page.mouse.move(x + dx / 2, y, { steps: 5 });
-  await page.mouse.move(x + dx, y, { steps: 5 });
+  await page.mouse.move(x + dx, y, { steps });
   await page.mouse.up();
 }
 
