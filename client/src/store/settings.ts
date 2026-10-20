@@ -23,6 +23,15 @@ const normalizeSavedSpeechEngine = (
   return legacyExternalEngines.has(engine) ? STTEndpoints.external : STTEndpoints.browser;
 };
 
+/** `auto` lets each field resolve its direction from what is typed; the others force it. */
+export type ChatDirection = 'auto' | 'ltr' | 'rtl';
+
+/** Older clients stored `LTR`/`RTL`; anything unrecognized falls back to `auto`. */
+const normalizeChatDirection = (direction: ChatDirection): ChatDirection => {
+  const value = typeof direction === 'string' ? direction.toLowerCase() : '';
+  return value === 'ltr' || value === 'rtl' ? value : 'auto';
+};
+
 // Static atoms without localStorage
 const staticAtoms = {
   abortScroll: atom<boolean>({ key: 'abortScroll', default: false }),
@@ -57,9 +66,13 @@ const localStorageAtoms = {
   chatTitleInTab: atomWithLocalStorage(CHAT_TITLE_IN_TAB_KEY, true),
 
   // Chat settings
-  enterToSend: atomWithLocalStorage('enterToSend', true),
+  enterToSend: atomWithLocalStorage('enterToSend', false),
   maximizeChatSpace: atomWithLocalStorage('maximizeChatSpace', false),
-  chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
+  chatDirection: atomWithLocalStorage<ChatDirection>(
+    'chatDirection',
+    'auto',
+    normalizeChatDirection,
+  ),
   autoExpandTools: atomWithLocalStorage(LocalStorageKeys.AUTO_EXPAND_TOOLS, false),
   saveDrafts: atomWithLocalStorage('saveDrafts', true),
   /**
@@ -67,7 +80,7 @@ const localStorageAtoms = {
    * "Show more" toggle. The clamp is visual only; the full text stays in
    * the DOM, copyable and searchable.
    */
-  collapseLongUserMessages: atomWithLocalStorage('collapseLongUserMessages', false),
+  collapseLongUserMessages: atomWithLocalStorage('collapseLongUserMessages', true),
   /**
    * Whether pasting a large block of text attaches it as a `.txt` file instead of
    * flooding the composer. The text still reaches the model in full.
@@ -79,7 +92,7 @@ const localStorageAtoms = {
   rememberDefaultFork: atomWithLocalStorage(LocalStorageKeys.REMEMBER_FORK_OPTION, false),
   saveBadgesState: atomWithLocalStorage('saveBadgesState', false),
   /** User preference for downscaling images before upload; ignored when the admin config sets it */
-  clientImageResize: atomWithLocalStorage('clientImageResize', false),
+  clientImageResize: atomWithLocalStorage('clientImageResize', true),
   /**
    * Whether copying a message also puts a rendered HTML version on the
    * clipboard, so apps that ignore Markdown (Teams, Outlook, Word) paste the

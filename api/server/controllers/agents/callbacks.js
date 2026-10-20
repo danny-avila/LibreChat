@@ -19,6 +19,7 @@ const {
 } = require('@librechat/agents');
 const {
   sendEvent,
+  getModelEndUsage,
   computeUsageCostUSD,
   GenerationJobManager,
   waitForGenerationSettled,
@@ -151,7 +152,7 @@ class ModelEndHandler {
         });
       }
 
-      const usage = data?.output?.usage_metadata;
+      const usage = getModelEndUsage(data?.output);
       if (!usage) {
         return;
       }
@@ -188,7 +189,11 @@ class ModelEndHandler {
             total_tokens: taggedUsage.total_tokens,
             input_token_details:
               cache_creation != null || cache_read != null
-                ? { cache_creation, cache_read }
+                ? {
+                    cache_creation,
+                    cache_creation_1h: taggedUsage.input_token_details?.cache_creation_1h,
+                    cache_read,
+                  }
                 : undefined,
             model: taggedUsage.model,
             provider: taggedUsage.provider,

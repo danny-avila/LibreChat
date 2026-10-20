@@ -1,7 +1,10 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
+import { useAtom } from 'jotai';
+import { useRecoilValue } from 'recoil';
 import { useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useDirection } from '@radix-ui/react-direction';
+import { useSteering, showStopButtonByIndex, useComposerRestoreHost } from '@librechat/chat/react';
 import {
   composerSurfaceClasses,
   composerSurfaceShadow,
@@ -16,9 +19,9 @@ import {
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TChatProject, TMessage, TConversation } from 'librechat-data-provider';
+import type { QueuedMessageContext } from '@librechat/chat';
 import type { SetterOrUpdater } from 'recoil';
 import type { ExtendedFile, FileSetter, ConvoGenerator, TAskFunction } from '~/common';
-import type { QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import {
   cn,
   getModelSpec,
@@ -46,7 +49,6 @@ import {
   useChatFormContext,
   useAddedChatContext,
   useAssistantsMapContext,
-  useComposerRestoreHost,
   BadgeRowProvider,
 } from '~/Providers';
 import {
@@ -68,13 +70,13 @@ import useHasAccess from '~/hooks/Roles/useHasAccess';
 import useDictation from '~/hooks/Input/useDictation';
 import { useGetStartupConfig } from '~/data-provider';
 import CodeWorkspaceMenu from './CodeWorkspaceMenu';
-import useSteering from '~/hooks/Chat/useSteering';
 import CodeApprovalMenu from './CodeApprovalMenu';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import { submitFromComposer } from './submit';
 import SkillsCommand from './SkillsCommand';
 import AutoPlayAudio from './AutoPlayAudio';
+import composerClearance from './clearance';
 import Waveform from './Composer/Waveform';
 import { mainTextareaId } from '~/common';
 import CollapseChat from './CollapseChat';
@@ -87,26 +89,6 @@ import Tray from './Composer/Tray';
 import Bar from './Composer/Bar';
 import Mention from './Mention';
 import store from '~/store';
-
-export function toRestoredComposerFile(
-  file: NonNullable<TMessage['files']>[number],
-): ExtendedFile | null {
-  if (!file.file_id) {
-    return null;
-  }
-  return {
-    file_id: file.file_id,
-    filename: file.filename,
-    filepath: file.filepath,
-    type: file.type ?? '',
-    height: file.height,
-    width: file.width,
-    size: file.bytes ?? 0,
-    progress: 1,
-    attached: true,
-    llmDeliveryPath: file.llmDeliveryPath,
-  };
-}
 
 interface ChatFormProps {
   index: number;
@@ -210,7 +192,7 @@ const ChatForm = memo(function ChatForm({
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const { isTemporary } = useChatSettings();
 
-  const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
+  const [showStopButton, setShowStopButton] = useAtom(showStopButtonByIndex(index));
   const plusPopoverAtom = useMemo(() => store.showPlusPopoverFamily(index), [index]);
   const mentionPopoverAtom = useMemo(() => store.showMentionPopoverFamily(index), [index]);
 
@@ -256,10 +238,6 @@ const ChatForm = memo(function ChatForm({
    */
   const quotesEnabled = useMemo(() => !isAssistantsEndpoint(endpoint), [endpoint]);
 
-  const isRTL = useMemo(
-    () => (chatDirection != null ? chatDirection?.toLowerCase() === 'rtl' : false),
-    [chatDirection],
-  );
   const invalidAssistant = useMemo(
     () =>
       isAssistantsEndpoint(endpoint) &&
@@ -327,6 +305,9 @@ const ChatForm = memo(function ChatForm({
    *  answer box, or is locked behind the batch card that owns the answer. A
    *  collapsed batch is neither, it hands the composer back to the thread. */
   const composerReserved = answerMode.composerAnswers || answerMode.composerLocked;
+  /** A batch card stacks above the composer with its own height cap, so a
+   *  locked composer keeps the draft to one line to leave the card on screen. */
+  const compactComposer = isCollapsed || answerMode.composerLocked;
 
   const { consumeDraft, preserveText, settleText } = useAutoSave({
     index,
@@ -511,6 +492,11 @@ const ChatForm = memo(function ChatForm({
   });
 
   const textValue = useWatch({ control: methods.control, name: 'text' });
+  const interfaceDirection = useDirection();
+  /** An empty `dir="auto"` field resolves to LTR, which would park an RTL interface's placeholder on
+   *  the wrong edge, so the empty field follows the interface until text gives it a direction. */
+  const autoDirection = textValue ? 'auto' : interfaceDirection;
+  const textDirection = chatDirection === 'auto' ? autoDirection : chatDirection;
 
   /** The composer commits once per keystroke for the row count and the send
    *  button; a second commit for a row count that did not move (or that no
@@ -703,29 +689,18 @@ const ChatForm = memo(function ChatForm({
   const baseClasses = useMemo(
     () =>
       cn(
-        'md:py-3.5 m-0 w-full resize-none py-3.25 placeholder:text-text-tertiary bg-transparent [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
-        isCollapsed ? 'max-h-[3.25rem]' : 'max-h-[45vh] md:max-h-[55vh]',
+        'composer-text md:py-3.5 m-0 w-full resize-none py-3.25 placeholder:text-text-tertiary bg-transparent [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
+        compactComposer ? 'max-h-[3.25rem]' : 'max-h-[45vh] md:max-h-[55vh]',
         'px-5',
       ),
-    [isCollapsed],
+    [compactComposer],
   );
 
-  /* From `sm` up the band leaves room under itself for the disclaimer, which only
-     the landing page carries — doubled while the centred landing composer floats,
-     and dropped back the moment a submission starts the thread. A started
-     conversation has nothing beneath it, so it keeps only enough to clear the
-     surface's own shadow. Below `sm` the composer runs to the viewport floor in
-     every state. */
-  const landingClearance =
-    centerFormOnLanding && !isSubmitting ? 'transition-all duration-200 sm:mb-28' : 'sm:mb-10';
-  let bottomClearance = 'sm:mb-4';
-  if (isLandingPage) {
-    bottomClearance = landingClearance;
-  } else if (footerBelow) {
-    /* A conversation that carries a configured footer keeps the band that bar
-       needs, exactly as the welcome screen does. */
-    bottomClearance = 'sm:mb-10';
-  }
+  const bottomClearance = composerClearance({
+    isLandingPage,
+    footerBelow,
+    floating: centerFormOnLanding && !isSubmitting,
+  });
 
   /** Answer mode, then during-run steering or queueing (a run in flight, or a
    *  queued follow-up about to start), then an ordinary send: the same route
@@ -752,6 +727,9 @@ const ChatForm = memo(function ChatForm({
 
   return (
     <form
+      /* A forced direction mirrors the whole composer, chrome included; `auto`
+         leaves the layout to the page and lets the text field follow its text. */
+      dir={chatDirection === 'auto' ? undefined : chatDirection}
       onSubmit={methods.handleSubmit((data) => {
         if (!isPreparingFromUrl && submitComposerText(data) !== false) {
           clearSettingsError();
@@ -794,7 +772,6 @@ const ChatForm = memo(function ChatForm({
               className={cn(
                 'mx-4 -mb-3 flex min-w-0 flex-wrap items-center gap-1.5 rounded-t-2xl',
                 'border-border-light bg-surface-secondary border px-2 pt-2 pb-5',
-                isRTL && 'flex-row-reverse',
               )}
             >
               {project ? <ProjectLandingChip project={project} /> : null}
@@ -809,7 +786,7 @@ const ChatForm = memo(function ChatForm({
               ) : null}
             </div>
           )}
-          <div className={cn('flex w-full items-center', isRTL && 'flex-row-reverse')}>
+          <div className="flex w-full items-center">
             <Mention
               index={index}
               popoverAtom={plusPopoverAtom}
@@ -874,7 +851,6 @@ const ChatForm = memo(function ChatForm({
                 files={files}
                 setFiles={setFiles}
                 setFilesLoading={setFilesLoading}
-                isRTL={isRTL}
                 index={index}
                 isPastedTextFile={isPastedTextFile}
                 isPasteActionPending={isPasteActionPending}
@@ -887,7 +863,7 @@ const ChatForm = memo(function ChatForm({
                 onSave={pastedTextEdit.saveEdit}
               />
               {endpoint && (
-                <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
+                <div className="flex">
                   <div
                     className={cn(
                       'relative flex-1',
@@ -897,7 +873,7 @@ const ChatForm = memo(function ChatForm({
                       answerMode.composerLocked && '[&_textarea]:select-none',
                     )}
                     style={
-                      isCollapsed
+                      compactComposer
                         ? {
                             WebkitMaskImage:
                               'linear-gradient(to bottom, black 60%, transparent 90%)',
@@ -908,6 +884,7 @@ const ChatForm = memo(function ChatForm({
                   >
                     <TextareaAutosize
                       {...registerProps}
+                      dir={textDirection}
                       ref={(e) => {
                         ref(e);
                         (
@@ -964,10 +941,10 @@ const ChatForm = memo(function ChatForm({
                     {/* Sits over the fade scrim in the corner of the input
                         rather than in its own column beside it, so a long draft
                         does not push an orphaned control off to the side. */}
-                    <div className="absolute right-2 bottom-1 z-10">
+                    <div className="absolute inset-e-2 bottom-1 z-10">
                       <CollapseChat
                         isCollapsed={isCollapsed}
-                        isScrollable={isMoreThanThreeRows}
+                        isScrollable={isMoreThanThreeRows && !answerMode.composerLocked}
                         setIsCollapsed={setIsCollapsed}
                       />
                     </div>
@@ -1000,7 +977,6 @@ const ChatForm = memo(function ChatForm({
               >
                 <Bar
                   index={index}
-                  isRTL={isRTL}
                   disabled={disableInputs}
                   agentId={conversation?.agent_id}
                   /* The RAW endpoint, not the effective type above: the attach
@@ -1025,7 +1001,7 @@ const ChatForm = memo(function ChatForm({
                   speechDisabled={speechDisabled}
                   dictation={dictation}
                   approvalSlot={
-                    <div className={cn('flex items-center gap-1.5', isRTL && 'flex-row-reverse')}>
+                    <div className="flex items-center gap-1.5">
                       <CodeApprovalMenu
                         conversation={conversation}
                         addedConversation={addedConvo}
@@ -1081,9 +1057,9 @@ function ChatFormWrapper({
   project,
   routePending = false,
   isLandingPage,
-  /** Defaults to the atom's own default (`atomWithLocalStorage('enterToSend',
-   *  true)`) so call sites that predate this prop, mainly tests, keep their
-   *  prior behavior without passing it explicitly. */
+  /** Enter sends unless told otherwise, so call sites that predate this prop,
+   *  mainly tests, keep their prior behavior without passing it explicitly.
+   *  ChatView always passes the user's preference, whose default is false. */
   enterToSend = true,
   /** Same reason, from `atomWithLocalStorage('autoSendText', -1)`. */
   autoSendText = -1,

@@ -37,6 +37,8 @@ import type {
   TFilterFilesByAgentAccess,
   TProvisionToCodeEnv,
   TProvisionToVectorDB,
+  TAdoptLegacySearchEmbeddings,
+  THasEntityEmbeddings,
   TCheckSessionsAlive,
   TLoadCodeApiKey,
 } from './resources';
@@ -1142,6 +1144,10 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   provisionToVectorDB?: TProvisionToVectorDB;
   /** Optional: batch-check code env file liveness */
   checkSessionsAlive?: TCheckSessionsAlive;
+  /** Optional: record the agent's namespace on legacy File Search embeddings confirmed there */
+  adoptLegacySearchEmbeddings?: TAdoptLegacySearchEmbeddings;
+  /** Optional: ask the vector store whether a file's chunks are in an entity's namespace */
+  hasEntityEmbeddings?: THasEntityEmbeddings;
   /** Optional: load CODE_API_KEY once per request */
   loadCodeApiKey?: TLoadCodeApiKey;
   /** Optional: persist file metadata updates after provisioning */
@@ -1682,6 +1688,10 @@ export async function initializeAgent(
     /** Falsy anchors cannot match a parent chain, so they get no walk. */
     const threadAnchor =
       parentMessageId && parentMessageId !== Constants.NO_PARENT ? parentMessageId : null;
+    /* A turn sent at the root has no history at all. The conversation's file refs then
+     * belong to sibling roots (an edited first message, or one retried without its files),
+     * so a root turn takes none of them, unlike a continuation that names no anchor. */
+    const isRootTurn = parentMessageId === Constants.NO_PARENT;
     /* Either provisioning resource needs the anchor: deferred attachments for
      * file_search are found by thread file ids just as code files are. */
     const needsThreadWalk = wantsProvisioning && threadAnchor != null && getThreadMessages != null;
@@ -1697,7 +1707,10 @@ export async function initializeAgent(
      * every code-output ref.
      */
     const [convoFileIds, threadMessages] = await Promise.all([
-      readResolvedConversationFiles(runtime, conversationId) ?? db.getConvoFiles(conversationId),
+      isRootTurn
+        ? []
+        : (readResolvedConversationFiles(runtime, conversationId) ??
+          db.getConvoFiles(conversationId)),
       needsThreadWalk && getThreadMessages
         ? getThreadMessages({ conversationId }, 'messageId parentMessageId files attachments')
         : null,
@@ -2040,6 +2053,8 @@ export async function initializeAgent(
     enabledToolResources: toolResourceSet,
     checkSessionsAlive: db.checkSessionsAlive,
     loadCodeApiKey: db.loadCodeApiKey,
+    adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
+    hasEntityEmbeddings: db.hasEntityEmbeddings,
     provisionCandidates: deferredProvisionFiles as unknown as TFile[],
     codeRouteKey: codeExecutionContext.executionRouteKey ?? codeExecutionContext.executionProfile,
     codeBaseUrl: codeExecutionContext.baseUrl,
