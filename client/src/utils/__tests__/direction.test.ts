@@ -23,6 +23,17 @@ describe('strongDirection', () => {
     expect(strongDirection('\u07C1 hello')).toBe('rtl');
   });
 
+  it('reads strong characters outside letters and digits', () => {
+    expect(strongDirection('\u2160 \u0645\u0631\u062D\u0628\u0627')).toBe('ltr');
+    expect(strongDirection('\u05BE hello')).toBe('rtl');
+    expect(strongDirection('\u061F hello')).toBe('rtl');
+  });
+
+  it('skips combining marks and Arabic separators inside RTL blocks', () => {
+    expect(strongDirection('\u0651 hello')).toBe('ltr');
+    expect(strongDirection('\u060C\u066B hello')).toBe('ltr');
+  });
+
   it('honors explicit direction marks', () => {
     expect(strongDirection('\u200F hello')).toBe('rtl');
     expect(strongDirection('\u061C hello')).toBe('rtl');
