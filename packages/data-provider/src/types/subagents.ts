@@ -1,3 +1,8 @@
+import type { ChatStepFrame } from './transport';
+import type { TMessageContentParts } from './content';
+import type { Agents } from './agents';
+import type { StepEvents } from './runs';
+
 export type SubagentThreadStatus =
   | 'dispatched'
   | 'running'
@@ -241,3 +246,64 @@ export type SubagentDigest = {
   /** Why an `expand` returned less than the node it named. */
   note?: string;
 };
+
+/** Public graph events only. Never a private model transcript or tool execution request. */
+export type SubagentContentFrame = Extract<
+  ChatStepFrame,
+  {
+    event:
+      | StepEvents.ON_RUN_STEP
+      | StepEvents.ON_MESSAGE_DELTA
+      | StepEvents.ON_REASONING_DELTA
+      | StepEvents.ON_RUN_STEP_DELTA
+      | StepEvents.ON_RUN_STEP_COMPLETED
+      | StepEvents.ON_RUN_STEP_CLOSED;
+  }
+>;
+
+export type SubagentContentEvent = { sequence: number; frame: SubagentContentFrame };
+
+export type SubagentContentWatermark = {
+  taskId: string;
+  throughSequence: number;
+  /** Monotonic committed journal batch, scoped to this immutable task execution. */
+  revision: number;
+};
+
+export type SubagentContentAvailableFrame = {
+  event: 'subagent_content_available';
+  data: SubagentContentWatermark;
+};
+
+type SubagentTaskContentIdentity = SubagentContentWatermark & {
+  parentConversationId: string;
+  threadId: string;
+  /** Stable normal assistant message identity, including before terminal persistence. */
+  messageId: string;
+  parentMessageId: string;
+  sender: string;
+  status: SubagentThreadStatus;
+  /** Partial means a retained prefix, not permission to invent missing content. */
+  recovery: 'complete' | 'partial';
+};
+
+export type SubagentTaskContentSnapshot = SubagentTaskContentIdentity & {
+  mode: 'snapshot';
+  content: TMessageContentParts[];
+  runSteps: Agents.RunStep[];
+};
+
+export type SubagentTaskContentSuffix = SubagentTaskContentIdentity & {
+  mode: 'suffix';
+  afterSequence: number;
+  events: SubagentContentEvent[];
+};
+
+/** Subscribe to activity first, wait for ready, then GET content. Treat
+ * subagent_content_available as invalidation, never a content delta. Read the
+ * committed suffix with afterSequence; ignore duplicate revisions/sequences.
+ * Poll while running as a fallback for an unavailable notification transport.
+ * A suffix's throughSequence also covers non-rendering activity events. */
+export type SubagentTaskContentResponse =
+  | SubagentTaskContentSnapshot
+  | SubagentTaskContentSuffix;

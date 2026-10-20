@@ -109,6 +109,7 @@ export enum QueryKeys {
   schedule = 'schedule',
   parentSubagents = 'parentSubagents',
   subagentThread = 'subagentThread',
+  subagentTaskContent = 'subagentTaskContent',
   backgroundTasks = 'backgroundTasks',
   conversationPullRequest = 'conversationPullRequest',
   pullRequestConnection = 'pullRequestConnection',
