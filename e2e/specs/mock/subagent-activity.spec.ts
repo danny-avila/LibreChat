@@ -204,7 +204,11 @@ async function assertHistoryCalls(
     .toEqual(Array.from({ length: count }, (_, index) => history.callId(label, index)));
 }
 
-async function assertFullToolDetails(surface: Locator, label: string, index: number): Promise<void> {
+async function assertFullToolDetails(
+  surface: Locator,
+  label: string,
+  index: number,
+): Promise<void> {
   const id = history.callId(label, index);
   const row = surface.locator(`[data-testid="tool-call"][data-tool-call-id="${id}"]`);
   const disclosure = row.getByRole('button').first();
