@@ -276,6 +276,63 @@ function attachmentToolCallIds(message: PreviewableMessage): AttachmentScopes | 
   return scopes.size > 0 ? scopes : undefined;
 }
 
+/** A file whose owner a client is resolving: the tool call it was saved under, with its scope. */
+export type AttachmentCallQuery = { toolCallId: string; agentId?: string; stepId?: string };
+
+/** A top-level subagent call and the child calls of its stored transcript the queried files name. */
+export type SubagentAttachmentCallsEntry = {
+  toolCallId: string;
+  stepId?: string;
+  agentId?: string;
+  calls: Agents.SubagentAttachmentCall[];
+};
+
+/**
+ * For each top-level subagent call in stored `content`, the child calls of its transcript that
+ * the queried files can belong to, chosen as a preview chooses `subagentAttachmentCalls`. Read
+ * from the transcript rather than the saved attachments, so a file that streamed before it was
+ * saved on the message resolves the same way.
+ */
+export function findSubagentAttachmentCalls(
+  content: unknown[],
+  files: ReadonlyArray<AttachmentCallQuery>,
+): SubagentAttachmentCallsEntry[] {
+  const wanted = new Map<string, AttachmentScope[]>();
+  for (const { toolCallId, agentId, stepId } of files) {
+    const scopes = wanted.get(toolCallId) ?? [];
+    scopes.push({ ...(agentId != null ? { agentId } : {}), ...(stepId != null ? { stepId } : {}) });
+    wanted.set(toolCallId, scopes);
+  }
+  const entries: SubagentAttachmentCallsEntry[] = [];
+  if (wanted.size === 0) {
+    return entries;
+  }
+  for (const part of content) {
+    if (!isToolCallPart(part) || !Array.isArray(part.tool_call.subagent_content)) {
+      continue;
+    }
+    const { id, stepId } = part.tool_call;
+    if (typeof id !== 'string' || id === '') {
+      continue;
+    }
+    const calls = nestedAttachmentCalls(
+      part.tool_call.subagent_content,
+      wanted,
+      runAgentId(part.tool_call),
+    );
+    if (calls.length === 0) {
+      continue;
+    }
+    entries.push({
+      toolCallId: id,
+      ...(typeof stepId === 'string' && stepId !== '' ? { stepId } : {}),
+      ...(typeof part.agentId === 'string' && part.agentId !== '' ? { agentId: part.agentId } : {}),
+      calls,
+    });
+  }
+  return entries;
+}
+
 /** Cuts at `end` without splitting a surrogate pair. */
 function sliceStart(text: string, end: number): string {
   const code = text.charCodeAt(end - 1);
