@@ -192,13 +192,41 @@ for (const mode of ['handoff', 'shared subagent'] as const) {
       expect(debug.ok()).toBe(true);
       const body = (await debug.json()) as {
         execs: Array<{ files: Array<{ id: string; name: string }> }>;
+        uploads: Array<{ fileId: string; filename: string; kind: string; id: string }>;
       };
       const files = body.execs.at(-1)!.files;
       expect(files).toHaveLength(2);
-      expect(files).toContainEqual(
-        expect.objectContaining({ id: privateRef!.file_id, name: 'results.csv' }),
-      );
+      if (mode === 'handoff') {
+        expect(files).toContainEqual(
+          expect.objectContaining({ id: privateRef!.file_id, name: 'results.csv' }),
+        );
+      } else {
+        // Lazy children preserve project paths already advertised to the parent.
+        expect(files).toContainEqual(
+          expect.objectContaining({
+            id: `e2e-project-collision-first-${label}`,
+            name: 'results.csv',
+          }),
+        );
+        const privateMount = files.find((file) => /^results-.+\.csv$/.test(file.name));
+        expect(privateMount).toBeDefined();
+        expect(body.uploads).toContainEqual(
+          expect.objectContaining({
+            fileId: privateMount!.id,
+            filename: privateMount!.name,
+            kind: 'agent',
+            id: child.id,
+          }),
+        );
+      }
       expect(files.filter((file) => /^results-.+\.csv$/.test(file.name))).toHaveLength(1);
+      const privateCanonical = await withMongo((db) =>
+        db.collection('files').findOne({ file_id: privateFile.file_id }),
+      );
+      expect(privateCanonical?.metadata.codeEnvRef.file_id).toBe(privateRef!.file_id);
+      expect(
+        privateCanonical?.metadata.codeEnvRef.sandboxFilename ?? privateCanonical?.filename,
+      ).toBe('results.csv');
       const canonical = await withMongo((db) =>
         db.collection('files').findOne({ file_id: projectFiles[0].file_id }),
       );

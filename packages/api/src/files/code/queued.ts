@@ -386,9 +386,8 @@ export function planCodeFileUploads({
         candidate?.recoveryName ??
         getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type));
       if (
-        (isImportedProjectFile(file, state.project) &&
-          (state.temporaryCodeFileIds?.has(file.file_id) === true ||
-            destination !== canonicalName)) ||
+        state.temporaryCodeFileIds?.has(file.file_id) === true ||
+        (isImportedProjectFile(file, state.project) && destination !== canonicalName) ||
         (!isImportedProjectFile(file, state.project) &&
           projectSession?.frozen === true &&
           isCodeDestinationTaken(fixedProjectPaths, canonicalName))

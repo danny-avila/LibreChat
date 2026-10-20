@@ -13,6 +13,7 @@ import type {
 } from '~/agents/resources';
 import type { ProvisionCallbackDeps, ProvisionToolContext } from '~/files/provision/callback';
 import type { ToolEndCallback, ToolEndCallbackMetadata } from '~/agents/handlers';
+import type { CodeFileProjectScope } from '~/files/code/destinations';
 import type { RunFileSession, RunFileSessionDeps } from './session';
 import type { CodeExecutionContext } from '~/agents/execution';
 import type { ServerRequest } from '~/types';
@@ -28,6 +29,7 @@ import {
   getCodeFileContextLine,
   appendCodeFileContextLine,
   checkCodeFileActive,
+  selectCodeFiles,
 } from '~/files/code/priming';
 import {
   createCodeApiUploadRegistry,
@@ -39,9 +41,11 @@ import { isCodeArtifactToolOutput, isCodeFileToolName } from '~/agents/tools';
 import { createProvisionFilesCallback } from '~/files/provision/callback';
 import { assertModelBoundContent } from '~/middleware/modelBoundContent';
 import { addFileToResource, primeResources } from '~/agents/resources';
+import { mergeCodeFilesIntoContext } from '~/agents/codeFilesSession';
 import { filterFilesByEndpointRuntimeConfig } from '~/files/filter';
 import { prepareQueuedCodeFileContext } from '~/files/code/queued';
 import { getCodeEnvUploadFilename } from '~/files/code/form';
+import { getTurnCodeEnvRef } from '~/files/code/references';
 import { createRunFileSession } from './session';
 
 export interface RunFileToolContext extends ProvisionToolContext {
@@ -147,6 +151,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
 }): RunFileHost<TContext> {
   const user = req.user;
   if (user == null) throw new Error('Run file sharing requires an authenticated user.');
+  const userId = user.id;
   const executionContexts = new Map<string, TContext>();
   const prepared = new Map<
     string,
@@ -194,6 +199,97 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
       );
     }
   }
+
+  async function prepareCodeFileContext(
+    context: RunFileToolContext,
+    agentId: string,
+    signal: AbortSignal,
+    inheritedProject?: CodeFileProjectScope,
+  ): Promise<void> {
+    const state = context.provisionState;
+    const scope = state?.project;
+    const plan = scope?.sessionPlan;
+    if (!state || !scope || !plan) return;
+    const files = new Map(
+      [...state.codeEnvFiles, ...(context.tool_resources?.execute_code?.files ?? [])].map(
+        (file) => [file.file_id, file],
+      ),
+    );
+    if (!plan.frozen) {
+      for (const [id, name] of inheritedProject?.sessionPlan?.mountedNames ?? []) {
+        if (files.has(id)) plan.mountedNames.set(id, name);
+      }
+    }
+    const claimed = createCodeDestinationSet();
+    if (plan.frozen) {
+      for (const name of plan.destinations.values()) reserveCodeDestination(claimed, name);
+      for (const name of plan.mountedNames.values()) reserveCodeDestination(claimed, name);
+    }
+    const route =
+      context.codeExecutionContext?.executionRouteKey ??
+      context.codeExecutionContext?.executionProfile ??
+      'default';
+    const requiredCodeFiles = sortCodeFilesByDestinationPriority(
+      [...files.values()],
+      state.agentScopedFileIds,
+      scope,
+    ).filter(
+      (file): file is TFile =>
+        file != null &&
+        !isImportedProjectFile(file, scope) &&
+        (!plan.frozen || !plan.mountedNames.has(file.file_id)),
+    );
+    const storedNames = new Map<string, string>();
+    const getCodeFileInfo = provisioning.getCodeFileInfo;
+    const { scope: probeScope, concurrency } = getCodeApiUploadOptions(req, route);
+    await Promise.all(
+      requiredCodeFiles.map(async (file) => {
+        const ref = getCodeEnvRefForProfile(file.metadata, route);
+        if (!ref || ref.sandboxFilename || !getCodeFileInfo) return;
+        const info = await withCodeApiUploadSlot({
+          registry: probeRegistry,
+          scope: probeScope,
+          concurrency,
+          signal,
+          task: () => getCodeFileInfo(ref, context.codeExecutionContext ?? {}, signal),
+        });
+        if (info?.originalFilename && checkCodeFileActive(info.lastModified)) {
+          storedNames.set(file.file_id, info.originalFilename);
+        }
+      }),
+    );
+    signal.throwIfAborted();
+    for (const file of requiredCodeFiles) {
+      const name =
+        plan.mountedNames.get(file.file_id) ??
+        storedNames.get(file.file_id) ??
+        getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
+        state.codeEnvDestinations?.get(file.file_id) ??
+        getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type));
+      plan.mountedNames.set(file.file_id, claimCodeDestination(claimed, name, file.file_id));
+    }
+    if (!plan.frozen) {
+      for (const file of files.values()) {
+        if (!isImportedProjectFile(file, scope)) continue;
+        const name =
+          inheritedProject?.sessionPlan?.destinations.get(file.file_id) ??
+          state.codeEnvDestinations?.get(file.file_id) ??
+          getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
+          getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type));
+        plan.destinations.set(file.file_id, claimCodeDestination(claimed, name, file.file_id));
+      }
+      plan.frozen = true;
+    }
+    const codeAgent = {
+      ...context,
+      id: agentId,
+      fileConsumers: { executeCode: context.codeEnvAvailable === true, fileSearch: false },
+      dynamicToolContextMap: { ...context.dynamicToolContextMap },
+    };
+    prepareQueuedCodeFileContext(codeAgent, [codeAgent], userId, true);
+    context.dynamicToolContextMap = codeAgent.dynamicToolContextMap;
+  }
+
   const session = createRunFileSession({
     policy: req.config?.endpoints?.agents?.fileSharing,
     userId: user.id,
@@ -210,7 +306,11 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
     validateMessages,
     encodeMessages,
     getCodeFileContext: (actor) => {
-      const context = executionContexts.get(JSON.stringify(actor));
+      const context =
+        executionContexts.get(JSON.stringify(actor)) ??
+        (actor.executionId === session.actorFor(actor.agentId).executionId
+          ? contexts.get(actor.agentId)
+          : undefined);
       const state = context?.provisionState;
       if (!context || !state?.project) return undefined;
       const paths = new Map<string, string>();
@@ -381,6 +481,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
             );
             context.provisionState = state;
           }
+          await prepareCodeFileContext(context, actor.agentId, signal);
           const removedCodeIds = new Set(
             [...removed].flatMap((id) =>
               getCodeEnvRefs(previous?.files.get(id)?.metadata).map(([, ref]) => ref.file_id),
@@ -533,11 +634,13 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
         }
         const provisionState =
           primed.provisionState ??
-          (existingContext?.provisionState
+          (source.codeEnvAvailable === true || existingContext?.provisionState
             ? {
-                ...existingContext.provisionState,
+                ...existingContext?.provisionState,
                 codeEnvFiles: [],
                 vectorDBFiles: [],
+                aliveFileIds: new Set<string>(),
+                agentScopedFileIds: new Set<string>(),
                 codeEnvRecoveryNames: undefined,
               }
             : undefined);
@@ -555,92 +658,10 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
             }
           }
           provisionState.codeEnvDestinations = destinations;
-          if (projectFiles.length > 0) {
-            const scope = getProjectCodeScope(req, sessionKey);
-            if (scope?.sessionPlan) {
-              const plan = scope.sessionPlan;
-              if (!plan.frozen) {
-                for (const [id, name] of project?.sessionPlan?.mountedNames ?? []) {
-                  if (admittedIds.has(id)) plan.mountedNames.set(id, name);
-                }
-              }
-              const claimed = createCodeDestinationSet();
-              if (plan.frozen) {
-                for (const name of plan.destinations.values())
-                  reserveCodeDestination(claimed, name);
-                for (const name of plan.mountedNames.values())
-                  reserveCodeDestination(claimed, name);
-              }
-              const route =
-                codeExecutionContext?.executionRouteKey ??
-                codeExecutionContext?.executionProfile ??
-                'default';
-              const requiredCodeFiles = sortCodeFilesByDestinationPriority(
-                [
-                  ...new Map(
-                    [
-                      ...provisionState.codeEnvFiles,
-                      ...(primed.tool_resources?.execute_code?.files ?? []),
-                    ].map((file) => [file.file_id, file]),
-                  ).values(),
-                ],
-                provisionState.agentScopedFileIds,
-                scope,
-              ).filter(
-                (file): file is TFile =>
-                  file != null &&
-                  !isImportedProjectFile(file, scope) &&
-                  (!plan.frozen || !plan.mountedNames.has(file.file_id)),
-              );
-              const storedNames = new Map<string, string>();
-              const getCodeFileInfo = provisioning.getCodeFileInfo;
-              const { scope: probeScope, concurrency } = getCodeApiUploadOptions(req, route);
-              await Promise.all(
-                requiredCodeFiles.map(async (file) => {
-                  const ref = getCodeEnvRefForProfile(file.metadata, route);
-                  if (!ref || ref.sandboxFilename || !getCodeFileInfo) return;
-                  const info = await withCodeApiUploadSlot({
-                    registry: probeRegistry,
-                    scope: probeScope,
-                    concurrency,
-                    signal,
-                    task: () => getCodeFileInfo(ref, codeExecutionContext ?? {}, signal),
-                  });
-                  if (info?.originalFilename && checkCodeFileActive(info.lastModified)) {
-                    storedNames.set(file.file_id, info.originalFilename);
-                  }
-                }),
-              );
-              signal.throwIfAborted();
-              for (const file of requiredCodeFiles) {
-                const name =
-                  storedNames.get(file.file_id) ??
-                  plan.mountedNames.get(file.file_id) ??
-                  getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
-                  destinations.get(file.file_id) ??
-                  getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type));
-                plan.mountedNames.set(
-                  file.file_id,
-                  claimCodeDestination(claimed, name, file.file_id),
-                );
-              }
-              if (!plan.frozen) {
-                for (const file of projectFiles) {
-                  if (!isImportedProjectFile(file, scope)) continue;
-                  const name =
-                    project?.sessionPlan?.destinations.get(file.file_id) ??
-                    destinations.get(file.file_id) ??
-                    getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
-                    getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type));
-                  plan.destinations.set(
-                    file.file_id,
-                    claimCodeDestination(claimed, name, file.file_id),
-                  );
-                }
-                plan.frozen = true;
-              }
-              provisionState.project = { ...scope, projectFileIds: projectIds };
-            }
+          const scope =
+            source.codeEnvAvailable === true ? getProjectCodeScope(req, sessionKey) : undefined;
+          if (scope?.sessionPlan && (projectFiles.length > 0 || scope.sessionPlan.frozen)) {
+            provisionState.project = { ...scope, projectFileIds: projectIds };
           }
         }
         const context: TContext = existingContext ?? {
@@ -651,16 +672,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
         context.provisionState = provisionState;
         context.codeExecutionContext = codeExecutionContext;
         context.codeSessionKey = codeExecutionContext?.codeSessionKey;
-        if (source.provisionState?.project) {
-          const codeAgent = {
-            ...context,
-            id: actor.agentId,
-            fileConsumers: { executeCode: source.codeEnvAvailable === true, fileSearch: false },
-            dynamicToolContextMap: { ...source.dynamicToolContextMap },
-          };
-          prepareQueuedCodeFileContext(codeAgent, [codeAgent], user.id, true);
-          context.dynamicToolContextMap = codeAgent.dynamicToolContextMap;
-        }
+        await prepareCodeFileContext(context, actor.agentId, signal, project);
         if (context.pendingProvisionedCodeFiles) {
           const currentCodeIds = new Set(
             [
@@ -714,9 +726,71 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
     if (!session.isActive()) return undefined;
     const key = JSON.stringify(session.actorFor(agentId, executionContext));
     if (!prepared.has(key)) throw new Error('The shared-file execution has not been prepared.');
-    return serialize(key, signal, async () =>
-      provisioningCallbacks.get(key)?.(toolNames, agentId, signal),
-    );
+    return serialize(key, signal, async () => {
+      const context = executionContexts.get(key);
+      const state = context?.provisionState;
+      const liveCodeFiles: CodeEnvFile[] = [];
+      if (context?.codeEnvAvailable === true && state && toolNames.some(isCodeFileToolName)) {
+        const route =
+          context.codeExecutionContext?.executionRouteKey ??
+          context.codeExecutionContext?.executionProfile ??
+          'default';
+        const queuedIds = new Set(state.codeEnvFiles.map((file) => file.file_id));
+        const { scope: probeScope, concurrency } = getCodeApiUploadOptions(req, route);
+        const { selected } = await selectCodeFiles({
+          files: (context.tool_resources?.execute_code?.files ?? []).filter(
+            (file) => !queuedIds.has(file.file_id),
+          ),
+          privateFileIds: state.agentScopedFileIds,
+          project: state.project,
+          getTurnRef: (file, destination) => getTurnCodeEnvRef(req, route, file, destination),
+          routeKey: route,
+          getFileInfo: (ref) =>
+            withCodeApiUploadSlot({
+              registry: probeRegistry,
+              scope: probeScope,
+              concurrency,
+              signal,
+              task: async () =>
+                provisioning.getCodeFileInfo?.(ref, context.codeExecutionContext ?? {}, signal) ??
+                null,
+            }),
+          concurrency,
+          signal,
+        });
+        for (const candidate of selected) {
+          if (!candidate.isActive || !candidate.ref) {
+            state.codeEnvFiles.push(candidate.file);
+            state.codeEnvDestinations ??= new Map();
+            state.codeEnvDestinations.set(candidate.file.file_id, candidate.sandboxName);
+            if (candidate.temporary) {
+              state.temporaryCodeFileIds = new Set([
+                ...(state.temporaryCodeFileIds ?? []),
+                candidate.file.file_id,
+              ]);
+            }
+            continue;
+          }
+          const ref = candidate.ref;
+          const codeFile = {
+            id: ref.file_id,
+            resource_id: ref.id,
+            storage_session_id: ref.storage_session_id,
+            name: candidate.sandboxName,
+          };
+          liveCodeFiles.push(
+            ref.kind === 'skill'
+              ? { ...codeFile, kind: ref.kind, version: ref.version }
+              : { ...codeFile, kind: ref.kind },
+          );
+        }
+      }
+      const provisioned = await provisioningCallbacks.get(key)?.(toolNames, agentId, signal);
+      // An isolated child has no entry under its new SDK session key. Live setup files
+      // must travel with uploads instead of relying on the original graph's seed.
+      return mergeCodeFilesIntoContext(undefined, [...liveCodeFiles, ...(provisioned ?? [])])
+        ?.files;
+    });
   }
 
   const deliverToolEnd = async (

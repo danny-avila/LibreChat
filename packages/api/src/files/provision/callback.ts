@@ -296,10 +296,22 @@ export function createProvisionFilesCallback({
                 ? getTurnCodeEnvRef(req, codeRouteKey, file, sandboxFilename)
                 : undefined;
               if (existingRef) {
-                return {
-                  refs: mergeCodeEnvRef(file.metadata, existingRef),
-                  sandboxFilename,
-                };
+                const { scope, concurrency } = getCodeApiUploadOptions(req, codeRouteKey);
+                const info = await withCodeApiUploadSlot({
+                  registry: req.app?.locals?.codeApiUploadRegistry ?? probeRegistry,
+                  scope,
+                  concurrency,
+                  signal,
+                  task: async () =>
+                    getCodeFileInfo?.(existingRef, ctx.codeExecutionContext ?? {}, signal),
+                });
+                signal?.throwIfAborted();
+                if (checkCodeFileActive(info?.lastModified)) {
+                  return {
+                    refs: mergeCodeEnvRef(file.metadata, existingRef),
+                    sandboxFilename,
+                  };
+                }
               }
               const canonicalRef = getCodeEnvRefForProfile(file.metadata, codeRouteKey);
               if (
