@@ -34,6 +34,12 @@ describe('strongDirection', () => {
     expect(strongDirection('\u060C\u066B hello')).toBe('ltr');
   });
 
+  it('reads strong symbols outside letter categories', () => {
+    expect(strongDirection('\u{1F1FA}\u{1F1F8} \u0645\u0631\u062D\u0628\u0627')).toBe('ltr');
+    expect(strongDirection('\u2801')).toBe('ltr');
+    expect(strongDirection('\u0964 \u0645\u0631\u062D\u0628\u0627')).toBe('ltr');
+  });
+
   it('honors explicit direction marks', () => {
     expect(strongDirection('\u200F hello')).toBe('rtl');
     expect(strongDirection('\u061C hello')).toBe('rtl');
