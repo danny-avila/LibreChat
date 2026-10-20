@@ -675,9 +675,13 @@ it.each(
   },
 );
 
-it.each(['completed', 'failed', 'cancelled'] as const)(
-  'retains the durable %s outcome beside a nonempty partial prefix without replaying it',
-  (status) => {
+it.each(
+  (['completed', 'failed', 'cancelled', 'interrupted'] as const).flatMap((status) =>
+    (['partial', 'complete'] as const).map((recovery) => ({ status, recovery })),
+  ),
+)(
+  'retains the durable $status outcome beside nonempty $recovery history without replaying it',
+  ({ status, recovery }) => {
     const content: TMessageContentParts[] = [
       { type: ContentTypes.TEXT, text: 'Retained earlier work.' },
     ];
@@ -685,7 +689,7 @@ it.each(['completed', 'failed', 'cancelled'] as const)(
       data: {
         messageId: 'task-1:assistant',
         status,
-        recovery: 'partial',
+        recovery,
         content,
         throughSequence: 0,
         targetThroughSequence: 0,
@@ -709,6 +713,7 @@ it.each(['completed', 'failed', 'cancelled'] as const)(
             parentMessageId: 'task-1:user',
             role: 'assistant' as const,
             text: 'Durable final outcome.',
+            ...(status === 'failed' ? { error: true } : {}),
           },
           activity: { ...turns[0].activity, status },
         },
@@ -787,3 +792,99 @@ it('shows the durable outcome when partial capture and fallback both lack the fi
   );
   expect(screen.getAllByText('Durable outcome survives.')).toHaveLength(1);
 });
+
+it.each(['partial', 'complete'] as const)(
+  'does not append a truncated terminal projection already present in %s journal text',
+  (recovery) => {
+    const content: TMessageContentParts[] = [
+      {
+        type: ContentTypes.TEXT,
+        text: 'Durable final outcome with retained full detail.',
+        phase: 'final_answer',
+      },
+    ];
+    mockRecoveredQuery.mockReturnValue({
+      data: {
+        messageId: 'task-1:assistant',
+        status: 'completed',
+        recovery,
+        content,
+        throughSequence: 1,
+        targetThroughSequence: 1,
+      },
+    });
+    render(
+      <ChatSurfaceHarness>
+        <SubagentConversation
+          author={author}
+          parentAuthor={parentAuthor}
+          recovery={{
+            parentConversationId: 'parent',
+            threadId: 'child',
+            selectedTaskId: 'task-1',
+            ready: true,
+          }}
+          turns={[
+            {
+              ...turns[0],
+              outcome: {
+                messageId: 'task-1:assistant',
+                parentMessageId: 'task-1:user',
+                role: 'assistant',
+                text: 'Durable final outcome',
+                textTruncated: true,
+              },
+            },
+          ]}
+        />
+      </ChatSurfaceHarness>,
+    );
+    expect(screen.getAllByText('Durable final outcome with retained full detail.')).toHaveLength(1);
+    expect(screen.queryByText('Durable final outcome', { exact: true })).not.toBeInTheDocument();
+    expect(mockCopyMessage.mock.calls.at(-1)?.[0].content).toBe(content);
+    expect(content).toHaveLength(1);
+  },
+);
+
+it.each(['partial', 'complete'] as const)(
+  'does not display a terminal outcome while a %s capture is still running',
+  (recovery) => {
+    mockRecoveredQuery.mockReturnValue({
+      data: {
+        messageId: 'task-1:assistant',
+        status: 'running',
+        recovery,
+        content: [{ type: ContentTypes.TEXT, text: 'Current work.' }],
+        throughSequence: 0,
+        targetThroughSequence: 0,
+      },
+    });
+    render(
+      <ChatSurfaceHarness>
+        <SubagentConversation
+          author={author}
+          parentAuthor={parentAuthor}
+          recovery={{
+            parentConversationId: 'parent',
+            threadId: 'child',
+            selectedTaskId: 'task-1',
+            ready: true,
+          }}
+          turns={[
+            {
+              ...turns[0],
+              outcome: {
+                messageId: 'task-1:assistant',
+                parentMessageId: 'task-1:user',
+                role: 'assistant',
+                text: 'Durable terminal outcome.',
+              },
+            },
+          ]}
+        />
+      </ChatSurfaceHarness>,
+    );
+    expect(screen.getByText('Current work.')).toBeInTheDocument();
+    expect(screen.queryByText('Durable terminal outcome.')).not.toBeInTheDocument();
+  },
+);

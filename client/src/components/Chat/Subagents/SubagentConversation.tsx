@@ -399,14 +399,16 @@ function RecoveredChildMessage({
     if (
       snapshot == null ||
       props.turn.contentRecoveryAvailable === false ||
-      snapshot.recovery !== 'partial' ||
       isLiveSubagentStatus(snapshot.status) ||
       !outcome?.text ||
-      getActivityContent(turn.activity).some(
-        (part) =>
-          part?.type === ContentTypes.TEXT &&
-          (typeof part.text === 'string' ? part.text : part.text?.value) === outcome.text,
-      )
+      getActivityContent(turn.activity).some((part) => {
+        if (part?.type !== ContentTypes.TEXT) return false;
+        const text = typeof part.text === 'string' ? part.text : part.text?.value;
+        return (
+          text === outcome.text ||
+          (outcome.textTruncated === true && text?.startsWith(outcome.text) === true)
+        );
+      })
     )
       return undefined;
     return [{ type: ContentTypes.TEXT, text: outcome.text, phase: 'final_answer' }];
