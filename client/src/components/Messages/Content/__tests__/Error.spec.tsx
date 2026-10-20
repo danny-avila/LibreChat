@@ -770,53 +770,20 @@ describe('Error — user key and limits', () => {
 });
 
 describe('Error — token balance and context budget', () => {
-  it('formats token credits and keeps generation rows behind a disclosure', () => {
+  it('shows a short credits message without amounts or prompt size', () => {
     renderError({
       type: ViolationTypes.TOKEN_BALANCE,
       balance: 1250,
       tokenCost: 8400,
       promptTokens: 6300,
-      generations: [
-        { model: 'gpt-4o', promptTokens: 6300, completionTokens: 2100 },
-        { model: 'gpt-4o-mini', promptTokens: 820, completionTokens: 240 },
-      ],
+      generations: [{ model: 'gpt-4o', promptTokens: 6300, completionTokens: 2100 }],
     });
 
-    expect(
-      screen.getByText(
-        localized('com_error_token_balance', numberFormat.format(8400), numberFormat.format(1250)),
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(localized('com_error_token_balance_prompt', numberFormat.format(6300))),
-    ).toBeInTheDocument();
-    expect(document.body.textContent).not.toContain('"model":');
-    fireEvent.click(
-      screen.getByRole('button', { name: catalog.com_error_token_balance_generations }),
-    );
-    expect(
-      screen.getByText(
-        localized(
-          'com_error_token_balance_generation',
-          'gpt-4o',
-          numberFormat.format(6300),
-          numberFormat.format(2100),
-        ),
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        localized(
-          'com_error_token_balance_generation',
-          'gpt-4o-mini',
-          numberFormat.format(820),
-          numberFormat.format(240),
-        ),
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText(catalog.com_error_token_balance)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/1,250|8,400|6,300|Prompt size|gpt-4o/);
   });
 
-  it('states the shortfall in money when the deployment shows balance as currency', () => {
+  it('shows a short balance message when the deployment shows currency', () => {
     mockStartupData = {
       compactionEnabled: false,
       balance: { enabled: true, display: 'currency' },
@@ -824,10 +791,9 @@ describe('Error — token balance and context budget', () => {
     };
     renderError({ type: ViolationTypes.TOKEN_BALANCE, balance: 1_250_000, tokenCost: 8_400_000 });
 
-    expect(
-      screen.getByText(localized('com_error_token_balance_currency', '$8.40', '$1.25')),
-    ).toBeInTheDocument();
+    expect(screen.getByText(catalog.com_error_token_balance_currency)).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('credits');
+    expect(document.body.textContent).not.toMatch(/\$8\.40|\$1\.25/);
   });
 
   it('shows no credit figures when the deployment shows balance as a percent', () => {
@@ -836,21 +802,6 @@ describe('Error — token balance and context budget', () => {
 
     expect(screen.getByText(catalog.com_error_token_balance_hidden)).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/1,250|8,400|credits/);
-  });
-
-  it('lists every generation charge rather than a truncated subset', () => {
-    const generations = Array.from({ length: 25 }, (_, index) => ({
-      model: `model-${index + 1}`,
-      promptTokens: 100,
-      completionTokens: 10,
-    }));
-    renderError({ type: ViolationTypes.TOKEN_BALANCE, balance: 10, tokenCost: 900, generations });
-
-    fireEvent.click(
-      screen.getByRole('button', { name: catalog.com_error_token_balance_generations }),
-    );
-    expect(screen.getAllByRole('listitem')).toHaveLength(25);
-    expect(screen.getByText(/^model-25 —/)).toBeInTheDocument();
   });
 
   it('shows a short personal spend limit message', () => {

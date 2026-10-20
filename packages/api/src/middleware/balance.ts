@@ -264,7 +264,8 @@ export function createUpdatePersonalSpendLimit({
         return;
       }
 
-      const userId = req.user?.id ?? req.user?._id?.toString();
+      const user = req.user as IUser | undefined;
+      const userId = user?.id;
       if (!userId) {
         res.status(401).json({ error: 'Unauthorized' });
         return;
