@@ -517,6 +517,8 @@ export class Chat {
   /** The pause whose resume request is in flight, so a second submit cannot send it again. */
   private resuming?: string;
   private disposed = false;
+  /** Aborted on dispose, which ends every wait on the server so no caller outlives the chat. */
+  private readonly lifetime = new AbortController();
   /** A generation whose stream dropped while the server kept it running. */
   private detached?: DetachedGeneration;
   /** The timestamp of the last generation a stop ended, whose later pauses are stale. */
@@ -831,7 +833,12 @@ export class Chat {
       return;
     }
     void this.abortOnServer(target).catch((error: unknown) =>
-      this.init.onError?.(error instanceof Error ? error : new Error(String(error))),
+      this.disposed
+        ? undefined
+        : this.callHost(
+            this.init.onError,
+            error instanceof Error ? error : new Error(String(error)),
+          ),
     );
   }
 
@@ -870,7 +877,10 @@ export class Chat {
    * a refusal rejects.
    */
   private async abortOnServer(target: Omit<ChatAbortRequest, 'chatId'>): Promise<ChatAbortResult> {
-    const result = await this.init.transport.abort({ chatId: this.id, ...target });
+    const result = await untilAborted(
+      this.init.transport.abort({ chatId: this.id, ...target }),
+      this.lifetime.signal,
+    );
     if (result && 'success' in result && !result.success && !result.settled) {
       throw new Error(result.error ?? 'The server refused the stop');
     }
@@ -1141,13 +1151,29 @@ export class Chat {
 
   /** Drops the local stream and every listener; the server's generation keeps running. */
   dispose(): void {
+    if (this.disposed) {
+      return;
+    }
     this.disposed = true;
+    this.lifetime.abort(new Error('The chat was disposed'));
     const active = this.active;
     this.active = undefined;
     active?.controller.abort();
     active?.stream?.close();
-    /** The chat holds no stream; the turn's status stays, since the server keeps running it. */
-    this.setConnection('idle');
+    const { state } = this.init;
+    const unsent = active != null && !active.sent && !active.reattach;
+    const status = unsent && state.status === 'submitted' ? 'ready' : state.status;
+    if (status !== state.status || state.connection !== 'idle') {
+      /**
+       * A turn that never reached the server ends here; a sent one keeps its status, since the
+       * server keeps running it. Either way the chat holds no stream.
+       */
+      state.status = status;
+      state.connection = 'idle';
+      this.notify();
+    }
+    /** Whoever waits on the request, such as its send or a stop, is released with the chat. */
+    active?.finish();
     this.listeners.clear();
     this.releaseState?.();
     this.releaseState = undefined;
@@ -1364,6 +1390,10 @@ export class Chat {
       }
     } else if (event.type === 'pending_action' && !this.resumed.has(event.data.actionId)) {
       /** A pause this chat already resumed is stale when a reattached stream replays it. */
+      if (this.status !== 'streaming') {
+        /** A live pause is the generation running, however its first frame arrives. */
+        this.init.state.status = 'streaming';
+      }
       if (this.action?.actionId !== event.data.actionId) {
         /** A reconnect replays the same pause; decisions already made for it still stand. */
         this.decisions.clear();
@@ -1387,11 +1417,7 @@ export class Chat {
       const message = getErrorMessage(event.data) ?? 'The response failed';
       outcome = { kind: 'error', error: new Error(message), disconnect };
     }
-    try {
-      this.init.onEvent?.(event);
-    } catch (error) {
-      reportListenerError(error);
-    }
+    this.callHost(this.init.onEvent, event);
     return outcome;
   }
 
@@ -1502,9 +1528,9 @@ export class Chat {
     const { settled } = outcome;
     this.notify();
     if (outcome.kind === 'error') {
-      this.init.onError?.(outcome.error);
+      this.callHost(this.init.onError, outcome.error);
     }
-    this.init.onFinish?.({
+    this.callHost(this.init.onFinish, {
       message,
       messages,
       isAbort: outcome.kind === 'abort',
@@ -1601,6 +1627,15 @@ export class Chat {
     }
     this.init.state.connection = connection;
     this.notify();
+  }
+
+  /** Runs a host callback; one that throws is reported and never interrupts the chat's transition. */
+  private callHost<T>(callback: ((value: T) => void) | undefined, value: T): void {
+    try {
+      callback?.(value);
+    } catch (error) {
+      reportListenerError(error);
+    }
   }
 
   private notify(): void {

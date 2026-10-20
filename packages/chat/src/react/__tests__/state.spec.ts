@@ -113,6 +113,18 @@ describe('ReactQueryChatState', () => {
     expect(hostListeners.size).toBe(0);
   });
 
+  it('reports a write that creates its cache entry once', async () => {
+    const queryClient = new QueryClient();
+    const state = new ReactQueryChatState({ queryClient, key: 'convo-1' });
+    const listener = jest.fn();
+    state.subscribe(listener);
+
+    queryClient.setQueryData([QueryKeys.messages, 'convo-1'], [message('a')]);
+    await flushMicrotasks();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
   it('reports writes to its own key only, after the writing call returns', async () => {
     const queryClient = new QueryClient();
     const state = new ReactQueryChatState({ queryClient, key: 'convo-1' });

@@ -84,11 +84,15 @@ export class ReactQueryChatState implements ChatState {
    */
   subscribe(listener: () => void): () => void {
     let active = true;
+    /** One write can raise several cache events, such as `added` then `updated`; one call covers them. */
+    let queued = false;
     const deliver = () => {
-      if (this.writing) {
+      if (this.writing || queued) {
         return;
       }
+      queued = true;
       queueMicrotask(() => {
+        queued = false;
         if (active) {
           listener();
         }

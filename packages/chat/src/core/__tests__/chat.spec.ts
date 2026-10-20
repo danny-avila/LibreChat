@@ -246,6 +246,20 @@ describe('Chat', () => {
       expect(listener).not.toHaveBeenCalled();
     });
 
+    it('in onError still tells the host the turn finished', async () => {
+      const onError = jest.fn(() => {
+        throw new Error('callback failed');
+      });
+      const { chat, stream, onFinish } = setup({ onError });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 500, data: 'boom' } as ChatEvent);
+      await sent;
+
+      expect(onError).toHaveBeenCalled();
+      expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isError: true }));
+    });
+
     it('in onEvent still ends the turn by its terminal frame', async () => {
       const onEvent = jest.fn(() => {
         throw new Error('callback failed');
@@ -261,6 +275,77 @@ describe('Chat', () => {
         expect.objectContaining({ isError: false, isDisconnect: false }),
       );
     });
+  });
+
+  describe('dispose', () => {
+    it('ends a turn that never reached the server and releases its send', async () => {
+      const { chat, transport } = setup({
+        prepareRequest: () => new Promise<never>(() => undefined),
+      });
+      const statuses: string[] = [];
+      chat.subscribe(() => statuses.push(chat.status));
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+
+      chat.dispose();
+
+      await expect(sent).resolves.toBeUndefined();
+      expect(chat.status).toBe('ready');
+      expect(statuses[statuses.length - 1]).toBe('ready');
+      expect(transport.sendMessages).not.toHaveBeenCalled();
+    });
+
+    it('keeps a sent turn running on the server but releases its send', async () => {
+      const { chat, transport } = setup();
+      transport.sendMessages.mockImplementationOnce(() => new Promise<never>(() => undefined));
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+
+      chat.dispose();
+
+      await expect(sent).resolves.toBeUndefined();
+      expect(chat.status).toBe('submitted');
+      expect(chat.connection).toBe('idle');
+    });
+
+    it('releases a stop still waiting for the server, and the turn it stops', async () => {
+      const { chat, transport } = setup({ resumeSelection: () => ({ endpoint: 'agents' }) });
+      transport.abort.mockImplementationOnce(() => new Promise<never>(() => undefined));
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      const stopped = chat.stop();
+      await flush();
+
+      chat.dispose();
+
+      await expect(stopped).rejects.toThrow('The chat was disposed');
+      await expect(sent).resolves.toBeUndefined();
+      expect(chat.connection).toBe('idle');
+    });
+  });
+
+  it('streams a turn whose first frame is a pause', async () => {
+    const { chat, stream } = setup();
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    expect(chat.status).toBe('submitted');
+
+    stream.push({
+      type: 'pending_action',
+      data: {
+        actionId: 'action-1',
+        streamId: 'convo-1',
+        conversationId: 'convo-1',
+        createdAt: 1,
+        expiresAt: Date.now() + 60_000,
+        payload: { type: 'ask_user_question', question: { question: 'Which?' }, tool_call_id: 'a' },
+      } as Agents.PendingAction,
+    });
+    await flush();
+
+    expect(chat.status).toBe('streaming');
+    stream.push(finalEvent());
+    await sent;
   });
 
   it('refuses a settled start the server did not negotiate under protocol v2', async () => {
@@ -1559,8 +1644,9 @@ describe('Chat', () => {
     const stopped = chat.stop();
     await flush();
 
-    /** The answer lands one microtask before the stream opens, so the stop cancels the open. */
+    /** The answer lands just before the stream opens, so the stop cancels the open. */
     answer?.({ success: false, settled: true, terminalStatus: 'complete' });
+    await Promise.resolve();
     await Promise.resolve();
     open?.(opened);
     await stopped;
@@ -3277,8 +3363,9 @@ describe('Chat', () => {
         const stopped = chat.stop();
         await flush();
         chat.dispose();
+        await expect(stopped).rejects.toThrow('The chat was disposed');
         answer?.({ success: true, persistenceFailed: true });
-        await stopped;
+        await flush();
 
         expect(transport.abort).toHaveBeenCalledTimes(1);
         expect(onFinish).toHaveBeenCalledTimes(finishes);
