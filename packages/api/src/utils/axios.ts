@@ -2,6 +2,7 @@ import axios from 'axios';
 import { Buffer } from 'buffer';
 import { logger } from '@librechat/data-schemas';
 import type { AxiosInstance, AxiosProxyConfig, AxiosError } from 'axios';
+import { isClientDisconnect } from './streams';
 
 /**
  * Render `error.response.data` as a small, log-safe value. Axios surfaces
@@ -46,6 +47,11 @@ export const logAxiosError = ({
   message: string;
   error: AxiosError | Error | unknown;
 }): string => {
+  if (isClientDisconnect(error)) {
+    const logMessage = `${message} Client disconnected`;
+    logger.debug(logMessage);
+    return logMessage;
+  }
   let logMessage = message;
   try {
     const stack =
