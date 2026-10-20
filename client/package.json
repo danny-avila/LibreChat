@@ -165,6 +165,7 @@
     "jest-environment-jsdom": "^30.2.0",
     "jest-file-loader": "^1.0.3",
     "jest-junit": "^17.0.0",
+    "lightningcss": "^1.33.0",
     "micromark-util-types": "^2.0.0",
     "postcss": "^8.5.18",
     "tailwindcss": "^4.3.3",
