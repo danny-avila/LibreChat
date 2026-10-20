@@ -22,6 +22,8 @@ import {
   migrateFilesDraft,
   migrateTextDraft,
   publishTabAttachmentIds,
+  registerComposerDraft,
+  subscribeDraftOwnership,
   setDraft,
   setFilesDraft,
 } from '~/utils';
@@ -260,6 +262,11 @@ export const useAutoSave = ({
    * which after a send put the just-sent attachment straight back as a chip. */
   const activeStorageId =
     currentConversationId === pendingDraftId ? pendingDraftId : conversationId;
+  useEffect(() => {
+    if (!activeStorageId) return;
+    return registerComposerDraft(index, _conversationId ?? Constants.NEW_CONVO, activeStorageId);
+  }, [index, _conversationId, activeStorageId]);
+
   /** Snapshot before a URL prompt replaces text; user input resumes normal persistence. */
   const preserveText = useCallback(() => {
     if (!saveDrafts || !activeStorageId || !textAreaRef?.current) {
@@ -364,6 +371,8 @@ export const useAutoSave = ({
 
   const prevConversationIdRef = useRef<string | null>(null);
   const pendingDestinationRef = useRef<string | null>(null);
+  // Pending provenance outlives the displayed draft during unrelated visits.
+  const pendingOwnerRef = useRef<string | null>(null);
   const [ownershipVersion, setOwnershipVersion] = useState(0);
 
   useEffect(() => {
@@ -374,6 +383,13 @@ export const useAutoSave = ({
 
     if (!saveDrafts || conversationId == null || conversationId === '') {
       return;
+    }
+    if (
+      conversationId === pendingDraftId &&
+      currentConversationId !== pendingDraftId &&
+      pendingDestinationRef.current == null
+    ) {
+      pendingOwnerRef.current = _conversationId ?? Constants.NEW_CONVO;
     }
     if (conversationId === currentConversationId) {
       return;
@@ -415,18 +431,21 @@ export const useAutoSave = ({
           Object.keys(pendingDraftRecord.pendingPastes).length > 0 ||
           (getDraft(pendingDraftId) ?? '') !== '');
       const pendingDestination = pendingDestinationRef.current;
+      const pendingOwner = pendingOwnerRef.current ?? currentDraft?.conversationId;
       const pendingStorageActive =
         (prevConversationIdRef.current === pendingDraftId ||
           currentConversationId === pendingDraftId ||
           (currentConversationId == null && pendingDraftHasContent) ||
+          (pendingOwner === (_conversationId ?? Constants.NEW_CONVO) && pendingDraftHasContent) ||
           pendingDestination === conversationId) &&
         (pendingDestination == null || pendingDestination === conversationId);
       if (
         pendingStorageActive &&
-        (currentDraft == null ||
-          isNewConversationDraftId(currentDraft.conversationId) ||
-          isPendingDraftId(currentDraft.conversationId) ||
-          currentDraft.conversationId === (_conversationId ?? Constants.NEW_CONVO)) &&
+        (pendingDestination === conversationId ||
+          pendingOwner == null ||
+          isNewConversationDraftId(pendingOwner) ||
+          isPendingDraftId(pendingOwner) ||
+          pendingOwner === (_conversationId ?? Constants.NEW_CONVO)) &&
         conversationId !== pendingDraftId &&
         !isAskAnswerDraftId(conversationId) &&
         !isNewConversationDraftId(conversationId) &&
@@ -452,6 +471,7 @@ export const useAutoSave = ({
           nextConversationId = pendingDraftId;
         } else if (pendingOwned) {
           pendingDestinationRef.current = null;
+          pendingOwnerRef.current = null;
           /** Move the pending text draft to the new conversationId, then let the composer correct
            * it. Both describe the same composer and the record is a debounced copy of it, so when
            * they disagree the record is simply older, and restoring it would roll the user's last
@@ -528,20 +548,20 @@ export const useAutoSave = ({
 
   useEffect(() => {
     const destination = pendingDestinationRef.current;
-    if (!destination || destination !== conversationId) {
+    if (!saveDrafts || !destination || destination !== conversationId) {
       return;
     }
     const retry = () => {
       if (
+        pendingDestinationRef.current === destination &&
         isFilesDraftOwnedByThisTab(getFilesDraft(destination)) &&
         mayWriteComposerText(destination)
       ) {
         setOwnershipVersion((version) => version + 1);
       }
     };
-    window.addEventListener('storage', retry);
-    return () => window.removeEventListener('storage', retry);
-  }, [conversationId, currentDraft]);
+    return subscribeDraftOwnership(destination, retry);
+  }, [conversationId, currentDraft, saveDrafts]);
 
   useEffect(() => {
     const draftStorageId = activeStorageId;

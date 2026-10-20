@@ -26,6 +26,9 @@ import {
   renewNewConversationDraftToken,
   setDraft,
   setFilesDraft,
+  subscribeDraftOwnership,
+  registerComposerDraft,
+  getActiveComposerDraftId,
   removePendingTextAttachmentDraft,
   setPendingTextAttachmentDraft,
 } from './drafts';
@@ -1133,5 +1136,38 @@ describe('clearDraft navigation ordering', () => {
     jest.advanceTimersByTime(3000);
     expect(getDraft('chat-a')).toBe('');
     expect(getDraft('chat-b')).toBe('');
+  });
+});
+
+describe('composer draft ownership', () => {
+  it('releases only the registered pane scope and rejects another conversation', () => {
+    const releaseOld = registerComposerDraft(4, 'origin', 'ask-answer:old');
+    const releaseNew = registerComposerDraft(4, 'origin', 'ask-answer:new');
+    releaseOld();
+    expect(getActiveComposerDraftId(4, 'origin')).toBe('ask-answer:new');
+    expect(getActiveComposerDraftId(4, 'other')).toBeNull();
+    expect(getActiveComposerDraftId(5, 'origin')).toBeNull();
+    releaseNew();
+    expect(getActiveComposerDraftId(4, 'origin')).toBeNull();
+  });
+
+  it('coalesces actual local changes and stops notifying after unsubscription', async () => {
+    localStorage.clear();
+    await Promise.resolve();
+    const changed = jest.fn();
+    const unsubscribe = subscribeDraftOwnership('observed', changed);
+    const draft = { fileIds: ['file'], pendingPastes: {} };
+    setFilesDraft('unrelated', draft);
+    setFilesDraft('observed', draft);
+    setFilesDraft('observed', draft);
+    await Promise.resolve();
+    expect(changed).toHaveBeenCalledTimes(1);
+    setFilesDraft('observed', draft);
+    await Promise.resolve();
+    expect(changed).toHaveBeenCalledTimes(1);
+    unsubscribe();
+    clearFilesDraft('observed');
+    await Promise.resolve();
+    expect(changed).toHaveBeenCalledTimes(1);
   });
 });

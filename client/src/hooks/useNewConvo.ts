@@ -39,6 +39,7 @@ import {
   renewNewConversationDraftToken,
   getNewConversationDraftId,
   getPendingDraftId,
+  getActiveComposerDraftId,
   getFilesDraft,
   isPastedTextFileMarked,
   loadPendingDiscardIds,
@@ -199,8 +200,7 @@ const useNewConvo = (index = 0) => {
           const assistants: AssistantListItem[] = assistantsListMap[defaultEndpoint] ?? [];
           const currentAssistantId = conversation.assistant_id ?? '';
           const currentAssistant = assistantsListMap[defaultEndpoint]?.[currentAssistantId] as
-            | AssistantListItem
-            | undefined;
+            AssistantListItem | undefined;
 
           if (currentAssistantId && !currentAssistant) {
             conversation.assistant_id = undefined;
@@ -394,11 +394,16 @@ const useNewConvo = (index = 0) => {
           prevConversation.conversationId === Constants.NEW_CONVO
             ? getNewConversationDraftId(index)
             : prevConversation.conversationId;
+        const activeDraftId = getActiveComposerDraftId(
+          index,
+          prevConversation?.conversationId ?? Constants.NEW_CONVO,
+        );
         const retainedUploadIds = new Set(
           saveDrafts
             ? [
                 ...getFilesDraft(sourceDraftId).fileIds,
                 ...getFilesDraft(getPendingDraftId(index)).fileIds,
+                ...(activeDraftId ? getFilesDraft(activeDraftId).fileIds : []),
               ]
             : [],
         );

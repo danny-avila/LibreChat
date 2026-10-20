@@ -79,6 +79,48 @@ beforeEach(() => {
 });
 
 describe('useAutoSave — conversation switching', () => {
+  it('recovers blocked pending drafts when this document sweeps an expired foreign lease', async () => {
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+    try {
+      markTabLive('expired-owner');
+      const textAreaRef = makeTextAreaRef('');
+      (useGetFiles as jest.Mock).mockReturnValue({ data: [{ file_id: 'lease-file', bytes: 3 }] });
+      const { result, rerender, unmount } = renderHook(
+        ({ isSubmitting }: { isSubmitting: boolean }) => {
+          const [files, setFiles] = React.useState<Map<string, ExtendedFile>>(new Map());
+          useAutoSave({
+            conversationId: 'lease-destination',
+            isSubmitting,
+            textAreaRef,
+            files,
+            setFiles,
+          });
+          return files;
+        },
+        { initialProps: { isSubmitting: true } },
+      );
+      setFilesDraft(Constants.PENDING_CONVO, { fileIds: ['lease-file'], pendingPastes: {} });
+      setFilesDraft('lease-destination', {
+        fileIds: ['foreign-file'],
+        pendingPastes: {},
+        tabId: 'expired-owner',
+      });
+      act(() => rerender({ isSubmitting: false }));
+      expect(getFilesDraft('lease-destination').tabId).toBe('expired-owner');
+      await act(async () => {
+        jest.advanceTimersByTime(160_000);
+        await Promise.resolve();
+      });
+      expect(localStorage.getItem('librechat-live-tab:expired-owner')).toBeNull();
+      expect(getFilesDraft(Constants.PENDING_CONVO).fileIds).toEqual([]);
+      expect(getFilesDraft('lease-destination').fileIds).toEqual(['lease-file']);
+      expect(result.current.has('lease-file')).toBe(true);
+      unmount();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('clears the textarea when switching to a conversation with no draft', () => {
     const { rerender } = renderHook(
       ({ conversationId }: { conversationId: string }) =>

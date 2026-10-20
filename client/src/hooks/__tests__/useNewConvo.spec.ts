@@ -5,10 +5,10 @@ import { Constants, LocalStorageKeys, EModelEndpoint } from 'librechat-data-prov
 import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { clearUploadRecovery } from '~/hooks/Files/useFileHandling';
+import { setFilesDraft, getAskAnswerDraftId } from '~/utils/drafts';
 import { beginFileSearchUpload } from '~/hooks/Files/search';
 import { useAutoSave } from '~/hooks/Input/useAutoSave';
 import { setFileSearchChoice } from '~/utils/choices';
-import { setFilesDraft } from '~/utils/drafts';
 
 const mockDeleteFiles = jest.fn();
 let mockSaveDrafts = false;
@@ -283,6 +283,58 @@ describe('useNewConvo reset cleanup', () => {
       } else {
         expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
       }
+      restored.unmount();
+    },
+  );
+
+  it.each(['active', 'other-question', 'other-conversation', 'other-pane'])(
+    'retains only the owning active answer draft on New Chat (%s)',
+    (mode) => {
+      mockSaveDrafts = true;
+      mockPreviousConversation = {
+        conversationId: 'answer-origin',
+        endpoint: EModelEndpoint.openAI,
+      };
+      mockFiles.clear();
+      mockFiles.set('answer-upload', { file_id: 'answer-upload', attached: false, progress: 0.2 });
+      const draftId = getAskAnswerDraftId('active-question');
+      const source = renderHook(() =>
+        useAutoSave({
+          index: mode === 'other-pane' ? 0 : 2,
+          conversationId: mode === 'other-conversation' ? 'unrelated-origin' : 'answer-origin',
+          draftId,
+          files: mockFiles as Map<string, ExtendedFile>,
+          setFiles: jest.fn(),
+        }),
+      );
+      if (mode === 'other-question') {
+        setFilesDraft(draftId, { fileIds: [], pendingPastes: {} });
+        setFilesDraft(getAskAnswerDraftId('other-question'), {
+          fileIds: ['answer-upload'],
+          pendingPastes: {},
+        });
+      }
+      beginFileSearchUpload('answer-upload', 'answer-origin');
+      const next = renderHook(() => useNewConvo(2));
+      act(() => next.result.current.newConversation());
+      expect(clearUploadRecovery).toHaveBeenCalledWith('answer-upload', mode === 'active');
+      next.unmount();
+      source.unmount();
+      mockFileList = [
+        { file_id: 'saved-answer', temp_file_id: 'answer-upload', bytes: 3, embedded: true },
+      ];
+      setFilesDraft(draftId, { fileIds: ['answer-upload'], pendingPastes: {} });
+      mockSetEphemeralAgent.mockClear();
+      const restored = renderHook(() =>
+        useAutoSave({
+          index: 2,
+          conversationId: 'answer-origin',
+          draftId,
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      );
+      expect(mockSetEphemeralAgent.mock.calls.length > 0).toBe(mode === 'active');
       restored.unmount();
     },
   );

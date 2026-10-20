@@ -266,9 +266,70 @@ const getLocalStorageItem = (key: string): string | null => {
   }
 };
 
+const ownershipChanges = new Set<string>();
+const ownershipListeners = new Set<(keys: ReadonlySet<string>) => void>();
+let ownershipNotificationPending = false;
+
+const notifyOwnershipChange = (key: string): void => {
+  ownershipChanges.add(key);
+  if (ownershipNotificationPending) return;
+  ownershipNotificationPending = true;
+  void Promise.resolve().then(() => {
+    ownershipNotificationPending = false;
+    const keys = new Set(ownershipChanges);
+    ownershipChanges.clear();
+    ownershipListeners.forEach((listener) => listener(keys));
+  });
+};
+
+export const subscribeDraftOwnership = (id: string, onChange: () => void): (() => void) => {
+  const draftKey = `${LocalStorageKeys.FILES_DRAFT}${id}`;
+  const relevant = (key: string): boolean =>
+    key === draftKey || key.startsWith(TAB_PRESENCE_KEY_PREFIX);
+  const local = (keys: ReadonlySet<string>) => {
+    for (const key of keys) {
+      if (!relevant(key)) continue;
+      onChange();
+      return;
+    }
+  };
+  const external = (event: StorageEvent) => {
+    if (event.key == null || relevant(event.key)) onChange();
+  };
+  ownershipListeners.add(local);
+  window.addEventListener('storage', external);
+  return () => {
+    ownershipListeners.delete(local);
+    window.removeEventListener('storage', external);
+  };
+};
+
+type ComposerDraftScope = { conversationId: string; draftId: string };
+const composerDraftScopes = new Map<number, ComposerDraftScope>();
+
+export const registerComposerDraft = (
+  index: number,
+  conversationId: string,
+  draftId: string,
+): (() => void) => {
+  const scope = { conversationId, draftId };
+  composerDraftScopes.set(index, scope);
+  return () => {
+    if (composerDraftScopes.get(index) === scope) composerDraftScopes.delete(index);
+  };
+};
+
+export const getActiveComposerDraftId = (index: number, conversationId: string): string | null => {
+  const scope = composerDraftScopes.get(index);
+  return scope?.conversationId === conversationId ? scope.draftId : null;
+};
+
 const setLocalStorageItem = (key: string, value: string): void => {
   try {
+    const changed =
+      key.startsWith(LocalStorageKeys.FILES_DRAFT) && localStorage.getItem(key) !== value;
     localStorage.setItem(key, value);
+    if (changed) notifyOwnershipChange(key);
   } catch {
     // Quota or disabled storage must not abort paste/upload recovery.
   }
@@ -276,7 +337,10 @@ const setLocalStorageItem = (key: string, value: string): void => {
 
 const removeLocalStorageItem = (key: string): void => {
   try {
+    const changed =
+      key.startsWith(LocalStorageKeys.FILES_DRAFT) && localStorage.getItem(key) != null;
     localStorage.removeItem(key);
+    if (changed) notifyOwnershipChange(key);
   } catch {
     // Ignore storage failures on cleanup.
   }
@@ -598,6 +662,7 @@ const readLiveTabs = (): Map<string, TabPresence> => {
     }
     for (const key of expired) {
       localStorage.removeItem(key);
+      if (key !== `${TAB_PRESENCE_KEY_PREFIX}${documentTabId}`) notifyOwnershipChange(key);
     }
   } catch {
     // An unreadable store just means no other tab can be proven live.
@@ -1126,7 +1191,10 @@ export const migrateFilesDraft = (fromId: string, toId: string): string => {
 
   removeLocalStorageItem(key);
   try {
-    localStorage.setItem(`${LocalStorageKeys.FILES_DRAFT}${toId}`, record);
+    const destinationKey = `${LocalStorageKeys.FILES_DRAFT}${toId}`;
+    const changed = getLocalStorageItem(destinationKey) !== record;
+    localStorage.setItem(destinationKey, record);
+    if (changed) notifyOwnershipChange(destinationKey);
     return toId;
   } catch {
     /** Storage cannot hold the record even with the source freed, so put it back rather than
