@@ -892,9 +892,12 @@ export class Chat {
     if (sent.status === 'stream') {
       sent.stream.close();
     }
-    /** A `replaced` result names a newer generation this request does not own, so it is left alone. */
-    if (sent.status === 'settled' && sent.generationProtocolVersion === 2) {
-      /** The server finished the start on its own, so a stop has nothing left to reach. */
+    const answered = sent.status === 'settled' || sent.status === 'replaced';
+    if (answered && sent.generationProtocolVersion === 2) {
+      /**
+       * The server finished the start on its own, or answered it with a newer generation this
+       * request does not own and leaves alone; either way its stop has nothing left to reach.
+       */
       if (this.unaddressed === active) {
         this.unaddressed = undefined;
       }

@@ -1304,6 +1304,38 @@ describe('Chat invariants', () => {
     expect(h.chat.pendingAction).toBeUndefined();
   });
 
+  it.each([
+    ['settled', { status: 'settled', conversationId: 'convo-1', generationProtocolVersion: 2 }],
+    [
+      'replaced',
+      {
+        status: 'replaced',
+        conversationId: 'convo-1',
+        streamId: 'stream-2',
+        generationCreatedAt: 200,
+        generationProtocolVersion: 2,
+      },
+    ],
+  ])(
+    "(2) a cancelled start the server answers late as %s is no longer the caller's",
+    async (_label, late) => {
+      const h = createHarness();
+      let answer: (() => void) | undefined;
+      h.transport.sendMessages.mockImplementation(
+        () => new Promise((resolve) => (answer = () => resolve(late as never))),
+      );
+      send(h);
+      await flush();
+      await expect(h.chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+      answer?.();
+      await flush();
+
+      await expect(h.chat.stop()).resolves.toEqual({ status: 'idle' });
+      expect(h.transport.abort).not.toHaveBeenCalled();
+      expect(h.transport.reconnectToStream).not.toHaveBeenCalled();
+    },
+  );
+
   it('(4) a fresh reattachment that drops before a frame names its response reports none', async () => {
     const h = createHarness({ messages: [userMessage, laterMessage] });
     const stream = createStream({ streamId: 'convo-1', generationCreatedAt: 700 });
