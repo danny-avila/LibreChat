@@ -2373,6 +2373,41 @@ describe('useFileHandling', () => {
     }
   });
 
+  it('rechecks the upload entry identity when deferred disposal executes', () => {
+    const useUpdateFiles =
+      jest.requireActual<typeof import('../useUpdateFiles')>('../useUpdateFiles').default;
+    const updates: React.SetStateAction<Map<string, ExtendedFile>>[] = [];
+    const { result } = renderHook(() => useUpdateFiles((update) => updates.push(update)));
+    const original = new File(['old'], 'old.txt', { type: 'text/plain' });
+    const replacement = new File(['fresh'], 'fresh.txt', { type: 'text/plain' });
+    const file = { file_id: 'retired-id', file: original, progress: 0.2, size: 3 };
+    act(() =>
+      result.current.deleteFileById('retired-id', (files) => {
+        const entry = files.get('retired-id');
+        return entry?.file === original && entry.progress < 1;
+      }),
+    );
+    const update = updates[0];
+    expect(typeof update).toBe('function');
+    if (typeof update !== 'function') throw new Error('Expected a deferred update');
+    const retained = { file_id: 'kept', progress: 1, size: 1 };
+    const retired = new Map<string, ExtendedFile>([
+      ['retired-id', file],
+      ['kept', retained],
+    ]);
+    expect(update(retired).has('retired-id')).toBe(false);
+    expect(update(retired).get('kept')).toBe(retained);
+    for (const entry of [{ ...file, file: replacement }, { ...file, progress: 1 }]) {
+      const current = new Map<string, ExtendedFile>([
+        ['retired-id', entry],
+        ['kept', retained],
+      ]);
+      expect(update(current)).toBe(current);
+    }
+    const current = new Map([['kept', retained]]);
+    expect(update(current)).toBe(current);
+  });
+
   describe('stalled attachments', () => {
     /**
      * The upload only starts once the browser has decoded the image, so a decode

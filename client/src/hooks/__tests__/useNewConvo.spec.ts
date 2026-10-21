@@ -553,14 +553,32 @@ describe('useNewConvo reset cleanup', () => {
       const options = mockUploadOptions;
       const next = renderHook(() => useNewConvo(2), { wrapper });
       if (reset) act(() => next.result.current.newConversation());
-      const submission = {
+      const submission: EventSubmission = {
         isTemporary: false,
         endpointOption: { endpoint },
         conversation: launch,
         messages: [],
-        userMessage: { messageId: 'sync-user', text: 'Hello', isCreatedByUser: true },
-        initialResponse: { messageId: 'sync-response', text: '' },
-      } as EventSubmission;
+        userMessage: {
+          messageId: 'sync-user',
+          conversationId: 'saved-sync',
+          parentMessageId: Constants.NO_PARENT,
+          title: 'New Chat',
+          text: 'Hello',
+          isCreatedByUser: true,
+          createdAt: '',
+          updatedAt: '',
+        },
+        initialResponse: {
+          messageId: 'sync-response',
+          conversationId: 'saved-sync',
+          parentMessageId: 'sync-user',
+          title: 'New Chat',
+          text: '',
+          isCreatedByUser: false,
+          createdAt: '',
+          updatedAt: '',
+        },
+      };
       act(() => {
         result.current.handlers.syncHandler(
           {
@@ -592,11 +610,13 @@ describe('useNewConvo reset cleanup', () => {
 
   it.each(
     [false, true].flatMap((saveDrafts) =>
-      ['remove', 'replace'].map((change) => ({ saveDrafts, change })),
+      ['remove', 'replace'].flatMap((change) =>
+        [undefined, 'file_search'].map((resource) => ({ saveDrafts, change, resource })),
+      ),
     ),
   )(
-    'does not activate a retired project upload after $change (saveDrafts: $saveDrafts)',
-    async ({ saveDrafts, change }) => {
+    'discards only the retired $resource project upload after $change (saveDrafts: $saveDrafts)',
+    async ({ saveDrafts, change, resource }) => {
       const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
       mockSaveDrafts = saveDrafts;
       mockFiles.clear();
@@ -632,10 +652,14 @@ describe('useNewConvo reset cleanup', () => {
         { wrapper, initialProps: { projectId: 'project-a' as string | null, tick: 0 } },
       );
       const owner = captureComposerDraft(2, 'new');
+      const completed = { file_id: 'kept-completed', progress: 1, size: 1, attached: true };
+      act(() => {
+        getDefaultStore().set(filesFamily(2), new Map([['kept-completed', completed]]));
+      });
       await act(async () => {
         await result.current.handler.handleFiles(
           [new File(['search'], 'retired.txt', { type: 'text/plain' })],
-          'file_search',
+          resource,
         );
       });
       const body = mockUploadFile.mock.calls[0][0] as FormData;
@@ -646,6 +670,19 @@ describe('useNewConvo reset cleanup', () => {
         rerender({ projectId, tick: 1 });
       });
       expect(owner()).toBe(false);
+      const retiredId = body.get('file_id') as string;
+      expect(result.current.files.has(retiredId)).toBe(false);
+      expect(result.current.files.get('kept-completed')).toEqual(completed);
+      await act(async () => {
+        await result.current.handler.handleFiles(
+          [new File(['fresh'], 'fresh.txt', { type: 'text/plain' })],
+          resource,
+        );
+      });
+      const freshBody = mockUploadFile.mock.calls[1][0] as FormData;
+      const freshId = freshBody.get('file_id') as string;
+      const fresh = result.current.files.get(freshId);
+      expect(fresh).toBeDefined();
       mockSetEphemeralAgent.mockClear();
       const persisted = {
         file_id: 'persisted-retired',
@@ -654,7 +691,7 @@ describe('useNewConvo reset cleanup', () => {
         filename: 'retired.txt',
         type: 'text/plain',
         bytes: 6,
-        embedded: true,
+        embedded: resource === 'file_search',
         llmDeliveryPath: 'none',
       };
       // The real mutation caches the response before invoking its success callback.
@@ -666,6 +703,9 @@ describe('useNewConvo reset cleanup', () => {
         options.onSuccess?.(persisted, body);
         await new Promise((resolve) => setTimeout(resolve, 320));
       });
+      expect(result.current.files.has(retiredId)).toBe(false);
+      expect(result.current.files.get('kept-completed')).toEqual(completed);
+      expect(result.current.files.get(freshId)).toBe(fresh);
       expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
       expect(localStorage.getItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}new`)).not.toBe(
         'true',

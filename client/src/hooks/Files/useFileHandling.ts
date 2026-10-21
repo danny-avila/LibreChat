@@ -231,6 +231,15 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       }
     }
   }
+  const composerRoute = window.location.pathname + window.location.search;
+  useEffect(() => {
+    if (!tracksReservations) return;
+    for (const fileId of files.keys()) {
+      const recovery = uploadErrorCallbacks.get(fileId);
+      if (recovery?.isCurrent?.() === false) recovery.dispose?.();
+    }
+  }, [files, conversation?.conversationId, composerRoute, tracksReservations]);
+
   const setFilesLoading = fileState.setFilesLoading ?? noop;
   const setEphemeralAgent = useSetRecoilState(
     ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
@@ -361,7 +370,10 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           queryClient.refetchQueries([QueryKeys.agent, agent_id]);
           return;
         }
-        if (recovery.isCurrent?.() === false) return;
+        if (recovery.isCurrent?.() === false) {
+          recovery.dispose?.();
+          return;
+        }
         updateFileById(
           fileId,
           {
@@ -373,7 +385,10 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         );
 
         setTimeout(() => {
-          if (recovery.isCurrent?.() === false) return;
+          if (recovery.isCurrent?.() === false) {
+            recovery.dispose?.();
+            return;
+          }
           const cachedBlob = getCachedPreview(fileId);
           if (cachedBlob && data.file_id !== fileId) {
             cachePreview(data.file_id, cachedBlob);
@@ -771,14 +786,25 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           : { ...uploadLifecycle, status: 'staged' };
       uploadErrorCallbacks.set(file_id, recovery);
       let currentPreview: string | undefined;
+      let ownedFile = originalFile;
       recovery.dispose = () => {
         recovery.dispose = undefined;
+        const ownsEntry = (currentFiles: Map<string, ExtendedFile>) => {
+          const owner = uploadErrorCallbacks.get(file_id);
+          const entry = currentFiles.get(file_id);
+          return (
+            (owner == null || owner === recovery) &&
+            entry != null &&
+            entry.progress < 1 &&
+            (entry.file === originalFile || entry.file === ownedFile)
+          );
+        };
         const owner = uploadErrorCallbacks.get(file_id);
         if (owner == null || owner === recovery) {
-          if (recovery.isCurrent?.() !== false) deleteFileById(file_id, recovery.isCurrent);
+          deleteFileById(file_id, ownsEntry);
           removePreviewEntry(file_id);
           uploadScope.recent.delete(file_id);
-          if (recovery.isCurrent?.() !== false && filesRef.current.has(file_id)) {
+          if (ownsEntry(filesRef.current)) {
             const remaining = new Map(filesRef.current);
             remaining.delete(file_id);
             filesRef.current = remaining;
@@ -872,6 +898,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           currentPreview = newPreview;
           cachePreview(file_id, newPreview);
 
+          ownedFile = finalProcessedFile;
           const updatedExtendedFile: ExtendedFile = {
             ...initialExtendedFile,
             file: finalProcessedFile,

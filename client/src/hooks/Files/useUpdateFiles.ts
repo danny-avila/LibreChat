@@ -71,9 +71,12 @@ export default function useUpdateFiles(setFiles: FileSetter) {
     });
   };
 
-  const deleteFileById = (fileId: string, shouldCommit?: () => boolean) => {
+  const deleteFileById = (
+    fileId: string,
+    shouldCommit?: (currentFiles: Map<string, ExtendedFile>) => boolean,
+  ) => {
     setFiles((currentFiles) => {
-      if (shouldCommit?.() === false) return currentFiles;
+      if (shouldCommit?.(currentFiles) === false) return currentFiles;
       const updatedFiles = new Map(currentFiles);
       if (updatedFiles.has(fileId)) {
         updatedFiles.delete(fileId);
