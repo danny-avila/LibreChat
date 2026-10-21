@@ -825,6 +825,47 @@ describe('Chat invariants', () => {
   });
 
   it.each([
+    ['whose preparation failed', () => Promise.reject(new Error('Upload failed'))],
+    ['stopped before it was sent', () => new Promise<never>(() => undefined)],
+  ])("(2) a lost start stays the caller's through a retry %s", async (_label, retry) => {
+    let prepared = 0;
+    const h = createHarness({
+      prepareRequest: () => {
+        prepared += 1;
+        if (prepared > 1) {
+          return retry() as never;
+        }
+        return { payload, messages: [userMessage, placeholder], responseMessageId: 'response-1' };
+      },
+    });
+    await lost(h);
+    h.chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] }).then(
+      () => undefined,
+      () => undefined,
+    );
+    await flush();
+
+    await expect(h.chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+    await expect(h.chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+  });
+
+  it('(4) a fresh reattachment that drops before a frame names its response reports none', async () => {
+    const h = createHarness({ messages: [userMessage, laterMessage] });
+    const stream = createStream({ streamId: 'convo-1', generationCreatedAt: 700 });
+    h.transport.reconnectToStream.mockResolvedValueOnce(stream);
+    h.chat.resumeStream({ streamId: 'convo-1' }).then(
+      () => undefined,
+      () => undefined,
+    );
+    await flush();
+    stream.push(dropEvent);
+    await flush();
+
+    expect(h.finishes).toHaveLength(1);
+    expect(h.finishes[0]).toMatchObject({ isResponseUnknown: true, message: undefined });
+  });
+
+  it.each([
     ['named by the status read', 'response-9', false],
     ['the status read did not name', undefined, true],
   ])(

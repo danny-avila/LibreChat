@@ -625,8 +625,11 @@ export class Chat {
     this.restored = undefined;
     const active = createActiveRequest(continued?.generation ?? paused?.generation);
     const { generation } = active;
-    if (dropped && !continued) {
-      /** Another generation than the one that dropped: no frame has named its response yet. */
+    if (!continued && generation.responseId === undefined) {
+      /**
+       * A reattachment this chat did not prepare has no response until a frame names one. A
+       * continued local turn keeps the list-tail fallback its own request had.
+       */
       generation.responseUnknown = true;
     }
     generation.endpoint = this.resumeEndpoint() ?? dropped?.target.endpoint;
@@ -735,7 +738,9 @@ export class Chat {
        * A start already handed to the transport may be running on the server with no frame naming
        * it; a late stream is stopped by `dropLateStart`, but one that never arrives is the caller's.
        */
-      return active.sent ? unaddressable : { status: 'stopped' };
+      return active.sent || (this.unaddressed && !this.active)
+        ? unaddressable
+        : { status: 'stopped' };
     }
     const { generation } = active;
     if (!generation.endpoint) {
@@ -1238,7 +1243,6 @@ export class Chat {
     }
     const active = createActiveRequest({ responseless: true });
     this.active = active;
-    this.unaddressed = false;
     this.generationCreatedAt = undefined;
     this.resumed.clear();
     try {
@@ -1297,6 +1301,8 @@ export class Chat {
        * Until then that generation stays the stop target, in case the start fails.
        */
       this.detached = undefined;
+      /** Likewise a lost start stays the caller's to stop until the server takes this one. */
+      this.unaddressed = false;
       let stream: ChatStream | null = null;
       if (result.status === 'stream') {
         stream = result.stream;
