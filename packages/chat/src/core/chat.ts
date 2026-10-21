@@ -1684,17 +1684,7 @@ export class Chat {
         this.reconcileSnapshotPause(event.data.resumeState.pendingAction);
       }
     } else if (event.type === 'pending_action' && isExpired(event.data)) {
-      /**
-       * An expired pause a reconnect replays is stale, as one a status read restores is, and it
-       * still supersedes an older pause of its generation that the chat holds.
-       */
-      const generation = this.generationCreatedAt;
-      this.seePause(event.data, generation);
-      const held = this.action;
-      const superseded = held != null && generation != null && this.isOlderPause(held, generation);
-      if (held?.actionId === event.data.actionId || superseded) {
-        this.clearAction();
-      }
+      this.retireExpiredPause(event.data);
     } else if (
       event.type === 'pending_action' &&
       !this.resumed.has(event.data.actionId) &&
@@ -1947,8 +1937,11 @@ export class Chat {
       }
       return;
     }
+    if (isExpired(snapshot)) {
+      this.retireExpiredPause(snapshot);
+      return;
+    }
     const stale =
-      isExpired(snapshot) ||
       this.resumed.has(snapshot.actionId) ||
       (generation != null && this.isOlderPause(snapshot, generation));
     if (stale) {
@@ -1964,6 +1957,20 @@ export class Chat {
     this.seePause(snapshot, generation);
     this.action = snapshot;
     this.notify();
+  }
+
+  /**
+   * An expired pause a reconnect replays or a snapshot carries is stale, as one a status read
+   * restores is, and it still supersedes an older pause of its generation that the chat holds.
+   */
+  private retireExpiredPause(expired: Agents.PendingAction): void {
+    const generation = this.generationCreatedAt;
+    this.seePause(expired, generation);
+    const held = this.action;
+    const superseded = held != null && generation != null && this.isOlderPause(held, generation);
+    if (held?.actionId === expired.actionId || superseded) {
+      this.clearAction();
+    }
   }
 
   /** Whether `action` came before a pause this chat already saw in the same generation. */

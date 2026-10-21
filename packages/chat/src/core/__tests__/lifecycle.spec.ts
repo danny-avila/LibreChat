@@ -2170,6 +2170,26 @@ describe('Chat sync snapshots and resume conflicts', () => {
     expect(h.transport.resume).toHaveBeenCalledTimes(1);
   });
 
+  it('(2) a sync snapshot carrying an expired newer pause clears the older one held and stays ordered', async () => {
+    const h = createHarness();
+    h.chat.restorePendingAction({ ...askAction, createdAt: 2, actionId: 'action-a' }, 500);
+    const stream = await reattached(h);
+    stream.push(
+      snapshot({
+        pendingAction: { ...askAction, createdAt: 3, actionId: 'action-b', expiresAt: 1 },
+      }),
+    );
+    await flush();
+    expect(h.chat.pendingAction).toBeUndefined();
+
+    stream.push({
+      type: 'pending_action',
+      data: { ...askAction, createdAt: 2, actionId: 'action-a' },
+    } as ChatEvent);
+    await flush();
+    expect(h.chat.pendingAction).toBeUndefined();
+  });
+
   it('(4) a sync snapshot without a pause releases one answered elsewhere', async () => {
     const h = createHarness();
     h.chat.restorePendingAction(askAction, 500);
