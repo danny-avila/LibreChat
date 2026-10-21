@@ -247,6 +247,16 @@ describe('createMCPOAuthDeferral', () => {
     expect(prompt).toHaveBeenCalledTimes(2);
   });
 
+  it('queues the turn-start prompt for a cached catalog without a declared one', async () => {
+    const { tracker } = create();
+    const prompt = jest.fn().mockResolvedValue(true);
+    const undeclared = { ...onUseConfig, oauthToolCatalog: undefined };
+
+    await tracker.promptUnlessDeferred('sheets', undeclared, ownCatalog, prompt);
+    expect(prompt).toHaveBeenCalledTimes(1);
+    expect(tracker.hasSignInDecision('sheets')).toBe(true);
+  });
+
   it('records a server deferred with its own catalog', async () => {
     const { tracker, pendingOAuthServers } = create();
     pendingOAuthServers.delete('sheets');

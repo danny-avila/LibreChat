@@ -631,6 +631,9 @@ export function canUseAppConnection(config: UserScopedConnectionConfig): boolean
  * yet the tool catalog the operator declared. Limited to operator-owned servers whose tools
  * cannot vary by request or user input. OAuth itself is not required up front: it is often only
  * discovered when the connection is refused, and the caller only asks once a sign-in is pending.
+ * The declared catalog is required even for a user who holds a cached one from an earlier
+ * connection: one config then prompts every user at the same point, and a cache that may be stale
+ * against the server never decides on its own whether sign-in waits.
  */
 export function canDeferOAuthSignIn(config: ParsedServerConfig): boolean {
   return (
