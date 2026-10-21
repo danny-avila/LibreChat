@@ -1316,6 +1316,8 @@ export class Chat {
       } else if (result.status === 'replaced') {
         /** The target is recorded before anyone hears of the reconnect, so a stop can reach it. */
         this.generationCreatedAt = result.generationCreatedAt ?? undefined;
+        /** The replacement it names, so a stream of yet another generation gets its own record. */
+        active.inheritedGeneration = this.generationCreatedAt;
         active.reattach = { streamId: result.streamId };
         active.generation.conversationId = result.conversationId;
         /** The replacement's response is not this turn's placeholder; its first frame names it. */
