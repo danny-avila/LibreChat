@@ -2454,3 +2454,44 @@ describe('Chat late answers and lost starts', () => {
     },
   );
 });
+
+describe('Chat retries that continue an answered generation', () => {
+  it.each([
+    ['a stream', 'stream'],
+    ['a replacement', 'replaced'],
+  ])(
+    '(2) a retry answered with %s of the dropped generation keeps its answered pause stale',
+    async (_label, kind) => {
+      const h = createHarness();
+      await states.restored(h);
+      const continued = createStream({ streamId: 'convo-1', generationCreatedAt: 500 });
+      h.transport.reconnectToStream.mockResolvedValueOnce(continued);
+      await h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' });
+      await flush();
+      continued.push(stepEvent);
+      await flush();
+      continued.push(dropEvent);
+      await flush();
+
+      const retry = createStream({ streamId: 'convo-1', generationCreatedAt: 500 });
+      if (kind === 'stream') {
+        h.transport.sendMessages.mockResolvedValueOnce({ status: 'stream', stream: retry });
+      } else {
+        h.transport.sendMessages.mockResolvedValueOnce({
+          status: 'replaced',
+          conversationId: 'convo-1',
+          streamId: 'convo-1',
+          generationCreatedAt: 500,
+          generationProtocolVersion: 2,
+        });
+        h.transport.reconnectToStream.mockResolvedValueOnce(retry);
+      }
+      send(h);
+      await flush();
+      retry.push({ type: 'pending_action', data: askAction } as ChatEvent);
+      await flush();
+
+      expect(h.chat.pendingAction).toBeUndefined();
+    },
+  );
+});

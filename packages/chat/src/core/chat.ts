@@ -1571,9 +1571,22 @@ export class Chat {
       this.detached = undefined;
       /** Likewise a lost start stays the caller's to stop until the server takes this one. */
       this.unaddressed = undefined;
-      /** And the old generation's resumed pauses stay stale until this start supersedes it. */
-      this.generationCreatedAt = undefined;
-      this.resumed.clear();
+      /**
+       * And the old generation's resumed pauses stay stale until this start supersedes it; a start
+       * the server attached to that same generation continues it, answered pauses included.
+       */
+      let answered: number | undefined;
+      if (result.status === 'stream') {
+        answered = result.stream.generationCreatedAt;
+      } else if (result.status === 'replaced') {
+        answered = result.generationCreatedAt ?? undefined;
+      }
+      const continues =
+        answered != null && answered === (dropped?.target.generationCreatedAt ?? undefined);
+      if (!continues) {
+        this.generationCreatedAt = undefined;
+        this.resumed.clear();
+      }
       let stream: ChatStream | null = null;
       if (result.status === 'stream') {
         stream = result.stream;
