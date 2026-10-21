@@ -2507,3 +2507,34 @@ describe('Chat retries that continue an answered generation', () => {
     },
   );
 });
+
+describe('Chat status reads of a dropped generation', () => {
+  it('(4) a status read naming the response of the dropped generation reaches its unframed stop', async () => {
+    const named: TMessage = { ...placeholder, messageId: 'response-9', text: 'Named' };
+    const h = createHarness({
+      messages: [userMessage, named, { ...placeholder, messageId: 'other' }],
+    });
+    const stream = createStream({ streamId: 'convo-1', generationCreatedAt: 700 });
+    h.transport.reconnectToStream.mockResolvedValueOnce(stream);
+    h.chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 700 }).then(
+      () => undefined,
+      () => undefined,
+    );
+    await flush();
+    stream.push(dropEvent);
+    await flush();
+    h.chat.restorePendingAction({ ...askAction, responseMessageId: 'response-9' }, 700);
+    h.transport.abort.mockResolvedValueOnce({
+      success: true,
+      generationProtocolVersion: 2,
+      aborted: 'convo-1',
+      persistenceFailed: true,
+    });
+
+    await h.chat.stop();
+
+    const last = h.finishes[h.finishes.length - 1];
+    expect(last).toMatchObject({ isResponseUnknown: false });
+    expect(last.message?.messageId).toBe('response-9');
+  });
+});

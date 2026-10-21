@@ -1361,7 +1361,12 @@ export class Chat {
     this.action = action;
     this.generationCreatedAt = generationCreatedAt;
     if (this.restored?.createdAt !== generationCreatedAt) {
-      this.restored = { createdAt: generationCreatedAt, generation: {} };
+      /** The generation whose stream dropped keeps one record, which this read adds to. */
+      const dropped =
+        this.detached?.target.generationCreatedAt === generationCreatedAt
+          ? this.detached.generation
+          : undefined;
+      this.restored = { createdAt: generationCreatedAt, generation: dropped ?? {} };
     }
     /** The record carries what the status read says of the generation, for a stop or reattachment. */
     const { generation } = this.restored;
