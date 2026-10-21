@@ -418,6 +418,17 @@ const getFinalOutcome = (data: ChatFinalFrame): Outcome => {
   return { kind: 'complete', settled };
 };
 
+/**
+ * Whether a frame's message carries every field a stored row needs. A partial one only updates the
+ * row it names; appended as it is, it would stand in the list as a message missing required fields.
+ */
+const isCompleteMessage = (message: Partial<TMessage>): message is TMessage =>
+  typeof message.messageId === 'string' &&
+  typeof message.text === 'string' &&
+  typeof message.isCreatedByUser === 'boolean' &&
+  message.conversationId !== undefined &&
+  message.parentMessageId !== undefined;
+
 /** Merges the messages a `final` event carries onto the stored ones, by id. */
 /** Merges `finals` onto `messages` by id, appending the ones the list does not hold. */
 const mergeById = (
@@ -433,9 +444,9 @@ const mergeById = (
   const next = [...messages];
   for (const final of known) {
     const index = next.findIndex((message) => message.messageId === final.messageId);
-    if (index === -1) {
-      next.push(final as TMessage);
-    } else {
+    if (index === -1 && isCompleteMessage(final)) {
+      next.push(final);
+    } else if (index !== -1) {
       next[index] = { ...next[index], ...final };
     }
   }
@@ -633,6 +644,8 @@ export class Chat {
     if (this.active || this.disposed) {
       return;
     }
+    /** The host's selection is read before any marker changes, so a throw leaves them all as they were. */
+    const selected = this.resumeEndpoint();
     /** A turn whose stream dropped: finding nothing running means it ended without this chat. */
     const dropped = this.detached;
     this.detached = undefined;
@@ -663,7 +676,7 @@ export class Chat {
        */
       generation.responseUnknown = true;
     }
-    generation.endpoint = this.resumeEndpoint() ?? dropped?.target.endpoint;
+    generation.endpoint = selected ?? dropped?.target.endpoint;
     generation.conversationId = options.conversationId ?? generation.conversationId;
     /** The generation the caller named, or the record continued, so a stream of another is told apart. */
     active.inheritedGeneration =
@@ -1344,8 +1357,6 @@ export class Chat {
     }
     const active = createActiveRequest({ responseless: true });
     this.active = active;
-    this.generationCreatedAt = undefined;
-    this.resumed.clear();
     try {
       this.init.state.error = undefined;
       this.setStatus('submitted');
@@ -1405,6 +1416,9 @@ export class Chat {
       this.detached = undefined;
       /** Likewise a lost start stays the caller's to stop until the server takes this one. */
       this.unaddressed = undefined;
+      /** And the old generation's resumed pauses stay stale until this start supersedes it. */
+      this.generationCreatedAt = undefined;
+      this.resumed.clear();
       let stream: ChatStream | null = null;
       if (result.status === 'stream') {
         stream = result.stream;
@@ -1835,9 +1849,14 @@ export class Chat {
         reattach.continuation = true;
       } else if (!this.active && !this.disposed) {
         /** A pause restored after a reload has no stream attached for the continuation. */
-        void this.reattach(
+        this.reattach(
           { streamId: result.streamId, generationCreatedAt, conversationId: result.conversationId },
           true,
+        ).catch((error: unknown) =>
+          this.callHost(
+            this.init.onError,
+            error instanceof Error ? error : new Error(String(error)),
+          ),
         );
       }
       this.clearAction();

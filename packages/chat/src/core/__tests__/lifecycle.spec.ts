@@ -1448,3 +1448,275 @@ describe('Chat invariants', () => {
     expect(h.chat.pendingAction).toBeUndefined();
   });
 });
+
+/** Where a host callback or transport method can throw once a request owns the chat. */
+type Fault = { fault: boolean };
+
+const throwing = (f: Fault, what: string) => {
+  if (f.fault) {
+    f.fault = false;
+    throw new Error(`${what} failed`);
+  }
+};
+
+const settles = async (pending: Promise<unknown>) => {
+  let done = false;
+  pending.then(
+    () => (done = true),
+    () => (done = true),
+  );
+  await flush();
+  return done;
+};
+
+const freeAfter = async (h: Harness) => {
+  attach(h, createStream({ streamId: 'convo-1', generationCreatedAt: 900 }));
+  const next = h.chat.sendMessage({ parts: [{ type: 'text', text: 'Next' }] });
+  next.then(
+    () => undefined,
+    () => undefined,
+  );
+  await flush();
+  return h.chat.status === 'submitted' || h.chat.status === 'streaming';
+};
+
+describe('Chat exception safety', () => {
+  it.each([
+    ['prepareRequest throws', 'prepare-sync'],
+    ['prepareRequest rejects', 'prepare-async'],
+    ['transport.sendMessages throws', 'send'],
+  ])('(5) a start whose %s settles and frees the chat', async (_label, where) => {
+    const f: Fault = { fault: true };
+    const h = createHarness({
+      prepareRequest: () => {
+        if (where === 'prepare-sync') {
+          throwing(f, 'prepare');
+        }
+        if (where === 'prepare-async' && f.fault) {
+          f.fault = false;
+          return Promise.reject(new Error('prepare failed')) as never;
+        }
+        return { payload, messages: [userMessage, placeholder], responseMessageId: 'response-1' };
+      },
+    });
+    if (where === 'send') {
+      h.transport.sendMessages.mockImplementationOnce(() => {
+        throw new Error('send failed');
+      });
+    }
+
+    expect(await settles(h.chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] }))).toBe(true);
+    expect(await freeAfter(h)).toBe(true);
+  });
+
+  it('(5) a reattachment whose resume selection throws keeps the dropped generation stoppable', async () => {
+    const f: Fault = { fault: false };
+    const h = createHarness({
+      resumeSelection: () => {
+        throwing(f, 'selection');
+        return { endpoint: 'agents' };
+      },
+    });
+    await states.detached(h);
+    f.fault = true;
+
+    expect(await settles(h.chat.resumeStream({ streamId: 'convo-1' }))).toBe(true);
+    await h.chat.stop();
+    expect(h.transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({ generationCreatedAt: 100 }),
+    );
+  });
+
+  it('(5) a reattachment whose resume selection throws keeps a restored pause', async () => {
+    const f: Fault = { fault: false };
+    const h = createHarness({
+      resumeSelection: () => {
+        throwing(f, 'selection');
+        return { endpoint: 'agents' };
+      },
+    });
+    await states.restored(h);
+    f.fault = true;
+
+    expect(
+      await settles(h.chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 500 })),
+    ).toBe(true);
+    expect(h.chat.pendingAction?.actionId).toBe('action-1');
+    await h.chat.stop();
+    expect(h.transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({ generationCreatedAt: 500 }),
+    );
+  });
+
+  it('(5) a reattachment whose transport.reconnectToStream throws settles and frees the chat', async () => {
+    const h = createHarness();
+    h.transport.reconnectToStream.mockImplementationOnce(() => {
+      throw new Error('reconnect failed');
+    });
+
+    expect(await settles(h.chat.resumeStream({ streamId: 'convo-1' }))).toBe(true);
+    expect(await freeAfter(h)).toBe(true);
+  });
+
+  it('(5) a frame whose applyEvent throws keeps its generation stoppable', async () => {
+    const f: Fault = { fault: false };
+    const h = createHarness({
+      applyEvent: () => {
+        throwing(f, 'apply');
+      },
+    });
+    await states.attached(h);
+    f.fault = true;
+    h.stream?.push(stepEvent);
+    await flush();
+
+    expect(h.chat.status).toBe('error');
+    await h.chat.stop();
+    expect(h.transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({ generationCreatedAt: 100 }),
+    );
+  });
+
+  it('(5) a stop whose transport.abort throws leaves the stream attached and a later stop sends anew', async () => {
+    const h = createHarness();
+    await states.attached(h);
+    h.transport.abort.mockImplementationOnce(() => {
+      throw new Error('abort failed');
+    });
+
+    await expect(h.chat.stop()).rejects.toThrow('abort failed');
+    expect(h.chat.connection).toBe('live');
+    await h.chat.stop();
+    expect(h.transport.abort).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['resume selection throws', 'selection'],
+    ['transport.resume throws', 'resume'],
+  ])('(5) an answer whose %s keeps the pause answerable', async (_label, where) => {
+    const f: Fault = { fault: false };
+    const h = createHarness({
+      resumeSelection: () => {
+        if (where === 'selection') {
+          throwing(f, 'selection');
+        }
+        return { endpoint: 'agents' };
+      },
+    });
+    await states.restored(h);
+    f.fault = true;
+    if (where === 'resume') {
+      f.fault = false;
+      h.transport.resume.mockImplementationOnce(() => {
+        throw new Error('resume failed');
+      });
+    }
+
+    await expect(h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' })).rejects.toThrow();
+    expect(h.chat.pendingAction?.actionId).toBe('action-1');
+    await h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' });
+    expect(h.transport.resume).toHaveBeenCalledTimes(where === 'resume' ? 2 : 1);
+  });
+
+  it('(5) a continuation whose resume selection throws reports to onError instead of rejecting unseen', async () => {
+    let calls = 0;
+    const onError = jest.fn();
+    const h = createHarness({
+      onError,
+      resumeSelection: () => {
+        calls += 1;
+        if (calls === 2) {
+          throw new Error('selection failed');
+        }
+        return { endpoint: 'agents' };
+      },
+    });
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      await states.restored(h);
+      await h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' });
+      await flush();
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'selection failed' }),
+      );
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+});
+
+describe('Chat markers kept until a start is accepted', () => {
+  it.each([
+    ['whose preparation fails', 'prepare'],
+    ['that loses its response', 'network'],
+  ])(
+    '(2) a retry %s keeps the resumed pause of the live generation stale',
+    async (_label, where) => {
+      const h = createHarness({
+        prepareRequest: () => {
+          if (where === 'prepare') {
+            return Promise.reject(new Error('Upload failed')) as never;
+          }
+          return { payload, messages: [userMessage, placeholder], responseMessageId: 'response-1' };
+        },
+      });
+      await states.restored(h);
+      const continued = createStream({ streamId: 'convo-1', generationCreatedAt: 500 });
+      h.transport.reconnectToStream.mockResolvedValueOnce(continued);
+      await h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' });
+      await flush();
+      continued.push(stepEvent);
+      await flush();
+      continued.push(dropEvent);
+      await flush();
+      if (where === 'network') {
+        h.transport.sendMessages.mockRejectedValueOnce(networkError());
+      }
+      send(h);
+      await flush();
+
+      h.chat.restorePendingAction(askAction, 500);
+      expect(h.chat.pendingAction).toBeUndefined();
+    },
+  );
+});
+
+describe('Chat final frames', () => {
+  const complete: TMessage = { ...placeholder, messageId: 'response-new', text: 'Whole' };
+
+  it.each([
+    [
+      'a partial row it does not hold, which it leaves out',
+      { messageId: 'response-new', text: 'Part' },
+      false,
+    ],
+    ['a complete row it does not hold, which it appends', complete, true],
+  ])('(6) a final frame with %s', async (_label, responseMessage, appended) => {
+    const h = createHarness();
+    await states.attached(h);
+    h.stream?.push(finalEvent({ responseMessage: responseMessage as TMessage }));
+    await flush();
+
+    expect(h.chat.messages.some((message) => message.messageId === 'response-new')).toBe(appended);
+    expect(h.chat.messages.every((message) => typeof message.isCreatedByUser === 'boolean')).toBe(
+      true,
+    );
+  });
+
+  it('(6) a final frame with a partial row it holds merges the fields it carries', async () => {
+    const h = createHarness();
+    await states.attached(h);
+    h.stream?.push(
+      finalEvent({ responseMessage: { messageId: 'response-1', text: 'Done' } as TMessage }),
+    );
+    await flush();
+
+    expect(h.chat.messages.find((message) => message.messageId === 'response-1')).toMatchObject({
+      text: 'Done',
+      conversationId: 'convo-1',
+      isCreatedByUser: false,
+    });
+  });
+});
