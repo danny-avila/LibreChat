@@ -1683,6 +1683,24 @@ describe('Chat markers kept until a start is accepted', () => {
   );
 });
 
+describe('Chat stops the server answers as already settled', () => {
+  it('(1) an attached stop answered as settled ends the turn without its terminal frame', async () => {
+    const h = createHarness();
+    await states.attached(h);
+    h.transport.abort.mockResolvedValueOnce({
+      success: false,
+      settled: true,
+      terminalStatus: 'complete',
+      generationProtocolVersion: 2,
+    });
+
+    expect(await settles(h.chat.stop())).toBe(true);
+    expect(h.stream?.closed()).toBe(true);
+    expect(h.chat.status).toBe('ready');
+    expect(h.finishes[h.finishes.length - 1]).toMatchObject({ isSettled: true, isAbort: false });
+  });
+});
+
 describe('Chat final frames', () => {
   const complete: TMessage = { ...placeholder, messageId: 'response-new', text: 'Whole' };
 

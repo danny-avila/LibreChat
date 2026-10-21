@@ -880,8 +880,11 @@ export class Chat {
       await this.mergeRunMessages(result.runMessages, () => this.active === active);
       active.controller.abort();
       active.stream?.close();
-    } else if (result === null || result === goneStop) {
-      /** No run was left to stop, so its stream will not report an end either. */
+    } else if (result === null || result === goneStop || generation.settledAs) {
+      /**
+       * No run was left to stop, or it had already ended on its own: the answer is the end, so the
+       * attachment closes rather than waiting on a terminal frame that may never arrive.
+       */
       active.controller.abort();
       active.stream?.close();
     } else if (!active.stream && !generation.persistenceFailed) {
