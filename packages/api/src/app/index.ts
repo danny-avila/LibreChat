@@ -8,6 +8,7 @@ export * from './checks';
 export * from './resolve';
 export * from './shutdown';
 export * from './server';
+export * from './readiness';
 export * from './origin';
 export * from './agents';
 export { resolveBuildInfo } from './build';

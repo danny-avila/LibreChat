@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import type { IThemeAppearance, IThemeRGB, ThemeDefinition } from './types';
 import {
+  darkTheme,
+  defaultTheme,
   collectThemeWarnings,
   darkAppearanceDefaults,
   defaultAppearanceFor,
@@ -13,11 +14,10 @@ import {
   layerRoleSources,
   themeColorTokens,
   validateThemeDefinition,
-} from './registry';
+} from 'librechat-data-provider';
+import type { IThemeAppearance, IThemeRGB, ThemeDefinition } from 'librechat-data-provider';
 import { describeResolvedTheme } from './utils/applyTheme';
 import { clickHouseTheme } from './themes/clickhouse';
-import { defaultTheme } from './themes/default';
-import { darkTheme } from './themes/dark';
 import * as themeEntry from './index';
 
 const compactTheme: ThemeDefinition = {
@@ -289,7 +289,12 @@ describe('theme registry', () => {
         name: 'corner-reference',
         modes: {
           light: {
-            appearance: { radius2xl: '3px', radiusXl: '5px', roundControlRadius: '7px' },
+            appearance: {
+              radius2xl: '3px',
+              radiusXl: '5px',
+              radiusLg: '4px',
+              roundControlRadius: '7px',
+            },
           },
         },
       },
@@ -298,6 +303,7 @@ describe('theme registry', () => {
 
     expect(resolved.appearance.popoverRadius).toBe('3px');
     expect(resolved.appearance.menuPanelRadius).toBe('5px');
+    expect(resolved.appearance.compactPanelRadius).toBe('4px');
     expect(resolved.appearance.composerActionRadius).toBe('7px');
   });
 
@@ -1561,8 +1567,10 @@ describe('theme registry', () => {
 
     expect(issues({ listMinWidth: '0', listMaxHeight: '8rem' })).toEqual([]);
     expect(issues({ listMinWidth: '12rem', listMaxHeight: '640px' })).toEqual([]);
+    expect(issues({ listMaxHeight: 'none' })).toEqual([]);
     [
       { listMinWidth: 'auto' },
+      { listMaxHeight: 'auto' },
       { listMinWidth: '-1rem' },
       { listMaxHeight: '0' },
       { listMaxHeight: '7rem' },
@@ -2408,4 +2416,14 @@ describe('appearance families substitute through the emitted variables', () => {
       expect(themed.get(property)).not.toBe(base.get(property));
     },
   );
+
+  it('writes a `none` list height as the viewport height its available-height cap undercuts', () => {
+    const uncapped = emitted({
+      ...reference,
+      modes: { light: { appearance: { listMaxHeight: 'none' } } },
+    });
+
+    expect(emitted(libreChatTheme).get('--theme-list-max-height')).toBe('24rem');
+    expect(uncapped.get('--theme-list-max-height')).toBe('100dvh');
+  });
 });

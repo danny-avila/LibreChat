@@ -18,7 +18,13 @@ export const MOBILE_DRAWER_WIDTH_VAR = '--mobile-drawer-width';
 export const MOBILE_DRAWER_FULL_WIDTH = '100%';
 export const MOBILE_DRAWER_STRIP_WIDTH = '80%';
 export const MOBILE_DRAWER_WIDTH = `var(${MOBILE_DRAWER_WIDTH_VAR}, ${MOBILE_DRAWER_FULL_WIDTH})`;
-export const MOBILE_PANE_SHIFT = `translateX(${MOBILE_DRAWER_WIDTH})`;
+/**
+ * Which way the drawer opens: 1 when it sits on the left (LTR), -1 when it sits on
+ * the right (RTL). Root sets it with an `rtl:` utility, so the pane's declarative
+ * transform follows the document direction without React reading it.
+ */
+export const MOBILE_DRAWER_SIGN_VAR = '--mobile-drawer-sign';
+export const MOBILE_PANE_SHIFT = `translateX(calc(var(${MOBILE_DRAWER_SIGN_VAR}, 1) * ${MOBILE_DRAWER_WIDTH}))`;
 export const TRANSITION_MS = 300;
 /**
  * Decelerating, but it settles rather than crawls. The previous

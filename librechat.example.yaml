@@ -76,6 +76,10 @@ projects:
 # librechat.endpoint.type, librechat.provider, librechat.model,
 # librechat.model.label, librechat.spec.
 #
+# Temporary chats, including every chat when interface.retentionMode is
+# "ephemeral", are not traced and their feedback is not scored unless
+# langfuse.trace.temporaryChats is true.
+#
 # langfuse:
 #   headers:
 #     CF-Access-Client-Id: "${CF_ACCESS_CLIENT_ID}"
@@ -84,6 +88,7 @@ projects:
 #     userIdField: email
 #     userMetadataFields: [email, username, role, provider]
 #     conversationMetadataFields: [conversationId, endpoint, model, modelLabel, spec]
+#     temporaryChats: false
 
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)
@@ -175,6 +180,13 @@ projects:
 # Custom interface configuration
 interface:
   customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
+  # What heads the welcome screen when an agent, assistant or model spec is selected (default: entity).
+  # 'entity' shows its name; 'greeting' shows the time-of-day greeting (or customWelcome) with the
+  # user's name, for deployments where the header selector already names the agent.
+  # landingHeading: entity
+  # Show the generic disclaimer and policy links beneath the welcome screen's composer (default: true).
+  # When false, a CUSTOM_FOOTER still renders there, as it does in conversations.
+  # landingFooter: true
   # Allow renaming a running chat or one with a placeholder title (default: true).
   # Set to false during a rolling upgrade, until ALL API replicas are upgraded and old
   # title-generation jobs have drained. While false, rename is disabled for running chats
@@ -491,6 +503,7 @@ registration:
 # connect-time guard only covers direct, non-proxied connections.
 # speech:
 #   tts:
+#     maxInputChars: 20000 # longest text one request may synthesize (each 1,000 chars is a provider call)
 #     openai:
 #       url: ''
 #       apiKey: '${TTS_API_KEY}'
@@ -522,6 +535,10 @@ registration:
 #   allowedAddresses:
 #     - 'localhost:8080'
 #     - '127.0.0.1:8080'
+
+# Worker threads that hash passwords and auth tokens off the event loop.
+# passwordHashing:
+#   maxWorkers: 2 # default: one less than the CPU count, at most 4
 
 # rateLimits:
 #   # Per-user MCP App browser-route limits. Each limit uses a fixed one-minute window.
@@ -1742,3 +1759,5 @@ endpoints:
 # ACL writes retry only conflicts on an individual document.
 # permissions:
 #   maxWriteAttempts: 3 # Integer 1-100, including the first attempt.
+#   leaseTtlMs: 30000 # Integer 1000-600000. Sharing updates on deployments without transactions hold a per-resource lease this long between renewals.
+#   leaseWaitMs: 3000 # Integer 0-60000. How long an update waits for a contended lease before answering 409.

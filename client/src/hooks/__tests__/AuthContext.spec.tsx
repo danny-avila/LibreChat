@@ -821,6 +821,33 @@ describe('AuthContextProvider — optional authentication', () => {
   });
 });
 
+describe('AuthContextProvider — prerendered page', () => {
+  const setPrerendering = (value: boolean) =>
+    Object.defineProperty(document, 'prerendering', { configurable: true, value });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setPrerendering(true);
+  });
+
+  afterEach(() => {
+    delete (document as Document & { prerendering?: boolean }).prerendering;
+  });
+
+  it('defers the silent refresh until the prerendered page is shown', () => {
+    renderProviderLive();
+
+    expect(mockRefreshMutate).not.toHaveBeenCalled();
+
+    setPrerendering(false);
+    act(() => {
+      document.dispatchEvent(new Event('prerenderingchange'));
+    });
+
+    expect(mockRefreshMutate).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('AuthContextProvider — silentRefresh subdirectory deployment', () => {
   beforeEach(() => {
     jest.clearAllMocks();

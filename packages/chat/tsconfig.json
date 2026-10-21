@@ -17,7 +17,7 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "types": ["jest"]
+    "types": ["jest", "@testing-library/jest-dom"]
   },
   "include": ["src/**/*"],
   "exclude": ["dist", "node_modules"]

@@ -855,6 +855,34 @@ describe('initializeRoles - SHARE permission preservation', () => {
     const userRole = await getRoleByName(SystemRoles.USER);
     expect(userRole.permissions[PermissionTypes.AGENTS]?.SHARE).toBe(true);
   });
+
+  it('migrates only legacy tenant documents and leaves migrated ones untouched', async () => {
+    await Role.collection.insertOne({
+      name: SystemRoles.USER,
+      tenantId: 'tenant-migrated',
+      permissions: { PROMPTS: { SHARE: false }, AGENTS: { SHARE: true } },
+    });
+    await Role.collection.insertOne({ name: SystemRoles.USER, tenantId: 'tenant-empty' });
+    await Role.collection.insertOne({
+      name: SystemRoles.USER,
+      tenantId: 'tenant-legacy',
+      permissions: { PROMPTS: { SHARED_GLOBAL: true }, AGENTS: { SHARED_GLOBAL: false } },
+    });
+
+    await initializeRoles();
+
+    const docs = await Role.collection.find({ name: SystemRoles.USER }).toArray();
+    const byTenant = Object.fromEntries(docs.map((doc) => [doc.tenantId, doc]));
+    const legacy = byTenant['tenant-legacy'].permissions;
+    expect(legacy.PROMPTS.SHARE).toBe(true);
+    expect(legacy.PROMPTS.SHARED_GLOBAL).toBeUndefined();
+    expect(legacy.AGENTS.SHARE).toBe(false);
+    expect(legacy.AGENTS.SHARED_GLOBAL).toBeUndefined();
+    const migrated = byTenant['tenant-migrated'].permissions;
+    expect(migrated.PROMPTS.SHARE).toBe(false);
+    expect(migrated.AGENTS.SHARE).toBe(true);
+    expect(byTenant['tenant-empty'].permissions?.AGENTS?.SHARED_GLOBAL).toBeUndefined();
+  });
 });
 
 describe('createRoleByName', () => {
@@ -926,6 +954,29 @@ describe('deleteRoleByName', () => {
     expect(alice!.role).toBe(SystemRoles.USER);
     expect(bob!.role).toBe(SystemRoles.USER);
     expect(carol!.role).toBe(SystemRoles.USER);
+  });
+
+  it('leaves a role recreated under the same name when the expected id no longer matches', async () => {
+    const original = await createRoleByName({ name: 'editor' });
+    await Role.deleteOne({ name: 'editor' });
+    await createRoleByName({ name: 'editor' });
+    await User.create({ name: 'Dana', email: 'dana@test.com', role: 'editor', username: 'dana' });
+
+    const result = await deleteRoleByName('editor', { id: String(original._id) });
+
+    expect(result).toBeNull();
+    expect(await Role.exists({ name: 'editor' })).toBeTruthy();
+    const dana = await User.findOne({ email: 'dana@test.com' }).lean();
+    expect(dana!.role).toBe('editor');
+  });
+
+  it('deletes the role when the expected id matches', async () => {
+    const created = await createRoleByName({ name: 'editor' });
+
+    const result = await deleteRoleByName('editor', { id: String(created._id) });
+
+    expect(result?.name).toBe('editor');
+    expect(await Role.exists({ name: 'editor' })).toBeNull();
   });
 
   it('returns null when role does not exist', async () => {

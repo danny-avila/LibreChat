@@ -1575,6 +1575,15 @@ describe('interfaceSchema', () => {
     },
   );
 
+  it('accepts the welcome screen heading and footer settings', () => {
+    expect(
+      interfaceSchema.parse({ landingHeading: 'greeting', landingFooter: false }),
+    ).toMatchObject({ landingHeading: 'greeting', landingFooter: false });
+    expect(interfaceSchema.parse({})).not.toHaveProperty('landingHeading');
+    expect(interfaceSchema.safeParse({ landingHeading: 'name' }).success).toBe(false);
+    expect(interfaceSchema.safeParse({ landingFooter: 'false' }).success).toBe(false);
+  });
+
   it('silently strips removed legacy fields', () => {
     const result = interfaceSchema.parse({
       endpointsMenu: true,
@@ -2146,4 +2155,14 @@ describe('reset interval validation', () => {
       );
     },
   );
+});
+
+describe('passwordHashing config', () => {
+  it.each([1, 4, 32])('accepts %s hash workers', (maxWorkers) => {
+    expect(configSchema.shape.passwordHashing.parse({ maxWorkers })).toEqual({ maxWorkers });
+  });
+
+  it.each([0, 33, 1.5])('rejects %s hash workers', (maxWorkers) => {
+    expect(configSchema.shape.passwordHashing.safeParse({ maxWorkers }).success).toBe(false);
+  });
 });

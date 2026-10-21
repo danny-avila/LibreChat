@@ -16,6 +16,7 @@ jest.mock(
     ErrorTypes: {},
     SystemRoles: { USER: 'USER', ADMIN: 'ADMIN' },
     errorsToString: jest.fn(),
+    SESSION_HINT_COOKIE: 'session_hint',
   }),
   { virtual: false },
 );
@@ -25,6 +26,9 @@ jest.mock(
     const shouldUseSecureCookie = jest.fn(() => false);
     return {
       isEnabled: jest.fn((val) => val === 'true' || val === true),
+      /** Real bcrypt on the test thread; the worker pool has its own spec in packages/api. */
+      hashSecret: jest.fn((plain) => require('bcryptjs').hash(plain, 4)),
+      compareSecret: jest.fn((plain, hash) => require('bcryptjs').compare(plain, hash)),
       checkEmailConfig: jest.fn(),
       isEmailDomainAllowed: jest.fn(),
       getSafeErrorMetadata: jest.fn((error) => ({ type: error?.name ?? 'UnknownError' })),
@@ -39,6 +43,7 @@ jest.mock(
           sameSite: 'strict',
         });
       }),
+      setLocalSessionCookies: jest.fn(),
       setOpenIDMarkerCookies: jest.fn((res, { userId, expires }) => {
         res.cookie('token_provider', 'openid', {
           expires,
@@ -138,6 +143,7 @@ let isEmailDomainAllowed;
 let resolveAppConfigForUser;
 let setRefreshTokenCookie;
 let setOpenIDMarkerCookies;
+let setLocalSessionCookies;
 let setCloudFrontCookies;
 let getCloudFrontConfig;
 let parseCloudFrontCookieScope;
@@ -182,6 +188,7 @@ jest.isolateModules(() => {
     commitPasswordReset,
     setRefreshTokenCookie,
     setOpenIDMarkerCookies,
+    setLocalSessionCookies,
     setCloudFrontCookies,
     getCloudFrontConfig,
     parseCloudFrontCookieScope,
@@ -1697,6 +1704,39 @@ describe('CloudFront cookie integration', () => {
         },
         { userId: 'old-user', tenantId: 'old-tenant' },
       );
+    });
+
+    it('names the session owner and expiry in the readable cookie the theme replay checks', async () => {
+      const expiration = new Date(Date.now() + 604800000);
+      createSession.mockResolvedValueOnce({
+        session: { expiration },
+        refreshToken: 'mock-refresh-token',
+      });
+      const res = mockResponse();
+
+      await setAuthTokens('user-123', res);
+
+      expect(setLocalSessionCookies).toHaveBeenCalledWith(res, {
+        refreshToken: 'mock-refresh-token',
+        expires: expiration,
+        userId: 'user-123',
+        tenantId: 'tenantA',
+      });
+    });
+
+    it('re-stamps the expiry of the session a refresh keeps', async () => {
+      const expiration = new Date(Date.now() + 3600000);
+      const res = mockResponse();
+
+      await setAuthTokens('user-123', res, { _id: 'session-1', expiration });
+
+      expect(createSession).not.toHaveBeenCalled();
+      expect(setLocalSessionCookies).toHaveBeenCalledWith(res, {
+        refreshToken: 'mock-refresh-token',
+        expires: expiration,
+        userId: 'user-123',
+        tenantId: 'tenantA',
+      });
     });
 
     it('succeeds even when setCloudFrontCookies returns false', async () => {

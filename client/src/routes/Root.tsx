@@ -36,6 +36,7 @@ import {
   normalizeCodeHighlightThrottleMs,
 } from '~/components/Chat/Messages/Content/Parts/useLazyHighlight';
 import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
+import { SteerHostProvider, appSteerHost } from '~/Providers/SteerHostContext';
 import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { MobileDrawerScrim } from '~/components/UnifiedSidebar/mobile';
@@ -186,9 +187,11 @@ function RootLayout() {
                 <Banner onHeightChange={setBannerHeight} />
                 <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
                   <div
-                    className="relative z-0 flex h-full w-full overflow-hidden"
+                    className="relative z-0 flex h-full w-full overflow-hidden rtl:[--mobile-drawer-sign:-1]"
                     /** The drawer and the pane both read this, so their travel
-                     *  cannot disagree about how far the drawer opens. */
+                     *  cannot disagree about how far the drawer opens. The sign
+                     *  above sends the pane the other way when the drawer opens
+                     *  from the right. */
                     style={
                       {
                         [MOBILE_DRAWER_WIDTH_VAR]: drawerStrip
@@ -274,7 +277,9 @@ function RootLayout() {
 export default function Root() {
   return (
     <ChatSettingsProvider>
-      <RootLayout />
+      <SteerHostProvider host={appSteerHost}>
+        <RootLayout />
+      </SteerHostProvider>
     </ChatSettingsProvider>
   );
 }

@@ -22,10 +22,12 @@ import { resolveSubagentAgentId } from '~/components/Chat/Subagents/identity';
 import { subagentStatusLabelKey } from '~/components/Chat/Subagents/status';
 import { useOpenSubagentPanel } from '~/components/Chat/Subagents/surface';
 import { getSubagentPrompt } from '~/components/Chat/Subagents/prompt';
+import { tailOverflowDirection } from '~/utils/subagentContent';
 import { MessageContext } from '~/Providers/MessageContext';
 import { useShareContext } from '~/Providers/ShareContext';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { parseSubagentBackgroundHandle } from './handle';
+import { MCPAppViews } from '~/components/MCPUIResource';
 import { isError } from '../ToolOutput/OutputRenderer';
 import { useToolPreparation } from '../preparation';
 import { useAgentsMapContext } from '~/Providers';
@@ -386,13 +388,26 @@ export default function SubagentCall({
 
   useEffect(() => {
     setSelectedSubagent((current) =>
-      current?.parentMessageId === parentMessageId &&
+      current?.host === panelSelection.host &&
+      current.shareId === panelSelection.shareId &&
+      current.parentConversationId === parentConversationId &&
+      current.parentMessageId === parentMessageId &&
       current.toolCallId === toolCallId &&
-      current.partIndex === partIndex
+      current.partIndex === partIndex &&
+      (current.durable == null ||
+        (current.durable.threadId === panelSelection.durable?.threadId &&
+          current.durable.taskId === panelSelection.durable?.taskId))
         ? panelSelection
         : current,
     );
-  }, [panelSelection, parentMessageId, partIndex, setSelectedSubagent, toolCallId]);
+  }, [
+    panelSelection,
+    parentConversationId,
+    parentMessageId,
+    partIndex,
+    setSelectedSubagent,
+    toolCallId,
+  ]);
 
   const openDetails = useCallback(() => {
     if (!canOpenDetails || openPanel == null) return;
@@ -421,7 +436,7 @@ export default function SubagentCall({
         data-subagent-parent-message={parentMessageId}
         data-subagent-part-index={partIndex}
         className={cn(
-          'border-border-light bg-surface-secondary my-2 flex w-full flex-col gap-1 rounded-lg border px-3 py-2 text-left transition',
+          'border-border-light bg-surface-secondary my-2 flex w-full flex-col gap-1 rounded-lg border px-3 py-2 text-start transition',
           canOpenDetails ? 'group' : 'cursor-default opacity-80',
           running && !detachedStatusUnknown && 'animate-pulse-slow',
         )}
@@ -495,13 +510,13 @@ export default function SubagentCall({
           {canOpenDetails && (
             <ChevronRight
               size={14}
-              className="text-text-secondary shrink-0 transition group-hover:translate-x-0.5"
+              className="text-text-secondary shrink-0 transition group-hover:translate-x-0.5 rtl:-scale-x-100 rtl:group-hover:-translate-x-0.5"
               aria-hidden="true"
             />
           )}
         </div>
 
-        <ul className="text-text-secondary w-full space-y-0.5 pl-5 font-mono text-xs">
+        <ul className="text-text-secondary w-full space-y-0.5 ps-5 font-mono text-xs">
           {displayedTickerLines.length === 0 && running ? (
             <li className="truncate opacity-70">{localize('com_ui_subagent_waiting')}</li>
           ) : null}
@@ -512,7 +527,10 @@ export default function SubagentCall({
       </button>
 
       {!hideAttachments && attachments && attachments.length > 0 && (
-        <AttachmentGroup attachments={attachments} />
+        <>
+          <AttachmentGroup attachments={attachments} />
+          <MCPAppViews attachments={attachments} />
+        </>
       )}
     </>
   );
@@ -613,28 +631,36 @@ function ToolIdentifier({
 /**
  * Renderer for one ticker line. Writing is the default visible activity, so
  * it renders without a redundant prefix. Reasoning retains its semantic label.
- * Streaming bodies use `dir="rtl"` + `text-align: left` to push tail-side
- * ellipsis behavior (newest characters stay flush-right, oldest clip off the
- * left). The rtl trick is scoped to the body span so trailing punctuation on
- * non-streaming lines can't get flipped by bidi.
+ * Streaming bodies run the outer box opposite to the text direction so the
+ * oldest characters clip and the newest stay visible; `text-end` of that box is
+ * the text's own start, so a line that fits stays where it reads from. The text
+ * sits in an isolated `dir="auto"` span so its punctuation is never reordered.
  *
  * Tool lines (`using_tool`, `tool_complete`) go through `ToolIdentifier`
  * so MCP-hosted tools render as `<server> · <tool>` badges and native
  * tools use their friendly names — matching the delimiter-aware
  * rendering the main tool UI already uses.
  */
+function TailText({ text }: { text: string }): JSX.Element {
+  return (
+    <span
+      dir={tailOverflowDirection(text)}
+      className="min-w-0 flex-1 overflow-hidden text-end text-ellipsis whitespace-nowrap"
+    >
+      <bdi dir="auto" className="[unicode-bidi:isolate]">
+        {text}
+      </bdi>
+    </span>
+  );
+}
+
 function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
   const localize = useLocalize();
   const mcpServerNames = useMCPServerNames();
   if (line.kind === 'writing') {
     return (
       <li className="text-text-primary flex w-full items-baseline overflow-hidden">
-        <span
-          dir="rtl"
-          className="min-w-0 flex-1 overflow-hidden text-left text-ellipsis whitespace-nowrap"
-        >
-          {line.body}
-        </span>
+        <TailText text={line.body} />
       </li>
     );
   }
@@ -642,12 +668,7 @@ function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
     return (
       <li className="text-text-primary flex w-full items-baseline gap-1 overflow-hidden">
         <span className="shrink-0">{localize('com_ui_subagent_ticker_reasoning')}:</span>
-        <span
-          dir="rtl"
-          className="min-w-0 flex-1 overflow-hidden text-left text-ellipsis whitespace-nowrap"
-        >
-          {line.body}
-        </span>
+        <TailText text={line.body} />
       </li>
     );
   }
@@ -679,12 +700,7 @@ function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
           mcpServerNames={mcpServerNames}
         />
         <span className="text-text-tertiary shrink-0">→</span>
-        <span
-          dir="rtl"
-          className="min-w-0 flex-1 overflow-hidden text-left text-ellipsis whitespace-nowrap"
-        >
-          {line.outputSnippet ?? localize('com_ui_subagent_ticker_tool_done')}
-        </span>
+        <TailText text={line.outputSnippet ?? localize('com_ui_subagent_ticker_tool_done')} />
       </li>
     );
   }

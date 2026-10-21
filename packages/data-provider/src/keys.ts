@@ -2,6 +2,8 @@ export enum QueryKeys {
   messages = 'messages',
   /* Full content of one tool-call part, fetched when its preview is not enough */
   toolCallPart = 'toolCallPart',
+  /* Child calls of a message's subagent transcripts that files reaching it late belong to */
+  subagentAttachmentCalls = 'subagentAttachmentCalls',
   ownerMessageTexts = 'ownerMessageTexts',
   sharedMessages = 'sharedMessages',
   sharedStartupConfig = 'sharedStartupConfig',
@@ -27,8 +29,6 @@ export enum QueryKeys {
   reasoningCapabilities = 'reasoningCapabilities',
   presets = 'presets',
   searchResults = 'searchResults',
-  tokenCount = 'tokenCount',
-  availablePlugins = 'availablePlugins',
   startupConfig = 'startupConfig',
   insights = 'insights',
   insightsAccess = 'insightsAccess',

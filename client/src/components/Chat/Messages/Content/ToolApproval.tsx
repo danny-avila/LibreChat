@@ -401,13 +401,13 @@ export default function ToolApproval({
           </Button>
           {status === 'expired' && (
             <span className="text-text-warning flex items-center text-xs">
-              <TriangleAlert className="mr-1.5 h-4 w-4" aria-hidden="true" />
+              <TriangleAlert className="me-1.5 h-4 w-4" aria-hidden="true" />
               {localize('com_ui_approval_expired')}
             </span>
           )}
           {status === 'error' && (
             <span className="text-text-warning flex items-center text-xs">
-              <TriangleAlert className="mr-1.5 h-4 w-4" aria-hidden="true" />
+              <TriangleAlert className="me-1.5 h-4 w-4" aria-hidden="true" />
               {localize('com_ui_approval_error')}
             </span>
           )}
