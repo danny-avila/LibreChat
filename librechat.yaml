@@ -10,17 +10,6 @@ interface:
     externalUrl: "https://insinno.de"
     openInNewTab: true
 
-# Kundenspezifische Benutzeroberfl�che im Insinno-Stil
-customation:
-  appName: "insinno iCore AI"
-  appTitle: "insinno AI Portal"
-  # Offizielle Insinno Farbpalette (Orange-Akzente auf dunklem/hellem Grund)
-  brandColors:
-    primary: "#FF6B00"       # Das typische insinno-Orange
-    secondary: "#000000"     # Klassisch Schwarz f�r Schriftz�ge/Header
-  # Optionale Links f�r das Dashboard/Hilfe-Men�
-  helpLink: "https://insinno.de"
-
 # Beispiel-Endpunkte (Passe diese an deine genutzten LLMs an)
 endpoints:
   custom:
