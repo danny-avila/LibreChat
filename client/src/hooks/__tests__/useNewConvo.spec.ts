@@ -4,7 +4,7 @@ import { filesFamily } from '@librechat/chat/react';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Constants, LocalStorageKeys, EModelEndpoint } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
+import type { EventSubmission, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import {
   setFilesDraft,
@@ -24,6 +24,7 @@ import {
 import { setFileSearchChoice, transferFileSearchChoice } from '~/utils/choices';
 import { clearUploadRecovery } from '~/hooks/Files/useFileHandling';
 import { useAutoSave } from '~/hooks/Input/useAutoSave';
+import useTurnHandlers from '~/hooks/SSE/opening';
 
 const mockDeleteFiles = jest.fn();
 const mockUploadFile = jest.fn();
@@ -464,6 +465,123 @@ describe('useNewConvo reset cleanup', () => {
         );
         expect(mockSetEphemeralAgent).not.toHaveBeenCalledWith('new', expect.anything());
       } else expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+      unmount();
+      client.clear();
+      window.history.replaceState({}, '', '/');
+    },
+  );
+
+  it.each(
+    [EModelEndpoint.assistants, EModelEndpoint.azureAssistants].flatMap((endpoint) =>
+      [false, true].map((reset) => ({ endpoint, reset })),
+    ),
+  )(
+    'keeps only the bound upload through Assistants sync ($endpoint, reset: $reset)',
+    async ({ endpoint, reset }) => {
+      const { useFileHandlingNoChatContext } = await import('../Files/useFileHandling');
+      mockSaveDrafts = false;
+      mockFiles.clear();
+      mockConfigPending = false;
+      mockPreparationGate = undefined;
+      window.history.replaceState({}, '', '/c/new');
+      global.URL.createObjectURL = jest.fn(() => 'blob:assistants-sync');
+      global.URL.revokeObjectURL = jest.fn();
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(QueryClientProvider, { client }, children);
+      const { result, rerender, unmount } = renderHook(
+        ({ conversationId }) => {
+          const [files, setFiles] = useAtom(filesFamily(2));
+          useAutoSave({ index: 2, conversationId, isSubmitting: true, files, setFiles });
+          const handlers = useTurnHandlers({
+            queryClient: client,
+            runIndex: 2,
+            isAddedRequest: false,
+            setMessages: jest.fn(),
+            getMessages: () => [],
+            setCompleted: jest.fn(),
+            setIsSubmitting: jest.fn(),
+            setShowStopButton: jest.fn(),
+            setAbortScroll: jest.fn(),
+            setSubmissionStart: jest.fn(),
+            announcePolite: jest.fn(),
+            lastAnnouncementTimeRef: { current: 0 },
+            applyAgentTemplate: jest.fn(),
+            focusRegeneratedResponse: jest.fn(),
+            location: {
+              pathname: window.location.pathname,
+              search: '',
+              hash: '',
+              state: null,
+              key: 'sync',
+            },
+            navigate: jest.fn(),
+            restorePendingContext: jest.fn(),
+            reconcileFailedCodeDecision: jest.fn(),
+            recoverConversation: jest.fn(),
+            attachmentHandler: jest.fn(),
+            preserveSubagentAtomsForNewConvoIdRef: { current: null },
+          });
+          return {
+            files,
+            handlers,
+            upload: useFileHandlingNoChatContext(undefined, {
+              index: 2,
+              files,
+              setFiles,
+              conversation: {
+                conversationId,
+                endpoint,
+                assistant_id: 'assistant-sync',
+                model: 'gpt-4o',
+              } as TConversation,
+            }),
+          };
+        },
+        { wrapper, initialProps: { conversationId: 'new' } },
+      );
+      const launch = { conversationId: 'new', endpoint };
+      bindComposerLaunch(launch, 2);
+      const owner = captureComposerDraft(2, 'new');
+      await act(async () => {
+        await result.current.upload.handleFiles(
+          [new File(['sync'], 'sync.txt', { type: 'text/plain' })],
+        );
+      });
+      const body = mockUploadFile.mock.calls[0][0] as FormData;
+      expect(body.get('assistant_id')).toBe('assistant-sync');
+      const options = mockUploadOptions;
+      const next = renderHook(() => useNewConvo(2), { wrapper });
+      if (reset) act(() => next.result.current.newConversation());
+      const submission = {
+        conversation: launch,
+        messages: [],
+        userMessage: { messageId: 'sync-user', text: 'Hello', isCreatedByUser: true },
+        initialResponse: { messageId: 'sync-response', text: '' },
+      } as EventSubmission;
+      act(() => {
+        result.current.handlers.syncHandler(
+          {
+            sync: true,
+            conversationId: 'saved-sync',
+            thread_id: 'thread-sync',
+            requestMessage: submission.userMessage,
+            responseMessage: submission.initialResponse,
+          },
+          submission,
+        );
+        window.history.replaceState({}, '', '/c/saved-sync');
+        rerender({ conversationId: 'saved-sync' });
+      });
+      expect(owner()).toBe(!reset);
+      await act(async () => {
+        options.onSuccess?.({ file_id: 'persisted-sync', filepath: '/files/sync.txt' }, body);
+        await new Promise((resolve) => setTimeout(resolve, 320));
+      });
+      if (reset) expect(result.current.files.size).toBe(0);
+      else expect(result.current.files.get(body.get('file_id') as string)?.progress).toBe(1);
+      expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+      next.unmount();
       unmount();
       client.clear();
       window.history.replaceState({}, '', '/');

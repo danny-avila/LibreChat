@@ -114,6 +114,7 @@ export default function useTurnHandlers(ctx: EventHandlerContext) {
     (data: TSyncData, submission: EventSubmission) => {
       const { conversationId, thread_id, responseMessage, requestMessage } = data;
       const { initialResponse, messages: _messages, userMessage, isTemporary = false } = submission;
+      adoptComposerConversation(submission.conversation, conversationId, runIndex);
       /** Swap the optimistic user row for the server-stamped one IN PLACE.
        *  Filtering it out and re-appending at the tail would order any of its
        *  already-present children (abandoned responses from preempted
@@ -185,7 +186,15 @@ export default function useTurnHandlers(ctx: EventHandlerContext) {
 
       setShowStopButton(true);
     },
-    [queryClient, setMessages, isAddedRequest, announcePolite, setConversation, setShowStopButton],
+    [
+      queryClient,
+      setMessages,
+      isAddedRequest,
+      announcePolite,
+      setConversation,
+      setShowStopButton,
+      runIndex,
+    ],
   );
 
   const createdHandler = useCallback(
