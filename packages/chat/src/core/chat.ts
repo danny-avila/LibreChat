@@ -574,9 +574,15 @@ export class Chat {
   private readonly decisions = new Map<string, Agents.ToolApprovalResolution>();
   /** Pauses already resumed, whose replay by a reattached stream is stale. */
   private readonly resumed = new Set<string>();
+  /**
+   * The conversation this chat runs under: its id, until the server names the one it created for
+   * a chat started under `new`. Every later start, stop and reattachment addresses that one.
+   */
+  private conversationId: string;
 
   constructor(init: ChatInit) {
     this.id = init.id;
+    this.conversationId = init.id;
     this.init = init;
   }
 
@@ -678,6 +684,7 @@ export class Chat {
     }
     generation.endpoint = selected ?? dropped?.target.endpoint;
     generation.conversationId = options.conversationId ?? generation.conversationId;
+    this.learnConversation(options.conversationId);
     /** The generation the caller named, or the record continued, so a stream of another is told apart. */
     active.inheritedGeneration =
       options.generationCreatedAt ?? continued?.target.generationCreatedAt ?? paused?.createdAt;
@@ -698,7 +705,8 @@ export class Chat {
       (this.action ? this.generationCreatedAt : undefined);
     /** A restored pause names a running generation, so finding nothing means it ended elsewhere. */
     const restored = !superseded && this.action !== undefined;
-    const { conversationId = generation.conversationId ?? this.id, ...request } = options;
+    const { conversationId = generation.conversationId ?? this.conversationId, ...request } =
+      options;
     try {
       if (superseded) {
         /** A restored pause belongs to the generation it was restored with, not this one. */
@@ -782,7 +790,8 @@ export class Chat {
       return this.orUnaddressed(await this.stopDetached(this.detached));
     }
     if (!active && this.unaddressed) {
-      return unaddressable;
+      /** A restored pause is stopped too, and the lost start is still the caller's. */
+      return this.action ? this.orUnaddressed(await this.stopPaused()) : unaddressable;
     }
     if (!active) {
       return this.stopPaused();
@@ -848,6 +857,9 @@ export class Chat {
       }
       if (isStreamAbort(result)) {
         generation.stoppedConversationId = this.stoppedConversationId(generation, result);
+        this.learnConversation(generation.stoppedConversationId);
+      } else if (result) {
+        this.learnConversation(result.conversation?.conversationId);
       }
       generation.settledAs = getSettledAs(result);
       if (!generation.settledAs && isStreamAbort(result) && result.persistenceFailed) {
@@ -990,13 +1002,13 @@ export class Chat {
     if (result.aborted == null) {
       return undefined;
     }
-    const known = generation.conversationId ?? this.id;
+    const known = generation.conversationId ?? this.conversationId;
     return known !== Constants.NEW_CONVO ? known : result.aborted;
   }
 
   /** `conversationId:responseMessageId` of a run with no resumable stream (Assistants). */
   private abortKey(generation: Generation): string | undefined {
-    const conversationId = generation.conversationId ?? this.id;
+    const conversationId = generation.conversationId ?? this.conversationId;
     if (conversationId === Constants.NEW_CONVO) {
       /** Before its sync frame, a turn under `new` has no id the server knows it by. */
       return undefined;
@@ -1006,7 +1018,11 @@ export class Chat {
 
   /** Whether a stop can name the generation: by its stream, its run key, or a created chat. */
   private isAddressable(target: Omit<ChatAbortRequest, 'chatId'>): boolean {
-    return target.streamId != null || target.abortKey != null || this.id !== Constants.NEW_CONVO;
+    return (
+      target.streamId != null ||
+      target.abortKey != null ||
+      this.conversationId !== Constants.NEW_CONVO
+    );
   }
 
   /**
@@ -1018,13 +1034,15 @@ export class Chat {
       throw this.lifetime.signal.reason;
     }
     const result = await untilAborted(
-      this.init.transport.abort({ chatId: this.id, ...target }).catch((error: unknown) => {
-        if (isGone(error as ChatTransportError)) {
-          /** Nothing is left to stop, so the run ended on its own and the host reloads it. */
-          return goneStop;
-        }
-        throw error;
-      }),
+      this.init.transport
+        .abort({ chatId: this.conversationId, ...target })
+        .catch((error: unknown) => {
+          if (isGone(error as ChatTransportError)) {
+            /** Nothing is left to stop, so the run ended on its own and the host reloads it. */
+            return goneStop;
+          }
+          throw error;
+        }),
       this.lifetime.signal,
     );
     if (result && 'success' in result && !result.success && !result.settled) {
@@ -1196,12 +1214,23 @@ export class Chat {
       /** A status read before the end landed reports a pause of a generation that ended. */
       return;
     }
-    /** A current status read names the running generation, which a stop then addresses. */
-    this.unaddressed = undefined;
-    if (this.detached && this.detached.target.generationCreatedAt !== generationCreatedAt) {
-      /** The pause belongs to a newer generation than the one whose stream dropped. */
+    const dropped = this.detached?.target.generationCreatedAt;
+    if (dropped != null && generationCreatedAt < dropped) {
+      /** A read of an older generation than the one whose stream dropped is stale. */
+      return;
+    }
+    if (this.detached && (dropped == null || generationCreatedAt > dropped)) {
+      /**
+       * The pause belongs to a newer generation, or one the dropped stream never dated, which
+       * superseded the one whose stream dropped.
+       */
       this.detached = undefined;
     }
+    /**
+     * A lost start is left as it is: no read can tell whether it names that start's generation or
+     * an older one, so only an answer about the start itself clears it.
+     */
+    this.learnConversation(action.conversationId);
     if (isExpired(action)) {
       /**
        * An expired pause is stale: the server will refuse its resume. It also supersedes a pause
@@ -1367,7 +1396,11 @@ export class Chat {
         throw active.controller.signal.reason;
       }
       const prepared = await untilAborted(
-        this.init.prepareRequest({ ...request, chatId: this.id, messages: this.messages }),
+        this.init.prepareRequest({
+          ...request,
+          chatId: this.conversationId,
+          messages: this.messages,
+        }),
         active.controller.signal,
       );
       active.generation.responseId = prepared.responseMessageId;
@@ -1391,7 +1424,7 @@ export class Chat {
         this.init.transport.sendMessages({
           ...options,
           trigger: request.trigger,
-          chatId: this.id,
+          chatId: this.conversationId,
           messageId: request.messageId,
           payload: prepared.payload,
           abortSignal: signal,
@@ -1410,6 +1443,9 @@ export class Chat {
       if (result.status === 'settled' && result.generationProtocolVersion !== 2) {
         /** Only protocol v2 vouches for a settled start, which completes the turn without a stream. */
         throw new Error('The server answered with a settled start it did not negotiate');
+      }
+      if (result.status !== 'stream') {
+        this.learnConversation(result.conversationId);
       }
       /**
        * The server took the start, so it owns or superseded a generation whose stream dropped.
@@ -1733,12 +1769,15 @@ export class Chat {
       if (named && (known == null || known === Constants.NEW_CONVO)) {
         active.generation.conversationId = named;
       }
+      this.learnConversation(named);
     } else if (event.type === 'sync') {
       /** The server's ids for the turn, which an Assistants stop addresses. */
       active.generation.conversationId =
         event.data.conversationId ?? active.generation.conversationId;
+      this.learnConversation(event.data.conversationId);
       this.nameResponse(active.generation, event.data.responseMessage?.messageId);
     } else if (event.type === 'final') {
+      this.learnConversation(event.data.conversation?.conversationId);
       this.nameResponse(active.generation, event.data.responseMessage?.messageId);
     }
   }
@@ -1793,6 +1832,17 @@ export class Chat {
     });
   }
 
+  /** Adopts the conversation the server created for a chat started under `new`; a real id stays. */
+  private learnConversation(conversationId: string | null | undefined): void {
+    if (
+      conversationId &&
+      conversationId !== Constants.NEW_CONVO &&
+      this.conversationId === Constants.NEW_CONVO
+    ) {
+      this.conversationId = conversationId;
+    }
+  }
+
   /** Whether `active` still holds this chat, which an async continuation checks before acting. */
   private owns(active: ActiveRequest): boolean {
     return !this.disposed && this.active === active;
@@ -1835,7 +1885,8 @@ export class Chat {
         resume.call(this.init.transport, {
           ...this.init.resumeSelection?.(),
           ...resolution,
-          conversationId: action.conversationId ?? this.pausedConversationId() ?? this.id,
+          conversationId:
+            action.conversationId ?? this.pausedConversationId() ?? this.conversationId,
           generationCreatedAt,
           actionId: action.actionId,
         }),

@@ -1738,3 +1738,124 @@ describe('Chat final frames', () => {
     });
   });
 });
+
+describe('Chat status reads and lost starts', () => {
+  it("(2) a status read never takes over a lost start; a stop ends the pause and still owes the start's abort", async () => {
+    const h = createHarness();
+    await lost(h);
+    h.chat.restorePendingAction(askAction, 500);
+
+    await expect(h.chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+    expect(h.transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({ generationCreatedAt: 500 }),
+    );
+    expect(h.chat.pendingAction).toBeUndefined();
+  });
+
+  it('(2) a status read older than the dropped generation is stale and keeps it the stop target', async () => {
+    const h = createHarness();
+    await states.detached(h);
+    h.chat.restorePendingAction(askAction, 50);
+
+    expect(h.chat.pendingAction).toBeUndefined();
+    await h.chat.stop();
+    expect(h.transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({ generationCreatedAt: 100 }),
+    );
+  });
+});
+
+const createdUnder = 'convo-9';
+const learns: Array<[string, (h: Harness) => Promise<void>]> = [
+  [
+    'a sync frame',
+    async (h) => {
+      const stream = createStream({ streamId: createdUnder, generationCreatedAt: 100 });
+      attach(h, stream);
+      send(h);
+      await flush();
+      stream.push({
+        type: 'sync',
+        data: { conversationId: createdUnder, responseMessage: placeholder },
+      } as ChatEvent);
+      stream.push(finalEvent());
+      await flush();
+    },
+  ],
+  [
+    'a created frame',
+    async (h) => {
+      const stream = createStream({ streamId: createdUnder, generationCreatedAt: 100 });
+      attach(h, stream);
+      send(h);
+      await flush();
+      stream.push({
+        type: 'created',
+        data: { message: { ...userMessage, conversationId: createdUnder }, created: true },
+      } as ChatEvent);
+      stream.push(finalEvent());
+      await flush();
+    },
+  ],
+  [
+    'a settled start',
+    async (h) => {
+      h.transport.sendMessages.mockResolvedValueOnce({
+        status: 'settled',
+        conversationId: createdUnder,
+        generationProtocolVersion: 2,
+      });
+      send(h);
+      await flush();
+    },
+  ],
+  [
+    'a status read',
+    async (h) => {
+      h.chat.restorePendingAction({ ...askAction, conversationId: createdUnder }, 500);
+      h.transport.abort.mockResolvedValueOnce({ success: true });
+      await h.chat.stop();
+    },
+  ],
+];
+
+describe('Chat conversation identity', () => {
+  it.each(learns)(
+    '(7) after %s names the conversation, later turns, stops and reattachments use it',
+    async (_label, learn) => {
+      const prepared: string[] = [];
+      const h = createHarness({
+        id: 'new',
+        prepareRequest: (request) => {
+          prepared.push(request.chatId);
+          return {
+            payload: { ...payload, conversationId: null } as unknown as TPayload,
+            messages: [userMessage, placeholder],
+            responseMessageId: 'response-1',
+          };
+        },
+      });
+      await learn(h);
+
+      const next = createStream({ streamId: createdUnder, generationCreatedAt: 700 });
+      attach(h, next);
+      send(h);
+      await flush();
+      expect(prepared[prepared.length - 1]).toBe(createdUnder);
+      expect(h.transport.sendMessages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ chatId: createdUnder }),
+      );
+      h.transport.abort.mockResolvedValueOnce({ success: true });
+      next.push(dropEvent);
+      await flush();
+      await h.chat.stop();
+      expect(h.transport.abort).toHaveBeenLastCalledWith(
+        expect.objectContaining({ chatId: createdUnder }),
+      );
+      await h.chat.resumeStream({ streamId: createdUnder }).catch(() => undefined);
+      expect(h.transport.reconnectToStream).toHaveBeenLastCalledWith(
+        expect.objectContaining({ chatId: createdUnder }),
+      );
+    },
+  );
+});
