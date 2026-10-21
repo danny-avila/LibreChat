@@ -994,19 +994,24 @@ export class Chat {
     if (!endpoint) {
       throw new Error('The paused generation cannot be stopped without its endpoint');
     }
+    const stoppedAt = this.generationCreatedAt;
     /** A pause no status read restored names no response this chat prepared or saw framed. */
     const generation: Generation = this.restored?.generation ?? { responseUnknown: true };
     const result = await this.stopGeneration(generation, {
       endpoint,
       streamId: action.streamId,
-      generationCreatedAt: this.generationCreatedAt,
+      generationCreatedAt: stoppedAt,
     });
     const active = this.active;
     if (!this.disposed && active?.generation === generation) {
       /** A reattachment took the generation over while the stop was in flight; it ends with it. */
       return this.endStopped(active, generation, result);
     }
-    if (this.disposed || this.action?.actionId !== action.actionId) {
+    /** Whatever pause the stopped generation holds now ends with it, however often it was refreshed. */
+    const owned =
+      this.action &&
+      (this.action.actionId === action.actionId || this.generationCreatedAt === stoppedAt);
+    if (this.disposed || !owned) {
       return getStopResult(result, generation.stoppedConversationId);
     }
     this.action = undefined;

@@ -849,6 +849,22 @@ describe('Chat invariants', () => {
     await expect(h.chat.stop()).resolves.toEqual({ status: 'unaddressable' });
   });
 
+  it('(1) a stop of a restored pause ends the pause a refresh restored for its generation meanwhile', async () => {
+    const h = createHarness();
+    let answerStop: (() => void) | undefined;
+    h.transport.abort.mockImplementation(
+      () => new Promise((resolve) => (answerStop = () => resolve({ success: true }))),
+    );
+    h.chat.restorePendingAction(askAction, 500);
+    const stopped = h.chat.stop();
+    await flush();
+    h.chat.restorePendingAction({ ...askAction, actionId: 'action-2' }, 500);
+    answerStop?.();
+    await stopped;
+
+    expect(h.chat.pendingAction).toBeUndefined();
+  });
+
   it('(4) a fresh reattachment that drops before a frame names its response reports none', async () => {
     const h = createHarness({ messages: [userMessage, laterMessage] });
     const stream = createStream({ streamId: 'convo-1', generationCreatedAt: 700 });
