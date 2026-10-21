@@ -1248,7 +1248,10 @@ export class Chat {
        * An expired pause is stale: the server will refuse its resume. It also supersedes a pause
        * restored for an older generation, which no longer runs.
        */
-      const superseded = this.action != null && generationCreatedAt !== this.generationCreatedAt;
+      const superseded =
+        this.action != null &&
+        (generationCreatedAt !== this.generationCreatedAt ||
+          this.isOlderPause(this.action, generationCreatedAt));
       if (this.action?.actionId === action.actionId || superseded) {
         this.clearAction();
       }

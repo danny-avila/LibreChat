@@ -2002,6 +2002,17 @@ describe('Chat answers, successors and pause order', () => {
     expect(h.chat.pendingAction?.actionId).toBe('action-b');
   });
 
+  it('(2) an expired newer pause in the same generation clears the older one held', async () => {
+    const h = createHarness();
+    h.chat.restorePendingAction({ ...askAction, createdAt: 2, actionId: 'action-a' }, 500);
+    h.chat.restorePendingAction(
+      { ...askAction, createdAt: 3, actionId: 'action-b', expiresAt: 1 },
+      500,
+    );
+
+    expect(h.chat.pendingAction).toBeUndefined();
+  });
+
   it('(2) a status read of an older pause than the one the stream delivered keeps the streamed one', async () => {
     const h = createHarness();
     await states.attached(h);
