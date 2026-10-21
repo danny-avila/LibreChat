@@ -15,7 +15,7 @@ import {
   BASE_CONFIG_PRINCIPAL_ID,
   SYSTEM_TENANT_ID,
 } from '@librechat/data-schemas';
-import type { AppConfig, IConfig } from '@librechat/data-schemas';
+import type { AppConfig, ConfigOverrideLayer } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 import type { CustomConfigLoadMode } from './loader';
 import { checkAppConfigTheme } from './theme';
@@ -226,7 +226,7 @@ export interface AppConfigServiceDeps {
   /** The CacheKeys constants from librechat-data-provider. */
   cacheKeys: { APP_CONFIG: string };
   /** Fetch applicable DB config overrides for a set of principals. */
-  getApplicableConfigs: (principals?: AppConfigPrincipal[]) => Promise<IConfig[]>;
+  getApplicableConfigs: (principals?: AppConfigPrincipal[]) => Promise<ConfigOverrideLayer[]>;
   /** Resolve full principal list (user + role + groups) from userId/role. */
   getUserPrincipals: (params: {
     userId: string | Types.ObjectId;
@@ -258,6 +258,12 @@ export interface GetAppConfigOptions {
   resolvedPrincipals?: AppConfigPrincipal[];
   /** Skip mutable runtime augmentation when the caller has already loaded that data. */
   skipRuntimeAugmentation?: boolean;
+  /**
+   * Merge the overrides as stored now, neither reading nor writing the per-principal merged
+   * cache. Admin reads use it so they never show a merge from before their own write. Unlike
+   * `refresh`, the YAML base config is not reloaded.
+   */
+  bypassOverrideCache?: boolean;
 }
 
 export interface AppConfigUserLike {
@@ -366,6 +372,28 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
   const cache = getCache(cacheKeys.APP_CONFIG);
   let lastGoodBaseConfig: AppConfig | undefined;
   let baseConfigFlight: Promise<AppConfig> | undefined;
+
+  /**
+   * Override-cache generations: a clear bumps the cleared tenant's (or, for a clear of every
+   * tenant, the global) counter before deleting entries. A merge captures the generation before
+   * it reads the database and is cached only if no clear happened meanwhile, so a request that
+   * read just before an admin write cannot re-cache the old merge just after the write's clear.
+   */
+  let globalOverrideGeneration = 0;
+  const tenantOverrideGenerations = new Map<string, number>();
+
+  function getOverrideGeneration(tenantId: string | undefined): string {
+    const tenant = tenantId ? (tenantOverrideGenerations.get(tenantId) ?? 0) : 0;
+    return `${globalOverrideGeneration}:${tenant}`;
+  }
+
+  function bumpOverrideGeneration(tenantId: string | undefined): void {
+    if (!tenantId) {
+      globalOverrideGeneration += 1;
+      return;
+    }
+    tenantOverrideGenerations.set(tenantId, (tenantOverrideGenerations.get(tenantId) ?? 0) + 1);
+  }
 
   async function buildPrincipals(
     role?: string,
@@ -487,6 +515,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       failClosed,
       resolvedPrincipals,
       skipRuntimeAugmentation,
+      bypassOverrideCache,
     } = options;
 
     const ambientTenantId = getTenantId();
@@ -563,19 +592,21 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
         ]),
       )
       .digest('hex');
-    const cacheKey = overrideCacheKey(
-      role,
-      userId,
-      ambientTenantId ?? effectiveTenantId,
-      scopeVersion,
-    );
-    if (!refresh) {
+    const cacheTenantId = ambientTenantId ?? effectiveTenantId;
+    const cacheKey = overrideCacheKey(role, userId, cacheTenantId, scopeVersion);
+    /**
+     * The key names a role and user, not a principal set: principals resolved elsewhere are
+     * cached only when a user id ties them to the key.
+     */
+    const cacheable = bypassOverrideCache !== true && (resolvedPrincipals == null || !!userId);
+    if (cacheable && !refresh) {
       const cachedMerged = (await cache.get(cacheKey)) as AppConfig | undefined;
       if (cachedMerged) {
         return await augment(cachedMerged);
       }
     }
 
+    const generation = getOverrideGeneration(cacheTenantId);
     let merged = scopedBaseConfig;
     try {
       const configs = await getApplicableConfigs(principals);
@@ -595,7 +626,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       return scopedBaseConfig;
     }
 
-    await cache.set(cacheKey, merged, overrideCacheTtl);
+    if (cacheable && getOverrideGeneration(cacheTenantId) === generation) {
+      await cache.set(cacheKey, merged, overrideCacheTtl);
+    }
     return await augment(merged);
   }
 
@@ -615,6 +648,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    * caches are cleared.
    */
   async function clearOverrideCache(tenantId?: string): Promise<void> {
+    bumpOverrideGeneration(tenantId);
     const namespace = cacheKeys.APP_CONFIG;
     const overrideSegment = tenantId ? `_OVERRIDE_:${tenantId}:tenant:` : '_OVERRIDE_:';
 

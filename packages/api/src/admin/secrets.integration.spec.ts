@@ -255,8 +255,7 @@ beforeAll(async () => {
   handlers = createAdminConfigHandlers({
     listAllConfigs: methods.listAllConfigs,
     findConfigByPrincipal: methods.findConfigByPrincipal,
-    upsertConfig: methods.upsertConfig,
-    patchConfigFields: methods.patchConfigFields,
+    writeConfigDocument: methods.writeConfigDocument,
     tombstoneConfigField: methods.tombstoneConfigField,
     unsetConfigField: methods.unsetConfigField,
     deleteConfig: methods.deleteConfig,
@@ -711,9 +710,12 @@ describe('config secret registry — real handlers against a real Config collect
       const baseHandlers = createAdminConfigHandlers({
         listAllConfigs: async () => [],
         findConfigByPrincipal: async () => null,
-        upsertConfig: async () => null,
-        patchConfigFields: async () => null,
-        tombstoneConfigField: async () => null,
+        writeConfigDocument: async () => {
+          throw new Error('not written in this test');
+        },
+        tombstoneConfigField: async () => {
+          throw new Error('not written in this test');
+        },
         unsetConfigField: async () => null,
         deleteConfig: async () => null,
         toggleConfigActiveTracked: async () => null,

@@ -1,15 +1,18 @@
 const mongoose = require('mongoose');
 const { CacheKeys } = require('librechat-data-provider');
-const { AppService, logger } = require('@librechat/data-schemas');
+const { AppService } = require('@librechat/data-schemas');
 const {
   createAppConfigService,
   clearMcpConfigCache,
   createCodeEnvironmentRegistry,
+  createConfigCacheInvalidation,
+  createRedisConfigInvalidationPubSub,
   mergeAccessibleCodeEnvironments,
+  ioredisClient,
   cacheConfig,
   standardCache,
 } = require('@librechat/api');
-const { setCachedTools, invalidateCachedTools } = require('./getCachedTools');
+const { setCachedTools } = require('./getCachedTools');
 const { loadAndFormatTools } = require('~/server/services/start/tools');
 const loadCustomConfig = require('./loadCustomConfig');
 const getLogStores = require('~/cache/getLogStores');
@@ -45,7 +48,7 @@ const loadBaseConfig = async (mode) => {
   return AppService({ config, paths, systemTools });
 };
 
-const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfigService({
+const { getAppConfig, clearOverrideCache } = createAppConfigService({
   loadBaseConfig,
   setCachedTools,
   getCache: getLogStores,
@@ -72,29 +75,29 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
 db.initializeMessageBudget(getAppConfig);
 
 /**
- * Invalidate all config-related caches after an admin config mutation.
- * Clears the base config, per-principal override caches, tool caches,
- * and the MCP config-source server cache.
+ * Admin config writes change DB overrides only, so they clear what is merged from them: the
+ * per-principal override caches and the MCP config-source servers. The YAML base config and
+ * the tools derived from it are untouched, so a write no longer re-reads librechat.yaml. With
+ * Redis, the clear is broadcast so every instance drops its in-process merged config.
+ */
+const configCacheInvalidation = createConfigCacheInvalidation({
+  clears: [
+    { label: 'clearOverrideCache', clear: clearOverrideCache },
+    { label: 'clearMcpConfigCache', clear: () => clearMcpConfigCache() },
+  ],
+  pubsub: createRedisConfigInvalidationPubSub({
+    useRedis: cacheConfig.USE_REDIS,
+    client: ioredisClient,
+    namespace: cacheConfig.REDIS_KEY_PREFIX,
+  }),
+});
+
+/**
+ * Invalidate the config caches an admin config mutation affects, on every instance.
  * @param {string} [tenantId] - Optional tenant ID to scope override cache clearing.
  */
-async function invalidateConfigCaches(tenantId) {
-  const results = await Promise.allSettled([
-    clearAppConfigCache(),
-    clearOverrideCache(tenantId),
-    invalidateCachedTools({ invalidateGlobal: true }),
-    clearMcpConfigCache(),
-  ]);
-  const labels = [
-    'clearAppConfigCache',
-    'clearOverrideCache',
-    'invalidateCachedTools',
-    'clearMcpConfigCache',
-  ];
-  for (let i = 0; i < results.length; i++) {
-    if (results[i].status === 'rejected') {
-      logger.error(`[invalidateConfigCaches] ${labels[i]} failed:`, results[i].reason);
-    }
-  }
+function invalidateConfigCaches(tenantId) {
+  return configCacheInvalidation.invalidate(tenantId);
 }
 
 module.exports = {

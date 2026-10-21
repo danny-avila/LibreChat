@@ -20,8 +20,15 @@ export type AdminConfig = {
   principalModel: PrincipalModel;
   priority: number;
   overrides: Partial<TCustomConfig>;
+  /** Dotted paths this principal suppresses from the layers below it. */
+  tombstones?: string[];
   isActive: boolean;
   configVersion: number;
+  /**
+   * `<_id>:<configVersion>`. Sent back as `expectedRevision`, it makes a write apply only to
+   * this exact document; `absent` instead means "only if the principal has no document".
+   */
+  revision?: string;
   tenantId?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -35,9 +42,56 @@ export type AdminConfigResponse = {
   config: AdminConfig;
 };
 
+/** A write the server had nothing to apply for; `revision` is the stored document's, if any. */
+export type AdminConfigNoopResponse = {
+  message: string;
+  revision: string | null;
+};
+
+/** 409: the stored document is not at the `expectedRevision` the write named. */
+export type AdminConfigConflictResponse = {
+  error: string;
+  code: 'CONFIG_VERSION_CONFLICT';
+  /** The revision now stored, or `null` when the principal has no document. */
+  currentRevision: string | null;
+};
+
 export type AdminConfigDeleteResponse = {
   success: boolean;
 };
+
+/* ── Admin API request types ────────────────────────────────────────── */
+
+/**
+ * Where a field write lands: a dotted `fieldPath`, which cannot name a key that contains a dot,
+ * or the path's `segments`, which can (`['endpoints', 'bedrock', 'inferenceProfiles',
+ * 'us.anthropic.claude-sonnet-4-5']`). Segments are 1 to 32 non-empty strings, none starting with
+ * `$` or naming `__*`, `constructor` or `prototype`. A segment with a dot is refused (400
+ * `CONFIG_PATH_INVALID`, reason `dotted_segment`) in tombstones, in `mcpServers`, `mcpConfig` and
+ * `langfuse`, and wherever it would split a registered secret's location. DELETE `/fields` takes
+ * `segments` as a JSON-encoded array in the query string.
+ */
+export type AdminConfigFieldTarget =
+  | { fieldPath: string; segments?: never }
+  | { segments: string[]; fieldPath?: never };
+
+/** Optional write precondition: `absent`, or a `revision` the config API returned. */
+export type AdminConfigWritePrecondition = {
+  /** A mismatch answers 409 `CONFIG_VERSION_CONFLICT`; a malformed value 400. */
+  expectedRevision?: string;
+};
+
+/** PATCH `/:principalType/:principalId/fields` */
+export type AdminConfigPatchRequest = AdminConfigWritePrecondition & {
+  entries: Array<AdminConfigFieldTarget & { value: unknown }>;
+  priority?: number;
+};
+
+/** POST `/:principalType/:principalId/fields/tombstone` */
+export type AdminConfigTombstoneRequest = AdminConfigWritePrecondition &
+  AdminConfigFieldTarget & {
+    priority?: number;
+  };
 
 /* ── Audit log taxonomy ─────────────────────────────────────────────── */
 

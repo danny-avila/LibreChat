@@ -347,3 +347,46 @@ those namespaces before opening the transaction.
 This sweep exists because every incompatibility found so far was invisible
 until someone thought to look for its class; here the engine adjudicates
 whatever each method emits, known class or not.
+
+## Admin config overrides — key encoding (2026-10-21)
+
+Admin config override documents (`configs.overrides`) are free-form JSON whose
+record keys legitimately contain `.` (Bedrock inference profiles such as
+`us.anthropic.claude-sonnet-4-5`, Azure model names such as `gpt-4.1`, MIME
+patterns, header names) and can start with `$`. MongoDB 5+ stores such field
+names but cannot address them in an update; DocumentDB, Cosmos DB (MongoDB
+API) and FerretDB restrict them further. Whether DocumentDB 5.0 and Cosmos
+accept dotted names inside a Mixed subdocument was never adjudicated live.
+
+The question no longer needs an answer. Config persistence goes through the
+portable store contract (`src/app/store.ts`, conformance suite
+`src/app/conformance.ts`), and the Mongoose binding (`src/methods/config.ts`)
+writes every document whole with plain `$set`, after reversibly
+percent-escaping `%`, `.`, `$` and NUL in every object key
+(`src/methods/encoding.ts`). The engine never sees a dotted or `$`-prefixed
+field name, so DocumentDB and Cosmos are covered by the encoding rather than
+by their field-name rules. Values are never rewritten.
+
+- Documents carry `keyEncoding: 1` once encoded. Older documents have no
+  marker and are read verbatim; their next write re-encodes them. No
+  migration is required.
+- No dotted-path `$set`/`$unset` or `$pull`/`$addToSet` touches `overrides` or
+  `tombstones`; every mutation is a pure transform followed by one
+  compare-and-swap on `{_id, configVersion}`, which every engine supports.
+- Pre-release check on a real cluster: run the conformance runner
+  (`misc/ferretdb/configStore.ferretdb.spec.ts`, any MongoDB-compatible URI in
+  `FERRETDB_URI`) against DocumentDB 5.0 and Cosmos. It passes 24/24 against
+  mongod 8.2 and mongodb-memory-server; FerretDB and the managed engines were
+  not available when this was written.
+- The runner is destructive: it deletes every document in the target
+  database's `configs` collection before each case and drops the collection
+  at teardown. Give it a throwaway database on the cluster (for example
+  `.../config_store_test`), never a database a deployment uses. It refuses to
+  start when `configs` already holds documents.
+- Rollback and mixed versions: an instance without the encoding reads an
+  encoded key literally. Only keys containing `.`, `$` or `%` change at rest;
+  every other key is stored as is. On such an instance a dotted key (a Bedrock
+  inference profile stored as `us%2Eanthropic%2Eclaude-sonnet-4-5`) no longer
+  matches, and a legacy key containing `%` reads as `%25…` once any write has
+  re-encoded its document. After a rollback, re-enter the affected values, or
+  restore `configs` from a backup taken before the upgrade.
