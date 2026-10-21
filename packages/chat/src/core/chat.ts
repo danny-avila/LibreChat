@@ -581,6 +581,8 @@ export class Chat {
   private conversationId: string;
   /** The newest generation a status read named, expired or not, below which a read is stale. */
   private newestRead?: number;
+  /** The newest pause this chat saw within its generation, which an older one of that generation trails. */
+  private newestPause?: { generationCreatedAt: number; createdAt: number };
 
   constructor(init: ChatInit) {
     this.id = init.id;
@@ -815,8 +817,11 @@ export class Chat {
        * it; a late stream is stopped by `dropLateStart`, but one that never arrives is the caller's.
        */
       const own: ChatStopResult = active.sent ? unaddressable : { status: 'stopped' };
-      if (detached && this.detached === detached && !this.active) {
-        /** The cancelled retry never took over the dropped generation, which this stop also ends. */
+      if (detached && this.detached === detached) {
+        /**
+         * The cancelled retry never took over the dropped generation, which this stop also ends,
+         * even when a turn its completion callback started is preparing meanwhile.
+         */
         const result = await this.stopDetached(detached);
         return active.sent ? own : this.orUnaddressed(result);
       }
@@ -1220,10 +1225,11 @@ export class Chat {
       /** A status read before the answer landed reports a pause this chat already resumed. */
       return;
     }
-    if (this.isStaleRead(generationCreatedAt)) {
+    if (this.isStaleRead(generationCreatedAt) || this.isOlderPause(action, generationCreatedAt)) {
       return;
     }
     this.newestRead = generationCreatedAt;
+    this.seePause(action, generationCreatedAt);
     const dropped = this.detached?.target.generationCreatedAt;
     if (this.detached && (dropped == null || generationCreatedAt > dropped)) {
       /**
@@ -1647,6 +1653,7 @@ export class Chat {
         /** A reconnect replays the same pause; decisions already made for it still stand. */
         this.decisions.clear();
       }
+      this.seePause(event.data, this.generationCreatedAt);
       this.action = event.data;
       this.notify();
     } else if (event.type === 'final') {
@@ -1857,6 +1864,24 @@ export class Chat {
     return seen.some((known) => known != null && generationCreatedAt < known);
   }
 
+  /** Whether `action` came before a pause this chat already saw in the same generation. */
+  private isOlderPause(action: Agents.PendingAction, generationCreatedAt: number): boolean {
+    const newest = this.newestPause;
+    return (
+      newest != null &&
+      newest.generationCreatedAt === generationCreatedAt &&
+      action.createdAt < newest.createdAt
+    );
+  }
+
+  /** Records a pause of `generationCreatedAt` as the newest seen when no later one was. */
+  private seePause(action: Agents.PendingAction, generationCreatedAt: number | undefined): void {
+    if (generationCreatedAt == null || this.isOlderPause(action, generationCreatedAt)) {
+      return;
+    }
+    this.newestPause = { generationCreatedAt, createdAt: action.createdAt };
+  }
+
   /** Adopts the conversation the server created for a chat started under `new`; a real id stays. */
   private learnConversation(conversationId: string | null | undefined): void {
     if (
@@ -1918,6 +1943,8 @@ export class Chat {
         this.lifetime.signal,
       );
       this.resumed.add(action.actionId);
+      /** The answer names the conversation, which a chat started under `new` adopts either way. */
+      this.learnConversation(result.conversationId);
       /** A pause stopped or replaced while the request was in flight is no longer this one's. */
       if (this.action?.actionId !== action.actionId) {
         return;

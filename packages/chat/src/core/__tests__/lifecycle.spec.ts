@@ -1918,3 +1918,102 @@ describe('Chat status reads out of order', () => {
     await expect(h.chat.stop()).resolves.toEqual({ status: 'idle' });
   });
 });
+
+describe('Chat answers, successors and pause order', () => {
+  it('(7) an answer given while the stream stays attached carries its conversation into the next turn', async () => {
+    const prepared: string[] = [];
+    const h = createHarness({
+      id: 'new',
+      prepareRequest: (request) => {
+        prepared.push(request.chatId);
+        return {
+          payload: { ...payload, conversationId: null } as unknown as TPayload,
+          messages: [userMessage, placeholder],
+          responseMessageId: 'response-1',
+        };
+      },
+    });
+    h.transport.resume.mockResolvedValue({
+      streamId: createdUnder,
+      conversationId: createdUnder,
+      status: 'resuming',
+    });
+    const stream = createStream({ streamId: createdUnder, generationCreatedAt: 100 });
+    attach(h, stream);
+    send(h);
+    await flush();
+    stream.push({
+      type: 'pending_action',
+      data: { ...askAction, conversationId: undefined },
+    } as ChatEvent);
+    await flush();
+    await h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' });
+    stream.push({ type: 'abort', data: {} } as ChatEvent);
+    await flush();
+
+    attach(h, createStream({ streamId: createdUnder, generationCreatedAt: 200 }));
+    send(h);
+    await flush();
+    expect(prepared[prepared.length - 1]).toBe(createdUnder);
+    expect(h.transport.sendMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ chatId: createdUnder }),
+    );
+  });
+
+  it('(2) a stop of an unsent retry still ends the dropped generation when its callback starts a successor', async () => {
+    let prepared = 0;
+    let started = false;
+    const h = createHarness({
+      prepareRequest: () => {
+        prepared += 1;
+        if (prepared > 1) {
+          return new Promise<never>(() => undefined);
+        }
+        return { payload, messages: [userMessage, placeholder], responseMessageId: 'response-1' };
+      },
+    });
+    await states.detached(h);
+    const chat = h.chat;
+    const unsubscribe = chat.subscribe(() => {
+      if (!started && prepared === 2 && chat.status === 'ready') {
+        started = true;
+        chat.sendMessage({ parts: [{ type: 'text', text: 'Successor' }] }).then(
+          () => undefined,
+          () => undefined,
+        );
+      }
+    });
+    send(h);
+    await flush();
+
+    await h.chat.stop();
+    unsubscribe();
+    expect(started).toBe(true);
+    expect(h.transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({ generationCreatedAt: 100 }),
+    );
+  });
+
+  it('(2) a status read of an older pause in the same generation keeps the newer one', async () => {
+    const h = createHarness();
+    h.chat.restorePendingAction({ ...askAction, createdAt: 3, actionId: 'action-b' }, 500);
+    h.chat.restorePendingAction({ ...askAction, createdAt: 2, actionId: 'action-a' }, 500);
+
+    expect(h.chat.pendingAction?.actionId).toBe('action-b');
+  });
+
+  it('(2) a status read of an older pause than the one the stream delivered keeps the streamed one', async () => {
+    const h = createHarness();
+    await states.attached(h);
+    h.stream?.push({
+      type: 'pending_action',
+      data: { ...askAction, createdAt: 3, actionId: 'action-b' },
+    } as ChatEvent);
+    await flush();
+    h.stream?.push(dropEvent);
+    await flush();
+    h.chat.restorePendingAction({ ...askAction, createdAt: 2, actionId: 'action-a' }, 100);
+
+    expect(h.chat.pendingAction?.actionId).toBe('action-b');
+  });
+});
