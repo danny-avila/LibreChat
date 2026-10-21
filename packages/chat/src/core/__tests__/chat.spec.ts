@@ -2785,14 +2785,15 @@ describe('Chat', () => {
       const { chat, stream, transport } = setup();
       transport.abort.mockImplementation(async () => {
         stream.push(finalEvent({ terminalStatus: 'aborted' }));
-        return { success: true, aborted: 'convo-7', pendingSteers: [steer] };
+        return { success: true, aborted: 'stream-7', pendingSteers: [steer] };
       });
       const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
       await flush();
 
+      /** The answer names the stopped stream; the conversation is the one the chat knows. */
       await expect(chat.stop()).resolves.toEqual({
         status: 'stopped',
-        conversationId: 'convo-7',
+        conversationId: 'convo-1',
         pendingSteers: [steer],
       });
       await sent;
@@ -3850,6 +3851,101 @@ describe('Chat', () => {
       ]);
       expect(transport.abort).toHaveBeenCalledTimes(1);
       expect(chat.status).toBe('ready');
+    });
+  });
+
+  describe('ids a turn reports', () => {
+    it('opens no reattachment a listener disposed the chat from on its reconnecting notice', async () => {
+      const { chat, transport } = setup();
+      chat.subscribe(() => {
+        if (chat.connection === 'reconnecting') {
+          chat.dispose();
+        }
+      });
+
+      await chat.resumeStream({ streamId: 'convo-1' }).catch(() => undefined);
+
+      expect(transport.reconnectToStream).not.toHaveBeenCalled();
+    });
+
+    it('opens no replacement a listener disposed the chat from on its reconnecting notice', async () => {
+      const { chat, transport } = setup(
+        {},
+        {
+          sendMessages: jest.fn(async () => ({
+            status: 'replaced' as const,
+            generationProtocolVersion: 2,
+            conversationId: 'convo-1',
+            streamId: 'stream-2',
+            generationCreatedAt: 200,
+          })),
+        },
+      );
+      chat.subscribe(() => {
+        if (chat.connection === 'reconnecting') {
+          chat.dispose();
+        }
+      });
+
+      await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] }).catch(() => undefined);
+
+      expect(transport.reconnectToStream).not.toHaveBeenCalled();
+    });
+
+    it('settles an unframed stop under the chat, not under the stream id the answer names', async () => {
+      const { chat, stream, transport, onFinish } = setup();
+      transport.abort.mockResolvedValue({
+        success: true,
+        generationProtocolVersion: 2,
+        aborted: 'stream-9',
+        persistenceFailed: true,
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped', conversationId: 'convo-1' });
+
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          isSettled: true,
+          conversationId: 'convo-1',
+          reconcileReason: 'abort_persistence_failed',
+        }),
+      );
+    });
+
+    it('reports no response for a turn whose preparation failed', async () => {
+      const earlier: TMessage = { ...placeholder, messageId: 'earlier-1', text: 'Earlier' };
+      const { chat, onFinish } = setup({
+        state: createState([userMessage, earlier]),
+        prepareRequest: jest.fn(() => Promise.reject(new Error('Upload failed'))),
+      });
+
+      await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] }).catch(() => undefined);
+
+      expect(onFinish).toHaveBeenCalledTimes(1);
+      expect(onFinish).toHaveBeenCalledWith(
+        expect.objectContaining({ isError: true, message: undefined }),
+      );
+    });
+
+    it('reports no response for a turn stopped before its preparation finished', async () => {
+      const earlier: TMessage = { ...placeholder, messageId: 'earlier-1', text: 'Earlier' };
+      const { chat, onFinish } = setup({
+        state: createState([userMessage, earlier]),
+        prepareRequest: jest.fn(() => new Promise<never>(() => undefined)),
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+      await sent.catch(() => undefined);
+
+      expect(onFinish).toHaveBeenCalledWith(
+        expect.objectContaining({ isAbort: true, message: undefined }),
+      );
     });
   });
 });

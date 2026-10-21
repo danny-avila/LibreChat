@@ -214,6 +214,8 @@ type Generation = {
   stopAnswered?: Promise<void>;
   /** The stop in flight or confirmed, which a second stop joins instead of sending again. */
   stopping?: Promise<ChatAbortResult>;
+  /** A turn that ended before its preparation installed a response, so it has none to report. */
+  responseless?: boolean;
 };
 
 type DetachedGeneration = {
@@ -353,16 +355,16 @@ const isExpired = (action: Agents.PendingAction): boolean =>
  * What a stop hands back to the host. Steers come back only from a stop that ended the run: one
  * that settled first leaves them to its own terminal frame, and an unsaved one has none to trust.
  */
-const getStopResult = (result: ChatAbortResult): ChatStopResult => {
+const getStopResult = (result: ChatAbortResult, conversationId?: string): ChatStopResult => {
   if (!isStreamAbort(result)) {
     /** An Assistants run's answer carries the conversation, which a first turn's server created. */
-    const conversationId = result?.conversation.conversationId ?? undefined;
-    return { status: 'stopped', ...(conversationId != null && { conversationId }) };
+    const created = result?.conversation.conversationId ?? undefined;
+    return { status: 'stopped', ...(created != null && { conversationId: created }) };
   }
   const ended = !result.settled && !result.persistenceFailed;
   return {
     status: 'stopped',
-    ...(result.aborted != null && { conversationId: result.aborted }),
+    ...(conversationId != null && { conversationId }),
     ...(ended && result.pendingSteers && { pendingSteers: result.pendingSteers }),
   };
 };
@@ -653,6 +655,10 @@ export class Chat {
         this.clearAction();
       }
       this.setConnection('reconnecting');
+      if (active.controller.signal.aborted) {
+        /** A listener of that notification stopped or disposed the chat; nothing is opened. */
+        throw active.controller.signal.reason;
+      }
       const stream = await openUntilAborted(
         this.init.transport.reconnectToStream({
           ...request,
@@ -757,7 +763,7 @@ export class Chat {
       generation.stopped = true;
       this.stoppedGeneration = target.generationCreatedAt ?? this.stoppedGeneration;
       if (isStreamAbort(result)) {
-        generation.stoppedConversationId = result.aborted;
+        generation.stoppedConversationId = this.stoppedConversationId(generation, result);
       }
       if (isStreamAbort(result) && result.settled) {
         generation.settledAs = result.terminalStatus ?? 'complete';
@@ -805,7 +811,7 @@ export class Chat {
     } else {
       this.notify();
     }
-    return getStopResult(result);
+    return getStopResult(result, generation.stoppedConversationId);
   }
 
   /**
@@ -857,6 +863,22 @@ export class Chat {
     });
   }
 
+  /**
+   * The conversation a stop that named its stream ended. The answer names only the stream, so the
+   * generation's known conversation wins; a first turn no frame named yet falls back to that
+   * stream id, which a resumable server keys by the conversation it created.
+   */
+  private stoppedConversationId(
+    generation: Generation,
+    result: ChatStreamAbortResult,
+  ): string | undefined {
+    if (result.aborted == null) {
+      return undefined;
+    }
+    const known = generation.conversationId ?? this.id;
+    return known !== Constants.NEW_CONVO ? known : result.aborted;
+  }
+
   /** `conversationId:responseMessageId` of a run with no resumable stream (Assistants). */
   private abortKey(generation: Generation): string | undefined {
     const conversationId = generation.conversationId ?? this.id;
@@ -902,47 +924,43 @@ export class Chat {
     /** The dropped generation owns the chat only while no newer request does, such as a retry. */
     const owns = () => this.detached === detached && !this.active;
     if (this.disposed || !owns()) {
-      return getStopResult(result);
+      return getStopResult(result, generation.stoppedConversationId);
     }
     if (result && 'runMessages' in result) {
       await this.mergeRunMessages(result.runMessages, owns);
       if (!owns()) {
         /** A newer generation took over while the merge waited its turn. */
-        return getStopResult(result);
+        return getStopResult(result, generation.stoppedConversationId);
       }
     }
     this.detached = undefined;
     this.action = undefined;
     this.decisions.clear();
-    if (this.publishUnframedStop(result, generation.responseId, generation.responseUnknown)) {
-      return getStopResult(result);
+    if (this.publishUnframedStop(result, generation)) {
+      return getStopResult(result, generation.stoppedConversationId);
     }
     if (this.error === detached.error) {
       this.init.state.error = undefined;
       this.init.state.status = 'ready';
     }
     this.notify();
-    return getStopResult(result);
+    return getStopResult(result, generation.stoppedConversationId);
   }
 
   /**
    * Reports a stop whose end no attached stream will frame: one the run had already settled, or
    * one the server could not save. The host reloads what the server kept. Returns whether it did.
    */
-  private publishUnframedStop(
-    result: ChatAbortResult,
-    responseId: string | undefined,
-    responseUnknown?: boolean,
-  ): boolean {
+  private publishUnframedStop(result: ChatAbortResult, generation: Generation): boolean {
     if (!isStreamAbort(result) || (!result.settled && !result.persistenceFailed)) {
       return false;
     }
     const outcome = getStopOutcome({
       settledAs: result.settled ? (result.terminalStatus ?? 'complete') : undefined,
       persistenceFailed: result.persistenceFailed,
-      stoppedConversationId: result.aborted,
+      stoppedConversationId: generation.stoppedConversationId,
     });
-    this.publish(outcome, responseId, responseUnknown);
+    this.publish(outcome, generation.responseId, generation.responseUnknown);
     return true;
   }
 
@@ -968,12 +986,14 @@ export class Chat {
       return this.endStopped(active, result);
     }
     if (this.disposed || this.action?.actionId !== action.actionId) {
-      return getStopResult(result);
+      return getStopResult(result, generation.stoppedConversationId);
     }
     this.action = undefined;
     this.decisions.clear();
-    if (this.publishUnframedStop(result, undefined)) {
-      return getStopResult(result);
+    if (
+      this.publishUnframedStop(result, { stoppedConversationId: generation.stoppedConversationId })
+    ) {
+      return getStopResult(result, generation.stoppedConversationId);
     }
     if (this.status === 'error') {
       /** The stop confirmed the end a dropped connection left unknown. */
@@ -981,7 +1001,7 @@ export class Chat {
       this.init.state.status = 'ready';
     }
     this.notify();
-    return getStopResult(result);
+    return getStopResult(result, generation.stoppedConversationId);
   }
 
   /** The conversation the paused generation's record names, which a frame may have assigned. */
@@ -1192,7 +1212,7 @@ export class Chat {
     if (this.action) {
       throw new Error('A paused generation is waiting for a decision; answer or stop it first');
     }
-    const active = createActiveRequest();
+    const active = createActiveRequest({ responseless: true });
     this.active = active;
     this.unaddressed = false;
     this.generationCreatedAt = undefined;
@@ -1208,6 +1228,7 @@ export class Chat {
         active.controller.signal,
       );
       active.generation.responseId = prepared.responseMessageId;
+      active.generation.responseless = undefined;
       if (prepared.messages) {
         const optimistic = prepared.messages;
         await this.executor.run(() => {
@@ -1264,6 +1285,9 @@ export class Chat {
         active.generation.responseId = undefined;
         active.generation.responseUnknown = true;
         this.setConnection('reconnecting');
+        if (signal.aborted) {
+          throw signal.reason;
+        }
         stream = await openUntilAborted(
           this.init.transport.reconnectToStream({
             ...options,
@@ -1487,7 +1511,8 @@ export class Chat {
       this.action = undefined;
       this.decisions.clear();
     }
-    this.publish(outcome, active.generation.responseId, active.generation.responseUnknown);
+    const { responseId, responseUnknown, responseless } = active.generation;
+    this.publish(outcome, responseId, responseUnknown, responseless);
   }
 
   /** Records the ids and pause an event reports for the request it arrived on. */
@@ -1514,7 +1539,12 @@ export class Chat {
   }
 
   /** Publishes a turn's terminal state, then tells the host how it ended. */
-  private publish(outcome: Outcome, responseId: string | undefined, responseUnknown = false): void {
+  private publish(
+    outcome: Outcome,
+    responseId: string | undefined,
+    responseUnknown = false,
+    responseless = false,
+  ): void {
     const { state } = this.init;
     const status: ChatStatus = outcome.kind === 'error' ? 'error' : 'ready';
     if (state.connection !== 'idle') {
@@ -1528,7 +1558,7 @@ export class Chat {
     let message: TMessage | undefined;
     if (responseId !== undefined) {
       message = messages.find((stored) => stored.messageId === responseId);
-    } else if (!responseUnknown) {
+    } else if (!responseUnknown && !responseless) {
       message = messages[messages.length - 1];
     }
     const { settled } = outcome;
