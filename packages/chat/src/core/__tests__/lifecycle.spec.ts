@@ -2002,6 +2002,25 @@ describe('Chat answers, successors and pause order', () => {
     expect(h.chat.pendingAction?.actionId).toBe('action-b');
   });
 
+  it('(2) a reconnect replaying an older pause of the generation keeps the newer restored one', async () => {
+    const h = createHarness();
+    h.chat.restorePendingAction({ ...askAction, createdAt: 3, actionId: 'action-b' }, 500);
+    const replay = createStream({ streamId: 'convo-1', generationCreatedAt: 500 });
+    h.transport.reconnectToStream.mockResolvedValueOnce(replay);
+    h.chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 500 }).then(
+      () => undefined,
+      () => undefined,
+    );
+    await flush();
+    replay.push({
+      type: 'pending_action',
+      data: { ...askAction, createdAt: 2, actionId: 'action-a' },
+    } as ChatEvent);
+    await flush();
+
+    expect(h.chat.pendingAction?.actionId).toBe('action-b');
+  });
+
   it('(2) an expired newer pause in the same generation clears the older one held', async () => {
     const h = createHarness();
     h.chat.restorePendingAction({ ...askAction, createdAt: 2, actionId: 'action-a' }, 500);

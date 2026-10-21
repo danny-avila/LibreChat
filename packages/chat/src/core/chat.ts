@@ -1628,9 +1628,14 @@ export class Chat {
   /** Applies one event; returns the turn's outcome when the event ends it. */
   private apply(event: ChatEvent): Outcome | undefined {
     /** A pause that expired or that this chat already resumed is stale, so no card is drawn for it. */
+    /** A replay of a pause older than one already seen in this generation is stale too. */
+    const older =
+      event.type === 'pending_action' &&
+      this.generationCreatedAt != null &&
+      this.isOlderPause(event.data, this.generationCreatedAt);
     const stale =
       event.type === 'pending_action' &&
-      (isExpired(event.data) || this.resumed.has(event.data.actionId));
+      (isExpired(event.data) || this.resumed.has(event.data.actionId) || older);
     if (!stale) {
       const applyEvent = this.init.applyEvent ?? defaultApplyEvent;
       applyEvent(event, {
@@ -1648,7 +1653,11 @@ export class Chat {
       if (this.action?.actionId === event.data.actionId) {
         this.clearAction();
       }
-    } else if (event.type === 'pending_action' && !this.resumed.has(event.data.actionId)) {
+    } else if (
+      event.type === 'pending_action' &&
+      !this.resumed.has(event.data.actionId) &&
+      !older
+    ) {
       /** A pause this chat already resumed is stale when a reattached stream replays it. */
       /** A live pause is the generation running, however its first frame arrives. */
       this.markStreaming();
