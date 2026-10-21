@@ -1899,6 +1899,15 @@ describe('Chat status reads out of order', () => {
     expect(h.chat.pendingAction).toBeUndefined();
   });
 
+  it('(2) an expired status read still marks its newer generation, so an older read stays stale', async () => {
+    const h = createHarness();
+    h.chat.restorePendingAction(askAction, 500);
+    h.chat.restorePendingAction({ ...askAction, actionId: 'action-600', expiresAt: 1 }, 600);
+    h.chat.restorePendingAction({ ...askAction, actionId: 'action-550' }, 550);
+
+    expect(h.chat.pendingAction).toBeUndefined();
+  });
+
   it('(5) an idle stop answers idle without reading a resume selection that throws', async () => {
     const h = createHarness({
       resumeSelection: () => {

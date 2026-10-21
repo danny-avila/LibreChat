@@ -579,6 +579,8 @@ export class Chat {
    * a chat started under `new`. Every later start, stop and reattachment addresses that one.
    */
   private conversationId: string;
+  /** The newest generation a status read named, expired or not, below which a read is stale. */
+  private newestRead?: number;
 
   constructor(init: ChatInit) {
     this.id = init.id;
@@ -1221,6 +1223,7 @@ export class Chat {
     if (this.isStaleRead(generationCreatedAt)) {
       return;
     }
+    this.newestRead = generationCreatedAt;
     const dropped = this.detached?.target.generationCreatedAt;
     if (this.detached && (dropped == null || generationCreatedAt > dropped)) {
       /**
@@ -1849,6 +1852,7 @@ export class Chat {
       ...this.endedGenerations,
       this.detached?.target.generationCreatedAt,
       this.generationCreatedAt,
+      this.newestRead,
     ];
     return seen.some((known) => known != null && generationCreatedAt < known);
   }
