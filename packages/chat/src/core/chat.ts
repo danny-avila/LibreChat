@@ -1410,6 +1410,8 @@ export class Chat {
         const generationCreatedAt = result.generationCreatedAt ?? undefined;
         /** The target is recorded before anyone hears of the reconnect, so a stop can reach it. */
         this.generationCreatedAt = generationCreatedAt;
+        /** The replacement it names, so a stream of yet another generation gets its own record. */
+        active.inheritedGeneration = generationCreatedAt;
         active.reattach = { streamId: result.streamId };
         if (
           generationCreatedAt != null &&
@@ -1417,7 +1419,6 @@ export class Chat {
         ) {
           /** The dropped generation itself: its record carries the stop still in flight for it. */
           active.generation = dropped.generation;
-          active.inheritedGeneration = generationCreatedAt;
         } else {
           /** The replacement's response is not this turn's placeholder; its first frame names it. */
           active.generation.responseId = undefined;

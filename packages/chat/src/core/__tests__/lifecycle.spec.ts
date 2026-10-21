@@ -1,13 +1,20 @@
 import { StepEvents } from 'librechat-data-provider';
 import type { Agents, TMessage, TPayload, ChatEvent } from 'librechat-data-provider';
 import type {
+  ChatInit,
   ChatState,
   ChatStopResult,
   ChatFinishResult,
   ChatPrepareRequest,
   ChatPreparedRequest,
 } from '../chat';
-import type { ChatStream, ChatStatus, ChatTransport, ChatConnection } from '../types';
+import type {
+  ChatStream,
+  ChatStatus,
+  ChatTransport,
+  ChatConnection,
+  ChatAbortResult,
+} from '../types';
 import { Chat } from '../chat';
 
 /**
@@ -1142,6 +1149,8 @@ describe('Chat invariants', () => {
   it.each([
     ['a stream answer', { success: true }],
     ['an Assistants answer', { final: true, conversation: {}, runMessages: [] }],
+    ['an Assistants answer finding no run', null],
+    ['a gone answer', Object.assign(new Error('Not Found'), { response: { status: 404 } })],
   ])(
     '(1) a stop answered with %s after its reattachment moved to another generation leaves that one running',
     async (_label, answer) => {
@@ -1149,7 +1158,11 @@ describe('Chat invariants', () => {
       await states.detached(h);
       let answerStop: (() => void) | undefined;
       h.transport.abort.mockImplementation(
-        () => new Promise((resolve) => (answerStop = () => resolve(answer as ChatAbortResult))),
+        () =>
+          new Promise((resolve, reject) => {
+            answerStop = () =>
+              answer instanceof Error ? reject(answer) : resolve(answer as ChatAbortResult);
+          }),
       );
       const other = createStream({ streamId: 'convo-1', generationCreatedAt: 300 });
       let openOther: (() => void) | undefined;
