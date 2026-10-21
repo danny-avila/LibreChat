@@ -1837,19 +1837,20 @@ export class Chat {
 
   /**
    * Whether a status read names a generation this chat already knows is over or superseded: one
-   * that ended, or one older than the generation whose stream dropped or whose pause it holds.
+   * that ended, or one older than any generation the chat has seen, including one that since ended.
    * Every consumer of a status read checks this before changing anything.
    */
   private isStaleRead(generationCreatedAt: number): boolean {
     if (this.endedGenerations.has(generationCreatedAt)) {
       return true;
     }
-    const dropped = this.detached?.target.generationCreatedAt;
-    if (dropped != null && generationCreatedAt < dropped) {
-      return true;
-    }
-    const paused = this.action ? this.generationCreatedAt : undefined;
-    return paused != null && generationCreatedAt < paused;
+    /** Every generation this chat saw, running or over, so an older read stays stale after it ends. */
+    const seen = [
+      ...this.endedGenerations,
+      this.detached?.target.generationCreatedAt,
+      this.generationCreatedAt,
+    ];
+    return seen.some((known) => known != null && generationCreatedAt < known);
   }
 
   /** Adopts the conversation the server created for a chat started under `new`; a real id stays. */

@@ -1889,6 +1889,16 @@ describe('Chat status reads out of order', () => {
     },
   );
 
+  it('(2) a status read older than a generation that already finished is stale', async () => {
+    const h = createHarness();
+    await states.attached(h);
+    h.stream?.push(finalEvent());
+    await flush();
+
+    h.chat.restorePendingAction(askAction, 50);
+    expect(h.chat.pendingAction).toBeUndefined();
+  });
+
   it('(5) an idle stop answers idle without reading a resume selection that throws', async () => {
     const h = createHarness({
       resumeSelection: () => {
