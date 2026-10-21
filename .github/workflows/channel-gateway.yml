@@ -1,0 +1,39 @@
+name: Channel gateway
+
+on:
+  pull_request:
+    paths:
+      - 'packages/channel-gateway/**'
+      - 'packages/data-provider/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/channel-gateway.yml'
+  push:
+    branches: [dev]
+    paths:
+      - 'packages/channel-gateway/**'
+      - 'packages/data-provider/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/channel-gateway.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gateway:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24.16.0'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run build:data-provider
+      - run: npm run build:channel-gateway
+      - run: npm run typecheck --workspace @librechat/channel-gateway
+      - run: npm test --workspace @librechat/channel-gateway
+      - run: docker build -f packages/channel-gateway/Dockerfile -t librechat-channel-gateway .

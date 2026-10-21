@@ -5,13 +5,13 @@ its native agent view, thread sessions, working status, and stop button.
 
 ## Run the gateway
 
-Use Node 24 and the same application build for LibreChat and the gateway.
-Build the packages from the repository root:
+The gateway is a standalone app in `packages/channel-gateway`. It has its own
+entry point and Docker image. It calls LibreChat over authenticated HTTP and
+does not load the LibreChat API package. Use Node 24. Build from the repository root:
 
 ```sh
 npm run build:data-provider
-npm run build:data-schemas
-npm run build:api
+npm run build:channel-gateway
 ```
 
 Add this section to `librechat.yaml`. Use the public HTTPS addresses for your deployment.
@@ -39,6 +39,18 @@ credential. Do not log request bodies, authorization headers, or link URLs.
 ```sh
 npm run channel-gateway
 ```
+
+The command reads `.env` in `packages/channel-gateway`. For a container, build
+the separate image from the repository root and pass only its service settings:
+
+```sh
+docker build -f packages/channel-gateway/Dockerfile -t librechat-channel-gateway .
+docker run --init --env-file gateway.env -p 3091:3091 librechat-channel-gateway
+```
+
+`gateway.env` contains `CHANNEL_GATEWAY_API_URL` and `CHANNEL_GATEWAY_TOKEN`.
+Use a reachable HTTPS LibreChat address from the container. The image contains
+only the gateway bundle and Node. It needs no LibreChat image or database secrets.
 
 The gateway has a `/health` endpoint. Run one gateway process for this MVP,
 particularly for Socket Mode. The worker stores its event receipts and outgoing

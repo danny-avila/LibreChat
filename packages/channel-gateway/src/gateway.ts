@@ -1,20 +1,19 @@
 import { z } from 'zod';
 import express from 'express';
-import { channelsConfigSchema, channelEnvelopeSchema } from 'librechat-data-provider';
+import {
+  channelsConfigSchema,
+  channelEnvelopeSchema,
+  createSlackClient,
+  SlackRequestError,
+} from 'librechat-data-provider/channels';
 import type {
   ChannelGatewayInstallation,
   ChannelGatewaySettings,
   ChannelWork,
-} from 'librechat-data-provider';
+} from 'librechat-data-provider/channels';
 import type { Server } from 'node:http';
 import type { SlackCallback } from './slack';
-import {
-  normalizeSlackMessage,
-  verifySlackSignature,
-  slackCallbackSchema,
-  createSlackClient,
-  SlackRequestError,
-} from './slack';
+import { normalizeSlackMessage, verifySlackSignature, slackCallbackSchema } from './slack';
 
 interface GatewayDependencies {
   apiUrl: string;

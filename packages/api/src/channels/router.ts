@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Router } from 'express';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { getTenantId, tenantStorage } from '@librechat/data-schemas';
+import { createSlackClient } from 'librechat-data-provider/channels';
 import {
   channelConnectionSchema,
   channelEnvelopeSchema,
@@ -20,7 +21,6 @@ import { createAuthIdentityContext, isOpenIDSessionIdentityMatch } from '~/utils
 import { createChannelCipher, channelHash, channelSecretMatches } from './crypto';
 import { isTwoFactorEnrollmentRequired } from '~/auth/twoFactor';
 import { createSlackManifest } from './manifest';
-import { createSlackClient } from './slack';
 import { isEnabled } from '~/utils';
 
 interface ChannelRequest extends Request {

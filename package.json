@@ -42,7 +42,7 @@
     "create-error-convo": "node config/create-error-convo.js",
     "update-banner": "node config/update-banner.js",
     "delete-banner": "node config/delete-banner.js",
-    "channel-gateway": "node api/server/channel-gateway.js",
+    "channel-gateway": "npm start --workspace @librechat/channel-gateway",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
     "backend:inspect": "cross-env NODE_ENV=production node --inspect --expose-gc api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
@@ -61,7 +61,7 @@
     "build:client": "cd client && npm run build",
     "build:client-package": "cd packages/client && npm run build",
     "build:chat": "cd packages/chat && npm run build",
-    "build:packages": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && npm run build:chat",
+    "build:packages": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && npm run build:chat && npm run build:channel-gateway",
     "build": "npx turbo run build",
     "build:safe": "npx turbo run build --no-daemon",
     "frontend": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && npm run build:chat && cd client && npm run build",
@@ -164,7 +164,8 @@
     "migrate:code-file-duplicates:batch": "node config/migrate-code-file-duplicates.js --batch-size=50",
     "lighthouse": "npm run e2e:prepare && npm run lighthouse:run",
     "lighthouse:run": "playwright test --config=e2e/playwright.config.lighthouse.ts",
-    "lighthouse:regression": "cross-env LIGHTHOUSE_REGRESSION=serial-reads npm run lighthouse:run"
+    "lighthouse:regression": "cross-env LIGHTHOUSE_REGRESSION=serial-reads npm run lighthouse:run",
+    "build:channel-gateway": "npm run build --workspace @librechat/channel-gateway"
   },
   "repository": {
     "type": "git",

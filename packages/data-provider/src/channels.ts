@@ -96,3 +96,5 @@ export interface ChannelLinkInfo {
   teamId: string;
   senderId: string;
 }
+
+export { createSlackClient, SlackRequestError } from './channelSlack';

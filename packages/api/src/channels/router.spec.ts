@@ -12,9 +12,9 @@ import {
 import type { IUser, ChannelInstallation } from '@librechat/data-schemas';
 import type { ChannelEnvelope } from 'librechat-data-provider';
 import type { RequestHandler } from 'express';
+import { startChannelGateway } from '../../../channel-gateway/src';
 import { createChannelCipher, channelHash } from './crypto';
 import { createChannelsRouter } from './router';
-import { startChannelGateway } from './gateway';
 
 let mongo: MongoMemoryServer;
 let store: ReturnType<typeof createChannelStore>;

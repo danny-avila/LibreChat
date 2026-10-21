@@ -1,0 +1,33 @@
+{
+  "name": "@librechat/channel-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone channel gateway for LibreChat",
+  "type": "commonjs",
+  "main": "dist/index.cjs",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsdown && tsc --emitDeclarationOnly",
+    "start": "node --env-file-if-exists=.env dist/main.cjs",
+    "typecheck": "tsc --noEmit",
+    "test": "jest --runInBand"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "librechat-data-provider": "*",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@babel/preset-env": "^7.29.5",
+    "@babel/preset-typescript": "^7.21.0",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.2",
+    "@types/node": "^24.12.4",
+    "jest": "^30.2.0",
+    "tsdown": "0.22.2",
+    "typescript": "^5.9.3"
+  }
+}
