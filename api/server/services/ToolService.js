@@ -48,6 +48,7 @@ const {
   findShadowedServerNames,
   isNormalizationSensitiveName,
   createExpectedMCPToolsUnavailableError,
+  createMCPToolsFailureContext,
   isFatalAgentInitializationError,
   codeExecutionAuthHeaders,
   createLaneGitRecorder,
@@ -1402,7 +1403,7 @@ async function loadToolDefinitionsWrapper({
     }
   }
 
-  const oauthResults = [];
+  const mcpToolsFailure = createMCPToolsFailureContext(agent.name);
   if (pendingOAuthServers.size > 0 && (res || streamId)) {
     const serverNames = Array.from(pendingOAuthServers);
     logger.info(
@@ -1438,7 +1439,7 @@ async function loadToolDefinitionsWrapper({
           mcpApps,
         });
 
-        oauthResults.push({ oauthRequired: result?.oauthRequired });
+        mcpToolsFailure.recordOAuthResult(result);
         if (result?.availableTools && Object.keys(result.availableTools).length > 0) {
           rememberMCPAvailableTools(serverName, result.availableTools);
           logger.info('[Tool Definitions] MCP OAuth completed; tools available');
@@ -1498,7 +1499,7 @@ async function loadToolDefinitionsWrapper({
   }
 
   if (hasExpectedMCPTools && mcpResolution?.resolvedToolCount === 0) {
-    throw createExpectedMCPToolsUnavailableError(agent.name, undefined, oauthResults);
+    throw mcpToolsFailure.createError();
   }
 
   /** @type {Record<string, string>} */

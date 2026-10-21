@@ -6,6 +6,7 @@ import {
   stripLangChainTroubleshootingUrl,
 } from 'librechat-data-provider';
 import type { SubagentResolutionFailureHandler } from '@librechat/agents';
+import type { MCPReinitializeResponse } from 'librechat-data-provider';
 import {
   MCPErrorCodes,
   isMCPInitializationError,
@@ -44,15 +45,28 @@ export class AgentMCPToolsUnavailableError extends Error {
 export function createExpectedMCPToolsUnavailableError(
   agentName?: string,
   cause?: unknown,
-  oauthResults: readonly { oauthRequired?: boolean }[] = [],
 ): AgentMCPToolsUnavailableError {
-  return new AgentMCPToolsUnavailableError(
-    agentName,
-    cause,
-    oauthResults.some((result) => result.oauthRequired === true)
-      ? 'authentication_required'
-      : 'tools_unavailable',
-  );
+  return new AgentMCPToolsUnavailableError(agentName, cause);
+}
+
+/** Request-owned OAuth outcomes; legacy loaders only forward results and request the error. */
+export function createMCPToolsFailureContext(agentName?: string): {
+  recordOAuthResult(result?: Pick<MCPReinitializeResponse, 'oauthRequired'>): void;
+  createError(cause?: unknown): AgentMCPToolsUnavailableError;
+} {
+  let authenticationRequired = false;
+  return {
+    recordOAuthResult(result) {
+      authenticationRequired ||= result?.oauthRequired === true;
+    },
+    createError(cause) {
+      return new AgentMCPToolsUnavailableError(
+        agentName,
+        cause,
+        authenticationRequired ? 'authentication_required' : 'tools_unavailable',
+      );
+    },
+  };
 }
 
 /** Only host-owned typed failures may select the SDK's fixed model-facing messages. */
@@ -70,6 +84,8 @@ export const reportSubagentResolutionFailure = (
       cause = 'authentication_required';
     } else if (error instanceof MCPAuthenticationRefreshError) {
       cause = 'tools_unavailable';
+    } else if (error instanceof OboTokenResolutionError) {
+      cause = error.retryable ? 'tools_unavailable' : 'authentication_required';
     }
   }
   logger.warn('[Subagent] Resolution failed', {
