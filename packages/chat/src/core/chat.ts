@@ -378,21 +378,13 @@ const getSettledAs = (result: ChatAbortResult): ChatStreamAbortResult['terminalS
     : undefined;
 };
 
-type PauseOrder = Pick<Agents.PendingAction, 'createdAt' | 'actionId'>;
+type PauseOrder = Pick<Agents.PendingAction, 'createdAt'>;
 
 /**
- * Orders two pauses of one generation: by when the server created them, then by action id, so
- * two created in the same millisecond still order the same way for every status read and replay.
+ * Orders two pauses of one generation by when the server created them. Action ids are random, so
+ * two created in the same millisecond tie, and the one this chat received last stands.
  */
-const comparePauses = (a: PauseOrder, b: PauseOrder): number => {
-  if (a.createdAt !== b.createdAt) {
-    return a.createdAt - b.createdAt;
-  }
-  if (a.actionId === b.actionId) {
-    return 0;
-  }
-  return a.actionId < b.actionId ? -1 : 1;
-};
+const comparePauses = (a: PauseOrder, b: PauseOrder): number => a.createdAt - b.createdAt;
 
 /** A pause past its expiry, whose resume the server refuses. */
 const isExpired = (action: Agents.PendingAction): boolean =>
@@ -994,6 +986,13 @@ export class Chat {
         /** The start it reported lost is now stopped; a newer lost start keeps its own marker. */
         if (this.unaddressed === active) {
           this.unaddressed = undefined;
+        }
+        const failed = active.disconnected;
+        if (!this.disposed && !this.active && failed && this.error === failed) {
+          /** The failure that start reported is resolved, unless a newer turn owns the chat. */
+          this.init.state.error = undefined;
+          this.init.state.status = 'ready';
+          this.notify();
         }
       },
       (error: unknown) =>
@@ -1914,11 +1913,7 @@ export class Chat {
     if (generationCreatedAt == null || this.isOlderPause(action, generationCreatedAt)) {
       return;
     }
-    this.newestPause = {
-      generationCreatedAt,
-      createdAt: action.createdAt,
-      actionId: action.actionId,
-    };
+    this.newestPause = { generationCreatedAt, createdAt: action.createdAt };
   }
 
   /** Adopts the conversation the server created for a chat started under `new`; a real id stays. */
@@ -2005,6 +2000,33 @@ export class Chat {
         );
       }
       this.clearAction();
+    } catch (error) {
+      const ambiguous = (error as ChatTransportError).code === 'ERR_NETWORK';
+      if (
+        ambiguous &&
+        !this.active &&
+        !this.disposed &&
+        this.action?.actionId === action.actionId
+      ) {
+        /**
+         * The answer may have reached the server, which then runs the generation again. It stays
+         * addressable through a reattachment, which finds the continuation, the pause or the end.
+         */
+        this.reattach(
+          {
+            streamId: action.streamId,
+            generationCreatedAt,
+            conversationId: action.conversationId ?? this.pausedConversationId(),
+          },
+          true,
+        ).catch((failure: unknown) =>
+          this.callHost(
+            this.init.onError,
+            failure instanceof Error ? failure : new Error(String(failure)),
+          ),
+        );
+      }
+      throw error;
     } finally {
       if (this.resuming === action.actionId) {
         this.resuming = undefined;

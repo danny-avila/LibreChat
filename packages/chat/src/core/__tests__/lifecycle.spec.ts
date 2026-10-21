@@ -847,11 +847,12 @@ const teardown: Array<[keyof typeof states, keyof typeof events, Expected]> = [
     'dispose',
     { status: 'submitted', connection: 'idle', finishes: 0, turn: 'settled', abort: NONE },
   ],
+  /** The late start is stopped on the server, which resolves the failure its lost answer reported. */
   [
     'starting',
     'lateAnswer',
     {
-      status: 'error',
+      status: 'ready',
       finishes: 1,
       last: dropped,
       turn: 'settled',
@@ -2050,7 +2051,7 @@ describe('Chat answers, successors and pause order', () => {
     ['a status read', 'read'],
     ['a replay', 'replay'],
   ])(
-    '(2) two pauses created in the same millisecond order the same way through %s',
+    '(2) of two pauses created in the same millisecond, the one received last stands through %s',
     async (_label, via) => {
       const h = createHarness();
       const first = { ...askAction, createdAt: 3, actionId: 'action-a' };
@@ -2070,9 +2071,42 @@ describe('Chat answers, successors and pause order', () => {
         await flush();
       }
 
-      expect(h.chat.pendingAction?.actionId).toBe('action-b');
+      expect(h.chat.pendingAction?.actionId).toBe('action-a');
     },
   );
+
+  it('(2) an answer that fails on the network reattaches to the paused generation', async () => {
+    const h = createHarness();
+    await states.restored(h);
+    h.transport.resume.mockRejectedValueOnce(networkError());
+    const continued = createStream({ streamId: 'convo-1', generationCreatedAt: 500 });
+    h.transport.reconnectToStream.mockResolvedValueOnce(continued);
+
+    await expect(h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' })).rejects.toThrow();
+    await flush();
+    expect(h.transport.reconnectToStream).toHaveBeenCalledWith(
+      expect.objectContaining({ generationCreatedAt: 500 }),
+    );
+    continued.push(stepEvent);
+    await flush();
+    expect(h.chat.status).toBe('streaming');
+    h.transport.abort.mockResolvedValueOnce({ success: true });
+    continued.push(finalEvent({ terminalStatus: 'aborted' }));
+    await flush();
+  });
+
+  it('(2) an answer the server refuses keeps the pause answerable without reattaching', async () => {
+    const h = createHarness();
+    await states.restored(h);
+    h.transport.resume.mockRejectedValueOnce(
+      Object.assign(new Error('Conflict'), { response: { status: 409 } }),
+    );
+
+    await expect(h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' })).rejects.toThrow();
+    await flush();
+    expect(h.transport.reconnectToStream).not.toHaveBeenCalled();
+    expect(h.chat.pendingAction?.actionId).toBe('action-1');
+  });
 
   it('(2) an expired newer pause in the same generation clears the older one held', async () => {
     const h = createHarness();
