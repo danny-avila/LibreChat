@@ -113,6 +113,33 @@ describe('ReactQueryChatState', () => {
     expect(hostListeners.size).toBe(0);
   });
 
+  it('counts writes to a host store that bypass the cache, same array included', () => {
+    const queryClient = new QueryClient();
+    const stored = [message('a')];
+    const hostListeners = new Set<() => void>();
+    const state = new ReactQueryChatState({
+      queryClient,
+      key: 'convo-1',
+      read: () => stored,
+      write: () => undefined,
+      subscribe: (notify) => {
+        hostListeners.add(notify);
+        return () => hostListeners.delete(notify);
+      },
+    });
+    const unsubscribe = state.subscribe(() => undefined);
+    const versions = [state.version];
+
+    state.replaceMessages(stored);
+    versions.push(state.version);
+    stored[0] = { ...stored[0], text: 'changed in place' };
+    hostListeners.forEach((notify) => notify());
+    versions.push(state.version);
+
+    expect(new Set(versions).size).toBe(3);
+    unsubscribe();
+  });
+
   it('reports a write that creates its cache entry once', async () => {
     const queryClient = new QueryClient();
     const state = new ReactQueryChatState({ queryClient, key: 'convo-1' });

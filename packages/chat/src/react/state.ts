@@ -38,6 +38,8 @@ export class ReactQueryChatState implements ChatState {
   private readonly options: ReactQueryChatStateOptions;
   /** Set while the chat's own write runs, whose change the chat already announced. */
   private writing = false;
+  /** Writes to a host store that never reach the key's cache entry, which `version` also counts. */
+  private revision = 0;
 
   constructor(options: ReactQueryChatStateOptions) {
     this.options = options;
@@ -60,7 +62,9 @@ export class ReactQueryChatState implements ChatState {
    * on the same array, so a snapshot keyed by this count still sees that write.
    */
   get version(): number {
-    return this.options.queryClient.getQueryCache().get(this.queryHash)?.state.dataUpdateCount ?? 0;
+    const cached = this.options.queryClient.getQueryCache().get(this.queryHash)
+      ?.state.dataUpdateCount;
+    return (cached ?? 0) + this.revision;
   }
 
   replaceMessages(messages: TMessage[]): void {
@@ -69,6 +73,7 @@ export class ReactQueryChatState implements ChatState {
     try {
       if (write) {
         write(messages);
+        this.revision += 1;
         return;
       }
       queryClient.setQueryData<TMessage[]>([QueryKeys.messages, key], messages);
@@ -103,7 +108,10 @@ export class ReactQueryChatState implements ChatState {
         deliver();
       }
     });
-    const unsubscribeHost = this.options.subscribe?.(deliver);
+    const unsubscribeHost = this.options.subscribe?.(() => {
+      this.revision += 1;
+      deliver();
+    });
     return () => {
       active = false;
       unsubscribe();
