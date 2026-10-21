@@ -1,6 +1,6 @@
 const { createChannelsRouter, createChannelContext, isEnabled } = require('@librechat/api');
 const { createChannelStore, logger } = require('@librechat/data-schemas');
-const { writerMongoose } = require('~/db/connect');
+const mongoose = require('mongoose');
 const { requireJwtAuth, requireTermsAcceptance, checkBan } = require('~/server/middleware');
 const { checkRemoteAgentsFeature, checkAgentPermission } = require('./agents/middleware');
 const { OpenAIChatCompletionController } = require('~/server/controllers/agents/openai');
@@ -10,7 +10,7 @@ const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSe
 const db = require('~/models');
 
 module.exports = createChannelsRouter({
-  store: createChannelStore(writerMongoose),
+  store: createChannelStore(mongoose),
   loadConfig: loadCustomConfig.bind(null, false),
   env: process.env,
   browserAuth: requireJwtAuth,
