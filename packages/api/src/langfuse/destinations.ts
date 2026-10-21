@@ -5,6 +5,7 @@ import {
   isLangfuseFanoutEnabled,
   isLangfuseTenantExportEnabled,
   isLangfuseTracingEnabled,
+  isLangfuseTraceAllowed,
   isLangfuseTraceSampled,
   usesLangfuseMultiTenantRouting,
 } from './policy';
@@ -366,7 +367,8 @@ export type LangfuseTraceMessageFields = {
 /**
  * The sampling record a response stores for its run's trace. `runId` names the
  * run when it is not the response's own id, as for a failed turn's error row;
- * it is then stored too, so feedback and the trace viewer follow that run.
+ * it is then stored too, so feedback and the trace viewer follow that run. A
+ * temporary turn's run was not traced unless the deployment opts in.
  */
 export async function getLangfuseTraceMessageFields(
   appConfig: AppConfig | undefined,
@@ -374,14 +376,19 @@ export async function getLangfuseTraceMessageFields(
   {
     centralTraceExportEnabled = true,
     runId = messageId,
-  }: Pick<LangfuseScoreDestinationOptions, 'centralTraceExportEnabled'> & { runId?: string } = {},
+    isTemporary,
+  }: Pick<LangfuseScoreDestinationOptions, 'centralTraceExportEnabled'> & {
+    runId?: string;
+    isTemporary?: boolean;
+  } = {},
 ): Promise<{
   langfuseSampled: boolean;
   langfuseDestinationIds?: string[];
   langfuseRunId?: string;
 }> {
   const traceId = traceIdForMessage(runId);
-  const langfuseSampled = isLangfuseTraceSampled(traceId);
+  const langfuseSampled =
+    isLangfuseTraceAllowed(appConfig, isTemporary) && isLangfuseTraceSampled(traceId);
   return {
     langfuseSampled,
     langfuseDestinationIds: await getLangfuseTraceDestinationIds(
@@ -406,13 +413,14 @@ export async function getFailedTurnTraceFields(
     messageId,
     runId,
     runCreated,
-  }: { messageId: string; runId?: string | null; runCreated: boolean },
+    isTemporary,
+  }: { messageId: string; runId?: string | null; runCreated: boolean; isTemporary?: boolean },
 ): Promise<LangfuseTraceMessageFields> {
   if (!runCreated || typeof runId !== 'string' || runId.length === 0) {
     return {};
   }
   try {
-    return await getLangfuseTraceMessageFields(appConfig, messageId, { runId });
+    return await getLangfuseTraceMessageFields(appConfig, messageId, { runId, isTemporary });
   } catch (error) {
     logger.warn('[langfuse] Could not record the failed run trace:', error);
     return {};

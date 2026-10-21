@@ -290,10 +290,6 @@ export interface ConversationMethods {
     conversationId: string,
     fieldsToSelect?: string | null,
   ): Promise<IConversation | null>;
-  deleteNullOrEmptyConversations(): Promise<{
-    conversations: { deletedCount?: number };
-    messages: { deletedCount?: number };
-  }>;
   saveConvo(
     ctx: {
       userId: string;
@@ -2311,38 +2307,6 @@ export function createConversationMethods(
     } catch (error) {
       logger.error('[getConvoRetention] Error getting conversation retention fields', error);
       throw new Error('Error getting conversation retention fields');
-    }
-  }
-
-  /**
-   * Deletes conversations and messages with null or empty IDs.
-   */
-  async function deleteNullOrEmptyConversations() {
-    try {
-      const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      const { deleteMessages } = getMessageMethods();
-      const filter = {
-        $or: [
-          { conversationId: null },
-          { conversationId: '' },
-          { conversationId: { $exists: false } },
-        ],
-      };
-
-      const result = await Conversation.deleteMany(filter);
-      const messageDeleteResult = await deleteMessages(filter);
-
-      logger.info(
-        `[deleteNullOrEmptyConversations] Deleted ${result.deletedCount} conversations and ${messageDeleteResult.deletedCount} messages`,
-      );
-
-      return {
-        conversations: result,
-        messages: messageDeleteResult,
-      };
-    } catch (error) {
-      logger.error('[deleteNullOrEmptyConversations] Error deleting conversations', error);
-      throw new Error('Error deleting conversations with null or empty conversationId');
     }
   }
 
@@ -4574,7 +4538,6 @@ export function createConversationMethods(
   return {
     getConvoFiles,
     searchConversation,
-    deleteNullOrEmptyConversations,
     stampForcedRetention,
     saveConvo,
     setConvoPinned,

@@ -2,8 +2,9 @@ import { createElement } from 'react';
 import { join } from 'path';
 import { readFileSync } from 'fs';
 import { cleanup, fireEvent, render } from '@testing-library/react';
+import { resolveTheme, themeAppearanceProperties } from 'librechat-data-provider';
+import type { IThemeAppearance, IThemeRGB, ThemeMode } from 'librechat-data-provider';
 import type { ReactElement } from 'react';
-import type { IThemeAppearance, IThemeRGB, ThemeMode } from '../types';
 import {
   Table,
   TableBody,
@@ -13,7 +14,6 @@ import {
   TableRow,
 } from '../../components/Table';
 import { OGDialog, OGDialogContent, OGDialogTitle } from '../../components/OriginalDialog';
-import { resolveTheme, themeAppearanceProperties } from '../registry';
 import { Tabs, TabsList, TabsTrigger } from '../../components/Tabs';
 import { Checkbox } from '../../components/Checkbox';
 import { Button } from '../../components/Button';
@@ -505,10 +505,10 @@ const appearanceDecisions: Partial<Record<keyof IThemeAppearance, AppearanceDeci
       '0: Click UI draws its select list at var(--radix-popover-trigger-width) (select-popover-content), with no minimum of its own',
   },
   listMaxHeight: {
-    value: '24rem',
-    status: 'mismatch',
+    value: 'none',
+    status: 'match',
     reason:
-      "24rem: Click UI caps its select list only at var(--radix-popover-content-available-height), which a length role cannot express, so the cap keeps LibreChat's; tracked under the not-expressible list",
+      'none: Click UI caps its select list only at var(--radix-popover-content-available-height), the cap the Select list keeps under every value',
   },
   iconButtonSizeSm: {
     value: '1.5rem',
@@ -610,6 +610,7 @@ const appearanceSources: Partial<Record<keyof IThemeAppearance, string>> = {
   menuRadius: 'click.genericMenu.panel.radii.all',
   popoverRadius: 'click.genericMenu.panel.radii.all',
   menuPanelRadius: 'click.genericMenu.panel.radii.all',
+  compactPanelRadius: 'click.genericMenu.panel.radii.all',
   composerActionRadius: 'click.button.radii.all',
   authControlRadius: 'click.button.radii.all',
   inlineCodeWeight: 'typography.font.weights.2',
@@ -1429,15 +1430,7 @@ interface NotExpressible {
  * close it. Remove an entry when the change that closes it lands, and pin its decisions to what
  * they then measure.
  */
-const notExpressible: Record<string, NotExpressible> = {
-  'Select list height': {
-    decisions: {},
-    appearance: ['listMaxHeight'],
-    reason:
-      "Click UI caps its select list only at var(--radix-popover-content-available-height), which a length role cannot express, so listMaxHeight keeps LibreChat's 24rem",
-    issue: 'https://github.com/berry-13/LibreChat/issues/282',
-  },
-};
+const notExpressible: Record<string, NotExpressible> = {};
 
 type Verdict = 'match' | 'near' | 'deviation' | 'not expressible';
 

@@ -44,7 +44,6 @@ interface TrayProps {
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  isRTL: boolean;
   index: number;
   isPastedTextFile: (file: ExtendedFile) => boolean;
   isPasteActionPending: (file: ExtendedFile) => boolean;
@@ -70,7 +69,6 @@ function Tray({
   files,
   setFiles,
   setFilesLoading,
-  isRTL,
   index,
   isPastedTextFile,
   isPasteActionPending,
@@ -131,7 +129,6 @@ function Tray({
       <FileRow
         files={files}
         setFiles={setFiles}
-        isRTL={isRTL}
         abortUpload={abortUpload}
         setFilesLoading={setFilesLoading}
         index={index}

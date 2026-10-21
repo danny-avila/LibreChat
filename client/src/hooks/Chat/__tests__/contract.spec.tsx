@@ -7,7 +7,7 @@ import type { TConversation, TModelSpec } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ChatSettings } from '../contract';
 import { ChatSettingsContext, defaultChatSettings } from '~/Providers/ChatSettingsContext';
-import useTemporaryChat from '../useTemporaryChat';
+import useTemporaryChat from '~/hooks/Conversations/useTemporaryChat';
 import useChatHelpers from '../useChatHelpers';
 import useTokenLimits from '../useTokenLimits';
 import store from '~/store';
@@ -35,9 +35,9 @@ jest.mock('~/hooks/useNewConvo', () => ({
   default: () => ({ newConversation: jest.fn() }),
 }));
 
-jest.mock('~/hooks/Chat/useSteerConvert', () => ({
-  __esModule: true,
-  default: () => jest.fn(),
+jest.mock('@librechat/chat/react', () => ({
+  ...jest.requireActual('@librechat/chat/react'),
+  useSteerConvert: () => jest.fn(),
 }));
 
 function createWrapper(

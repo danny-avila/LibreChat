@@ -1,20 +1,21 @@
 import { ContentTypes, ToolCallTypes, getToolTimingDurations } from 'librechat-data-provider';
 import type { SubagentUpdateEvent, ToolTimingStamps } from 'librechat-data-provider';
+import { strongDirection } from './direction';
 
 /**
  * Client-side helpers for rendering the live `SubagentCall` UI while
- * `ON_SUBAGENT_UPDATE` events stream in. Exports two pure transforms:
+ * `ON_SUBAGENT_UPDATE` events stream in. Exports two incremental folds:
  *
- *   - `aggregateSubagentContent` — folds the raw event stream into an
- *     ordered array of TEXT / THINK / TOOL_CALL parts so the dialog can
- *     render the child's activity through the same `<Part />` pipeline
- *     the parent conversation uses. Frontend-only: on the backend we
- *     fold directly into the SDK's `createContentAggregator` in the
- *     `ON_SUBAGENT_UPDATE` handler, so no shared aggregator is needed.
- *   - `buildSubagentTickerLines` — short, user-readable status lines
- *     for the collapsed ticker. Aggregates message/reasoning deltas
- *     into running previews, surfaces tool-call lifecycle with
- *     args/output snippets, drops low-signal events.
+ *   - `foldSubagentEvent` folds one raw event into an ordered array of
+ *     TEXT / THINK / TOOL_CALL parts so the dialog can render the child's
+ *     activity through the same `<Part />` pipeline the parent conversation
+ *     uses. Frontend-only: on the backend we fold directly into the SDK's
+ *     `createContentAggregator` in the `ON_SUBAGENT_UPDATE` handler, so no
+ *     shared aggregator is needed.
+ *   - `foldSubagentEventIntoTicker` folds one raw event into the short,
+ *     user-readable status lines for the collapsed ticker. Aggregates
+ *     message/reasoning deltas into running previews, surfaces tool-call
+ *     lifecycle with args/output snippets, drops low-signal events.
  */
 
 type RunStepData = {
@@ -178,6 +179,11 @@ export interface SubagentAggregatorState {
   idlessTextPhase?: AssistantTextPhase;
   /** `tool_call.id` → its index in `contentParts` for O(1) updates. */
   toolCallIndexById: Record<string, number>;
+  /**
+   * Tool calls bounding dropped from `contentParts`, with their scope, so the
+   * files they saved keep an owner after their parts are gone. Bounded too.
+   */
+  evictedToolCalls?: Array<{ id: string; agentId?: string; stepId?: string }>;
 }
 
 /** Initial empty aggregator state. */
@@ -665,20 +671,6 @@ export function reconcileSubagentToolTimings(
 }
 
 /**
- * Batch wrapper around {@link foldSubagentEvent}: folds an entire event
- * stream in one go and returns just the parts. Kept for tests and for
- * legacy call-sites that don't need cursor state.
- */
-export function aggregateSubagentContent(events: SubagentUpdateEvent[]): SubagentContentPart[] {
-  let parts: SubagentContentPart[] = [];
-  let state = initSubagentAggregatorState();
-  for (const event of events) {
-    ({ parts, state } = foldSubagentEvent(parts, state, event));
-  }
-  return parts;
-}
-
-/**
  * Discriminated-union ticker line. Keeping the label tokens + body/snippets
  * separate from their rendered strings lets the caller localize at
  * render time (hooks can't live in a pure aggregator) and — more
@@ -719,11 +711,22 @@ export function initSubagentTickerState(): SubagentTickerState {
 }
 
 /** Generous tail window so wide ticker containers aren't half-empty.
- *  The component applies CSS tail-ellipsis (`dir="rtl"` +
- *  `text-overflow: ellipsis`) so narrow viewports clip from the oldest
- *  side; we deliberately DON'T prepend a data-level `…` on top of that
- *  CSS ellipsis — double-eliding would render a stray dot character
- *  right next to the "Writing:" / "Reasoning:" label. */
+ *  The component applies CSS tail-ellipsis: the outer box runs opposite to the
+ *  text's own direction (see `tailOverflowDirection`) so narrow viewports clip
+ *  from the oldest side; we deliberately DON'T prepend a data-level `…` on top
+ *  of that CSS ellipsis, which would render a stray dot next to the
+ *  "Writing:" / "Reasoning:" label. */
+/** Direction of the first strongly directional character, as the browser's `dir="auto"` resolves it. */
+export const textDirection = (text: string): 'ltr' | 'rtl' => strongDirection(text) ?? 'ltr';
+
+/**
+ * Direction for the outer box of a tail-ellipsis line. The newest text sits at the
+ * end of the content, so the box runs opposite to the content and the overflow
+ * (and the ellipsis) lands on the oldest side.
+ */
+export const tailOverflowDirection = (text: string): 'ltr' | 'rtl' =>
+  textDirection(text) === 'rtl' ? 'ltr' : 'rtl';
+
 const PREVIEW_MAX_CHARS = 300;
 const PREVIEW_BUFFER_MAX_CHARS = PREVIEW_MAX_CHARS * 4;
 const truncatePreview = (input: string): string => {
@@ -896,17 +899,4 @@ export function foldSubagentEventIntoTicker(
   }
 
   return state;
-}
-
-/**
- * Batch wrapper around {@link foldSubagentEventIntoTicker} — folds an
- * entire event stream in one shot. Kept for tests and any legacy
- * consumer that prefers a one-call API.
- */
-export function buildSubagentTickerLines(events: SubagentUpdateEvent[]): SubagentTickerLine[] {
-  let state = initSubagentTickerState();
-  for (const event of events) {
-    state = foldSubagentEventIntoTicker(state, event);
-  }
-  return state.lines;
 }

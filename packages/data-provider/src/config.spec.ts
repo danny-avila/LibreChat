@@ -69,6 +69,41 @@ describe('host-side file edit limits', () => {
   });
 });
 
+describe('skill deletion worker config', () => {
+  it('defaults and accepts deployment-specific sweep timing', () => {
+    expect(configSchema.parse({ version: '1.0' }).skillDeletion).toEqual({
+      finalizationEnabled: false,
+      sweepIntervalMs: 60_000,
+      claimLeaseMs: 120_000,
+      batchSize: 100,
+      recheckIntervalMs: 3_600_000,
+    });
+    expect(
+      configSchema.parse({ version: '1.0', skillDeletion: { claimLeaseMs: 180_000 } })
+        .skillDeletion,
+    ).toEqual({
+      finalizationEnabled: false,
+      sweepIntervalMs: 60_000,
+      claimLeaseMs: 180_000,
+      batchSize: 100,
+      recheckIntervalMs: 3_600_000,
+    });
+    expect(
+      configSchema.parse({ version: '1.0', skillDeletion: { finalizationEnabled: true } })
+        .skillDeletion.finalizationEnabled,
+    ).toBe(true);
+  });
+
+  it('rejects invalid sweep timing', () => {
+    expect(
+      configSchema.safeParse({ version: '1.0', skillDeletion: { sweepIntervalMs: 999 } }).success,
+    ).toBe(false);
+    expect(
+      configSchema.safeParse({ version: '1.0', skillDeletion: { recheckIntervalMs: 999 } }).success,
+    ).toBe(false);
+  });
+});
+
 describe('stream keepalive interval', () => {
   it('defaults to 25 seconds and accepts 0 to disable', () => {
     expect(agentsEndpointSchema.parse({}).streamKeepaliveIntervalMs).toBe(25_000);

@@ -918,9 +918,3 @@ export function restoreCompactionSemanticIndexSnapshot(
     providedEntryCount: projection.providedEntryCount ?? entries.length,
   });
 }
-
-export function restoreCompactionSemanticIndex(
-  projection: ICompactionSemanticIndexProjection | null | undefined,
-): CompactionSemanticIndex | undefined {
-  return restoreCompactionSemanticIndexSnapshot(projection)?.entries;
-}

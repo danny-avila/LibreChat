@@ -27,7 +27,6 @@ import {
   resolveFailedTurnContent,
   resolveCheckpointMessage,
   resolveFinalizedCompactionTurn,
-  restoreCompactionSemanticIndex,
   restoreCompactionSemanticIndexSnapshot,
   stripUnusableSummaryParts,
   getLatestEventActorSummary,
@@ -83,7 +82,9 @@ describe('compaction semantic index continuation projection', () => {
         },
       ],
     });
-    expect(restoreCompactionSemanticIndex(projection)).toEqual(projection?.entries);
+    expect(restoreCompactionSemanticIndexSnapshot(projection)?.entries).toEqual(
+      projection?.entries,
+    );
   });
 
   it('preserves cumulative omission counts across JSON persistence', () => {
@@ -135,9 +136,9 @@ describe('compaction semantic index continuation projection', () => {
       providedEntryCount: 1,
     } as ICompactionSemanticIndexProjection;
 
-    expect(restoreCompactionSemanticIndex(malformed)).toBeUndefined();
-    expect(restoreCompactionSemanticIndex(oversized)).toBeUndefined();
-    expect(restoreCompactionSemanticIndex(corrupt)).toBeUndefined();
+    expect(restoreCompactionSemanticIndexSnapshot(malformed)?.entries).toBeUndefined();
+    expect(restoreCompactionSemanticIndexSnapshot(oversized)?.entries).toBeUndefined();
+    expect(restoreCompactionSemanticIndexSnapshot(corrupt)?.entries).toBeUndefined();
     expect(restoreCompactionSemanticIndexSnapshot(impossibleCount)).toBeUndefined();
     expect(createCompactionSemanticIndexProjection(oversized.entries)).toBeUndefined();
   });

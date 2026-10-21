@@ -7,6 +7,7 @@ const {
   createResetPasswordController,
   createAuthIdentityContext,
   createOpenIDRefreshOwnershipError,
+  createOpenIDResponseDelivery,
   isOpenIDRefreshOwnershipError,
   isOpenIDSessionMissingError,
   isOpenIDSessionIdentityMatch,
@@ -19,6 +20,7 @@ const {
   isTwoFactorEnrollmentRequired,
   getSafeErrorMetadata,
   sanitizeUserForAuthResponse,
+  clearSessionHintCookie,
 } = require('@librechat/api');
 const {
   requestPasswordReset,
@@ -45,12 +47,7 @@ const {
   refreshOpenIDUser,
   sendOpenIDAuthResponse,
 } = require('~/server/services/OpenIDRefreshRecovery');
-const {
-  assertOpenIDRefreshFlightDeliveryAvailable,
-  assertOpenIDRefreshSessionGenerationAvailable,
-  claimOpenIDRefreshFlightDelivery,
-  releaseOpenIDRefreshFlightDelivery,
-} = require('~/server/services/OpenIDRefreshFlight');
+const OpenIDRefreshFlight = require('~/server/services/OpenIDRefreshFlight');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
 /**
@@ -200,88 +197,10 @@ const getReusableOpenIDSessionToken = (openidTokens) => {
   return null;
 };
 
-const assertReusableOpenIDSessionGeneration = async (openidTokens) =>
-  assertOpenIDRefreshSessionGenerationAvailable({
-    key: openidTokens?.publicationFlightKey,
-    ownerId: openidTokens?.publicationFlightOwnerId,
-  });
-
-/**
- * Serializes response delivery for one durable OpenID publication generation. A logout that
- * reaches the same flight either tombstones it before this claim or waits for the response to
- * finish before returning. The send callback keeps the final authorization check adjacent to the
- * synchronous Express write while allowing callers to do slow preparation under the lease.
- */
-const withOpenIDResponseDelivery = async ({ res, openidTokens, context }, operation) => {
-  let delivery;
-  let responseSent = false;
-  let releaseStarted = false;
-  let listenersArmed = false;
-  const releaseDelivery = async () => {
-    if (!delivery || releaseStarted) {
-      return;
-    }
-    releaseStarted = true;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        await releaseOpenIDRefreshFlightDelivery(delivery);
-        return;
-      } catch (error) {
-        if (attempt === 3) {
-          logger.warn(`[${context}] Failed to release OpenID response delivery`, {
-            error: error instanceof Error ? error.message : error,
-          });
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-    }
-  };
-
-  try {
-    await assertReusableOpenIDSessionGeneration(openidTokens);
-    if (openidTokens?.publicationFlightKey && openidTokens?.publicationFlightOwnerId) {
-      const claimed = await claimOpenIDRefreshFlightDelivery({
-        key: openidTokens.publicationFlightKey,
-        ownerId: openidTokens.publicationFlightOwnerId,
-        createdAt: openidTokens.publicationFlightCreatedAt,
-      });
-      if (!claimed.deliveryId) {
-        throw new Error('OpenID response delivery claim returned no owner');
-      }
-      delivery = {
-        key: openidTokens.publicationFlightKey,
-        ownerId: openidTokens.publicationFlightOwnerId,
-        deliveryId: claimed.deliveryId,
-      };
-    }
-
-    const sendAuthorized = async (send) => {
-      if (delivery) {
-        await assertOpenIDRefreshFlightDeliveryAvailable(delivery);
-        if (!listenersArmed && typeof res.once === 'function') {
-          listenersArmed = true;
-          res.once('finish', () => void releaseDelivery());
-          res.once('close', () => void releaseDelivery());
-        }
-      } else {
-        await assertReusableOpenIDSessionGeneration(openidTokens);
-      }
-      const response = send();
-      responseSent = true;
-      if (delivery && typeof res.once !== 'function') {
-        await releaseDelivery();
-      }
-      return response;
-    };
-
-    return await operation(sendAuthorized);
-  } finally {
-    if (delivery && !responseSent) {
-      await releaseDelivery();
-    }
-  }
-};
+const withOpenIDResponseDelivery = createOpenIDResponseDelivery({
+  flight: OpenIDRefreshFlight,
+  logger,
+});
 
 const resetPasswordRequestController = async (req, res) => {
   try {
@@ -328,6 +247,7 @@ const refreshController = async (req, res) => {
       selectOpenIDRefreshToken(req.session?.openidTokens, parsedCookies);
 
     if (!refreshToken) {
+      clearSessionHintCookie(res);
       return res.status(200).send('Refresh token not provided');
     }
 
@@ -395,6 +315,7 @@ const refreshController = async (req, res) => {
         req.session?.openidTokens?.appUserId ??
         getValidOpenIDReuseCredential(parsedCookies, process.env.JWT_REFRESH_SECRET)?.userId;
       if (!refreshUserId) {
+        clearSessionHintCookie(res);
         return res.status(403).send('Invalid OpenID refresh token');
       }
 
@@ -402,6 +323,7 @@ const refreshController = async (req, res) => {
         getUserById(refreshUserId, AUTH_REFRESH_USER_PROJECTION),
       );
       if (!refreshUser) {
+        clearSessionHintCookie(res);
         return res.status(403).send('Invalid OpenID refresh token');
       }
 
@@ -442,6 +364,7 @@ const refreshController = async (req, res) => {
           logger.warn(
             `[refreshController] Redirecting to /login: error=${error ?? 'null'}, user=${user ? 'exists' : 'null'}`,
           );
+          clearSessionHintCookie(res);
           return res.status(401).redirect('/login');
         }
 
@@ -453,6 +376,7 @@ const refreshController = async (req, res) => {
               resolvedUserId: user._id.toString(),
             },
           );
+          clearSessionHintCookie(res);
           return res.status(401).redirect('/login');
         }
 
@@ -465,9 +389,7 @@ const refreshController = async (req, res) => {
             openidId: claims.sub,
             ...(openidIssuer ? { openidIssuer } : {}),
           });
-          logger.info(
-            `[refreshController] Updated user ${user.email} openidId (${reason}): ${user.openidId ?? 'null'} -> ${claims.sub}`,
-          );
+          logger.info(`[refreshController] Updated user ${user._id} openidId (${reason})`);
         }
 
         if (
@@ -539,6 +461,7 @@ const refreshController = async (req, res) => {
               getUserById(userId, AUTH_REFRESH_USER_PROJECTION),
             );
             if (!bridgeUser) {
+              clearSessionHintCookie(res);
               return res.status(403).send('Invalid OpenID refresh token');
             }
 
@@ -598,6 +521,7 @@ const refreshController = async (req, res) => {
         }
       }
 
+      clearSessionHintCookie(res);
       return res.status(403).send('Invalid OpenID refresh token');
     }
   }

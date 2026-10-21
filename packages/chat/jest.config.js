@@ -6,8 +6,14 @@ module.exports = {
   coverageReporters: ['text', 'cobertura'],
   maxWorkers,
   restoreMocks: true,
-  // sse.js ships ES modules only, so jest transforms it like the app's own sources.
-  transformIgnorePatterns: ['/node_modules/(?!sse\\.js/)'],
+  // sse.js and some of @librechat/client's dependencies ship ES modules only, so jest transforms
+  // them like the package's own sources.
+  transformIgnorePatterns: [
+    '/node_modules/(?!(sse\\.js|@dicebear|lucide|lucide-react|morphicons|@ariakit/(react-components|react-utils|react-store|components|store|utils))/)',
+  ],
+  // The component library's resolver: its ESM-only @ariakit packages need the `import` condition.
+  resolver: '<rootDir>/../client/jest.resolver.cjs',
   // The core runs without a DOM; a React spec opts into jsdom with a docblock.
   testEnvironment: 'node',
+  setupFilesAfterEnv: ['@testing-library/jest-dom/extend-expect'],
 };

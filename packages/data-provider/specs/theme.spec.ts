@@ -1,4 +1,9 @@
-import { collectThemeIssues } from '../src/theme';
+import {
+  themeOwnerKey,
+  parseSessionHint,
+  formatSessionHint,
+  collectThemeIssues,
+} from '../src/theme';
 import { deploymentThemeSchema } from '../src/config';
 
 /** A deployment theme as `librechat.yaml` delivers it, with appearance only in the given modes. */
@@ -119,4 +124,23 @@ describe('field fill roles in a theme definition', () => {
     };
     expect(messages(newer)).toEqual([]);
   });
+});
+
+describe('session hint', () => {
+  it('round-trips an owner whose key carries the separator', () => {
+    const hint = { expires: 1791000000000, owner: themeOwnerKey('user~1', 'acme') };
+    expect(parseSessionHint(formatSessionHint(hint))).toEqual(hint);
+  });
+
+  it('names a tenantless owner with an empty tenant', () => {
+    expect(themeOwnerKey('user-1')).toBe(':user-1');
+    expect(themeOwnerKey('user-1', null)).toBe(':user-1');
+  });
+
+  it.each(['', '~:user-1', 'soon~:user-1', '1791000000000'])(
+    'rejects the malformed %p',
+    (value) => {
+      expect(parseSessionHint(value)).toBeUndefined();
+    },
+  );
 });

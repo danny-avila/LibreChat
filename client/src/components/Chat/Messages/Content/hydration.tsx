@@ -8,8 +8,8 @@ import {
 import type { FullToolCall, TMessageContentParts } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { ToolContentRequestContext, ToolContentPendingContext } from './disclosure';
+import { useMessagePartsHost } from '~/Providers/MessagePartsHostContext';
 import { useToolCallPartQuery } from '~/data-provider';
-import { useMessageContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 type ToolCallPart = Extract<TMessageContentParts, { type: ContentTypes.TOOL_CALL }>;
@@ -66,7 +66,7 @@ export function PreviewedToolCallPart({
   children: (part: TMessageContentParts) => ReactNode;
 }) {
   const localize = useLocalize();
-  const { messageId, conversationId, partIndex } = useMessageContext();
+  const { messageId, conversationId, partIndex } = useMessagePartsHost().useMessage();
   const [requested, setRequested] = useState(false);
   const request = useCallback(() => setRequested(true), []);
   const toolCall = part.tool_call as FullToolCall;
@@ -99,7 +99,7 @@ export function PreviewedToolCallPart({
         {children(effectivePart)}
       </ToolContentPendingContext.Provider>
       {requested && full == null && query.isError && (
-        <div role="alert" className="text-text-warning mb-2 flex items-center gap-2 pl-1 text-xs">
+        <div role="alert" className="text-text-warning mb-2 flex items-center gap-2 ps-1 text-xs">
           <span>{localize('com_ui_tool_content_error')}</span>
           <button
             type="button"
@@ -114,7 +114,7 @@ export function PreviewedToolCallPart({
         <div
           role="status"
           aria-live="polite"
-          className="text-text-secondary mb-2 flex items-center gap-1.5 pl-1 text-xs"
+          className="text-text-secondary mb-2 flex items-center gap-1.5 ps-1 text-xs"
         >
           <Spinner className="size-3" aria-hidden="true" />
           <span>{localize('com_ui_tool_content_loading')}</span>

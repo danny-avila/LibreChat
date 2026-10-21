@@ -2,6 +2,7 @@ import {
   AgentCapabilities,
   EModelEndpoint,
   chatProjectsConfigSchema,
+  configSchema,
   filtersConfigSchema,
   conversationListConfigSchema,
   toolCallPreviewsConfigSchema,
@@ -167,6 +168,7 @@ export const AppService = async (params?: {
   const memory = loadMemoryConfig(config.memory);
   const summarization = loadSummarizationConfig(config);
   const skillSync = loadSkillSyncConfig(config);
+  const skillDeletion = configSchema.shape.skillDeletion.parse(config.skillDeletion);
   const filteredTools = config.filteredTools;
   const includedTools = config.includedTools;
   const fileStrategy = (config.fileStrategy ?? configDefaults.fileStrategy) as
@@ -210,6 +212,7 @@ export const AppService = async (params?: {
     actions,
     balance,
     skillSync,
+    skillDeletion,
     webSearch,
     githubCompare: config.githubCompare,
     mcpSettings,

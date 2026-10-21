@@ -110,9 +110,7 @@ jest.mock('~/endpoints', () => ({
 }));
 
 jest.mock('~/files', () => ({
-  filterFilesByEndpointConfig: jest.fn(() => []),
   filterFilesByEndpointRuntimeConfig: jest.fn(() => []),
-  isLegacyFileUploadUX: jest.fn(() => false),
 }));
 
 jest.mock('~/prompts', () => ({

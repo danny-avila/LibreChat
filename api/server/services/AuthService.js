@@ -1,4 +1,3 @@
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
 const {
@@ -7,7 +6,12 @@ const {
   DEFAULT_SESSION_EXPIRY,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
 } = require('@librechat/data-schemas');
-const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
+const {
+  ErrorTypes,
+  SystemRoles,
+  errorsToString,
+  SESSION_HINT_COOKIE,
+} = require('librechat-data-provider');
 const {
   math,
   isEnabled,
@@ -21,12 +25,15 @@ const {
   shouldUseSecureCookie,
   setRefreshTokenCookie,
   setOpenIDMarkerCookies,
+  setLocalSessionCookies,
   clearCloudFrontCookies,
   normalizeExpiresIn,
   createOpenIDSessionIdentity,
   resolveAppConfigForUser,
   commitPasswordReset,
   getSafeErrorMetadata,
+  hashSecret,
+  compareSecret,
 } = require('@librechat/api');
 const {
   findUser,
@@ -207,6 +214,7 @@ const clearOpenIDAuthTokens = (req, res, userId, tenantId) => {
     'openid_id_token',
     'openid_user_id',
     'token_provider',
+    SESSION_HINT_COOKIE,
   ]) {
     res.clearCookie?.(name);
   }
@@ -248,11 +256,11 @@ const logoutUser = async (req, refreshToken) => {
 
 /**
  * Creates Token and corresponding Hash for verification
- * @returns {[string, string]}
+ * @returns {Promise<[string, string]>}
  */
-const createTokenHash = () => {
+const createTokenHash = async () => {
   const token = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString('hex');
-  const hash = bcrypt.hashSync(token, 10);
+  const hash = await hashSecret(token);
   return [token, hash];
 };
 
@@ -262,7 +270,7 @@ const createTokenHash = () => {
  * @returns {Promise<void>}
  */
 const sendVerificationEmail = async (user) => {
-  const [verifyToken, hash] = createTokenHash();
+  const [verifyToken, hash] = await createTokenHash();
   const email = user.email.toLowerCase();
 
   const verificationLink = `${
@@ -338,7 +346,7 @@ const verifyEmail = async (req) => {
     return new Error(invalidEmailVerificationMessage);
   }
 
-  const isValid = bcrypt.compareSync(token, emailVerificationData.token);
+  const isValid = await compareSecret(token, emailVerificationData.token);
 
   if (!isValid) {
     logger.warn(
@@ -411,7 +419,6 @@ const registerUser = async (user, additionalData = {}) => {
     // Tenant administrators must be provisioned through a trusted administrative flow.
     const isFirstRegisteredUser = !tenantId && (await countUsers()) === 0;
 
-    const salt = bcrypt.genSaltSync(10);
     const newUserData = {
       provider: provider ?? 'local',
       email,
@@ -419,7 +426,7 @@ const registerUser = async (user, additionalData = {}) => {
       name,
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
-      password: bcrypt.hashSync(password, salt),
+      password: await hashSecret(password),
       ...trustedAdditionalData,
     };
 
@@ -523,7 +530,7 @@ const requestPasswordReset = async (req) => {
     deleteTokens({ userId: user._id, email: null, identifier: null, type: null }),
   ]);
 
-  const [resetToken, hash] = createTokenHash();
+  const [resetToken, hash] = await createTokenHash();
 
   await createToken({
     userId: user._id,
@@ -574,8 +581,8 @@ const resetPassword = async (userId, token, password) => {
       getUserById,
       updateUser,
       deleteTokens,
-      compareToken: (candidate, storedHash) => bcrypt.compareSync(candidate, storedHash),
-      hashPassword: (plain) => bcrypt.hashSync(plain, 10),
+      compareToken: compareSecret,
+      hashPassword: hashSecret,
     },
     { userId, token, password },
   );
@@ -719,17 +726,11 @@ const setAuthTokens = async (userId, res, _session = null, req = null) => {
     const sessionExpiry = math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY);
     const token = await generateToken(user, sessionExpiry);
 
-    res.cookie('refreshToken', refreshToken, {
+    setLocalSessionCookies(res, {
+      refreshToken,
       expires: new Date(refreshTokenExpires),
-      httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
-    });
-    res.cookie('token_provider', 'librechat', {
-      expires: new Date(refreshTokenExpires),
-      httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
+      userId: user?._id ?? userId,
+      tenantId: user?.tenantId,
     });
 
     setCloudFrontAuthCookies(req, res, user, { userId: user?._id ?? userId });
@@ -929,6 +930,7 @@ const setOpenIDAuthTokens = (
 
     setOpenIDMarkerCookies(res, {
       userId,
+      tenantId,
       expires: expirationDate,
       refreshExpiryMs: expiryInMilliseconds,
       refreshToken,
@@ -970,7 +972,7 @@ const resendVerificationEmail = async (req) => {
 
     await deleteEmailVerificationTokens(user);
 
-    const [verifyToken, hash] = createTokenHash();
+    const [verifyToken, hash] = await createTokenHash();
 
     const verificationLink = `${
       domains.client

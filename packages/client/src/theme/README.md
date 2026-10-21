@@ -65,8 +65,9 @@ Three primitives keep corners of their own outside that scale: the menu panel (`
 `tabRadius` (0.185rem, through `rounded-theme-tab`). The defaults are the corners they always drew.
 
 The composer's popovers read `popoverRadius` (1rem, `rounded-theme-popover`), the model selector's
-panel `menuPanelRadius` (0.75rem, `rounded-theme-menu-panel`) and the send and stop buttons
-`composerActionRadius` (a full circle, `rounded-theme-composer-action`), so a theme can bring them
+panel and the form-control pickers `menuPanelRadius` (0.75rem, `rounded-theme-menu-panel`), the
+date range picker `compactPanelRadius` (0.5rem, `rounded-theme-compact-panel`) and the send and
+stop buttons `composerActionRadius` (a full circle, `rounded-theme-composer-action`), so a theme can bring them
 onto `menuRadius` or a square corner without moving the control or surface radii. An inline code
 chip in Markdown takes its weight from `inlineCodeWeight` (600).
 
@@ -391,7 +392,9 @@ Each status family has a foreground, a `-subtle` background, a `-border`, and a
   the dialog's close icon, `h-theme-field-lg` (`fieldHeightLg`) the large `title`
   input, and `h-theme-target` the switch's hit area, and `min-w-theme-tab` (`tabMinWidth`, `0` to size a tab by its label) the tab
   trigger. `min-w-theme-list` and `max-h-theme-list` (`listMinWidth`, `0` to size the list by
-  its trigger, and `listMaxHeight`, 8 to 40rem) bound the Select's list. Every default is the size the primitive drew before. The icon and checkbox roles
+  its trigger, and `listMaxHeight`, 8 to 40rem or `none`) bound the Select's list, which never
+  grows past the room the popper leaves between its trigger and the viewport's edge, so `none`
+  drops the fixed cap and keeps only that one. Every default is the size the primitive drew before. The icon and checkbox roles
   are bounded to the room their layouts leave: `iconSize` 0.75 to 1.25rem, `iconSizeMd` (the
   exported Dialog's close glyph) 1.25 to 1.5rem, `iconSizeLg` 1 to 2rem, `checkboxSize` 1 to
   1.5rem. The target floor (`h-theme-target`, `min-h-theme-target`, `min-w-theme-target`) is
@@ -608,7 +611,7 @@ function ThemeToggle() {
 - `'high-contrast-dark'` - Accessibility mode: white on black, WCAG AAA
 
 High contrast applies the built-in `highContrastTheme` definition
-(`themes/highContrast.ts`), which outranks a deployment's custom theme, and adds
+(`packages/data-provider/src/themes/highContrast.ts`), which outranks a deployment's custom theme, and adds
 a `high-contrast` class to `<html>` for the CSS-only variables the token layer
 cannot reach.
 
@@ -676,11 +679,8 @@ const { theme, setTheme } = useContext(ThemeContext);
 packages/client/src/theme/
 ├── context/
 │   └── ThemeProvider.tsx    # Main theme provider
-├── types/
-│   └── index.ts            # TypeScript interfaces
 ├── themes/
-│   ├── default.ts          # Light theme colors
-│   ├── dark.ts             # Dark theme colors
+│   ├── clickhouse.ts       # The bundled ClickHouse theme
 │   └── index.ts            # Theme exports
 ├── utils/
 │   ├── applyTheme.ts       # Apply CSS variables
@@ -689,6 +689,11 @@ packages/client/src/theme/
 ├── README.md               # This documentation
 └── index.ts               # Main exports
 ```
+
+The theme types, the resolver (`registry.ts`), the default, dark and high contrast palettes and
+`describeResolvedTheme` live in `packages/data-provider/src/themes`, so the server resolves a
+deployment's inline `interface.theme` for the shell's first paint with the same code the client
+runs. This package re-exports them.
 
 ### CSS Variable Format
 

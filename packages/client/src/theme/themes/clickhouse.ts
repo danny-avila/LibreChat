@@ -1,4 +1,4 @@
-import type { IThemeAppearance, ThemeDefinition, IThemeRGB } from '../types';
+import type { IThemeAppearance, ThemeDefinition, IThemeRGB } from 'librechat-data-provider';
 
 /**
  * ClickHouse reference theme, built from Click UI's design tokens
@@ -459,6 +459,7 @@ const clickHouseShape = {
   menuRadius: '0.25rem', // genericMenu.panel.radii.all
   popoverRadius: '0.25rem', // genericMenu.panel.radii.all, the panel the composer popovers are
   menuPanelRadius: '0.25rem', // genericMenu.panel.radii.all
+  compactPanelRadius: '0.25rem', // genericMenu.panel.radii.all
   composerActionRadius: '0.25rem', // button.radii.all, Click UI draws its icon buttons square
   inlineCodeWeight: '500', // typography.font.weights.2
   tooltipRadius: '0.25rem', // tooltip.radii.all
@@ -470,10 +471,10 @@ const clickHouseShape = {
   tabMinWidth: '0',
   /** Click UI's select list is as wide as its trigger (`select-popover-content` in
    *  SelectComponents.module.css), which the list's viewport already enforces, so it takes no
-   *  floor of its own. Its height is capped only by the viewport's available height, which a
-   *  length role cannot express, so the cap keeps LibreChat's. */
+   *  floor of its own. Its height is capped only by the popover's available height
+   *  (`--radix-popover-content-available-height`). */
   listMinWidth: '0',
-  listMaxHeight: '24rem',
+  listMaxHeight: 'none',
   radiusSm: '0.25rem', // border.radii.1
   radiusMd: '0.25rem', // border.radii.1
   radiusLg: '0.25rem', // border.radii.1

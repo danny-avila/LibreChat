@@ -344,13 +344,6 @@ export type TUpdateUserPreferencesResponse = {
   preferences: TUpdateUserPreferencesRequest;
 };
 
-export type TGetConversationsResponse = {
-  conversations: TConversation[];
-  pageNumber: string;
-  pageSize: string | number;
-  pages: string | number;
-};
-
 export type TUpdateMessageRequest = {
   conversationId: string;
   messageId: string;
@@ -598,15 +591,6 @@ export type TForkSharedConvoRequest = {
   shareRevision?: string;
 };
 
-export type TSearchResults = {
-  conversations: TConversation[];
-  messages: TMessage[];
-  pageNumber: string;
-  pageSize: string | number;
-  pages: string | number;
-  filter: object;
-};
-
 export type TPublicCodeEnvironment = {
   id: string;
   name: string;
@@ -788,16 +772,6 @@ export type TReasoningCapabilitiesResponse = {
 
 /** endpoint → model → resolved tokenomics, from GET /api/endpoints/token-config */
 export type TTokenConfigMap = Record<string, Record<string, TModelTokenomics>>;
-
-export type TUpdateTokenCountResponse = {
-  count: number;
-};
-
-export type TMessageTreeNode = object;
-
-export type TSearchMessage = object;
-
-export type TSearchMessageTreeNode = object;
 
 export type TRegisterUserResponse = {
   message: string;
