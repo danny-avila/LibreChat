@@ -766,7 +766,7 @@ export class Chat {
     }
     const active = this.active;
     if (!active && this.detached) {
-      return this.stopDetached(this.detached);
+      return this.orUnaddressed(await this.stopDetached(this.detached));
     }
     if (!active && this.unaddressed) {
       return unaddressable;
@@ -786,9 +786,9 @@ export class Chat {
       if (detached && this.detached === detached && !this.active) {
         /** The cancelled retry never took over the dropped generation, which this stop also ends. */
         const result = await this.stopDetached(detached);
-        return active.sent ? own : result;
+        return active.sent ? own : this.orUnaddressed(result);
       }
-      return this.unaddressed && !this.active ? unaddressable : own;
+      return this.orUnaddressed(own);
     }
     const { generation } = active;
     if (!generation.endpoint) {
@@ -810,6 +810,14 @@ export class Chat {
     generation.paused ??= this.action?.actionId;
     const result = await this.stopGeneration(generation, target);
     return this.endStopped(active, generation, result);
+  }
+
+  /**
+   * A stop's answer, unless a start this chat lost may still run on the server with nothing to
+   * address it by; then the caller still owes its separate abort.
+   */
+  private orUnaddressed(result: ChatStopResult): ChatStopResult {
+    return this.unaddressed && !this.active ? unaddressable : result;
   }
 
   /** Sends a stop and records its answer on the generation, where every attachment reads it. */

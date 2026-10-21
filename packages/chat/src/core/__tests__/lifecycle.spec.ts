@@ -1360,6 +1360,39 @@ describe('Chat invariants', () => {
     },
   );
 
+  it.each([
+    ['with no turn in flight', false],
+    ['while a later retry is still preparing', true],
+  ])(
+    '(2) a stop of a dropped generation still owes the abort of a lost retry %s',
+    async (_label, preparing) => {
+      let prepared = 0;
+      const h = createHarness({
+        prepareRequest: () => {
+          prepared += 1;
+          if (prepared > 2) {
+            return new Promise<never>(() => undefined);
+          }
+          return { payload, messages: [userMessage, placeholder], responseMessageId: 'response-1' };
+        },
+      });
+      await states.detached(h);
+      h.transport.sendMessages.mockRejectedValueOnce(networkError());
+      send(h);
+      await flush();
+      if (preparing) {
+        send(h);
+        await flush();
+      }
+
+      await expect(h.chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+      expect(h.transport.abort).toHaveBeenCalledTimes(1);
+      expect(h.transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ generationCreatedAt: 100 }),
+      );
+    },
+  );
+
   it('(4) a fresh reattachment that drops before a frame names its response reports none', async () => {
     const h = createHarness({ messages: [userMessage, laterMessage] });
     const stream = createStream({ streamId: 'convo-1', generationCreatedAt: 700 });
