@@ -1,4 +1,7 @@
 export enum QueryKeys {
+  channels = 'channels',
+  channelAvailability = 'channelAvailability',
+  channelLink = 'channelLink',
   messages = 'messages',
   /* Full content of one tool-call part, fetched when its preview is not enough */
   toolCallPart = 'toolCallPart',
@@ -128,6 +131,13 @@ export const DynamicQueryKeys = {
 } as const;
 
 export enum MutationKeys {
+  channelManifest = 'channelManifest',
+  channelSave = 'channelSave',
+  channelDisable = 'channelDisable',
+  channelCheck = 'channelCheck',
+  channelEnable = 'channelEnable',
+  channelUnlink = 'channelUnlink',
+  channelLink = 'channelLink',
   resetToolApprovalGrants = 'resetToolApprovalGrants',
   subagentControl = 'subagentControl',
   cancelBackgroundTasks = 'cancelBackgroundTasks',

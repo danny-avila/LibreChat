@@ -56,6 +56,7 @@ import ImageResize from '../SettingsTabs/Chat/ImageResize';
 import Passkeys from '../SettingsTabs/Account/Passkeys';
 import { showThinkingAtom } from '~/store/showThinking';
 import ProviderKeys from '../SettingsTabs/ProviderKeys';
+import ChannelEntry from '~/components/Channels/Entry';
 import { showLiaAtom } from '~/components/Lia/store';
 import { autoScrollAtom } from '~/store/autoScroll';
 import Avatar from '../SettingsTabs/Account/Avatar';
@@ -753,6 +754,14 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_ui_settings_label_agent_api_keys',
     show: (ctx) => ctx.hasRemoteAgents,
     Component: ApiKeys,
+  },
+  {
+    id: 'channels',
+    tab: DATA,
+    section: 'apiKeys',
+    labelKey: 'com_channels_title',
+    show: (ctx) => ctx.hasRemoteAgents,
+    Component: ChannelEntry,
   },
   {
     id: 'revokeKeys',

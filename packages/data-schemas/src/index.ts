@@ -1,4 +1,6 @@
 export * from './app';
+export { createChannelStore } from './channels/store';
+export type { ChannelStore, ChannelInstallation, ChannelAccountLink } from './channels/store';
 export * from './admin';
 export * from './common';
 export * from './crypto';

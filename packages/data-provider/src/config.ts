@@ -39,6 +39,7 @@ import {
   scheduledMCPResourceBindingSchema,
   scheduledMCPReadOnlyPolicySchema,
 } from './types/scheduleConsent';
+import { channelsConfigSchema } from './channels';
 
 export const AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_DEFAULT = 24 * 1024;
 export const AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_HARD_MAX = 64 * 1024;
@@ -4087,6 +4088,7 @@ export const toolCallPreviewsConfigSchema = z.object({
 export type TToolCallPreviewsConfig = z.infer<typeof toolCallPreviewsConfigSchema>;
 
 export const configSchema = z.object({
+  channels: channelsConfigSchema.optional(),
   version: z.string(),
   permissions: z
     .object({
