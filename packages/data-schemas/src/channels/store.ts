@@ -2,6 +2,7 @@ import { Schema } from 'mongoose';
 import { createHash, randomUUID } from 'node:crypto';
 import type { ChannelEnvelope, ChannelReply, ChannelWork } from 'librechat-data-provider';
 import type { IAgent } from '../types';
+import { createIndexesWithRetry } from '../utils/retry';
 
 export interface ChannelInstallation {
   id: string;
@@ -157,7 +158,7 @@ export function createChannelStore(mongoose: typeof import('mongoose')) {
   let indexes: Promise<void> | undefined;
   const ready = () =>
     (indexes ??= Promise.all(
-      [Installation, Link, Challenge, Event, Lane].map((model) => model.createIndexes()),
+      [Installation, Link, Challenge, Event, Lane].map((model) => createIndexesWithRetry(model)),
     )
       .then(() => undefined)
       .catch((error: unknown) => {
