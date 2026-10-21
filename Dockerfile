@@ -33,6 +33,7 @@ COPY --chown=node:node packages/data-provider/package.json ./packages/data-provi
 COPY --chown=node:node packages/data-schemas/package.json ./packages/data-schemas/package.json
 COPY --chown=node:node packages/api/package.json ./packages/api/package.json
 COPY --chown=node:node packages/chat/package.json ./packages/chat/package.json
+COPY --chown=node:node packages/channel-gateway/package.json ./packages/channel-gateway/package.json
 
 RUN \
     # Allow mounting of these files, which have no default
