@@ -50,7 +50,9 @@ describe('useSyncLangfusePromptsMutation', () => {
     ]);
   });
 
-  it('does not invalidate any query when the sync call fails', async () => {
+  it('invalidates prompt groups, all prompt groups, and prompt-group effective permissions when the sync call fails', async () => {
+    // An earlier page's groups can already be committed when a later page throws, so a
+    // failed sync still invalidates the catalog's queries, not only a successful one.
     mockSyncLangfusePrompts.mockRejectedValueOnce(new Error('upstream'));
     const { result } = renderHook(() => useSyncLangfusePromptsMutation(), { wrapper });
 
@@ -58,6 +60,25 @@ describe('useSyncLangfusePromptsMutation', () => {
       await result.current.mutateAsync().catch(() => undefined);
     });
 
-    expect(invalidateSpy).not.toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.promptGroups]);
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.allPromptGroups]);
+    expect(invalidateSpy).toHaveBeenCalledWith([
+      QueryKeys.effectivePermissions,
+      'all',
+      ResourceType.PROMPTGROUP,
+    ]);
+  });
+
+  it('still calls a caller-supplied onError when the sync call fails', async () => {
+    mockSyncLangfusePrompts.mockRejectedValueOnce(new Error('upstream'));
+    const { result } = renderHook(() => useSyncLangfusePromptsMutation(), { wrapper });
+    const onError = jest.fn();
+
+    await act(async () => {
+      await result.current.mutateAsync(undefined, { onError }).catch(() => undefined);
+    });
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.promptGroups]);
   });
 });

@@ -2484,6 +2484,22 @@ describe('createAdminLangfuseHandlers', () => {
       });
     });
 
+    it("passes the runner's complete: false through unchanged when the page cap stopped the run", async () => {
+      process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE = 'true';
+      const { handlers } = createSyncHandlers({
+        syncPromptCatalog: jest.fn().mockResolvedValue({
+          ok: true,
+          value: { created: 2, unchanged: 1, skipped: 0, complete: false },
+        }),
+      });
+      const res = mockRes();
+
+      await handlers.syncPrompts(syncReq(), res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ created: 2, unchanged: 1, skipped: 0, complete: false });
+    });
+
     it('forwards the configured lock lease and page cap from req.config', async () => {
       process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE = 'true';
       const { handlers, deps } = createSyncHandlers();

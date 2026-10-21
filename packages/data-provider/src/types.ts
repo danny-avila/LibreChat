@@ -1523,4 +1523,11 @@ export type TLangfusePromptSyncResult = {
   created: number;
   unchanged: number;
   skipped: number;
+  /** False when the server's page cap stopped the run before every upstream page was read,
+   *  so the counts above are partial. A re-run with the same page limit re-lists from page 1
+   *  and reads the same pages again; the server's `langfuse.promptSync.maxPages` config must
+   *  be raised to import the rest. Optional for compatibility with an older server that has
+   *  not added this field yet: treat a missing value as `true`, matching that server's only
+   *  possible outcome. */
+  complete?: boolean;
 };

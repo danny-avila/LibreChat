@@ -3,6 +3,7 @@ import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import LangfuseConnection from '../LangfuseConnection';
 
 const mockGet = jest.fn();
+const mockGetStartupConfig = jest.fn();
 const mockUpdate = jest.fn();
 const mockTest = jest.fn();
 const mockUpdatePromptSync = jest.fn();
@@ -30,6 +31,7 @@ async function selectDestination(destination: keyof typeof destinationLabels) {
 }
 
 jest.mock('~/data-provider', () => ({
+  useGetStartupConfig: () => mockGetStartupConfig(),
   useGetLangfuseConnectionQuery: () => mockGet(),
   useUpdateLangfuseConnectionMutation: () => ({
     mutate: mockUpdate,
@@ -72,6 +74,7 @@ beforeEach(() => {
     disconnect = jest.fn();
   };
   mockGet.mockReset();
+  mockGetStartupConfig.mockReset();
   mockUpdate.mockReset();
   mockTest.mockReset();
   mockUpdatePromptSync.mockReset();
@@ -86,6 +89,9 @@ beforeEach(() => {
   mockTest.mockImplementation((_payload, options) => {
     options?.onSuccess?.({ success: true });
   });
+  // Defaults to access so the many pre-existing tests that exercise the Sync button do not
+  // each have to opt in; the dedicated capability tests below set this to false.
+  mockGetStartupConfig.mockReturnValue({ data: { langfusePromptManageAccess: true } });
   mockGet.mockReturnValue({
     isLoading: false,
     isError: false,
@@ -938,6 +944,21 @@ describe('LangfuseConnection', () => {
     ).toBeInTheDocument();
   });
 
+  it('hides the Sync prompts button for an admin without manage:prompts access', () => {
+    mockGetStartupConfig.mockReturnValue({ data: { langfusePromptManageAccess: false } });
+    withPromptSyncEnabled();
+
+    render(<LangfuseConnection />);
+
+    expect(
+      screen.queryByRole('button', { name: 'com_ui_langfuse_prompt_sync_run' }),
+    ).not.toBeInTheDocument();
+    // The route behind this button does not require manage:prompts, so it stays available.
+    expect(
+      screen.getByRole('button', { name: 'com_ui_langfuse_prompt_sync_open' }),
+    ).toBeInTheDocument();
+  });
+
   it('calls the sync mutation when the Sync prompts button is clicked', async () => {
     withPromptSyncEnabled();
 
@@ -960,6 +981,22 @@ describe('LangfuseConnection', () => {
       message: 'com_ui_langfuse_prompt_sync_result {"0":1,"1":2,"2":3}',
       status: 'success',
     });
+  });
+
+  it('shows a warning toast, not the success toast, when the sync stops at the page cap', async () => {
+    mockSyncPrompts.mockImplementation((_payload, options) => {
+      options?.onSuccess?.({ created: 1, unchanged: 2, skipped: 3, complete: false });
+    });
+    withPromptSyncEnabled();
+
+    render(<LangfuseConnection />);
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_langfuse_prompt_sync_run' }));
+
+    expect(mockShowToast).toHaveBeenCalledWith({
+      message: 'com_ui_langfuse_prompt_sync_incomplete {"0":1,"1":2,"2":3}',
+      status: 'warning',
+    });
+    expect(mockShowToast).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'success' }));
   });
 
   it('shows a mapped error toast for an already-running sync', async () => {

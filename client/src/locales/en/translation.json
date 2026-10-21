@@ -1957,6 +1957,7 @@
   "com_ui_langfuse_prompt_sync": "Langfuse prompts",
   "com_ui_langfuse_prompt_sync_description": "Adds new text prompts from the connected Langfuse project to the catalog as read-only library entries. Never removes or changes an existing entry.",
   "com_ui_langfuse_prompt_sync_error": "Failed to update the Langfuse prompts setting",
+  "com_ui_langfuse_prompt_sync_incomplete": "Synced {{0}} new, {{1}} already in the catalog, {{2}} skipped. The sync stopped at the page limit, so some prompts were not imported. Increase the prompt sync page limit and run the sync again.",
   "com_ui_langfuse_prompt_sync_open": "Preview prompts (dry run)",
   "com_ui_langfuse_prompt_sync_result": "Synced {{0}} new, {{1}} already in the catalog, {{2}} skipped",
   "com_ui_langfuse_prompt_sync_run": "Sync prompts",

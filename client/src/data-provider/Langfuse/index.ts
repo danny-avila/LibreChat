@@ -126,9 +126,11 @@ export const useLangfusePromptQuery = (
   );
 
 /**
- * Runs the real Langfuse prompt sync. On success, the catalog's own prompt-group and
- * permissions queries are stale: a synced group is a new PromptGroup with a PUBLIC viewer
- * grant, so both the list views and the sidebar's effective-permissions map must refetch.
+ * Runs the real Langfuse prompt sync. The catalog's own prompt-group and permissions queries
+ * go stale whether the call settles in success or failure: a synced group is a new
+ * PromptGroup with a PUBLIC viewer grant, and a page that throws partway through still
+ * leaves any earlier page's groups committed, so both the list views and the sidebar's
+ * effective-permissions map must refetch on every outcome, not only on success.
  */
 export const useSyncLangfusePromptsMutation = (): UseMutationResult<
   TLangfusePromptSyncResult,
@@ -138,7 +140,7 @@ export const useSyncLangfusePromptsMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation(() => dataService.syncLangfusePrompts(), {
     mutationKey: [MutationKeys.syncLangfusePrompts],
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries([QueryKeys.promptGroups]);
       queryClient.invalidateQueries([QueryKeys.allPromptGroups]);
       queryClient.invalidateQueries([

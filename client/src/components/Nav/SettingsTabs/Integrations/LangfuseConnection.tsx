@@ -18,6 +18,7 @@ import type {
 } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
 import {
+  useGetStartupConfig,
   useGetLangfuseConnectionQuery,
   useUpdateLangfuseConnectionMutation,
   useTestLangfuseConnectionMutation,
@@ -106,6 +107,11 @@ function getDisplayPublicKey(publicKey: string): string {
 export default function LangfuseConnection() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const { data: startupConfig } = useGetStartupConfig();
+  // The server's `POST /prompts/sync` route requires `manage:prompts` in addition to the
+  // `langfuse` config capability that gates this whole tab, so an admin can see the
+  // connection without being able to run the sync.
+  const canManagePrompts = startupConfig?.langfusePromptManageAccess === true;
   const {
     data: status,
     isLoading: isConnectionLoading,
@@ -397,6 +403,17 @@ export default function LangfuseConnection() {
   const handleSyncPrompts = () => {
     syncPromptsMutation.mutate(undefined, {
       onSuccess: (result) => {
+        if (result.complete === false) {
+          showToast({
+            message: localize('com_ui_langfuse_prompt_sync_incomplete', {
+              0: result.created,
+              1: result.unchanged,
+              2: result.skipped,
+            }),
+            status: 'warning',
+          });
+          return;
+        }
         showToast({
           message: localize('com_ui_langfuse_prompt_sync_result', {
             0: result.created,
@@ -626,16 +643,18 @@ export default function LangfuseConnection() {
           )}
           {connectionStatus.promptSync.enabled && (
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="submit" size="sm" disabled={busy} onClick={handleSyncPrompts}>
-                {syncPromptsMutation.isLoading ? (
-                  <span className="flex items-center gap-2">
-                    <Spinner className="h-4 w-4" />
-                    {localize('com_ui_langfuse_prompt_sync_running')}
-                  </span>
-                ) : (
-                  localize('com_ui_langfuse_prompt_sync_run')
-                )}
-              </Button>
+              {canManagePrompts && (
+                <Button variant="submit" size="sm" disabled={busy} onClick={handleSyncPrompts}>
+                  {syncPromptsMutation.isLoading ? (
+                    <span className="flex items-center gap-2">
+                      <Spinner className="h-4 w-4" />
+                      {localize('com_ui_langfuse_prompt_sync_running')}
+                    </span>
+                  ) : (
+                    localize('com_ui_langfuse_prompt_sync_run')
+                  )}
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"

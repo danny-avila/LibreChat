@@ -871,11 +871,16 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
    *
    *  The sync runs inside this HTTP request. The page cap (default 50 pages
    *  of 100 prompts each, 5,000 prompts) is the request-sized ceiling; a
-   *  larger catalog is truncated at the cap with a warning log, not an error.
-   *  The lock lease (default 300 s) is renewed after every page but the
-   *  last. The sync is append-only: it creates pointers for new Langfuse text
-   *  prompts and never deletes, re-grants or reconciles existing groups, so a
-   *  prompt deleted in Langfuse keeps its local pointer. */
+   *  larger catalog is truncated at the cap with a warning log, not an
+   *  error — the response's `complete: false` tells the caller the run
+   *  stopped before every upstream page was read. The lock lease (default
+   *  300 s) is renewed after every page but the last, and only between
+   *  pages, so a page whose own processing outlasts the lease can still let
+   *  a second run start concurrently. The sync is append-only: it creates
+   *  pointers for new Langfuse text prompts and never deletes, re-grants or
+   *  reconciles existing groups, so a prompt deleted in Langfuse keeps its
+   *  local pointer; a truncated run is not resumed from where it stopped —
+   *  a later run re-lists from page 1. */
   async function syncPrompts(req: ServerRequest, res: Response): Promise<Response> {
     const gate = await gatePromptSyncTenantSwitch(res);
     if (gate.response) {

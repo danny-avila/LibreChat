@@ -3614,6 +3614,10 @@ export type TStartupConfig = {
   langfuseFanoutEnabled?: boolean;
   langfuseConnectionAccess?: boolean;
   langfusePromptSyncAccess?: boolean;
+  /** Whether this admin also holds `manage:prompts`, the capability the server's
+   *  `POST /prompts/sync` route requires in addition to Langfuse settings access. Gates the
+   *  "Sync prompts" action in the connection tab; absent (falsy) for an older server. */
+  langfusePromptManageAccess?: boolean;
   insightsEnabled?: boolean;
   /** Whether pull requests are active (on unless turned off, with a token and a repository scope);
    *  the header does not ask for a pull request without it. */
