@@ -148,5 +148,15 @@ describe('Redis mTLS client certificates (REDIS_TLS_CERT + REDIS_TLS_KEY)', () =
       ioredisClient?.disconnect();
       keyvRedisClient?.disconnect();
     });
+
+    it('fails fast when client certificates are configured with a plaintext URI', () => {
+      process.env.USE_REDIS = 'true';
+      process.env.REDIS_URI = 'redis://localhost:6999';
+      process.env.REDIS_TLS_CERT = certPath;
+      process.env.REDIS_TLS_KEY = keyPath;
+      expect(() => loadRedisClients()).toThrow(
+        'REDIS_TLS_CERT and REDIS_TLS_KEY require REDIS_URI to use rediss://',
+      );
+    });
   });
 });

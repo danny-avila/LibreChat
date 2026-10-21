@@ -34,6 +34,10 @@ if (cacheConfig.USE_REDIS && ca && !useTls) {
   throw new Error('REDIS_CA requires REDIS_URI to use rediss://');
 }
 
+if (cacheConfig.USE_REDIS && cacheConfig.REDIS_TLS_CERT && !useTls) {
+  throw new Error('REDIS_TLS_CERT and REDIS_TLS_KEY require REDIS_URI to use rediss://');
+}
+
 let resolveKeyvRedisClientReady: (() => void) | undefined;
 let rejectKeyvRedisClientReady: ((reason?: unknown) => void) | undefined;
 const keyvRedisClientReady: Promise<void> | null = cacheConfig.USE_REDIS
