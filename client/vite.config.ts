@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { constants } from 'zlib';
 import { defineConfig } from 'vite';
+import { Features } from 'lightningcss';
 import { THEME_BOOT_FILE } from 'librechat-data-provider';
 import { createRequire } from 'module';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -216,6 +217,12 @@ export default defineConfig(({ command }) => ({
     ],
   },
   publicDir: command === 'serve' ? './public' : false,
+  css: {
+    /** The CSS minifier lowers `:dir()` for `build.cssTarget` browsers into a `:lang()` list,
+     *  which mirrors by UI language instead of the element's direction and breaks LTR islands
+     *  in an RTL page. Tailwind keeps `:dir()` for the same reason; the minifier has to agree. */
+    lightningcss: { exclude: Features.DirSelector },
+  },
   build: {
     sourcemap: buildSourceMap,
     outDir: './dist',
