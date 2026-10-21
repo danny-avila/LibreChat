@@ -2,10 +2,14 @@ import { getDefaultStore } from 'jotai';
 import { filesFamily } from '@librechat/chat/react';
 import { renderHook, act } from '@testing-library/react';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
+import type { TConversation, TPreset } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 
 const mockDeleteFiles = jest.fn();
+const mockApplyModelSpecEffects = jest.fn();
+const mockGetPinnedNewChatPreset = jest.fn();
+const mockHasModelSelection = jest.fn((_selection?: unknown) => false);
+let mockDefaultPreset: TPreset | null = null;
 const mockRemoveTabAttachmentPresence = jest.fn();
 const mockCollectForeignAttachmentClaims = jest.fn(
   (_excludeDraftIds: string[], _excludeOwnPane?: number | 'tab') => new Set(mockForeignClaims),
@@ -44,6 +48,9 @@ jest.mock('recoil', () => ({
     if (key === 'saveBadgesState') {
       return true;
     }
+    if (key === 'defaultPreset') {
+      return mockDefaultPreset;
+    }
     return null;
   },
   useSetRecoilState: () => jest.fn(),
@@ -61,9 +68,10 @@ jest.mock('~/utils', () => ({
   updateLastSelectedModel: jest.fn(),
   getLocalStorageItems: () => ({}),
   getDefaultModelSpec: () => ({}),
+  getPinnedNewChatPreset: (...args: unknown[]) => mockGetPinnedNewChatPreset(...args),
   getDefaultEndpoint: () => undefined,
   getModelSpecPreset: jest.fn(),
-  hasModelSelection: () => false,
+  hasModelSelection: (selection?: unknown) => mockHasModelSelection(selection),
   isPastedTextFileMarked: (fileId?: string | null) =>
     fileId != null && mockMarkedPasteIds.has(fileId),
   collectForeignAttachmentClaims: (excludeDraftIds: string[], excludeOwnPane?: number | 'tab') =>
@@ -99,7 +107,7 @@ jest.mock('../Assistants/useAssistantListMap', () => ({
   default: () => ({}),
 }));
 jest.mock('../Files/useFileHandling', () => ({ clearUploadRecovery: jest.fn() }));
-jest.mock('../Agents', () => ({ useApplyModelSpecEffects: () => jest.fn() }));
+jest.mock('../Agents', () => ({ useApplyModelSpecEffects: () => mockApplyModelSpecEffects }));
 jest.mock('../Audio', () => ({ usePauseGlobalAudio: () => ({ pauseGlobalAudio: jest.fn() }) }));
 jest.mock('~/Providers', () => ({ useAgentsMapContext: () => ({}) }));
 jest.mock('~/hooks', () => ({ useHasAccess: () => true }));
@@ -229,5 +237,71 @@ describe('useNewConvo reset cleanup', () => {
 
     expect(mockStorePendingDiscardIds).toHaveBeenCalledWith(0, ['inflight-paste']);
     expect(mockPendingDiscardIds).toEqual(new Set(['inflight-paste']));
+  });
+});
+
+describe('useNewConvo pinned preset', () => {
+  const pinned = {
+    presetId: 'pinned-1',
+    title: 'Pinned',
+    defaultPreset: true,
+    endpoint: EModelEndpoint.openAI,
+    model: 'gpt-large',
+    spec: 'large-chat',
+  } as TPreset;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockFiles.clear();
+    getDefaultStore().set(filesFamily(0), mockFiles as Map<string, ExtendedFile>);
+    mockDefaultPreset = pinned;
+    mockHasModelSelection.mockReturnValue(false);
+    mockGetPinnedNewChatPreset.mockImplementation((preset?: TPreset | null) =>
+      preset?.presetId ? preset : undefined,
+    );
+  });
+
+  it('starts a bare new chat from the pinned preset', () => {
+    const { result } = renderHook(() => useNewConvo());
+
+    act(() => {
+      result.current.newConversation();
+    });
+
+    expect(mockGetPinnedNewChatPreset).toHaveBeenCalledWith(pinned, {});
+    expect(mockApplyModelSpecEffects).toHaveBeenCalledWith(
+      expect.objectContaining({ specName: 'large-chat' }),
+    );
+  });
+
+  it('keeps an explicit preset over the pin', () => {
+    const { result } = renderHook(() => useNewConvo());
+
+    act(() => {
+      result.current.newConversation({
+        preset: { endpoint: EModelEndpoint.openAI, model: 'gpt-fast', spec: 'fast-chat' },
+      });
+    });
+
+    expect(mockGetPinnedNewChatPreset).not.toHaveBeenCalled();
+    expect(mockApplyModelSpecEffects).toHaveBeenCalledWith(
+      expect.objectContaining({ specName: 'fast-chat' }),
+    );
+  });
+
+  it('keeps a template that already names a model over the pin', () => {
+    mockHasModelSelection.mockReturnValue(true);
+    const { result } = renderHook(() => useNewConvo());
+
+    act(() => {
+      result.current.newConversation({
+        template: { endpoint: EModelEndpoint.agents, agent_id: 'agent_shared' },
+      });
+    });
+
+    expect(mockGetPinnedNewChatPreset).not.toHaveBeenCalled();
+    expect(mockApplyModelSpecEffects).toHaveBeenCalledWith(
+      expect.objectContaining({ specName: undefined }),
+    );
   });
 });

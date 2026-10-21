@@ -30,6 +30,7 @@ import type { AssistantListItem } from '~/common';
 import {
   updateLastSelectedModel,
   getLocalStorageItems,
+  getPinnedNewChatPreset,
   getDefaultModelSpec,
   getDefaultEndpoint,
   getModelSpecPreset,
@@ -359,7 +360,12 @@ const useNewConvo = (index = 0) => {
         updatedAt: '',
       };
 
-      let preset = _preset;
+      /** A bare new chat starts from the user's pinned preset before any spec default. */
+      let preset =
+        _preset ??
+        (hasModelSelection(_template)
+          ? undefined
+          : getPinnedNewChatPreset(defaultPreset, startupConfig));
       const result = getDefaultModelSpec(startupConfig, endpointsConfig, agentsMap);
       const defaultModelSpec = result?.default ?? result?.last ?? result?.softDefault;
       const shouldApplyModelSpec =
@@ -518,6 +524,7 @@ const useNewConvo = (index = 0) => {
       agentsMap,
       saveDrafts,
       mutateAsync,
+      defaultPreset,
       startupConfig,
       endpointsConfig,
       getConversation,

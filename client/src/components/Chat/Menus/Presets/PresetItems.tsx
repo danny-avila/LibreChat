@@ -116,7 +116,7 @@ const PresetItems: FC<{
           </p>
           {hasPresets && (
             <p className="text-text-secondary truncate text-xs">
-              {defaultPreset
+              {defaultPreset?.presetId
                 ? `${localize('com_endpoint_preset_default_item')} ${defaultPreset.title}`
                 : localize('com_endpoint_preset_default_none')}
             </p>

@@ -50,9 +50,9 @@ export default function useAppStartup({
     localStorage.setItem(LocalStorageKeys.APP_TITLE, appTitle);
   }, [startupConfig]);
 
-  /** Set the default spec's preset as default */
+  /** Set the default spec's preset as default, unless the user pinned a saved preset */
   useEffect(() => {
-    if (defaultPreset && defaultPreset.spec != null) {
+    if (defaultPreset && (defaultPreset.presetId || defaultPreset.spec != null)) {
       return;
     }
 

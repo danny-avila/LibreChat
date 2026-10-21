@@ -2,7 +2,7 @@ import React from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { TConversation } from 'librechat-data-provider';
+import type { TConversation, TPreset } from 'librechat-data-provider';
 import ChatRoute from '../ChatRoute';
 
 const mockSetConversation = jest.fn();
@@ -11,6 +11,9 @@ const mockHasSetConversation = { current: true };
 let mockConversation: Partial<TConversation> = { conversationId: 'chat-a' };
 const mockConfig = {};
 const mockRoles = { USER: {} };
+let mockStartupConfig: Record<string, unknown> = mockConfig;
+let mockUser: { id: string } | undefined;
+let mockPresetsQuery: { data?: TPreset[]; isError: boolean } = { isError: false };
 let mockAssistantListMap = {};
 const mockNewConversation = jest.fn(({ template }: { template?: Partial<TConversation> }) => {
   mockConversation = { conversationId: 'new', ...template };
@@ -33,14 +36,15 @@ jest.mock('~/store', () => ({
 jest.mock('~/store/temporary', () => ({ __esModule: true, default: {} }));
 jest.mock('../useAuthRedirect', () => ({
   __esModule: true,
-  default: () => ({ isAuthenticated: true, roles: mockRoles }),
+  default: () => ({ isAuthenticated: true, roles: mockRoles, user: mockUser }),
 }));
 jest.mock('librechat-data-provider/react-query', () => ({
   useGetModelsQuery: () => ({ data: mockConfig }),
 }));
 jest.mock('~/data-provider', () => ({
-  useGetStartupConfig: () => ({ data: mockConfig }),
+  useGetStartupConfig: () => ({ data: mockStartupConfig }),
   useGetEndpointsQuery: () => ({ data: mockConfig }),
+  useGetPresetsQuery: () => mockPresetsQuery,
   useListAgentsQuery: () => ({}),
   useProjectQuery: () => ({}),
   useGetConvoIdQuery: (id: string, options: { enabled: boolean }) => {
@@ -70,7 +74,12 @@ jest.mock('@librechat/client', () => ({
 }));
 jest.mock('~/utils', () => ({
   defaultSpecAwaitsAgents: () => false,
-  processValidSettings: () => ({}),
+  processValidSettings: (params: Record<string, string>) => params,
+  mergeQuerySettingsWithSpec: (specPreset: object | undefined, settings: object) => ({
+    ...specPreset,
+    ...settings,
+  }),
+  getPinnedNewChatPreset: (pinned?: TPreset) => (pinned?.presetId ? pinned : undefined),
   getDefaultModelSpec: () => ({}),
   hasModelSelection: () => false,
   isNotFoundError: () => false,
@@ -107,6 +116,9 @@ beforeEach(() => {
   mockConversation = { conversationId: 'chat-a' };
   mockHasSetConversation.current = true;
   mockAssistantListMap = {};
+  mockStartupConfig = mockConfig;
+  mockUser = undefined;
+  mockPresetsQuery = { isError: false };
   mockFetchConversation.mockImplementation(async (id: string) => ({ conversationId: id }));
 });
 
@@ -230,4 +242,67 @@ it('reconciles a remounted chat route with conversation state retained by the sh
   setup(['/c/chat-b']);
   await waitFor(() => expect(screen.getByTestId('composer')).toHaveTextContent('chat-b'));
   expect(mockFetchConversation).toHaveBeenCalledWith('chat-b');
+});
+
+describe('pinned preset on a new chat', () => {
+  const pinned = {
+    presetId: 'pinned-1',
+    title: 'Pinned',
+    defaultPreset: true,
+    endpoint: 'openAI',
+    model: 'gpt-large',
+    spec: 'large-chat',
+  } as TPreset;
+
+  beforeEach(() => {
+    mockStartupConfig = { interface: { presets: true, modelSelect: true } };
+    mockUser = { id: 'user-1' };
+    mockHasSetConversation.current = false;
+    mockConversation = {};
+  });
+
+  it('waits for the presets and then starts from the pinned preset', async () => {
+    setup(['/c/new']);
+    expect(mockNewConversation).not.toHaveBeenCalled();
+
+    act(() => {
+      mockPresetsQuery = {
+        data: [{ ...pinned, defaultPreset: false, presetId: 'other' }, pinned],
+        isError: false,
+      };
+      mockSetConversation();
+    });
+
+    await waitFor(() =>
+      expect(mockNewConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ preset: pinned, disableParams: true }),
+      ),
+    );
+    expect(mockNewConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts without a preset once a presets request has failed', async () => {
+    mockPresetsQuery = { isError: true };
+    setup(['/c/new']);
+
+    await waitFor(() => expect(mockNewConversation).toHaveBeenCalledTimes(1));
+    expect(mockNewConversation.mock.calls[0][0]).not.toHaveProperty('preset');
+  });
+
+  it('lets a URL that names its own settings start without the pin', async () => {
+    setup(['/c/new?spec=fast-chat']);
+
+    await waitFor(() => expect(mockNewConversation).toHaveBeenCalledTimes(1));
+    const options = mockNewConversation.mock.calls[0][0] as { preset?: Partial<TPreset> };
+    expect(options.preset).toEqual({ spec: 'fast-chat' });
+    expect(options).not.toHaveProperty('disableParams');
+  });
+
+  it('does not wait for presets where the presets menu is off', async () => {
+    mockStartupConfig = { interface: { presets: false, modelSelect: true } };
+    setup(['/c/new']);
+
+    await waitFor(() => expect(mockNewConversation).toHaveBeenCalledTimes(1));
+    expect(mockNewConversation.mock.calls[0][0]).not.toHaveProperty('preset');
+  });
 });

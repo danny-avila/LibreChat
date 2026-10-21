@@ -13,11 +13,13 @@ import {
   normalizeExportFilename,
   removeUnavailableTools,
   getConvoSwitchLogic,
+  resolvePresetSpec,
   cleanupPreset,
 } from '~/utils';
 import {
   useUpdatePresetMutation,
   useDeletePresetMutation,
+  useGetStartupConfig,
   useGetPresetsQuery,
 } from '~/data-provider';
 import useGetConversation from '~/hooks/Conversations/useGetConversation';
@@ -45,8 +47,8 @@ export default function usePresets(index = 0) {
   const presetsQuery = useGetPresetsQuery({ enabled: !!user && isAuthenticated });
   const preset = useAtomValue(presetFamily(index));
   const setPreset = useSetAtom(presetFamily(index));
-  const conversationId = useRecoilValue(store.conversationIdByIndex(index));
   const { data: modelsData } = useGetModelsQuery();
+  const { data: startupConfig } = useGetStartupConfig();
   const { newConversation } = useNewConvo(index);
 
   useEffect(() => {
@@ -55,7 +57,8 @@ export default function usePresets(index = 0) {
     }
 
     const { data: presets } = presetsQuery;
-    if (_defaultPreset || !presets || hasLoaded.current) {
+    /** The default spec's preset (no `presetId`, set by `useAppStartup`) must not hide a pin */
+    if (_defaultPreset?.presetId || !presets || hasLoaded.current) {
       return;
     }
 
@@ -69,14 +72,12 @@ export default function usePresets(index = 0) {
       hasLoaded.current = true;
       return;
     }
+    /** `ChatRoute` starts the first new chat from the pin, after waiting for this query */
     setDefaultPreset(defaultPreset);
-    if (!conversationId || conversationId === 'new') {
-      newConversation({ preset: defaultPreset, modelsData, disableParams: true });
-    }
     hasLoaded.current = true;
     // dependencies are stable and only needed once
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetsQuery.data, user, modelsData, conversationId]);
+  }, [presetsQuery.data, user, modelsData]);
 
   const setPresets = useCallback(
     (presets: TPreset[]) => {
@@ -122,7 +123,10 @@ export default function usePresets(index = 0) {
       if (data.defaultPreset && data.presetId !== _defaultPreset?.presetId) {
         message = `${toastTitle} ${localize('com_endpoint_preset_default')}`;
         setDefaultPreset(data);
-        newConversation({ preset: data, disableParams: true });
+        newConversation({
+          preset: { ...data, spec: resolvePresetSpec(data, startupConfig?.modelSpecs?.list) },
+          disableParams: true,
+        });
       } else if (preset.defaultPreset === false) {
         setDefaultPreset(null);
         message = `${toastTitle} ${localize('com_endpoint_preset_default_removed')}`;
@@ -202,7 +206,7 @@ export default function usePresets(index = 0) {
       endpointsConfig,
     });
 
-    newPreset.spec = null;
+    newPreset.spec = resolvePresetSpec(newPreset, startupConfig?.modelSpecs?.list);
     newPreset.iconURL = newPreset.iconURL ?? null;
     newPreset.modelLabel = newPreset.modelLabel ?? null;
     const isModular = isCurrentModular && isNewModular && shouldSwitch;

@@ -14,6 +14,7 @@ import type { TPreset, TAgentsMap } from 'librechat-data-provider';
 import {
   defaultSpecAwaitsAgents,
   mergeQuerySettingsWithSpec,
+  getPinnedNewChatPreset,
   processValidSettings,
   getDefaultModelSpec,
   getModelSpecPreset,
@@ -27,6 +28,7 @@ import {
   useGetConvoIdQuery,
   useGetStartupConfig,
   useGetEndpointsQuery,
+  useGetPresetsQuery,
   useListAgentsQuery,
   useProjectQuery,
 } from '~/data-provider';
@@ -155,6 +157,13 @@ export default function ChatRoute() {
     { requiredPermission: PermissionBits.VIEW },
     { enabled: isAuthenticated },
   );
+  /** Presets can only be pinned where the header shows the presets menu. */
+  const pinsEnabled =
+    isAuthenticated &&
+    user != null &&
+    startupConfig?.interface?.presets === true &&
+    startupConfig.interface.modelSelect === true;
+  const presetsQuery = useGetPresetsQuery({ enabled: pinsEnabled });
 
   const isTemporaryChat = isTemporaryConversation(conversation);
   const forceTemporaryChat = isForcedTemporaryRetention(startupConfig?.interface?.retentionMode);
@@ -225,7 +234,24 @@ export default function ChatRoute() {
       return;
     }
 
+    /** A bare new chat starts from the user's pinned preset before any spec default, so the
+     * first one waits for the presets list; a URL naming its own settings never does. */
+    const bareNewConvo = isNewConvo && Object.keys(querySettings).length === 0;
+    if (bareNewConvo && pinsEnabled && presetsQuery.data == null && !presetsQuery.isError) {
+      return;
+    }
+    const pinnedPreset =
+      bareNewConvo && pinsEnabled
+        ? getPinnedNewChatPreset(
+            presetsQuery.data?.find((preset) => preset.defaultPreset === true),
+            startupConfig,
+          )
+        : undefined;
+
     const getNewConvoPreset = () => {
+      if (pinnedPreset) {
+        return pinnedPreset;
+      }
       /** A spec named in the URL is an explicit selection: it must resolve to its own
        * full preset, or stale last-selection state (endpoint/agent) fills the gaps.
        * Names absent from the client config (e.g. `showInMenu: false`) stay in the
@@ -255,6 +281,7 @@ export default function ChatRoute() {
         modelsData: modelsQuery.data,
         template: projectTemplate,
         ...(preset ? { preset } : {}),
+        ...(pinnedPreset ? { disableParams: true } : {}),
       });
 
       hasSetConversation.current = true;
@@ -303,6 +330,7 @@ export default function ChatRoute() {
         modelsData: modelsQuery.data,
         template: projectTemplate,
         ...(preset ? { preset } : {}),
+        ...(pinnedPreset ? { disableParams: true } : {}),
       });
       hasSetConversation.current = true;
     } else if (
@@ -326,6 +354,8 @@ export default function ChatRoute() {
     roles,
     agentsMap,
     agentsQuery.isError,
+    presetsQuery.data,
+    presetsQuery.isError,
     startupConfig,
     initialConvoQuery.data,
     initialConvoQuery.isError,
