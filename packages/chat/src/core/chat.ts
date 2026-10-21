@@ -400,6 +400,55 @@ type PauseOrder = Pick<Agents.PendingAction, 'createdAt'>;
  */
 const comparePauses = (a: PauseOrder, b: PauseOrder): number => a.createdAt - b.createdAt;
 
+/** The ids a frame names for the conversation and the response its generation produces. */
+type FrameIdentity = { conversationId?: string | null; responseMessageId?: string };
+
+/**
+ * Reads the identity every frame type carries. A `created` frame's message is the user's, so it
+ * names only the conversation; an attachment may belong to an uploaded file, so the same holds.
+ */
+const getFrameIdentity = (event: ChatEvent): FrameIdentity => {
+  switch (event.type) {
+    case 'created':
+      return { conversationId: event.data.message?.conversationId };
+    case 'sync': {
+      const { resumeState } = event.data;
+      return {
+        conversationId: event.data.conversationId ?? resumeState?.conversationId,
+        responseMessageId: event.data.responseMessage?.messageId ?? resumeState?.responseMessageId,
+      };
+    }
+    case 'final':
+      return {
+        conversationId:
+          event.data.conversation?.conversationId ?? event.data.responseMessage?.conversationId,
+        responseMessageId: event.data.responseMessage?.messageId ?? undefined,
+      };
+    case 'pending_action':
+    case 'steer_applied':
+    case 'activity_label':
+    case 'reasoning_label':
+      return {
+        conversationId: event.data.conversationId,
+        responseMessageId: event.data.responseMessageId,
+      };
+    case 'steer_updated':
+      return { conversationId: event.data.conversationId };
+    case 'title':
+      return { conversationId: event.data.data?.conversationId };
+    case 'content':
+      return { conversationId: event.data.conversationId, responseMessageId: event.data.messageId };
+    case 'text':
+      return { responseMessageId: event.data.messageId };
+    case 'attachment':
+      return {
+        conversationId: 'conversationId' in event.data ? event.data.conversationId : undefined,
+      };
+    default:
+      return {};
+  }
+};
+
 /** A pause past its expiry, whose resume the server refuses. */
 const isExpired = (action: Agents.PendingAction): boolean =>
   action.expiresAt != null && action.expiresAt <= Date.now();
@@ -1823,34 +1872,23 @@ export class Chat {
   private track(active: ActiveRequest, event: ChatEvent): void {
     if (event.type === 'pending_action') {
       active.generation.paused = event.data.actionId;
-    } else if (event.type === 'created') {
-      /** A legacy first turn names its conversation here, with no sync frame to follow. */
-      const named = event.data.message?.conversationId;
-      const known = active.generation.conversationId;
-      if (named && (known == null || known === Constants.NEW_CONVO)) {
-        active.generation.conversationId = named;
-      }
-      this.learnConversation(named);
-    } else if (event.type === 'sync') {
-      /**
-       * The server's ids for the turn, which an Assistants stop addresses. A resumable snapshot
-       * carries them in its resume state instead.
-       */
-      const { resumeState } = event.data;
-      const conversationId = event.data.conversationId ?? resumeState?.conversationId;
-      active.generation.conversationId = conversationId ?? active.generation.conversationId;
-      this.learnConversation(conversationId);
-      this.nameResponse(
-        active.generation,
-        event.data.responseMessage?.messageId ?? resumeState?.responseMessageId,
-      );
-      if (resumeState?.pendingAction) {
-        active.generation.paused = resumeState.pendingAction.actionId;
-      }
-    } else if (event.type === 'final') {
-      this.learnConversation(event.data.conversation?.conversationId);
-      this.nameResponse(active.generation, event.data.responseMessage?.messageId);
+    } else if (event.type === 'sync' && event.data.resumeState?.pendingAction) {
+      active.generation.paused = event.data.resumeState.pendingAction.actionId;
     }
+    this.adopt(active.generation, getFrameIdentity(event));
+  }
+
+  /**
+   * Adopts the ids a frame names: the conversation for the generation and, for a chat started
+   * under `new`, for the chat; and the response the generation produces, which makes it known.
+   */
+  private adopt(generation: Generation, identity: FrameIdentity): void {
+    const { conversationId, responseMessageId } = identity;
+    if (conversationId && conversationId !== Constants.NEW_CONVO) {
+      generation.conversationId = conversationId;
+      this.learnConversation(conversationId);
+    }
+    this.nameResponse(generation, responseMessageId);
   }
 
   /** Records the response a frame named, which makes it known. */

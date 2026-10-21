@@ -2284,3 +2284,97 @@ describe('Chat sync snapshots and resume conflicts', () => {
     },
   );
 });
+
+describe('Chat identity every frame carries', () => {
+  const ids = { conversationId: createdUnder, responseMessageId: 'response-9' };
+  const frames: Array<[string, ChatEvent, { response?: boolean; conversation?: boolean }]> = [
+    [
+      'pending_action',
+      { type: 'pending_action', data: { ...askAction, ...ids } } as ChatEvent,
+      { response: true, conversation: true },
+    ],
+    [
+      'activity_label',
+      { type: 'activity_label', data: { index: 0, part: {}, ...ids } } as unknown as ChatEvent,
+      { response: true, conversation: true },
+    ],
+    [
+      'reasoning_label',
+      { type: 'reasoning_label', data: { index: 0, ...ids } } as unknown as ChatEvent,
+      { response: true, conversation: true },
+    ],
+    [
+      'steer_applied',
+      {
+        type: 'steer_applied',
+        data: { steerId: 's', index: 0, part: {}, ...ids },
+      } as unknown as ChatEvent,
+      { response: true, conversation: true },
+    ],
+    [
+      'content',
+      {
+        type: 'content',
+        data: {
+          index: 0,
+          type: 'text',
+          text: 'x',
+          messageId: 'response-9',
+          conversationId: createdUnder,
+        },
+      } as unknown as ChatEvent,
+      { response: true, conversation: true },
+    ],
+    [
+      'text',
+      { type: 'text', data: { text: 'x', messageId: 'response-9' } } as unknown as ChatEvent,
+      { response: true },
+    ],
+    [
+      'title',
+      {
+        type: 'title',
+        data: { event: 'title', data: { conversationId: createdUnder, title: 'T' } },
+      } as ChatEvent,
+      { conversation: true },
+    ],
+    [
+      'steer_updated',
+      { type: 'steer_updated', data: { conversationId: createdUnder } } as unknown as ChatEvent,
+      { conversation: true },
+    ],
+  ];
+
+  it.each(frames)('(4)(7) the %s frame names what it carries', async (_label, frame, names) => {
+    const named: TMessage = { ...placeholder, messageId: 'response-9', text: 'Named' };
+    const h = createHarness({
+      id: 'new',
+      messages: [userMessage, named, { ...placeholder, messageId: 'other' }],
+    });
+    const stream = createStream({ streamId: createdUnder, generationCreatedAt: 700 });
+    h.transport.reconnectToStream.mockResolvedValueOnce(stream);
+    h.chat.resumeStream({ streamId: createdUnder }).then(
+      () => undefined,
+      () => undefined,
+    );
+    await flush();
+    stream.push(frame);
+    await flush();
+    stream.push({ type: 'error', status: 500, data: 'failed' } as ChatEvent);
+    await flush();
+
+    const last = h.finishes[h.finishes.length - 1];
+    if (names.response) {
+      expect(last).toMatchObject({ isResponseUnknown: false });
+      expect(last.message?.messageId).toBe('response-9');
+    }
+    if (names.conversation) {
+      attach(h, createStream({ streamId: createdUnder, generationCreatedAt: 800 }));
+      send(h);
+      await flush();
+      expect(h.transport.sendMessages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ chatId: createdUnder }),
+      );
+    }
+  });
+});
