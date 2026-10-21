@@ -1057,7 +1057,14 @@ const jsonTruncateFormat: winston.Logform.FormatWrap = winston.format(
       return newObj;
     };
 
-    return truncateObject(info) as winston.Logform.TransformableInfo;
+    const result = truncateObject(info) as Record<string | symbol, unknown>;
+    // truncateObject rebuilds from enumerable string keys only; re-attach the
+    // reserved winston symbols (LEVEL/MESSAGE/SPLAT) that downstream transports
+    // read, e.g. the OpenTelemetry transport takes the severity from LEVEL.
+    for (const sym of Object.getOwnPropertySymbols(info)) {
+      result[sym] = (info as Record<string | symbol, unknown>)[sym];
+    }
+    return result as winston.Logform.TransformableInfo;
   },
 );
 
