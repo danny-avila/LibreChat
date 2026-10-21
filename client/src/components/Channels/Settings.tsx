@@ -127,7 +127,7 @@ export default function ChannelSettings() {
     check.isError ||
     enable.isError;
   return (
-    <main className="mx-auto w-full max-w-2xl space-y-6 overflow-y-auto p-6">
+    <main className="text-text-primary mx-auto w-full max-w-2xl space-y-6 overflow-y-auto p-6">
       <h1 className="text-xl font-semibold">{localize('com_channels_title')}</h1>
       <p>{localize('com_channels_intro')}</p>
       {query.isLoading && <p role="status">{localize('com_ui_loading')}</p>}

@@ -39,7 +39,7 @@ export default function ChannelLink() {
       />
     );
   return (
-    <main className="mx-auto w-full max-w-lg space-y-4 p-6">
+    <main className="text-text-primary mx-auto w-full max-w-lg space-y-4 p-6">
       <h1 className="text-xl font-semibold">{localize('com_channels_link_title')}</h1>
       {confirm.isSuccess ? (
         <p role="status">{localize('com_channels_linked')}</p>
