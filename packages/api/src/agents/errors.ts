@@ -1,15 +1,84 @@
+import { logger } from '@librechat/data-schemas';
 import {
   ErrorTypes,
   DEFAULT_MAX_PROVIDER_ERROR_CHARS,
   parseLangChainErrorCode,
   stripLangChainTroubleshootingUrl,
 } from 'librechat-data-provider';
+import type { SubagentResolutionFailureHandler } from '@librechat/agents';
+import {
+  MCPErrorCodes,
+  isMCPInitializationError,
+  MCPAuthenticationRejectedError,
+  MCPAuthenticationRefreshError,
+} from '~/mcp/errors';
 import { ScheduledMCPPolicyError } from '~/schedules/authorization/policy';
-import { MCPErrorCodes, isMCPInitializationError } from '~/mcp/errors';
 import { OboTokenResolutionError } from '~/mcp/oauth/obo';
+import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
 export const AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE = 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE';
 export const AGENT_ATTACHMENT_LIMIT_EXCEEDED = 'AGENT_ATTACHMENT_LIMIT_EXCEEDED';
+
+type MCPToolsUnavailableReason = 'authentication_required' | 'tools_unavailable';
+
+/** Preserves the loader's existing fatal-error contract and its safe resolution reason. */
+export class AgentMCPToolsUnavailableError extends Error {
+  readonly code: typeof AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE = AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE;
+  readonly status = 503;
+  readonly statusCode = 503;
+
+  constructor(
+    agentName?: string,
+    cause?: unknown,
+    readonly reason: MCPToolsUnavailableReason = 'tools_unavailable',
+  ) {
+    const subject = agentName ? `Agent "${agentName}"` : 'The agent';
+    super(
+      `${subject} is configured to use MCP tools, but none are available. Verify that the MCP server is connected and this agent can access its selected tools, then try again.`,
+      { cause },
+    );
+    this.name = 'AgentToolInitializationError';
+  }
+}
+
+export function createExpectedMCPToolsUnavailableError(
+  agentName?: string,
+  cause?: unknown,
+  oauthResults: readonly { oauthRequired?: boolean }[] = [],
+): AgentMCPToolsUnavailableError {
+  return new AgentMCPToolsUnavailableError(
+    agentName,
+    cause,
+    oauthResults.some((result) => result.oauthRequired === true)
+      ? 'authentication_required'
+      : 'tools_unavailable',
+  );
+}
+
+/** Only host-owned typed failures may select the SDK's fixed model-facing messages. */
+export const reportSubagentResolutionFailure = (
+  detail: Parameters<SubagentResolutionFailureHandler>[0],
+  error: unknown,
+): Exclude<ReturnType<SubagentResolutionFailureHandler>, void> => {
+  let cause: MCPToolsUnavailableReason | 'unknown' = 'unknown';
+  if (!detail.aborted) {
+    if (error instanceof AgentMCPToolsUnavailableError) {
+      cause = error.reason;
+    } else if (error instanceof MCPAuthenticationRejectedError) {
+      cause = error.connectionRefreshed ? 'tools_unavailable' : 'authentication_required';
+    } else if (error instanceof OpenIDReauthRequiredError) {
+      cause = 'authentication_required';
+    } else if (error instanceof MCPAuthenticationRefreshError) {
+      cause = 'tools_unavailable';
+    }
+  }
+  logger.warn('[Subagent] Resolution failed', {
+    phase: detail.phase,
+    aborted: detail.aborted,
+    cause,
+  });
+  return cause;
+};
 
 const FATAL_AGENT_INITIALIZATION_CODES = new Set(
   [
