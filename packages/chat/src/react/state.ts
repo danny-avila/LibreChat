@@ -1,6 +1,6 @@
 import { QueryKeys } from 'librechat-data-provider';
 import { hashQueryKey } from '@tanstack/react-query';
-import type { QueryClient, QueryCacheNotifyEvent } from '@tanstack/react-query';
+import type { Query, QueryClient, QueryCacheNotifyEvent } from '@tanstack/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatState, ChatStatus, ChatConnection } from '../core';
 
@@ -40,6 +40,9 @@ export class ReactQueryChatState implements ChatState {
   private writing = false;
   /** Writes to a host store that never reach the key's cache entry, which `version` also counts. */
   private revision = 0;
+  /** The cache entry `version` last counted, and the writes every entry before it had seen. */
+  private counted?: Query;
+  private carried = 0;
 
   constructor(options: ReactQueryChatStateOptions) {
     this.options = options;
@@ -62,9 +65,15 @@ export class ReactQueryChatState implements ChatState {
    * on the same array, so a snapshot keyed by this count still sees that write.
    */
   get version(): number {
-    const cached = this.options.queryClient.getQueryCache().get(this.queryHash)
-      ?.state.dataUpdateCount;
-    return (cached ?? 0) + this.revision;
+    const query = this.options.queryClient.getQueryCache().get(this.queryHash);
+    if (query !== this.counted) {
+      /** A removed and recreated entry restarts its count, so the old entry's writes carry over. */
+      if (this.counted) {
+        this.carried += this.counted.state.dataUpdateCount + 1;
+      }
+      this.counted = query;
+    }
+    return this.carried + (query?.state.dataUpdateCount ?? 0) + this.revision;
   }
 
   replaceMessages(messages: TMessage[]): void {
