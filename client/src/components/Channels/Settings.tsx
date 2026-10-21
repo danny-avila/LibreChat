@@ -37,7 +37,7 @@ export default function ChannelSettings() {
       dataService.listAgents({
         requiredPermission: PermissionBits.VIEW,
         mine: 1,
-        cursor: pageParam,
+        ...(pageParam ? { cursor: pageParam } : {}),
       }),
     {
       enabled: isAuthenticated && query.isSuccess,

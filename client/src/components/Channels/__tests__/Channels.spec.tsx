@@ -46,6 +46,34 @@ it('shows a safe error when loading connections fails', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('com_channels_error');
   expect(screen.queryByText('private backend detail')).not.toBeInTheDocument();
 });
+it('omits the first-page cursor and forwards the next-page cursor', async () => {
+  jest.spyOn(dataService, 'getChannels').mockResolvedValue({ connections: [] });
+  const list = jest.spyOn(dataService, 'listAgents').mockResolvedValueOnce({
+    data: [],
+    has_more: true,
+    after: 'next-page',
+    object: 'list',
+    first_id: '',
+    last_id: '',
+  });
+  list.mockResolvedValueOnce({
+    data: [],
+    has_more: false,
+    object: 'list',
+    first_id: '',
+    last_id: '',
+  });
+  const user = userEvent.setup();
+  mount(<Settings />);
+  const more = await screen.findByRole('button', { name: 'com_channels_more' });
+  expect(list.mock.calls[0][0]).not.toHaveProperty('cursor');
+  await user.click(more);
+  await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+  expect(list.mock.calls[1][0]).toMatchObject({ mine: 1, cursor: 'next-page' });
+  await waitFor(() =>
+    expect(screen.queryByRole('button', { name: 'com_channels_more' })).not.toBeInTheDocument(),
+  );
+});
 it('exposes check, enable, and unlink as separate operations', async () => {
   jest.spyOn(dataService, 'getChannels').mockResolvedValue({
     connections: [
