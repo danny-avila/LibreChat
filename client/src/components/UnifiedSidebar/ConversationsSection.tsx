@@ -110,6 +110,9 @@ const ConversationsSection = memo(() => {
       role="region"
       aria-label={localize('com_ui_chat_history')}
     >
+      <div className="flex items-center px-3 pb-3 pt-1">
+        <img src="assets/logo.svg" alt="PwC" className="h-7 w-auto" />
+      </div>
       <div className="flex items-center gap-0.5 px-3">
         {hasAccessToBookmarks && (
           <Suspense fallback={null}>
