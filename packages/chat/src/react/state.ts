@@ -43,6 +43,8 @@ export class ReactQueryChatState implements ChatState {
   /** The cache entry `version` last counted, and the writes every entry before it had seen. */
   private counted?: Query;
   private carried = 0;
+  /** The version last handed out, which a change of cache entry must move past. */
+  private reported?: number;
 
   constructor(options: ReactQueryChatStateOptions) {
     this.options = options;
@@ -66,14 +68,23 @@ export class ReactQueryChatState implements ChatState {
    */
   get version(): number {
     const query = this.options.queryClient.getQueryCache().get(this.queryHash);
+    const count = () => this.carried + (query?.state.dataUpdateCount ?? 0) + this.revision;
     if (query !== this.counted) {
       /** A removed and recreated entry restarts its count, so the old entry's writes carry over. */
       if (this.counted) {
         this.carried += this.counted.state.dataUpdateCount + 1;
       }
       this.counted = query;
+      /**
+       * An entry an observer created with initial data starts at zero writes, so its arrival alone
+       * moves the version past the last one handed out.
+       */
+      if (this.reported != null && count() <= this.reported) {
+        this.carried += this.reported - count() + 1;
+      }
     }
-    return this.carried + (query?.state.dataUpdateCount ?? 0) + this.revision;
+    this.reported = count();
+    return this.reported;
   }
 
   replaceMessages(messages: TMessage[]): void {
