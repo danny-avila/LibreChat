@@ -165,6 +165,19 @@ describe('ReactQueryChatState', () => {
     expect(state.version).toBeGreaterThan(before);
   });
 
+  it('moves past the last version when its entry is reset and written again', () => {
+    const queryClient = new QueryClient();
+    const state = new ReactQueryChatState({ queryClient, key: 'convo-1' });
+    const key = [QueryKeys.messages, 'convo-1'];
+    queryClient.setQueryData(key, [message('a')]);
+    const before = state.version;
+
+    queryClient.resetQueries({ queryKey: key, exact: true });
+    queryClient.setQueryData(key, [message('b')]);
+
+    expect(state.version).toBeGreaterThan(before);
+  });
+
   it('reports a write that creates its cache entry once', async () => {
     const queryClient = new QueryClient();
     const state = new ReactQueryChatState({ queryClient, key: 'convo-1' });

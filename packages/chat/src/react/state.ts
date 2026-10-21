@@ -40,10 +40,10 @@ export class ReactQueryChatState implements ChatState {
   private writing = false;
   /** Writes to a host store that never reach the key's cache entry, which `version` also counts. */
   private revision = 0;
-  /** The cache entry `version` last counted, and the writes every entry before it had seen. */
+  /** The cache entry and the data `version` last counted, and what it handed out for them. */
   private counted?: Query;
+  private countedData?: unknown;
   private carried = 0;
-  /** The version last handed out, which a change of cache entry must move past. */
   private reported?: number;
 
   constructor(options: ReactQueryChatStateOptions) {
@@ -68,23 +68,21 @@ export class ReactQueryChatState implements ChatState {
    */
   get version(): number {
     const query = this.options.queryClient.getQueryCache().get(this.queryHash);
-    const count = () => this.carried + (query?.state.dataUpdateCount ?? 0) + this.revision;
-    if (query !== this.counted) {
-      /** A removed and recreated entry restarts its count, so the old entry's writes carry over. */
-      if (this.counted) {
-        this.carried += this.counted.state.dataUpdateCount + 1;
-      }
-      this.counted = query;
+    const data = query?.state.data;
+    let version = this.carried + (query?.state.dataUpdateCount ?? 0) + this.revision;
+    const changed = query !== this.counted || data !== this.countedData;
+    if (changed && this.reported != null && version <= this.reported) {
       /**
-       * An entry an observer created with initial data starts at zero writes, so its arrival alone
-       * moves the version past the last one handed out.
+       * The write count restarts when an entry is created with initial data, removed and created
+       * again, or reset, so a change of entry or data alone moves past the last version handed out.
        */
-      if (this.reported != null && count() <= this.reported) {
-        this.carried += this.reported - count() + 1;
-      }
+      this.carried += this.reported - version + 1;
+      version = this.reported + 1;
     }
-    this.reported = count();
-    return this.reported;
+    this.counted = query;
+    this.countedData = data;
+    this.reported = version;
+    return version;
   }
 
   replaceMessages(messages: TMessage[]): void {
