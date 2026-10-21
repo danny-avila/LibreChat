@@ -2,6 +2,7 @@ import IoRedis from 'ioredis';
 import { randomUUID } from 'crypto';
 import { CacheKeys } from 'librechat-data-provider';
 import type { RedisClientsModule } from '~/cache/__tests__/redisClients.helper';
+import type { LCAvailableTools } from '~/mcp/types';
 import { closeRedisClients } from '~/cache/__tests__/redisClients.helper';
 
 /**
@@ -74,7 +75,7 @@ describe('MCP catalog store under a prefix-restricted ACL user', () => {
 
   test('writes and reads the global tool cache', async () => {
     const store = await createStore();
-    const tools = { search: { type: 'function', function: { name: 'search' } } };
+    const tools: LCAvailableTools = { search: { type: 'function', function: { name: 'search' } } };
 
     await expect(store.setCachedTools(tools)).resolves.toBe(true);
     await expect(store.getCachedTools()).resolves.toEqual(tools);
