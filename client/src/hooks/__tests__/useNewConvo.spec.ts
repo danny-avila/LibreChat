@@ -544,9 +544,9 @@ describe('useNewConvo reset cleanup', () => {
       bindComposerLaunch(launch, 2);
       const owner = captureComposerDraft(2, 'new');
       await act(async () => {
-        await result.current.upload.handleFiles(
-          [new File(['sync'], 'sync.txt', { type: 'text/plain' })],
-        );
+        await result.current.upload.handleFiles([
+          new File(['sync'], 'sync.txt', { type: 'text/plain' }),
+        ]);
       });
       const body = mockUploadFile.mock.calls[0][0] as FormData;
       expect(body.get('assistant_id')).toBe('assistant-sync');
@@ -561,7 +561,7 @@ describe('useNewConvo reset cleanup', () => {
         userMessage: {
           messageId: 'sync-user',
           conversationId: 'saved-sync',
-          parentMessageId: Constants.NO_PARENT,
+          parentMessageId: String(Constants.NO_PARENT),
           title: 'New Chat',
           text: 'Hello',
           isCreatedByUser: true,

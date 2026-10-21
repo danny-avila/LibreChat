@@ -2397,7 +2397,10 @@ describe('useFileHandling', () => {
     ]);
     expect(update(retired).has('retired-id')).toBe(false);
     expect(update(retired).get('kept')).toBe(retained);
-    for (const entry of [{ ...file, file: replacement }, { ...file, progress: 1 }]) {
+    for (const entry of [
+      { ...file, file: replacement },
+      { ...file, progress: 1 },
+    ]) {
       const current = new Map<string, ExtendedFile>([
         ['retired-id', entry],
         ['kept', retained],
