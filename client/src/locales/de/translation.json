@@ -403,7 +403,7 @@
   "com_error_refusal": "Antwort von Sicherheitsfiltern verweigert. Formulieren Sie Ihre Nachricht um und versuchen Sie es erneut. Sollte dies bei der Verwendung von Claude Sonnet 4.5 oder Opus 4.1 häufig auftreten, versuchen Sie es mit Sonnet 4, da hier andere Nutzungsbeschränkungen gelten.",
   "com_error_resource_recovery_required": "Einige Dateien aus dieser Unterhaltung konnten nicht wiederhergestellt werden. Hänge die Dateien erneut an und versuche es noch einmal.",
   "com_error_stream_expired": "Der Antwort-Stream ist abgelaufen oder wurde bereits abgeschlossen. Bitte versuche es erneut.",
-  "com_error_token_balance": "Nicht genügend Guthaben. Verfügbares Guthaben: {{0}}. Prompt-Tokens: {{1}}. Kosten: {{2}}.",
+  "com_error_token_balance": "Ihr Guthaben reicht für diese Anfrage nicht: benötigt {{0}}, verfügbar {{1}}. Es wird mit Ihrem Tarif monatlich erneuert (Einstellungen → Nutzung).",
   "com_file_pages": "Seiten: {{pages}}",
   "com_file_source": "Datei",
   "com_file_unknown": "Unbekannte Datei",
