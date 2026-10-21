@@ -467,7 +467,7 @@ const isExpired = (action: Agents.PendingAction): boolean =>
 const getStopResult = (result: ChatAbortResult, conversationId?: string): ChatStopResult => {
   if (!isStreamAbort(result)) {
     /** An Assistants run's answer carries the conversation, which a first turn's server created. */
-    const created = result?.conversation.conversationId ?? undefined;
+    const created = result?.conversation?.conversationId ?? undefined;
     return { status: 'stopped', ...(created != null && { conversationId: created }) };
   }
   const ended = !result.settled && !result.persistenceFailed;
@@ -929,7 +929,7 @@ export class Chat {
     }
     generation.paused ??= this.action?.actionId;
     const result = await this.stopGeneration(generation, target);
-    return this.endStopped(active, generation, result);
+    return this.orUnaddressed(await this.endStopped(active, generation, result));
   }
 
   /**
@@ -1261,8 +1261,11 @@ export class Chat {
     if (this.publishUnframedStop(result, unframed)) {
       return getStopResult(result, generation.stoppedConversationId);
     }
-    if (this.status === 'error') {
-      /** The stop confirmed the end a dropped connection left unknown. */
+    if (this.status === 'error' && !this.unaddressed) {
+      /**
+       * The stop confirmed the end a dropped connection left unknown. A lost start still owed its
+       * own abort keeps the failure it reported.
+       */
       this.init.state.error = undefined;
       this.init.state.status = 'ready';
     }

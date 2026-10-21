@@ -2538,3 +2538,40 @@ describe('Chat status reads of a dropped generation', () => {
     expect(last.message?.messageId).toBe('response-9');
   });
 });
+
+describe('Chat stops while a lost start is owed', () => {
+  it('(2) a stop of a restored pause keeps the failure a lost start reported', async () => {
+    const h = createHarness();
+    await lost(h);
+    expect(h.chat.status).toBe('error');
+    h.chat.restorePendingAction(askAction, 500);
+
+    await expect(h.chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+    expect(h.chat.status).toBe('error');
+  });
+
+  it('(2) a stop of a reattachment still owes the lost start', async () => {
+    const h = createHarness();
+    await lost(h);
+    h.transport.reconnectToStream.mockImplementationOnce(() => new Promise(() => undefined));
+    h.chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 500 }).then(
+      () => undefined,
+      () => undefined,
+    );
+    await flush();
+    h.transport.abort.mockResolvedValueOnce({ success: true });
+
+    await expect(h.chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+  });
+
+  it('(2) an Assistants stop answer without a conversation still resolves the stop', async () => {
+    const h = createHarness();
+    await states.attached(h);
+    h.transport.abort.mockResolvedValueOnce({
+      final: true,
+      runMessages: [],
+    } as unknown as ChatAbortResult);
+
+    await expect(h.chat.stop()).resolves.toEqual({ status: 'stopped' });
+  });
+});
