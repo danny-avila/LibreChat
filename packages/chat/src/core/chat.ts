@@ -650,6 +650,14 @@ export class Chat {
     if (this.active || this.disposed) {
       return;
     }
+    if (
+      options.generationCreatedAt != null &&
+      !continuation &&
+      this.isStaleRead(options.generationCreatedAt)
+    ) {
+      /** A status read that named an older generation than this chat holds changes nothing. */
+      return;
+    }
     /** The host's selection is read before any marker changes, so a throw leaves them all as they were. */
     const selected = this.resumeEndpoint();
     /** A turn whose stream dropped: finding nothing running means it ended without this chat. */
@@ -1111,10 +1119,10 @@ export class Chat {
   /** Stops a pause restored without a stream on the server, which frees the chat for a turn. */
   private async stopPaused(): Promise<ChatStopResult> {
     const action = this.action;
-    const endpoint = this.resumeEndpoint();
     if (!action) {
       return { status: 'idle' };
     }
+    const endpoint = this.resumeEndpoint();
     if (!endpoint) {
       throw new Error('The paused generation cannot be stopped without its endpoint');
     }
@@ -1210,15 +1218,10 @@ export class Chat {
       /** A status read before the answer landed reports a pause this chat already resumed. */
       return;
     }
-    if (this.endedGenerations.has(generationCreatedAt)) {
-      /** A status read before the end landed reports a pause of a generation that ended. */
+    if (this.isStaleRead(generationCreatedAt)) {
       return;
     }
     const dropped = this.detached?.target.generationCreatedAt;
-    if (dropped != null && generationCreatedAt < dropped) {
-      /** A read of an older generation than the one whose stream dropped is stale. */
-      return;
-    }
     if (this.detached && (dropped == null || generationCreatedAt > dropped)) {
       /**
        * The pause belongs to a newer generation, or one the dropped stream never dated, which
@@ -1830,6 +1833,23 @@ export class Chat {
       ...(settled?.conversationId !== undefined && { conversationId: settled.conversationId }),
       ...(settled?.reason !== undefined && { reconcileReason: settled.reason }),
     });
+  }
+
+  /**
+   * Whether a status read names a generation this chat already knows is over or superseded: one
+   * that ended, or one older than the generation whose stream dropped or whose pause it holds.
+   * Every consumer of a status read checks this before changing anything.
+   */
+  private isStaleRead(generationCreatedAt: number): boolean {
+    if (this.endedGenerations.has(generationCreatedAt)) {
+      return true;
+    }
+    const dropped = this.detached?.target.generationCreatedAt;
+    if (dropped != null && generationCreatedAt < dropped) {
+      return true;
+    }
+    const paused = this.action ? this.generationCreatedAt : undefined;
+    return paused != null && generationCreatedAt < paused;
   }
 
   /** Adopts the conversation the server created for a chat started under `new`; a real id stays. */

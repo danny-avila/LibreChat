@@ -779,12 +779,8 @@ const table: Array<[keyof typeof states, keyof typeof events, Expected]> = [
     },
   ],
   ['detached', 'reconnectIdle', { status: 'ready', finishes: 2, last: settled, abort: NONE }],
-  /** The reconnect named generation 100, which the caller knew running, so finding none settles it. */
-  [
-    'restored',
-    'reconnectIdle',
-    { status: 'ready', finishes: 1, last: settled, action: NONE, abort: NONE },
-  ],
+  /** The reconnect named generation 100, older than the restored pause's 500, so it is stale. */
+  ['restored', 'reconnectIdle', { status: 'ready', finishes: 0, action: 'action-1', abort: NONE }],
   ['aborted', 'reconnectIdle', { status: 'ready', finishes: 1, last: aborted, abort: NONE }],
   [
     'detached',
@@ -1858,4 +1854,48 @@ describe('Chat conversation identity', () => {
       );
     },
   );
+});
+
+describe('Chat status reads out of order', () => {
+  it('(2) a status read older than the restored pause is stale and keeps the newer pause', async () => {
+    const h = createHarness();
+    h.chat.restorePendingAction(askAction, 500);
+    h.chat.restorePendingAction({ ...askAction, actionId: 'action-old' }, 400);
+
+    expect(h.chat.pendingAction?.actionId).toBe('action-1');
+    await h.chat.stop();
+    expect(h.transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({ generationCreatedAt: 500 }),
+    );
+  });
+
+  it.each([
+    ['the restored pause', states.restored, 400, 500],
+    ['the dropped generation', states.detached, 50, 100],
+  ])(
+    '(2) a reattachment naming a generation older than %s changes nothing',
+    async (_label, state, named, kept) => {
+      const h = createHarness();
+      await state(h);
+      const reconnects = h.transport.reconnectToStream.mock.calls.length;
+      await h.chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: named });
+
+      expect(h.transport.reconnectToStream.mock.calls.length).toBe(reconnects);
+      h.transport.abort.mockResolvedValueOnce({ success: true });
+      await h.chat.stop();
+      expect(h.transport.abort).toHaveBeenLastCalledWith(
+        expect.objectContaining({ generationCreatedAt: kept }),
+      );
+    },
+  );
+
+  it('(5) an idle stop answers idle without reading a resume selection that throws', async () => {
+    const h = createHarness({
+      resumeSelection: () => {
+        throw new Error('no selection');
+      },
+    });
+
+    await expect(h.chat.stop()).resolves.toEqual({ status: 'idle' });
+  });
 });
