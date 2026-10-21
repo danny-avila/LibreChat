@@ -849,6 +849,44 @@ describe('Chat invariants', () => {
     await expect(h.chat.stop()).resolves.toEqual({ status: 'unaddressable' });
   });
 
+  it('(1) a stop of a named reattachment leaves the other generation its reconnect found running', async () => {
+    const h = createHarness();
+    let answerStop: (() => void) | undefined;
+    h.transport.abort.mockImplementation(
+      () => new Promise((resolve) => (answerStop = () => resolve({ success: true }))),
+    );
+    const other = createStream({ streamId: 'convo-1', generationCreatedAt: 400 });
+    let openOther: (() => void) | undefined;
+    h.transport.reconnectToStream.mockImplementation(
+      () => new Promise((resolve) => (openOther = () => resolve(other))),
+    );
+    h.chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 300 }).then(
+      () => undefined,
+      () => undefined,
+    );
+    await flush();
+    const first = h.chat.stop();
+    await flush();
+    openOther?.();
+    await flush();
+    answerStop?.();
+    await first;
+    other.push(stepEvent);
+    await flush();
+
+    expect(other.closed()).toBe(false);
+    expect(h.chat.status).toBe('streaming');
+    h.transport.abort.mockResolvedValueOnce({ success: true });
+    const second = h.chat.stop();
+    await flush();
+    expect(h.transport.abort).toHaveBeenCalledTimes(2);
+    expect(h.transport.abort).toHaveBeenLastCalledWith(
+      expect.objectContaining({ generationCreatedAt: 400 }),
+    );
+    other.push(finalEvent({ terminalStatus: 'aborted' }));
+    await second;
+  });
+
   it('(1) a stop of a restored pause ends the pause a refresh restored for its generation meanwhile', async () => {
     const h = createHarness();
     let answerStop: (() => void) | undefined;

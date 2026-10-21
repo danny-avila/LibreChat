@@ -634,7 +634,9 @@ export class Chat {
     }
     generation.endpoint = this.resumeEndpoint() ?? dropped?.target.endpoint;
     generation.conversationId = options.conversationId ?? generation.conversationId;
-    active.inheritedGeneration = continued?.target.generationCreatedAt ?? paused?.createdAt;
+    /** The generation the caller named, or the record continued, so a stream of another is told apart. */
+    active.inheritedGeneration =
+      options.generationCreatedAt ?? continued?.target.generationCreatedAt ?? paused?.createdAt;
     active.reattach = { streamId: options.streamId ?? continued?.target.streamId };
     this.active = active;
     const superseded =
