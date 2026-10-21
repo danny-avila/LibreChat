@@ -12,6 +12,12 @@ if (REDIS_KEY_PREFIX_VAR && REDIS_KEY_PREFIX) {
   throw new Error('Only either REDIS_KEY_PREFIX_VAR or REDIS_KEY_PREFIX can be set.');
 }
 
+// Optional prefix for Redis pub/sub channel names. ioredis keyPrefix applies to key
+// operations but NOT to pub/sub channels, so a separate prefix is needed when Redis
+// ACLs restrict channel patterns (e.g. per-tenant &<prefix>:* channel ACL rules).
+// When set, channels like `stream:{<id>}:events` become `<prefix>stream:{<id>}:events`.
+const REDIS_CHANNEL_PREFIX = process.env.REDIS_CHANNEL_PREFIX || '';
+
 const USE_REDIS = isEnabled(process.env.USE_REDIS);
 if (USE_REDIS && !process.env.REDIS_URI) {
   throw new Error('USE_REDIS is enabled but REDIS_URI is not set.');
@@ -108,6 +114,7 @@ const cacheConfig: {
   /** Contents of the TLS client key file (mTLS), or null when unset */
   REDIS_TLS_KEY: string | null;
   REDIS_KEY_PREFIX: string;
+  REDIS_CHANNEL_PREFIX: string;
   GLOBAL_PREFIX_SEPARATOR: string;
   REDIS_MAX_LISTENERS: number;
   REDIS_PING_INTERVAL: number;
@@ -187,6 +194,7 @@ const cacheConfig: {
   REDIS_TLS_CERT: redisTlsCert,
   REDIS_TLS_KEY: redisTlsKey,
   REDIS_KEY_PREFIX: process.env[REDIS_KEY_PREFIX_VAR ?? ''] || REDIS_KEY_PREFIX || '',
+  REDIS_CHANNEL_PREFIX,
   GLOBAL_PREFIX_SEPARATOR: '::',
   REDIS_MAX_LISTENERS: math(process.env.REDIS_MAX_LISTENERS, 40),
   REDIS_PING_INTERVAL: math(process.env.REDIS_PING_INTERVAL, 0),
