@@ -423,6 +423,7 @@ export const skillSyncGitLabSourceSchema = z
   .object({
     id: skillSyncIdentifierSchema,
     baseUrl: skillSyncGitLabBaseUrlSchema.optional(),
+    /** Numeric ID as a string, raw group/project path, or once URL-encoded path; not a full URL. */
     projectId: skillSyncGitLabProjectIdSchema,
     ref: skillSyncGitHubRefSchema.default('main'),
     paths: z.array(skillSyncPathSchema).min(1),

@@ -30,6 +30,7 @@ type GitLabFileMetadata = {
 
 export type GitLabRepoAdapterConfig = {
   baseUrl?: string;
+  /** Numeric ID, raw namespaced path, or once URL-encoded namespaced path (not a full URL). */
   projectId: string;
   token: string;
   fetchFn: FetchFn;
@@ -217,7 +218,16 @@ async function fetchFileMetadata(params: {
 }
 
 export function createGitLabRepoAdapter(config: GitLabRepoAdapterConfig): GitRepoAdapter {
-  const { projectId, token, fetchFn } = config;
+  const { token, fetchFn } = config;
+  let projectId: string;
+  try {
+    projectId = decodeURIComponent(config.projectId);
+  } catch {
+    throw new RepoAdapterError(
+      'GITLAB_INVALID_PROJECT_ID',
+      'GitLab projectId must be a numeric ID, raw path, or once URL-encoded path',
+    );
+  }
   const apiBase = buildGitLabApiBase(config.baseUrl ?? GITLAB_DEFAULT_BASE_URL);
 
   async function resolveCommit(ref: string): Promise<RepoCommit> {

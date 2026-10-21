@@ -80,6 +80,48 @@ function createAdapter(overrides: Partial<GitLabRepoAdapterConfig> = {}) {
 }
 
 describe('createGitLabRepoAdapter', () => {
+  describe.each(['https://gitlab.com', 'https://gitlab.example.com/gitlab'])(
+    'project routing on %s',
+    (baseUrl) => {
+      it.each([
+        ['42', '42'],
+        ['group/skills', 'group%2Fskills'],
+        ['group/subgroup/skills', 'group%2Fsubgroup%2Fskills'],
+        ['group%2Fskills', 'group%2Fskills'],
+        ['group%2fsubgroup%2Fskills', 'group%2Fsubgroup%2Fskills'],
+      ])('encodes project %s exactly once for every endpoint', async (projectId, encodedId) => {
+        const fetchFn = gitlabFetch();
+        const adapter = createAdapter({ baseUrl, projectId, fetchFn });
+        const commit = await adapter.resolveCommit('feature/skills');
+        const entries = await adapter.fetchTreeEntries(commit, {
+          ref: 'feature/skills',
+          pathPrefix: 'skills',
+          assertNotCancelled: () => undefined,
+        });
+        await adapter.fetchFileContent(commit, { ref: 'feature/skills', entry: entries[0] });
+        const root = `${baseUrl}/api/v4/projects/${encodedId}/repository`;
+        expect(jest.mocked(fetchFn).mock.calls.map(([url]) => url.toString())).toEqual([
+          `${root}/commits/feature%2Fskills`,
+          `${root}/tree?ref=commit-sha&recursive=true&per_page=100&page=1&path=skills`,
+          `${root}/files/skills%2Fresearch%2FSKILL.md?ref=commit-sha`,
+          `${root}/files/skills%2Fresearch%2Fscripts%2Frun.sh?ref=commit-sha`,
+          `${root}/files/skills%2Fresearch%2FSKILL.md?ref=commit-sha`,
+        ]);
+      });
+    },
+  );
+
+  it.each(['group%2', 'group%GGskills'])(
+    'rejects malformed encoding in %s before HTTP',
+    (projectId) => {
+      const fetchFn = gitlabFetch();
+      expect(() => createAdapter({ projectId, fetchFn })).toThrow(
+        expect.objectContaining({ code: 'GITLAB_INVALID_PROJECT_ID' }),
+      );
+      expect(fetchFn).not.toHaveBeenCalled();
+    },
+  );
+
   it('resolves a ref to a commit id, with treeId equal to the commit (GitLab has no separate tree object)', async () => {
     const adapter = createAdapter();
     const commit = await adapter.resolveCommit('main');

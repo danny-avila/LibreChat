@@ -63,7 +63,9 @@ describe('createRepoAdapter', () => {
     const adapter = createRepoAdapter('gitlab', gitlabSource, { token: 't', fetchFn });
     await adapter.resolveCommit('main');
     const [calledUrl] = (fetchFn as unknown as jest.Mock).mock.calls[0];
-    expect(calledUrl.toString()).toContain('gitlab.com/api/v4');
+    expect(calledUrl.toString()).toBe(
+      'https://gitlab.com/api/v4/projects/group%2Fskills/repository/commits/main',
+    );
   });
 
   it('honors a self-hosted GitLab baseUrl when routing', async () => {
@@ -80,6 +82,8 @@ describe('createRepoAdapter', () => {
     const adapter = createRepoAdapter('gitlab', source, { token: 't', fetchFn });
     await adapter.resolveCommit('main');
     const [calledUrl] = (fetchFn as unknown as jest.Mock).mock.calls[0];
-    expect(calledUrl.toString()).toContain('gitlab.internal.example.com/api/v4');
+    expect(calledUrl.toString()).toBe(
+      'https://gitlab.internal.example.com/api/v4/projects/group%2Fskills/repository/commits/main',
+    );
   });
 });
