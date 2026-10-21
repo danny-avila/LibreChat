@@ -13,7 +13,7 @@ interface ConfigSecretFieldInput {
   allowEnvPlaceholder?: boolean;
 }
 
-interface ConfigSecretField extends ConfigSecretFieldInput {
+export interface ConfigSecretField extends ConfigSecretFieldInput {
   /** Non-secret masked-preview companion, always the sibling `<field>Preview`. Written on encrypt, preserved by redaction. */
   previewPath: string;
 }
@@ -23,8 +23,9 @@ interface ConfigSecretField extends ConfigSecretFieldInput {
  * config API encrypt these at rest, reads redact them, and omitting them on a
  * subsequent write preserves the stored encrypted value. Each secret's
  * masked-preview companion is derived as `<path>Preview` — recognizing a new
- * sensitive field is a one-line path addition (plus the `<field>Preview`
- * companion in the config schema).
+ * sensitive field is a one-line path addition, plus the `<field>Preview`
+ * companion in the config schema and a runtime reader that decrypts the stored
+ * value (`secrets.runtime.spec.ts` lists them).
  */
 const CONFIG_SECRET_FIELDS: readonly ConfigSecretField[] = (
   [
@@ -40,6 +41,7 @@ const CONFIG_SECRET_FIELDS: readonly ConfigSecretField[] = (
     { path: 'webSearch.searxngApiKey', allowEnvPlaceholder: true },
     { path: 'webSearch.firecrawlApiKey', allowEnvPlaceholder: true },
     { path: 'webSearch.tavilyApiKey', allowEnvPlaceholder: true },
+    { path: 'webSearch.keenableApiKey', allowEnvPlaceholder: true },
     { path: 'webSearch.jinaApiKey', allowEnvPlaceholder: true },
     { path: 'webSearch.cohereApiKey', allowEnvPlaceholder: true },
     { path: 'endpoints.assistants.apiKey', allowEnvPlaceholder: true },
@@ -59,7 +61,7 @@ const LEGACY_PREVIEW_PATHS: ReadonlyMap<string, string> = new Map([
  * A secret stored on every item of an array config field, which dot-path
  * registry entries cannot express.
  */
-interface ArraySecretField {
+export interface ArraySecretField {
   /** Dot-path of the array container within config overrides */
   arrayPath: string;
   secretKey: string;
@@ -141,6 +143,16 @@ export function normalizeStoredPreview(preview: string): string {
 /** Top-level config sections containing registered secret fields. */
 export function getConfigSecretSections(): readonly string[] {
   return SECRET_SECTIONS;
+}
+
+/** The registered scalar secret fields, each with its preview companion path. */
+export function getConfigSecretFields(): readonly ConfigSecretField[] {
+  return CONFIG_SECRET_FIELDS;
+}
+
+/** The registered array-item secret fields. */
+export function getConfigArraySecretFields(): readonly ArraySecretField[] {
+  return ARRAY_SECRET_FIELDS;
 }
 
 function normalizeSecretString(value: unknown): string | undefined {
@@ -243,10 +255,6 @@ export function decryptConfigSecret(value: unknown): string | undefined {
 }
 
 /**
- * Resolves a config credential for runtime use: decrypts encrypted values and
- * resolves `${ENV_VAR}` placeholders, passing plain literals through unchanged.
- */
-/**
  * Whether a value has the exact shape `encryptV3` produces
  * (`v3:<32-hex-iv>:<hex-ciphertext>`). Runtime resolution uses this strict
  * check so a legitimate literal credential that merely starts with `v3:`
@@ -257,6 +265,10 @@ export function isEncryptedSecretPayload(value: string): boolean {
   return ENCRYPTED_PAYLOAD_REGEX.test(value.trim());
 }
 
+/**
+ * Resolves a config credential for runtime use: decrypts encrypted values and
+ * resolves `${ENV_VAR}` placeholders, passing plain literals through unchanged.
+ */
 export function resolveConfigSecret(value?: string): string | undefined {
   if (value == null || value === '') {
     return value;
@@ -265,6 +277,19 @@ export function resolveConfigSecret(value?: string): string | undefined {
     return decryptConfigSecret(value);
   }
   return extractEnvVariable(value);
+}
+
+/**
+ * Resolves a stored config credential without consulting the environment:
+ * decrypts an encrypted value and returns any other value verbatim, so a
+ * stored value never splices `${ENV_VAR}` references into a request. A failed
+ * decryption yields undefined, never the ciphertext.
+ */
+export function resolveStoredConfigSecret(value: string): string | undefined {
+  if (isEncryptedSecretPayload(value)) {
+    return decryptConfigSecret(value);
+  }
+  return value;
 }
 
 export function getConfigSecretMutationPaths(fieldPath: string): string[] {
@@ -863,12 +888,40 @@ function redactSecretMapFields(rootRecord: Record<string, unknown>): void {
 }
 
 /**
+ * Gives a plaintext secret without a preview the one its next save would
+ * write. A value stored before its path joined the registry stays plaintext
+ * until its section is saved again, and the runtime still reads it, so a read
+ * must show it as set.
+ */
+function previewLegacyPlaintext(
+  section: Record<string, unknown>,
+  previewKey: string,
+  value: unknown,
+): void {
+  const plaintext = normalizeSecretString(value);
+  if (!plaintext || section[previewKey] || isEncryptedSecretPayload(plaintext)) {
+    return;
+  }
+  section[previewKey] = getSecretPreview(plaintext);
+}
+
+interface RedactConfigSecretsOptions {
+  /** Gives a plaintext secret without a preview the one its next save would write. */
+  previewPlaintext?: boolean;
+  /** The librechat.yaml config a merged `root` came from; plaintext values it supplies get no preview. */
+  yamlConfig?: unknown;
+}
+
+/**
  * Deletes registered secret values from `root` in place so admin reads never
  * return them (encrypted or plaintext). Preview companions and plain
  * `${ENV_VAR}` references (for fields that allow them) are preserved.
  * Secret *maps* are masked value-by-value. The caller passes a cloned object.
  */
-export function redactConfigSecrets<T>(root: T): T {
+export function redactConfigSecrets<T>(
+  root: T,
+  { previewPlaintext = false, yamlConfig }: RedactConfigSecretsOptions = {},
+): T {
   const rootRecord = getPlainRecord(root);
   if (!rootRecord) {
     return root;
@@ -904,6 +957,9 @@ export function redactConfigSecrets<T>(root: T): T {
     const value = section[key];
     if (field.allowEnvPlaceholder && typeof value === 'string' && isEnvPlaceholder(value)) {
       continue;
+    }
+    if (previewPlaintext && walkToParent(yamlConfig, segments)?.[key] !== value) {
+      previewLegacyPlaintext(section, previewKey, value);
     }
     delete section[key];
   }

@@ -18,17 +18,19 @@ import {
   isProcessMCPServerField,
 } from 'librechat-data-provider';
 import type {
+  IConfig,
   AppConfig,
   ConfigSection,
-  IConfig,
   SystemCapability,
   ConfigOverrideIssue,
+  ConfigWritePrecondition,
 } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { AdminAuditEvent, RecordAuditEntry } from './audit';
 import type { CapabilityUser } from '~/middleware/capabilities';
+import type { SecretReentryIssue } from './binding';
 import type { ServerRequest } from '~/types/http';
 import {
   encryptConfigSecretFields,
@@ -42,6 +44,13 @@ import {
   preserveConfigSecrets,
   redactConfigSecrets,
 } from './secrets';
+import {
+  hasWebSearchSection,
+  getPatchReentryIssues,
+  isWebSearchBindingPath,
+  getRemovalReentryIssues,
+  getReplaceReentryIssues,
+} from './binding';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { createAdminAuditEmitter } from './audit';
 
@@ -196,8 +205,9 @@ export interface AdminConfigDeps {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean; preservePriority?: boolean },
+    options?: { expectEmpty?: boolean; preservePriority?: boolean } & ConfigWritePrecondition,
   ) => Promise<IConfig | null>;
+  /** Resolves to `null` only when `options.expectedVersion` no longer holds. */
   patchConfigFields: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -205,6 +215,7 @@ export interface AdminConfigDeps {
     fields: Record<string, unknown>,
     priority: number,
     session?: ClientSession,
+    options?: ConfigWritePrecondition,
   ) => Promise<IConfig | null>;
   tombstoneConfigField: (
     principalType: PrincipalType,
@@ -213,12 +224,14 @@ export interface AdminConfigDeps {
     fieldPath: string,
     priority: number,
     session?: ClientSession,
+    options?: ConfigWritePrecondition,
   ) => Promise<IConfig | null>;
   unsetConfigField: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     fieldPath: string,
     session?: ClientSession,
+    options?: ConfigWritePrecondition,
   ) => Promise<IConfig | null>;
   deleteConfig: (
     principalType: PrincipalType,
@@ -424,14 +437,20 @@ function collectAppConfigSections(appConfig: AppConfig): string[] {
 function redactConfigForResponse(config: IConfig): IConfig {
   const safeConfig = JSON.parse(JSON.stringify(config)) as IConfig;
   if (safeConfig.overrides) {
-    redactConfigSecrets(safeConfig.overrides);
+    redactConfigSecrets(safeConfig.overrides, { previewPlaintext: true });
   }
   return safeConfig;
 }
 
-function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
+/**
+ * Redacts an `AppConfig` for an admin read. For a config merged with overrides,
+ * `yamlConfig` is the librechat.yaml config beneath them: a plaintext secret an
+ * override stored before its path was registered gets a preview, like a read
+ * of the override document itself.
+ */
+function redactAppConfigForResponse(appConfig: AppConfig, yamlConfig?: AppConfig): AppConfig {
   const safeConfig = JSON.parse(JSON.stringify(appConfig)) as AppConfig & { config?: unknown };
-  redactConfigSecrets(safeConfig);
+  redactConfigSecrets(safeConfig, { previewPlaintext: yamlConfig != null, yamlConfig });
   if (safeConfig.config != null && typeof safeConfig.config === 'object') {
     redactConfigSecrets(safeConfig.config);
   }
@@ -445,6 +464,34 @@ function invalidOverrideResponse(res: Response, issues: ConfigOverrideIssue[]): 
     code: 'CONFIG_OVERRIDE_INVALID',
     issues: issues.map(({ path, code }) => ({ path, code })),
   });
+}
+
+/**
+ * Rejects a write that would send a stored secret to a destination it was not
+ * entered for. Reports only paths and stable codes, never a value.
+ */
+function secretReentryResponse(res: Response, issues: SecretReentryIssue[]): Response {
+  return res.status(400).json({
+    error: 'Enter the stored API key again when changing the URL it is sent to',
+    code: 'CONFIG_SECRET_REENTRY_REQUIRED',
+    issues: issues.map(({ path, code, secretPath }) => ({ path, code, secretPath })),
+  });
+}
+
+/**
+ * Rejects a write whose re-entry check read a document version another write
+ * has since replaced, so the check never approves a state it did not see.
+ */
+function versionConflictResponse(res: Response): Response {
+  return res.status(409).json({
+    error: 'The config changed while this write was being checked. Reload it and try again.',
+    code: 'CONFIG_VERSION_CONFLICT',
+  });
+}
+
+/** The version a binding write must apply to: the one read, or `null` when no document existed. */
+function readVersion(config: IConfig | null | undefined): ConfigWritePrecondition {
+  return { expectedVersion: config?.configVersion ?? null };
 }
 
 function preservePatchedConfigSecretFields(
@@ -562,15 +609,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const baseOnly = (req.query as Record<string, unknown>).baseOnly === 'true';
-      const appConfig = await getAppConfig({
-        tenantId: user.tenantId,
-        baseOnly,
-      });
+      const [appConfig, yamlConfig] = await Promise.all([
+        getAppConfig({ tenantId: user.tenantId, baseOnly }),
+        baseOnly ? undefined : getAppConfig({ tenantId: user.tenantId, baseOnly: true }),
+      ]);
       const sections = collectAppConfigSections(appConfig) as ConfigSection[];
       const readable = await getReadableConfigSections(user, sections);
       const filteredAppConfig = filterAppConfigForReadAccess(appConfig, readable);
 
-      return res.status(200).json({ config: redactAppConfigForResponse(filteredAppConfig) });
+      return res
+        .status(200)
+        .json({ config: redactAppConfigForResponse(filteredAppConfig, yamlConfig) });
     } catch (error) {
       logger.error('[adminConfig] getBaseConfig error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to get base config' });
@@ -797,6 +846,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         encryptedOverrides,
         existingConfig?.overrides,
       );
+      const reentryIssues = getReplaceReentryIssues(stored, filteredOverrides, preservedOverrides);
+      if (reentryIssues.length > 0) {
+        return secretReentryResponse(res, reentryIssues);
+      }
+      const precondition: ConfigWritePrecondition = hasWebSearchSection(filteredOverrides)
+        ? readVersion(stored)
+        : {};
       if (needsProtectedBaseSections) {
         for (const section of BASE_PRINCIPAL_OVERRIDE_SECTIONS) {
           const storedSection = (
@@ -814,8 +870,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         preservedOverrides,
         requestedPriority,
         undefined,
-        upsertOptions,
+        { ...upsertOptions, ...precondition },
       );
+      if (!config && precondition.expectedVersion !== undefined) {
+        return versionConflictResponse(res);
+      }
       if (!config && !hasBroadManage) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
@@ -992,6 +1051,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         encryptedFields,
         existing?.overrides,
       );
+      const reentryIssues = getPatchReentryIssues(existing, fields, preservedFields);
+      if (reentryIssues.length > 0) {
+        return secretReentryResponse(res, reentryIssues);
+      }
+      const precondition = Object.keys(fields).some(isWebSearchBindingPath)
+        ? readVersion(existing)
+        : undefined;
 
       const config = await patchConfigFields(
         principalType,
@@ -999,7 +1065,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         principalModel(principalType),
         preservedFields,
         requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
+        undefined,
+        precondition,
       );
+      if (!config && precondition) {
+        return versionConflictResponse(res);
+      }
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after patch:', err),
@@ -1102,23 +1173,35 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
 
+      const binding = isWebSearchBindingPath(fieldPath);
       const existing =
-        requestedPriority == null
+        requestedPriority == null || binding
           ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
           : null;
+      const reentryIssues = getRemovalReentryIssues(existing, fieldPath, true);
+      if (reentryIssues.length > 0) {
+        return secretReentryResponse(res, reentryIssues);
+      }
+      const precondition = binding ? readVersion(existing) : undefined;
 
       let config: IConfig | null = null;
       /** Each write bumps configVersion, so creation is read off the first write only. */
       let created = false;
       try {
-        for (const path of getConfigSecretMutationPaths(fieldPath)) {
+        const paths = getConfigSecretMutationPaths(fieldPath);
+        for (let i = 0; i < paths.length; i++) {
           const fieldConfig = await writeConfigTombstone(
             principalType,
             principalId,
             principalModel(principalType),
-            path,
+            paths[i],
             requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
+            undefined,
+            i === 0 ? precondition : undefined,
           );
+          if (!fieldConfig && i === 0 && precondition) {
+            return versionConflictResponse(res);
+          }
           if (fieldConfig) {
             created ||= config == null && fieldConfig.configVersion === 1;
             config = fieldConfig;
@@ -1229,10 +1312,33 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
 
+      const binding = isWebSearchBindingPath(fieldPath);
+      const existing = binding
+        ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+        : undefined;
+      if (binding && !existing) {
+        return res.status(404).json({ error: 'Config not found' });
+      }
+      const reentryIssues = getRemovalReentryIssues(existing, fieldPath, false);
+      if (reentryIssues.length > 0) {
+        return secretReentryResponse(res, reentryIssues);
+      }
+      const precondition = binding ? readVersion(existing) : undefined;
+
       let config: IConfig | null = null;
       try {
-        for (const path of getConfigSecretMutationPaths(fieldPath)) {
-          const fieldConfig = await unsetConfigField(principalType, principalId, path);
+        const paths = getConfigSecretMutationPaths(fieldPath);
+        for (let i = 0; i < paths.length; i++) {
+          const fieldConfig = await unsetConfigField(
+            principalType,
+            principalId,
+            paths[i],
+            undefined,
+            i === 0 ? precondition : undefined,
+          );
+          if (!fieldConfig && i === 0 && precondition) {
+            return versionConflictResponse(res);
+          }
           if (fieldConfig) {
             config = fieldConfig;
           }

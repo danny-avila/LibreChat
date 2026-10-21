@@ -3547,6 +3547,7 @@ export const webSearchSchema = z.object({
   tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
   tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
   keenableApiKey: z.string().optional().default('${KEENABLE_API_KEY}'),
+  keenableApiKeyPreview: apiKeyPreviewSchema,
   keenableApiUrl: z.string().optional().default('${KEENABLE_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiKeyPreview: apiKeyPreviewSchema,
