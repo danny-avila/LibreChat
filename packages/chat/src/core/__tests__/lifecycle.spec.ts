@@ -2095,18 +2095,24 @@ describe('Chat answers, successors and pause order', () => {
     await flush();
   });
 
-  it('(2) an answer the server refuses keeps the pause answerable without reattaching', async () => {
-    const h = createHarness();
-    await states.restored(h);
-    h.transport.resume.mockRejectedValueOnce(
-      Object.assign(new Error('Conflict'), { response: { status: 409 } }),
-    );
+  it.each([
+    ['refuses the caller', 403, {}],
+    ['is not ready for yet', 409, { code: 'EVENT_ACTOR_NOT_READY' }],
+  ])(
+    '(2) an answer the server %s keeps the pause answerable without reattaching',
+    async (_label, status, data) => {
+      const h = createHarness();
+      await states.restored(h);
+      h.transport.resume.mockRejectedValueOnce(
+        Object.assign(new Error('Refused'), { response: { status, data, headers: {} } }),
+      );
 
-    await expect(h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' })).rejects.toThrow();
-    await flush();
-    expect(h.transport.reconnectToStream).not.toHaveBeenCalled();
-    expect(h.chat.pendingAction?.actionId).toBe('action-1');
-  });
+      await expect(h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' })).rejects.toThrow();
+      await flush();
+      expect(h.transport.reconnectToStream).not.toHaveBeenCalled();
+      expect(h.chat.pendingAction?.actionId).toBe('action-1');
+    },
+  );
 
   it('(2) an expired newer pause in the same generation clears the older one held', async () => {
     const h = createHarness();
@@ -2133,4 +2139,128 @@ describe('Chat answers, successors and pause order', () => {
 
     expect(h.chat.pendingAction?.actionId).toBe('action-b');
   });
+});
+
+describe('Chat sync snapshots and resume conflicts', () => {
+  const snapshot = (resumeState: Record<string, unknown>) =>
+    ({
+      type: 'sync',
+      data: { sync: true, resumeState: { runSteps: [], ...resumeState } },
+    }) as ChatEvent;
+
+  const reattached = async (h: Harness, generationCreatedAt = 500) => {
+    const stream = createStream({ streamId: 'convo-1', generationCreatedAt });
+    h.transport.reconnectToStream.mockResolvedValueOnce(stream);
+    h.chat.resumeStream({ streamId: 'convo-1', generationCreatedAt }).then(
+      () => undefined,
+      () => undefined,
+    );
+    await flush();
+    return stream;
+  };
+
+  it('(4) a sync snapshot installs the pause it carries, which can then be answered', async () => {
+    const h = createHarness();
+    const stream = await reattached(h);
+    stream.push(snapshot({ pendingAction: askAction }));
+    await flush();
+
+    expect(h.chat.pendingAction?.actionId).toBe('action-1');
+    await h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' });
+    expect(h.transport.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('(4) a sync snapshot without a pause releases one answered elsewhere', async () => {
+    const h = createHarness();
+    h.chat.restorePendingAction(askAction, 500);
+    const stream = await reattached(h);
+    stream.push(snapshot({}));
+    await flush();
+
+    expect(h.chat.pendingAction).toBeUndefined();
+  });
+
+  it('(4) a pause a snapshot released and the stream reports again keeps its decisions', async () => {
+    const approval = {
+      ...askAction,
+      payload: {
+        type: 'tool_approval',
+        action_requests: [{ tool_call_id: 'tool-1' }, { tool_call_id: 'tool-2' }],
+      },
+    } as unknown as Agents.PendingAction;
+    const h = createHarness();
+    h.chat.restorePendingAction(approval, 500);
+    await h.chat.addToolApprovalResponse({ id: 'tool-1', approved: true });
+    const stream = await reattached(h);
+    stream.push(snapshot({}));
+    stream.push({ type: 'pending_action', data: approval } as ChatEvent);
+    await flush();
+    await h.chat.addToolApprovalResponse({ id: 'tool-2', approved: true });
+
+    expect(h.transport.resume).toHaveBeenCalledWith(
+      expect.objectContaining({
+        decisions: [
+          expect.objectContaining({ tool_call_id: 'tool-1' }),
+          expect.objectContaining({ tool_call_id: 'tool-2' }),
+        ],
+      }),
+    );
+  });
+
+  it('(4) a sync snapshot names the response a later unframed end reports', async () => {
+    const named: TMessage = { ...placeholder, messageId: 'response-9', text: 'Rebuilt' };
+    const h = createHarness({
+      messages: [userMessage, named, { ...placeholder, messageId: 'other' }],
+    });
+    const stream = await reattached(h, 700);
+    stream.push(snapshot({ responseMessageId: 'response-9' }));
+    await flush();
+    stream.push(dropEvent);
+    await flush();
+
+    expect(h.finishes[h.finishes.length - 1]).toMatchObject({ isResponseUnknown: false });
+    expect(h.finishes[h.finishes.length - 1].message?.messageId).toBe('response-9');
+  });
+
+  it('(7) a sync snapshot names the conversation a chat started under new adopts', async () => {
+    const h = createHarness({ id: 'new' });
+    const stream = createStream({ streamId: createdUnder, generationCreatedAt: 700 });
+    h.transport.reconnectToStream.mockResolvedValueOnce(stream);
+    h.chat.resumeStream({ streamId: createdUnder }).then(
+      () => undefined,
+      () => undefined,
+    );
+    await flush();
+    stream.push(snapshot({ conversationId: createdUnder }));
+    stream.push(finalEvent());
+    await flush();
+
+    attach(h, createStream({ streamId: createdUnder, generationCreatedAt: 800 }));
+    send(h);
+    await flush();
+    expect(h.transport.sendMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ chatId: createdUnder }),
+    );
+  });
+
+  it.each([
+    ['a replaced run', 409, { code: 'RUN_REPLACED' }],
+    ['an action answered elsewhere', 409, { error: 'No live pending action to resume' }],
+    ['no paused generation', 404, { error: 'No paused generation for this conversation' }],
+  ])(
+    '(2) an answer refused for %s ends the pause and probes what runs now',
+    async (_label, status, data) => {
+      const h = createHarness();
+      await states.restored(h);
+      h.transport.resume.mockRejectedValueOnce(
+        Object.assign(new Error('Conflict'), { response: { status, data, headers: {} } }),
+      );
+
+      await expect(h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' })).rejects.toThrow();
+      await flush();
+      expect(h.chat.pendingAction).toBeUndefined();
+      expect(h.transport.reconnectToStream).toHaveBeenCalledTimes(1);
+      await expect(freeAfter(h)).resolves.toBe(true);
+    },
+  );
 });

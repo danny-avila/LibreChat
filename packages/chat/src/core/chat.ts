@@ -359,6 +359,20 @@ const getApplyFailure = (event: ChatEvent, failure: unknown): Outcome => {
     : { kind: 'error', error, disconnect: true };
 };
 
+/**
+ * A resume the server refused because the pause is over: no paused generation (404), or a conflict
+ * (409) such as a replaced run or an action answered elsewhere. A 409 that only says the event
+ * actor is not ready yet leaves the pause answerable for a retry.
+ */
+const isPauseOver = (error: ChatTransportError): boolean => {
+  const status = error.response?.status;
+  if (status === 404) {
+    return true;
+  }
+  const code = (error.response?.data as { code?: string } | undefined)?.code;
+  return status === 409 && code !== 'EVENT_ACTOR_NOT_READY';
+};
+
 /** The answer for a stop the server says found no generation, as an already-settled run. */
 const goneStop: ChatStreamAbortResult = { success: false, settled: true, code: 'NO_ACTIVE_RUN' };
 
@@ -589,6 +603,8 @@ export class Chat {
   private conversationId: string;
   /** The newest generation a status read named, expired or not, below which a read is stale. */
   private newestRead?: number;
+  /** A pause a snapshot found gone, whose decisions stand if the stream reports it again. */
+  private releasedPause?: string;
   /** The newest pause this chat saw within its generation, which an older one of that generation trails. */
   private newestPause?: { generationCreatedAt: number } & PauseOrder;
 
@@ -1211,6 +1227,7 @@ export class Chat {
 
   private clearAction(): void {
     this.action = undefined;
+    this.releasedPause = undefined;
     this.decisions.clear();
     this.notify();
   }
@@ -1663,6 +1680,9 @@ export class Chat {
       if (this.markStreaming()) {
         this.notify();
       }
+      if (event.type === 'sync' && event.data.resumeState) {
+        this.reconcileSnapshotPause(event.data.resumeState.pendingAction);
+      }
     } else if (event.type === 'pending_action' && isExpired(event.data)) {
       /**
        * An expired pause a reconnect replays is stale, as one a status read restores is, and it
@@ -1683,10 +1703,14 @@ export class Chat {
       /** A pause this chat already resumed is stale when a reattached stream replays it. */
       /** A live pause is the generation running, however its first frame arrives. */
       this.markStreaming();
-      if (this.action?.actionId !== event.data.actionId) {
+      if (
+        this.action?.actionId !== event.data.actionId &&
+        this.releasedPause !== event.data.actionId
+      ) {
         /** A reconnect replays the same pause; decisions already made for it still stand. */
         this.decisions.clear();
       }
+      this.releasedPause = undefined;
       this.seePause(event.data, this.generationCreatedAt);
       this.action = event.data;
       this.notify();
@@ -1818,11 +1842,21 @@ export class Chat {
       }
       this.learnConversation(named);
     } else if (event.type === 'sync') {
-      /** The server's ids for the turn, which an Assistants stop addresses. */
-      active.generation.conversationId =
-        event.data.conversationId ?? active.generation.conversationId;
-      this.learnConversation(event.data.conversationId);
-      this.nameResponse(active.generation, event.data.responseMessage?.messageId);
+      /**
+       * The server's ids for the turn, which an Assistants stop addresses. A resumable snapshot
+       * carries them in its resume state instead.
+       */
+      const { resumeState } = event.data;
+      const conversationId = event.data.conversationId ?? resumeState?.conversationId;
+      active.generation.conversationId = conversationId ?? active.generation.conversationId;
+      this.learnConversation(conversationId);
+      this.nameResponse(
+        active.generation,
+        event.data.responseMessage?.messageId ?? resumeState?.responseMessageId,
+      );
+      if (resumeState?.pendingAction) {
+        active.generation.paused = resumeState.pendingAction.actionId;
+      }
     } else if (event.type === 'final') {
       this.learnConversation(event.data.conversation?.conversationId);
       this.nameResponse(active.generation, event.data.responseMessage?.messageId);
@@ -1896,6 +1930,40 @@ export class Chat {
       this.newestRead,
     ];
     return seen.some((known) => known != null && generationCreatedAt < known);
+  }
+
+  /**
+   * Reconciles the pause with a sync snapshot, which carries the live one or none. The server sends
+   * a live pause either here or as a `pending_action` frame right after, so a snapshot without one
+   * releases the held pause, keeping its decisions in case that frame reports it again.
+   */
+  private reconcileSnapshotPause(snapshot: Agents.PendingAction | undefined): void {
+    const generation = this.generationCreatedAt;
+    if (!snapshot) {
+      if (this.action) {
+        this.releasedPause = this.action.actionId;
+        this.action = undefined;
+        this.notify();
+      }
+      return;
+    }
+    const stale =
+      isExpired(snapshot) ||
+      this.resumed.has(snapshot.actionId) ||
+      (generation != null && this.isOlderPause(snapshot, generation));
+    if (stale) {
+      if (this.action?.actionId === snapshot.actionId) {
+        this.clearAction();
+      }
+      return;
+    }
+    if (this.action?.actionId !== snapshot.actionId && this.releasedPause !== snapshot.actionId) {
+      this.decisions.clear();
+    }
+    this.releasedPause = undefined;
+    this.seePause(snapshot, generation);
+    this.action = snapshot;
+    this.notify();
   }
 
   /** Whether `action` came before a pause this chat already saw in the same generation. */
@@ -2001,7 +2069,32 @@ export class Chat {
       }
       this.clearAction();
     } catch (error) {
-      const ambiguous = (error as ChatTransportError).code === 'ERR_NETWORK';
+      const failure = error as ChatTransportError;
+      if (isPauseOver(failure)) {
+        /**
+         * The server answered that this pause can no longer be resumed: another client answered
+         * it or a newer generation replaced it. It ends here, and a probe finds what runs now.
+         */
+        if (this.action?.actionId === action.actionId) {
+          this.clearAction();
+        }
+        if (!this.active && !this.disposed) {
+          this.reattach(
+            {
+              streamId: action.streamId,
+              conversationId: action.conversationId ?? this.pausedConversationId(),
+            },
+            false,
+          ).catch((probe: unknown) =>
+            this.callHost(
+              this.init.onError,
+              probe instanceof Error ? probe : new Error(String(probe)),
+            ),
+          );
+        }
+        throw error;
+      }
+      const ambiguous = failure.code === 'ERR_NETWORK';
       if (
         ambiguous &&
         !this.active &&
