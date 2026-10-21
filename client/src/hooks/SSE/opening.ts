@@ -18,7 +18,7 @@ import {
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
 } from '~/utils';
-import { transferFileSearchPreference, getFileSearchPreference } from '~/hooks/Files/search';
+import { transferFileSearchPreference, withFileSearchPreference } from '~/hooks/Files/search';
 import { startupConfigKey, markTitleGenerationProcessed } from '~/data-provider';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { getConvoTitle } from './turns';
@@ -231,7 +231,6 @@ export default function useTurnHandlers(ctx: EventHandlerContext) {
           transferFileSearchPreference,
         );
       }
-      const fileSearch = conversationId ? getFileSearchPreference(conversationId) : undefined;
       lastAnnouncementTimeRef.current = Date.now();
       announcePolite({
         message: 'start',
@@ -284,10 +283,7 @@ export default function useTurnHandlers(ctx: EventHandlerContext) {
         applyAgentTemplate({
           targetId: conversationId,
           sourceId: submission.conversation?.conversationId,
-          ephemeralAgent:
-            fileSearch == null
-              ? submission.ephemeralAgent
-              : { ...submission.ephemeralAgent, file_search: fileSearch },
+          ephemeralAgent: withFileSearchPreference(conversationId, submission.ephemeralAgent),
           specName: submission.conversation?.spec,
           startupConfig: queryClient.getQueryData<TStartupConfig>(startupConfigKey(true)),
         });

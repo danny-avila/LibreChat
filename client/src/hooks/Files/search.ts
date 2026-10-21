@@ -1,4 +1,5 @@
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
+import type { TEphemeralAgent } from 'librechat-data-provider';
 import type { CapturedComposerDraft } from '~/utils/drafts';
 import {
   getFileSearchChoice,
@@ -57,6 +58,17 @@ export function getFileSearchPreference(conversationId: string): boolean | undef
     // Unavailable storage leaves the live template as the fallback.
   }
   return undefined;
+}
+
+/** Acknowledgements cannot replay a tool snapshot over accepted uploads or later toggles. */
+export function withFileSearchPreference(
+  conversationId: string,
+  agent: TEphemeralAgent | null | undefined,
+): TEphemeralAgent | null | undefined {
+  const enabled = getFileSearchPreference(conversationId);
+  return enabled == null || enabled === agent?.file_search
+    ? agent
+    : { ...agent, file_search: enabled };
 }
 
 export function captureFileSearchUpload(

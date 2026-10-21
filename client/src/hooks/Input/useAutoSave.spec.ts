@@ -39,7 +39,7 @@ import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
 import { hasInFlightUpload } from '~/hooks/Files/useFileHandling';
-import { beginFileSearchUpload } from '~/hooks/Files/search';
+import { beginFileSearchUpload, captureFileSearchUpload } from '~/hooks/Files/search';
 import {
   encodeBase64,
   clearDraft,
@@ -52,7 +52,12 @@ import {
   setFilesDraft,
   renewNewConversationDraftToken,
 } from '~/utils';
-import { bindComposerLaunch, adoptComposerConversation } from '~/utils/drafts';
+import {
+  bindComposerLaunch,
+  adoptComposerConversation,
+  registerComposerDraft,
+  captureComposerDraft,
+} from '~/utils/drafts';
 import { markPastedTextFile } from '~/utils/files';
 import { useAutoSave } from '~/hooks';
 import type { ExtendedFile } from '~/common';
@@ -1103,6 +1108,34 @@ describe('useAutoSave — file cache updates', () => {
     expect(getFilesDraft('new').fileIds).toEqual([]);
     expect(mockSetDraftEphemeralAgent).not.toHaveBeenCalled();
     host.unmount();
+  });
+
+  it('restores an inactive upload after its owned pending draft migrates home', async () => {
+    const conversationId = 'migrated-saved-owner';
+    const index = 41;
+    window.history.replaceState({}, '', `/c/${conversationId}`);
+    const pendingId = getPendingDraftId(index);
+    const release = registerComposerDraft(index, conversationId, pendingId, {});
+    const owner = captureComposerDraft(index, conversationId);
+    setFilesDraft(pendingId, { fileIds: ['client-temp-id'], pendingPastes: {} });
+    beginFileSearchUpload('client-temp-id', captureFileSearchUpload(conversationId, owner));
+    release();
+    await Promise.resolve();
+    const host = renderHook(() => {
+      const [files, setFiles] = React.useState<Map<string, ExtendedFile>>(new Map());
+      (useGetFiles as jest.Mock).mockReturnValue({
+        data: [{ ...persistedRecord, embedded: true }],
+      });
+      useAutoSave({ index, conversationId, files, setFiles });
+      return files;
+    });
+    expect(owner()).toBe(false);
+    expect(host.result.current.get('client-temp-id')?.progress).toBe(1);
+    expect(getFilesDraft(conversationId).fileIds).toContain('client-temp-id');
+    expect(getFilesDraft(pendingId).fileIds).toEqual([]);
+    expect(mockSetDraftEphemeralAgent).toHaveBeenCalledWith(expect.any(Function));
+    host.unmount();
+    window.history.replaceState({}, '', '/');
   });
 
   it('marks a file restored from a draft alone as attached', () => {

@@ -357,6 +357,7 @@ type ComposerDraftScope = {
   sourcePropPending?: boolean;
   assignments: Set<(sourceId: string, targetId: string) => void>;
 };
+const composerDraftMigrations = new Set<(fromId: string, toId: string) => void>();
 const composerDraftScopes = new Map<number, ComposerDraftScope>();
 const composerLaunches = new WeakMap<object, { index: number; scope: ComposerDraftScope }>();
 const composerRoute = () => window.location.pathname + window.location.search;
@@ -585,9 +586,22 @@ export const captureComposerDraft = (
         }
       },
       onAssignment: (listener: (sourceId: string, targetId: string) => void) => {
+        const migrate = (fromId: string, toId: string) => {
+          if (
+            scope != null &&
+            scope.draftId === fromId &&
+            isPendingDraftId(fromId) &&
+            scope.conversationId === toId &&
+            toId !== Constants.NEW_CONVO
+          ) {
+            scope.draftId = toId;
+          }
+        };
         scope?.assignments.add(listener);
+        composerDraftMigrations.add(migrate);
         return () => {
           scope?.assignments.delete(listener);
+          composerDraftMigrations.delete(migrate);
         };
       },
     },
@@ -1464,6 +1478,9 @@ export const migrateFilesDraft = (fromId: string, toId: string): string => {
     const destinationKey = `${LocalStorageKeys.FILES_DRAFT}${toId}`;
     const changed = getLocalStorageItem(destinationKey) !== record;
     localStorage.setItem(destinationKey, record);
+    if (isFilesDraftOwnedByThisTab(getFilesDraft(toId))) {
+      composerDraftMigrations.forEach((listener) => listener(fromId, toId));
+    }
     if (changed) notifyOwnershipChange(destinationKey);
     return toId;
   } catch {

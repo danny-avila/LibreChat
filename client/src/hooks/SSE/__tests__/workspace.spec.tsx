@@ -5,7 +5,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Constants, EModelEndpoint, QueryKeys, LocalStorageKeys } from 'librechat-data-provider';
-import type { ChatCreatedFrame, EventSubmission, TConversation } from 'librechat-data-provider';
+import type {
+  ChatCreatedFrame,
+  EventSubmission,
+  TConversation,
+  TMessage,
+} from 'librechat-data-provider';
 import {
   registerComposerDraft,
   adoptComposerConversation,
@@ -73,7 +78,11 @@ const initialConversation = {
   title: 'New Chat',
 } as TConversation;
 
-function setup(current = initialConversation, isAddedRequest = false) {
+function setup(
+  current = initialConversation,
+  isAddedRequest = false,
+  currentMessages: TMessage[] = [],
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   queryClient.setQueryData([QueryKeys.allConversations], { pages: [], pageParams: [] });
   const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -92,7 +101,7 @@ function setup(current = initialConversation, isAddedRequest = false) {
         isAddedRequest,
         setConversation,
         setMessages: jest.fn(),
-        getMessages: () => [],
+        getMessages: () => currentMessages,
         setCompleted: jest.fn(),
         setIsSubmitting: jest.fn(),
         setShowStopButton: jest.fn(),
@@ -224,25 +233,31 @@ describe('created composer identity', () => {
   );
 
   it.each(
-    ['saved', 'resumable'].flatMap((origin) =>
-      [
-        'accepted',
-        'disabled-before',
-        'disabled-after',
-        'blocked-storage',
-        'accepted-unset',
-        'blocked-unset',
-      ].map((completion) => ({
-        origin,
-        completion,
-      })),
+    ['created', 'final'].flatMap((event) =>
+      ['saved', 'resumable'].flatMap((origin) =>
+        [
+          'accepted',
+          'disabled-before',
+          'disabled-after',
+          'blocked-storage',
+          'accepted-unset',
+          'blocked-unset',
+        ].map((completion) => ({
+          event,
+          origin,
+          completion,
+        })),
+      ),
     ),
   )(
-    'keeps the current File Search value over a stale template ($origin, $completion)',
-    ({ origin, completion }) => {
+    'keeps the current File Search value over a stale template ($event, $origin, $completion)',
+    ({ event, origin, completion }) => {
+      const currentMessages: TMessage[] = [];
       const saved = { ...initialConversation, conversationId: 'saved-chat' };
       const { result, submission, createdData, unmount, queryClient } = setup(
         origin === 'saved' ? saved : initialConversation,
+        false,
+        currentMessages,
       );
       window.history.replaceState({}, '', origin === 'saved' ? '/c/saved-chat' : '/c/new');
       const host = {};
@@ -263,6 +278,7 @@ describe('created composer identity', () => {
       localStorage.setItem(`${LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_}saved-chat`, 'false');
       const previousRevision = getFileSearchChoice('saved-chat')?.revision ?? null;
       const stale = { ...submission, ephemeralAgent: { file_search: false, web_search: true } };
+      currentMessages.push(stale.userMessage, stale.initialResponse);
       beginFileSearchUpload('late-accepted-upload', 'saved-chat');
       const writer = Storage.prototype.setItem;
       const storage = completion.startsWith('blocked')
@@ -288,8 +304,19 @@ describe('created composer identity', () => {
         const enabled = !completion.startsWith('disabled');
         if (!enabled) stale.ephemeralAgent.file_search = true;
         act(() => {
-          result.current.createdHandler(createdData, stale);
-          result.current.createdHandler(createdData, stale);
+          for (let replay = 0; replay < 2; replay++) {
+            if (event === 'created') result.current.createdHandler(createdData, stale);
+            else {
+              result.current.finalHandler(
+                {
+                  conversation: saved,
+                  requestMessage: stale.userMessage,
+                  responseMessage: { ...stale.initialResponse, text: 'Finished reply' },
+                },
+                stale,
+              );
+            }
+          }
         });
         expect(mockApplyAgentTemplate).toHaveBeenLastCalledWith(
           expect.objectContaining({

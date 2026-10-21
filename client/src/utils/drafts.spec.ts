@@ -1479,6 +1479,55 @@ describe('logical composer lifetime', () => {
     expect(captured.retainsFile('kept-file')).toBe(false);
   });
 
+  it.each(['owned', 'blocked', 'unrelated', 'foreign', 'unsubscribed'])(
+    'follows a retained pending upload only through its owned migration (%s)',
+    async (mode) => {
+      const conversationId = 'retained-migration';
+      const pendingId = getPendingDraftId(42);
+      const release = registerComposerDraft(42, conversationId, pendingId, {});
+      const captured = captureComposerDraft(42, conversationId);
+      const unsubscribe = captured.onAssignment(jest.fn());
+      if (mode === 'foreign') markTabLive('foreign-migration-owner');
+      setFilesDraft(pendingId, {
+        fileIds: ['migrating-upload'],
+        pendingPastes: {},
+        ...(mode === 'foreign' ? { tabId: 'foreign-migration-owner' } : {}),
+      });
+      release();
+      await Promise.resolve();
+      if (mode === 'unsubscribed') unsubscribe();
+      const setItem = Storage.prototype.setItem;
+      const blocked =
+        mode === 'blocked'
+          ? jest.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+              this: Storage,
+              key: string,
+              value: string,
+            ) {
+              if (key === `${LocalStorageKeys.FILES_DRAFT}${conversationId}`) {
+                throw new Error('Migration destination unavailable');
+              }
+              setItem.call(this, key, value);
+            })
+          : undefined;
+      try {
+        const destination = mode === 'unrelated' ? 'unrelated-migration' : conversationId;
+        expect(migrateFilesDraft(pendingId, destination)).toBe(
+          mode === 'blocked' ? pendingId : destination,
+        );
+        expect(captured()).toBe(false);
+        expect(captured.retainsFile('migrating-upload')).toBe(mode === 'owned' || mode === 'blocked');
+        if (mode === 'owned') {
+          captured.discardFile('migrating-upload');
+          expect(getFilesDraft(conversationId).fileIds).toEqual([]);
+        }
+      } finally {
+        blocked?.mockRestore();
+        unsubscribe();
+      }
+    },
+  );
+
   it('never treats a shared new-chat draft as a retained retired project', () => {
     const release = registerComposerDraft(27, Constants.NEW_CONVO, 'new:27', {});
     const captured = captureComposerDraft(27, Constants.NEW_CONVO);
