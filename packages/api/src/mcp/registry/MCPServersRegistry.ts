@@ -28,6 +28,7 @@ import { ReadThroughCache } from './cache/ReadThroughCache';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
 import { getSafeErrorMetadata } from '~/utils/errors';
+import { HiddenServers } from './hidden';
 import { cacheConfig } from '~/cache';
 import { withTimeout } from '~/utils';
 
@@ -200,22 +201,36 @@ const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
 })();
 
 /** Request context for resolving the effective MCP allowlists. */
-export interface MCPAllowlistContext {
-  userId?: string;
-  role?: string;
-}
+export type MCPAllowlistContext = Partial<t.MCPPrincipal>;
 
 /**
- * Resolves the effective `mcpSettings` allowlists for a request. Injected from the app
- * layer (where the merged, tenant-scoped config lives) so the registry keeps no app-config
- * dependency. Reads the ALS tenant context internally; pass the acting user to also pick up
- * user/role-scoped overrides.
+ * Resolves the effective MCP policy for a request: the `mcpSettings` allowlists and apps
+ * policy, plus the servers the principal's config keeps. Injected from the app layer (where
+ * the merged, tenant-scoped config lives) so the registry keeps no app-config dependency.
+ * Reads the ALS tenant context internally; pass the acting user to also pick up user/role-
+ * scoped overrides. Must reject, not fall back to the base config, when the principal's
+ * config cannot be resolved.
  */
 export type MCPAllowlistResolver = (ctx?: MCPAllowlistContext) => Promise<{
   allowedDomains?: string[] | null;
   allowedAddresses?: string[] | null;
   mcpApps: TMCPAppsPolicy;
+  /**
+   * Server names in the principal's resolved `mcpConfig`; a librechat.yaml server missing
+   * from it is hidden for that principal. A resolver that omits it hides nothing.
+   */
+  serverNames?: string[];
 }>;
+
+/** Drops hidden servers from a lookup result. A user-tier entry is the user's own and stays. */
+function omitHiddenServers(
+  configs: Record<string, t.ParsedServerConfig>,
+  hidden: ReadonlySet<string>,
+): Record<string, t.ParsedServerConfig> {
+  return Object.fromEntries(
+    Object.entries(configs).filter(([name, config]) => !hidden.has(name) || isUserSourced(config)),
+  );
+}
 
 /** Effective allowlists resolved for a request. */
 interface ResolvedMCPAllowlists {
@@ -281,6 +296,15 @@ export class MCPServersRegistry {
   private yamlServerNames: Set<string> | null = null;
   private yamlServerNamesPromise: Promise<Set<string>> | null = null;
 
+  /**
+   * librechat.yaml server options as configured, before inspection adds derived fields.
+   * Every process sets it at MCP init, including followers that reuse a shared YAML cache,
+   * and it survives `reset()`, which runs right after it is set.
+   */
+  private yamlServerOptions: ReadonlyMap<string, t.MCPOptions> = new Map();
+  /** The librechat.yaml servers each principal's config hides. */
+  private readonly hiddenServers: HiddenServers;
+
   constructor(
     mongoose: typeof import('mongoose'),
     allowedDomains?: string[] | null,
@@ -309,6 +333,11 @@ export class MCPServersRegistry {
       'mcp-registry-read-through-all',
       ttl,
       serverMapStoreTransforms(),
+    );
+
+    this.hiddenServers = new HiddenServers(
+      ttl,
+      allowlistResolver && (async (principal) => (await allowlistResolver(principal)).serverNames),
     );
   }
 
@@ -362,6 +391,81 @@ export class MCPServersRegistry {
   /** YAML base executable-UI policy used when no request resolver is available. */
   public getMCPAppsPolicy(): TMCPAppsPolicy {
     return this.mcpApps;
+  }
+
+  /**
+   * Records the librechat.yaml server options this process was configured with, before
+   * inspection. They decide which servers a principal can hide and whether a resolved entry
+   * differs from librechat.yaml when a field was removed.
+   */
+  public setYamlServerOptions(rawConfigs: t.MCPServers): void {
+    this.yamlServerOptions = new Map(Object.entries(rawConfigs ?? {}));
+    this.hiddenServers.setYamlServers(rawConfigs);
+  }
+
+  /**
+   * librechat.yaml servers a resolved `mcpConfig` hides: hideable servers the merge removed
+   * (a `mcpServers.<name>` tombstone). Plugin, user-tier and process-backed servers are never
+   * hidden, and a missing `mcpConfig` hides every hideable server. A config that fell back to
+   * librechat.yaml on a failed read hides nothing, so access decisions come from
+   * {@link resolveHiddenServerNames}; this can only narrow them.
+   */
+  public getHiddenServerNames(
+    mcpConfig?: Readonly<Record<string, t.MCPOptions>> | null,
+  ): ReadonlySet<string> {
+    return this.hiddenServers.hiddenIn(mcpConfig);
+  }
+
+  /**
+   * Resolves the servers hidden for a principal from a strict read of the principal's config,
+   * memoized in process for `MCP_REGISTRY_CACHE_TTL` and cleared with the config cache. When
+   * that config cannot be read, every hideable server is hidden: hiding is an access boundary,
+   * and the base config is broader than the scope that decides it.
+   */
+  public resolveHiddenServerNames(principal: t.MCPPrincipal): Promise<ReadonlySet<string>> {
+    return this.hiddenServers.forPrincipal(principal);
+  }
+
+  /**
+   * Whether checkout must refuse a config a caller resolved earlier: a hideable librechat.yaml
+   * server the principal's config now hides. A user-tier config is the user's own and an
+   * app-level checkout (no user) has no principal to hide it from.
+   */
+  public async isHiddenFromPrincipal(
+    serverName: string,
+    config: t.ParsedServerConfig,
+    principal?: t.MCPLookupUser,
+  ): Promise<boolean> {
+    const userId = principal?.id;
+    if (!userId || !this.hiddenServers.isHideable(serverName) || isUserSourced(config)) {
+      return false;
+    }
+    const hidden = await this.resolveHiddenServerNames({
+      userId,
+      role: principal?.role,
+      idOnTheSource: principal?.idOnTheSource,
+    });
+    return hidden.has(serverName);
+  }
+
+  /**
+   * The hidden set a lookup must apply, or undefined when hiding cannot change its result:
+   * an opt-out, an app-level lookup with no user, no hideable server, or a single-server
+   * lookup for a name no principal can hide.
+   */
+  private async getLookupHiddenServerNames(
+    userId: string | undefined,
+    role: string | undefined,
+    options: t.MCPServerLookupOptions | undefined,
+    serverName?: string,
+  ): Promise<ReadonlySet<string> | undefined> {
+    if (!userId || options?.includeHidden || this.hiddenServers.getHideable().size === 0) {
+      return undefined;
+    }
+    if (serverName != null && !this.hiddenServers.isHideable(serverName)) {
+      return undefined;
+    }
+    return this.resolveHiddenServerNames({ userId, role, idOnTheSource: options?.idOnTheSource });
   }
 
   /** Returns true when no explicit allowedDomains allowlist is configured, enabling SSRF TOCTOU protection */
@@ -437,8 +541,13 @@ export class MCPServersRegistry {
     // Validation concerns exactly one persisted binding. Avoid the all-server path here: besides
     // doing unrelated ACL/decryption work, one slow or malformed server can otherwise prevent an
     // independent inline App from ever reaching its sandbox. getServerConfig applies the same
-    // YAML-over-user precedence with an ACL-aware, per-server DB fallback.
+    // YAML-over-user precedence with an ACL-aware, per-server DB fallback, and withholds a server
+    // the principal's own resolution hides.
     const base = await this.getServerConfig(serverName, userId, undefined, role);
+    /** The admitted config may have been read leniently, so it can only narrow, never widen. */
+    if (base && !isUserSourced(base) && this.getHiddenServerNames(mcpConfig).has(serverName)) {
+      return undefined;
+    }
     const rawConfig = mcpConfig[serverName];
     let selectedConfig = base;
 
@@ -481,35 +590,49 @@ export class MCPServersRegistry {
    * configServers candidate is tenant-scoped and is never cached, so a
    * failed stub from one tenant can never satisfy a no-userId lookup from
    * another.
+   *
+   * A principal-scoped lookup (with `userId`) returns nothing for a librechat.yaml
+   * server that principal's config hides; see {@link t.MCPServerLookupOptions}. The
+   * hidden set is applied after the read cache, which is keyed by user and role only,
+   * never by group.
    */
   public async getServerConfig(
     serverName: string,
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
     role?: string,
+    options?: t.MCPServerLookupOptions,
   ): Promise<t.ParsedServerConfig | undefined> {
     const candidate = configServers?.[serverName];
+    const [base, hidden] = await Promise.all([
+      this.readBaseServerConfig(serverName, userId, role),
+      this.getLookupHiddenServerNames(userId, role, options, serverName),
+    ]);
 
-    const cacheKey = this.getReadThroughCacheKey(serverName, userId, role);
-    let base: t.ParsedServerConfig | undefined;
-    const cached = await this.readThroughCache.getEntry(cacheKey);
-    if (cached.hit) {
-      base = cached.value;
-    } else {
-      const configFromYaml = await this.cacheConfigsRepo.get(serverName);
-      if (configFromYaml) {
-        base = configFromYaml;
-      } else {
-        base = await this.dbConfigsRepo.get(serverName, userId, role);
-      }
-      await this.readThroughCache.set(cacheKey, base, cached.fill);
-    }
-
+    if (hidden?.has(serverName) && !(base && isUserSourced(base))) return undefined;
     if (!candidate) return base;
     if (base?.source === 'user') return base;
     if (isProcessMCPServerConfig(base)) return base;
     if (candidate.inspectionFailed) return base ?? candidate;
     return base ? { ...candidate, source: overlaySource(base, candidate) } : candidate;
+  }
+
+  /** The YAML entry for a name, else the principal's DB entry, through the per-server read cache. */
+  private async readBaseServerConfig(
+    serverName: string,
+    userId?: string,
+    role?: string,
+  ): Promise<t.ParsedServerConfig | undefined> {
+    const cacheKey = this.getReadThroughCacheKey(serverName, userId, role);
+    const cached = await this.readThroughCache.getEntry(cacheKey);
+    if (cached.hit) {
+      return cached.value;
+    }
+    const base =
+      (await this.cacheConfigsRepo.get(serverName)) ??
+      (await this.dbConfigsRepo.get(serverName, userId, role));
+    await this.readThroughCache.set(cacheKey, base, cached.fill);
+    return base;
   }
 
   /** Returns whether an effective config exactly matches the operator-owned base config. */
@@ -535,8 +658,26 @@ export class MCPServersRegistry {
    * recovery logic routes to the correct storage location — except a `'plugin'` base,
    * whose no-resolve provenance must not transfer to the operator override (see
    * `overlaySource`).
+   *
+   * A principal-scoped call (with `userId`) then drops the librechat.yaml servers
+   * that principal's config hides. The filtered map is built
+   * per call and never cached: the read caches are keyed by user and role, while
+   * hiding also follows group membership.
    */
   public async getAllServerConfigs(
+    userId?: string,
+    configServers?: Record<string, t.ParsedServerConfig>,
+    role?: string,
+    options?: t.MCPServerLookupOptions,
+  ): Promise<Record<string, t.ParsedServerConfig>> {
+    const [configs, hidden] = await Promise.all([
+      this.mergeServerConfigs(userId, configServers, role),
+      this.getLookupHiddenServerNames(userId, role, options),
+    ]);
+    return hidden?.size ? omitHiddenServers(configs, hidden) : configs;
+  }
+
+  private async mergeServerConfigs(
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
     role?: string,
@@ -1198,6 +1339,13 @@ export class MCPServersRegistry {
    * on every admin-configurable field, so an unmodified YAML-defined server
    * can skip lazy-init and avoid being re-inspected or shadowed in the
    * config tier.
+   *
+   * `rawConfig` is the resolved, pre-inspection config, while the cached entry
+   * carries fields the inspector derived (such as `requiresOAuth`). A field the
+   * resolved config lacks is therefore unmodified only when librechat.yaml did
+   * not set it either; one librechat.yaml set was removed by a tombstone. Set
+   * fields are compared with the cached entry, so restating a derived value is
+   * still no change.
    */
   private isUnmodifiedYamlServer(
     yamlSnapshot: Record<string, t.ParsedServerConfig>,
@@ -1210,10 +1358,12 @@ export class MCPServersRegistry {
     }
     const yamlRecord = yamlEntry as unknown as Record<string, unknown>;
     const rawRecord = rawConfig as unknown as Record<string, unknown>;
-    /** rawConfig is the pre-inspection MCPOptions; absent fields mean the admin didn't override and shouldn't count as a diff against inspector-derived values on the cached YAML entry. */
+    const yamlOptions = this.yamlServerOptions.get(serverName) as
+      | Record<string, unknown>
+      | undefined;
     return ADMIN_CONFIGURABLE_FIELDS.every((field) => {
       const rawVal = rawRecord[field];
-      if (rawVal === undefined) return true;
+      if (rawVal === undefined) return yamlOptions?.[field] === undefined;
       return deepEqual(yamlRecord[field], rawVal);
     });
   }
@@ -1342,6 +1492,8 @@ export class MCPServersRegistry {
    *          Callers should disconnect active connections for these servers.
    */
   public async invalidateConfigCache(): Promise<string[]> {
+    /** Hiding decisions are dropped first, so lookups stop using them at once, and again last. */
+    this.hiddenServers.clear();
     const allCached = await this.configCacheRepo.getAll();
     const evictedNames = [
       ...new Set(Object.keys(allCached).map((key) => this.parseServerNameFromConfigCacheKey(key))),
@@ -1354,6 +1506,8 @@ export class MCPServersRegistry {
       // Operator config changes are global, so the eviction crosses tenants.
       this.readThroughCacheAll.invalidateAllGlobal(),
     ]);
+    /** Drops a decision resolved meanwhile from a merged config that was still being cleared. */
+    this.hiddenServers.clear();
 
     if (evictedNames.length > 0) {
       logger.info(
@@ -1367,8 +1521,11 @@ export class MCPServersRegistry {
   // Known gap: config-source OAuth servers are not included here because callers
   // (OAuthReconnectionManager, UserController) lack request context to resolve configServers.
   // Config-source OAuth auto-reconnection and uninstall cleanup require a separate mechanism.
-  public async getOAuthServers(userId?: string): Promise<Set<string>> {
-    const allServers = await this.getAllServerConfigs(userId);
+  public async getOAuthServers(
+    userId?: string,
+    options?: t.MCPServerLookupOptions,
+  ): Promise<Set<string>> {
+    const allServers = await this.getAllServerConfigs(userId, undefined, undefined, options);
     const oauthServers = Object.entries(allServers).filter(([, config]) => config.requiresOAuth);
     return new Set(oauthServers.map(([name]) => name));
   }
@@ -1378,6 +1535,7 @@ export class MCPServersRegistry {
     await this.configCacheRepo.reset();
     await this.readThroughCache.clear();
     await this.readThroughCacheAll.invalidateAllGlobal();
+    this.hiddenServers.clear();
     this.resetYamlServerNamesMemo();
   }
 

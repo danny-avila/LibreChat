@@ -526,6 +526,109 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     });
   });
 
+  describe('librechat.yaml values removed by tombstones', () => {
+    const remoteYaml = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      timeout: 30000,
+      headers: { Authorization: 'Bearer {{PAT}}', 'X-Team': 'core' },
+      customUserVars: { PAT: { title: 'Token', description: 'Personal access token' } },
+    } as t.MCPOptions;
+    const allowlists = { allowedDomains: undefined, allowedAddresses: undefined };
+
+    /** Boot as `MCPServersInitializer.initialize` does: record the raw options, then inspect. */
+    async function loadYamlServer(derived: Partial<t.ParsedServerConfig> = {}): Promise<void> {
+      registry.setYamlServerOptions({ yaml_remote: remoteYaml });
+      inspectSpy.mockImplementationOnce(async (_name: string, rawConfig: t.MCPOptions) =>
+        makeParsedConfig({ ...rawConfig, ...derived } as unknown as Partial<t.ParsedServerConfig>),
+      );
+      await registry.addServer('yaml_remote', remoteYaml, 'CACHE');
+      inspectSpy.mockClear();
+    }
+
+    function without(field: string): t.MCPOptions {
+      return Object.fromEntries(
+        Object.entries(remoteYaml).filter(([key]) => key !== field),
+      ) as t.MCPOptions;
+    }
+
+    it.each(['timeout', 'headers', 'customUserVars'])(
+      'serves the server without a %s field a tombstone removed',
+      async (field) => {
+        await loadYamlServer();
+        const resolved = without(field);
+
+        const configServers = await registry.ensureConfigServers({ yaml_remote: resolved });
+
+        expect(inspectSpy).toHaveBeenCalledTimes(1);
+        expect(configServers.yaml_remote).not.toHaveProperty(field);
+        const effective = await registry.getServerConfig('yaml_remote', 'user-1', configServers);
+        expect(effective).not.toHaveProperty(field);
+        expect(effective?.source).toBe('yaml');
+        await expect(
+          registry.resolveCachedAppServerConfig({
+            serverName: 'yaml_remote',
+            userId: 'user-1',
+            mcpConfig: { yaml_remote: resolved },
+            ...allowlists,
+          }),
+        ).resolves.toEqual(
+          expect.objectContaining({
+            serverConfig: expect.not.objectContaining({ [field]: expect.anything() }),
+          }),
+        );
+      },
+    );
+
+    it('keeps an unchanged server on librechat.yaml, so the App path agrees', async () => {
+      await loadYamlServer();
+
+      await expect(registry.ensureConfigServers({ yaml_remote: remoteYaml })).resolves.toEqual({});
+      expect(inspectSpy).not.toHaveBeenCalled();
+      await expect(
+        registry.resolveCachedAppServerConfig({
+          serverName: 'yaml_remote',
+          userId: 'user-1',
+          mcpConfig: { yaml_remote: remoteYaml },
+          ...allowlists,
+        }),
+      ).resolves.toEqual(
+        expect.objectContaining({ serverConfig: expect.objectContaining({ timeout: 30000 }) }),
+      );
+    });
+
+    it('treats an inspector-derived field librechat.yaml never set as unmodified', async () => {
+      await loadYamlServer({ requiresOAuth: true });
+
+      await expect(registry.ensureConfigServers({ yaml_remote: remoteYaml })).resolves.toEqual({});
+      await expect(
+        registry.ensureConfigServers({ yaml_remote: { ...remoteYaml, requiresOAuth: true } }),
+      ).resolves.toEqual({});
+      expect(inspectSpy).not.toHaveBeenCalled();
+    });
+
+    it('drops one inherited header key and keeps its siblings', async () => {
+      await loadYamlServer();
+      const resolved = { ...remoteYaml, headers: { 'X-Team': 'core' } } as t.MCPOptions;
+
+      const configServers = await registry.ensureConfigServers({ yaml_remote: resolved });
+
+      const effective = await registry.getServerConfig('yaml_remote', 'user-1', configServers);
+      expect(effective).toEqual(expect.objectContaining({ headers: { 'X-Team': 'core' } }));
+    });
+
+    it('counts a record emptied by key tombstones as a modification', async () => {
+      await loadYamlServer();
+      const resolved = { ...remoteYaml, headers: {} } as t.MCPOptions;
+
+      const configServers = await registry.ensureConfigServers({ yaml_remote: resolved });
+
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
+      const effective = await registry.getServerConfig('yaml_remote', 'user-1', configServers);
+      expect(effective).toEqual(expect.objectContaining({ headers: {} }));
+    });
+  });
+
   describe('source tagging', () => {
     it('should tag CACHE-stored servers as yaml', async () => {
       await registry.addServer('yaml_srv', yamlConfig, 'CACHE');

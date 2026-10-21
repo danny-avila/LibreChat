@@ -2674,6 +2674,8 @@ describe('ToolService - Action Capability Gating', () => {
         serverName,
         req.user.id,
         expect.objectContaining({ [serverName]: expect.any(Object) }),
+        req.user.role,
+        { idOnTheSource: req.user.idOnTheSource },
       );
       expect(mockGetMCPServerTools).toHaveBeenCalledWith(
         req.user.id,

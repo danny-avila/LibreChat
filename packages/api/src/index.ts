@@ -22,6 +22,8 @@ export * from './mcp/mcpConfig';
 export * from './mcp/capabilities';
 export * from './mcp/authority';
 export * from './mcp/registry/MCPServersRegistry';
+export * from './mcp/registry/policy';
+export { reportStoredMCPTombstones } from './mcp/registry/hidden';
 export * from './mcp/MCPManager';
 export * from './mcp/connection';
 export * from './mcp/toolsChanged';

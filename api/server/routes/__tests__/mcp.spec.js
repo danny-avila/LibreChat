@@ -1512,6 +1512,43 @@ describe('MCP Routes', () => {
       expect(MCPOAuthHandler.completeOAuthFlow).toHaveBeenCalled();
     });
 
+    it('refuses the token exchange when the principal config cannot be read strictly', async () => {
+      const flowId = 'test-user-id:test-server';
+      const rawConfig = { type: 'streamable-http', url: 'https://mcp.example.com/mcp' };
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
+      };
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      const { getAppConfig } = require('~/server/services/Config');
+      /** A lenient read would fall back to the base config, which still lists a hidden server. */
+      getAppConfig.mockImplementationOnce(async (options) =>
+        options?.failClosed
+          ? Promise.reject(new Error('principal read failed'))
+          : { mcpConfig: { 'test-server': rawConfig } },
+      );
+      MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: flowId,
+        serverName: 'test-server',
+        userId: 'test-user-id',
+        serverUrl: rawConfig.url,
+      });
+      mockResolveAllMcpConfigs.mockResolvedValue({});
+      mockRegistryInstance.getServerConfig.mockResolvedValue(undefined);
+
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${generateTestCsrfToken(flowId)}`])
+        .query({ code: 'test-auth-code', state: flowId });
+
+      expect(getAppConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'test-user-id', failClosed: true }),
+      );
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe(`${getBasePath()}/oauth/error?error=callback_failed`);
+      expect(MCPOAuthHandler.completeOAuthFlow).not.toHaveBeenCalled();
+      expect(MCPTokenStorage.storeTokens).not.toHaveBeenCalled();
+    });
+
     it('should handle OAuth callback successfully', async () => {
       // mockRegistryInstance is defined at the top of the file
       const mockFlowManager = {
@@ -3373,6 +3410,22 @@ describe('MCP Routes', () => {
       expect(getUserPluginAuthValue).toHaveBeenCalledTimes(2);
     });
 
+    it("looks the server up with the requesting user's role and source identity", async () => {
+      currentUser = { id: 'test-user-id', role: 'USER', idOnTheSource: null };
+      mockRegistryInstance.getServerConfig.mockResolvedValue(null);
+
+      const response = await request(app).get('/api/mcp/hidden-server/auth-values');
+
+      expect(response.status).toBe(404);
+      expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
+        'hidden-server',
+        'test-user-id',
+        expect.any(Object),
+        'USER',
+        { idOnTheSource: null },
+      );
+    });
+
     it('should return 404 when server is not found in configuration', async () => {
       const mockMcpManager = {};
 
@@ -4564,6 +4617,8 @@ describe('MCP Routes', () => {
         'test-server',
         'test-user-id',
         {},
+        undefined,
+        { idOnTheSource: undefined },
       );
     });
 

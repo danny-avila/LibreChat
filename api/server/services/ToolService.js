@@ -1188,6 +1188,8 @@ async function loadToolDefinitionsWrapper({
         serverName,
         userId,
         configServers,
+        req.user?.role,
+        { idOnTheSource: req.user?.idOnTheSource },
       );
     } catch {
       logger.warn(

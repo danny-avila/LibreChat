@@ -434,9 +434,10 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         flowState.oauthHeaders ?? (await getOAuthHeaders(serverName, flowState.userId));
       let recoveryPolicy;
       const resolveActiveServer = async () => {
+        /** Strict: a degraded read falls back to the base config, which still lists hidden servers. */
         const [configs, appConfig] = await Promise.all([
           resolveAllMcpConfigs(flowState.userId),
-          getAppConfig({ userId: flowState.userId, tenantId: getTenantId() }),
+          getAppConfig({ userId: flowState.userId, tenantId: getTenantId(), failClosed: true }),
         ]);
         recoveryPolicy = appConfig?.mcpSettings?.catalogRecovery;
         const activeConfig =
@@ -938,6 +939,8 @@ router.post(
         serverName,
         user.id,
         configServers,
+        req.user.role,
+        { idOnTheSource: req.user.idOnTheSource },
       );
       if (!serverConfig) {
         return res.status(404).json({
@@ -1056,7 +1059,12 @@ router.get('/connection/status', requireJwtAuth, configMiddleware, async (req, r
 
     const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
       user.id,
-      { role: user.role, tenantId: getTenantId(), appConfig: req.config },
+      {
+        role: user.role,
+        idOnTheSource: user.idOnTheSource,
+        tenantId: getTenantId(),
+        appConfig: req.config,
+      },
     );
     const runtimeContext = createMCPStatusRuntimeContext(user, mcpConfig, Object.keys(mcpConfig));
     const connectionStatus = Object.fromEntries(
@@ -1128,7 +1136,12 @@ router.get('/connection/status/:serverName', requireJwtAuth, configMiddleware, a
 
     const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
       user.id,
-      { role: user.role, tenantId: getTenantId(), appConfig: req.config },
+      {
+        role: user.role,
+        idOnTheSource: user.idOnTheSource,
+        tenantId: getTenantId(),
+        appConfig: req.config,
+      },
     );
 
     if (!mcpConfig[serverName]) {
@@ -1195,6 +1208,8 @@ router.get('/:serverName/auth-values', requireJwtAuth, checkMCPUsePermissions, a
       serverName,
       user.id,
       configServers,
+      user.role,
+      { idOnTheSource: user.idOnTheSource },
     );
     if (!serverConfig) {
       return res.status(404).json({

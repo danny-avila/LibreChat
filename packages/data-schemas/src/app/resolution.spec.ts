@@ -1011,6 +1011,107 @@ describe('mergeConfigOverrides', () => {
   });
 });
 
+/**
+ * Record-key tombstones are how a profile removes one inherited key from an MCP server's record
+ * maps without replacing the whole map: deep merge cannot drop a lower layer's key, and atomic
+ * record merging would change what every stored partial map means.
+ */
+describe('mergeConfigOverrides: removing inherited MCP record keys', () => {
+  const github = {
+    type: 'streamable-http',
+    url: 'https://github.example.com/mcp',
+    headers: { Authorization: 'Bearer {{PAT}}', 'X-Team': 'core' },
+    oauth_headers: { 'X-Client': 'librechat', 'X-Keep': 'yes' },
+    requestHeaders: { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}', 'X-Static': 'on' },
+    customUserVars: {
+      PAT: { title: 'Token', description: 'Personal access token' },
+      ORG: { title: 'Org', description: 'Organization' },
+    },
+  };
+  const base = { mcpConfig: { github } } as unknown as AppConfig;
+
+  function mergedGithub(configs: IConfig[]): Record<string, unknown> {
+    const merged = mergeConfigOverrides(base, configs) as unknown as {
+      mcpConfig: Record<string, Record<string, unknown>>;
+    };
+    return merged.mcpConfig.github;
+  }
+
+  it.each([
+    ['headers', 'Authorization', { 'X-Team': 'core' }],
+    ['oauth_headers', 'X-Client', { 'X-Keep': 'yes' }],
+    ['requestHeaders', 'X-Conversation', { 'X-Static': 'on' }],
+    ['customUserVars', 'PAT', { ORG: github.customUserVars.ORG }],
+  ])('removes only the tombstoned %s key %s', (record, key, remaining) => {
+    const server = mergedGithub([fakeConfig({}, 10, [`mcpServers.github.${record}.${key}`])]);
+
+    expect(server[record]).toEqual(remaining);
+    expect(server.url).toBe(github.url);
+    expect(base.mcpConfig?.github).toEqual(github);
+  });
+
+  it('keeps the tombstone when the same profile writes a sibling key', () => {
+    const server = mergedGithub([
+      fakeConfig({ mcpServers: { github: { headers: { 'X-Extra': 'added' } } } }, 10, [
+        'mcpServers.github.headers.Authorization',
+      ]),
+    ]);
+
+    expect(server.headers).toEqual({ 'X-Team': 'core', 'X-Extra': 'added' });
+  });
+
+  it('lets a higher-priority profile supply the removed key again', () => {
+    const server = mergedGithub([
+      fakeConfig({}, 10, ['mcpServers.github.headers.Authorization']),
+      fakeConfig(
+        { mcpServers: { github: { headers: { Authorization: 'Bearer {{SCOPED}}' } } } },
+        20,
+        undefined,
+        'other',
+      ),
+    ]);
+
+    expect(server.headers).toEqual({ Authorization: 'Bearer {{SCOPED}}', 'X-Team': 'core' });
+  });
+
+  it('removes the whole record when the record itself is tombstoned', () => {
+    const server = mergedGithub([fakeConfig({}, 10, ['mcpServers.github.headers'])]);
+
+    expect(server).not.toHaveProperty('headers');
+    expect(server.oauth_headers).toEqual(github.oauth_headers);
+  });
+
+  it('ignores a key tombstone on a process-backed server', () => {
+    const local = {
+      type: 'stdio',
+      command: 'node',
+      args: ['x.js'],
+      env: { DEBUG: '1', KEEP: '2' },
+    };
+    const merged = mergeConfigOverrides({ mcpConfig: { local } } as unknown as AppConfig, [
+      fakeConfig({}, 10, ['mcpServers.local.env.DEBUG']),
+    ]) as unknown as { mcpConfig: Record<string, unknown> };
+
+    expect(merged.mcpConfig.local).toEqual(local);
+  });
+
+  it('validates writes on the same base the merge produces', () => {
+    const yaml = { mcpServers: { github } } as unknown as Partial<TCustomConfig>;
+    const tombstoned = applyConfigTombstones(yaml, ['mcpServers.github.headers.Authorization']);
+
+    expect(
+      (tombstoned.mcpServers as Record<string, { headers?: Record<string, string> }>).github
+        .headers,
+    ).toEqual({ 'X-Team': 'core' });
+    expect(
+      getConfigOverrideIssues(
+        { mcpServers: { github: { headers: { 'X-Extra': 'added' } } } } as Partial<TCustomConfig>,
+        tombstoned,
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe('mergeConfigOverrides: filtered MCP servers', () => {
   it('does not let a filtered process-backed server shape a later partial', () => {
     const merged = mergeConfigOverrides({} as AppConfig, [

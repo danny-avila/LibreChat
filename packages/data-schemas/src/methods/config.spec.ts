@@ -473,6 +473,80 @@ describe('unsetConfigField', () => {
   });
 });
 
+/** Storage half of removing one inherited MCP record key; the merge half is in `resolution.spec.ts`. */
+describe('MCP record-key tombstones', () => {
+  const KEY = 'mcpServers.github.headers.Authorization';
+
+  async function tombstoneKey(): Promise<void> {
+    await methods.tombstoneConfigField(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, KEY, 10);
+  }
+
+  it('survives a write to a sibling key of the same record', async () => {
+    await tombstoneKey();
+
+    const result = await methods.patchConfigFields(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { 'mcpServers.github.headers.X-Extra': 'added' },
+      10,
+    );
+
+    expect(result!.tombstones).toEqual([KEY]);
+  });
+
+  it('is cleared when the profile writes that key itself', async () => {
+    await tombstoneKey();
+
+    const result = await methods.patchConfigFields(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { [KEY]: 'Bearer {{SCOPED}}' },
+      10,
+    );
+
+    expect(result!.tombstones).toEqual([]);
+  });
+
+  it('is removed alone by a reset of the same path', async () => {
+    await tombstoneKey();
+    await methods.tombstoneConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      'mcpServers.github.headers.X-Team',
+      10,
+    );
+
+    const result = await methods.unsetConfigField(PrincipalType.ROLE, 'admin', KEY);
+
+    expect(result!.tombstones).toEqual(['mcpServers.github.headers.X-Team']);
+  });
+
+  it('is removed by a reset of the whole record, along with the keys the profile wrote', async () => {
+    await methods.patchConfigFields(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { 'mcpServers.github.headers.X-Extra': 'added' },
+      10,
+    );
+    await tombstoneKey();
+
+    const result = await methods.unsetConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      'mcpServers.github.headers',
+    );
+
+    expect(result!.tombstones).toEqual([]);
+    const github = (result!.overrides as { mcpServers: { github: Record<string, unknown> } })
+      .mcpServers.github;
+    expect(github).not.toHaveProperty('headers');
+  });
+});
+
 describe('deleteConfig', () => {
   it('deletes and returns the config', async () => {
     await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, {}, 10);
