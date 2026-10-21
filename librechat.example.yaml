@@ -1065,6 +1065,14 @@ endpoints:
   #           userId: '507f1f77bcf86cd799439011'
   #           tenantId: 'tenant-id'
 
+  # (optional) Title settings under `endpoints.all` apply to every endpoint one field at a
+  # time: a field set here wins over the endpoint's own value, and a field left out keeps it.
+  # `titleEndpoint` and `titleModel` are one choice, taken together from the first of `all`,
+  # the endpoint's block, or its custom endpoint entry that sets either.
+  # all:
+  #   titleConvo: true
+  #   titleMethod: completion
+
   # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
   # Forwarded on every request to the provider (or an AI gateway / reverse proxy
   # in front of it) while keeping provider-native request shaping intact. Values

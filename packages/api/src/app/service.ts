@@ -18,6 +18,7 @@ import {
 import type { AppConfig, IConfig } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 import type { CustomConfigLoadMode } from './loader';
+import { normalizeEndpointReferences } from './references';
 import { checkAppConfigTheme } from './theme';
 
 const BASE_CONFIG_KEY = '_BASE_';
@@ -189,8 +190,6 @@ function checkOverrideTheme(baseConfig: AppConfig, merged: AppConfig): AppConfig
 /**
  * Materializes inferable model-spec fields (an omitted `preset.endpoint` for
  * agent specs) so every consumer of the effective config reads complete specs.
- * Runs at both assembly points — YAML base load and DB-override merge — because
- * override documents contribute specs the base config never saw.
  */
 function materializeConfigModelSpecs(config: AppConfig): AppConfig {
   const modelSpecs = materializeModelSpecEndpoints(config.modelSpecs);
@@ -198,6 +197,15 @@ function materializeConfigModelSpecs(config: AppConfig): AppConfig {
     return config;
   }
   return { ...config, modelSpecs };
+}
+
+/**
+ * Completes the effective config: inferred spec endpoints, and endpoint references in the
+ * names the runtime serves. Runs at both assembly points — YAML base load and DB-override
+ * merge — because override documents contribute specs and references the base never saw.
+ */
+function completeEffectiveConfig(config: AppConfig): AppConfig {
+  return normalizeEndpointReferences(materializeConfigModelSpecs(config));
 }
 
 export const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
@@ -421,7 +429,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
         throw new Error('Failed to initialize app configuration through AppService.');
       }
 
-      const baseConfig = materializeConfigModelSpecs(loaded);
+      const baseConfig = completeEffectiveConfig(loaded);
       if (baseConfig.availableTools) {
         await setCachedTools(baseConfig.availableTools);
       }
@@ -583,7 +591,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
         merged = scopeCustomEndpoints(
           checkOverrideTheme(
             scopedBaseConfig,
-            materializeConfigModelSpecs(mergeConfigOverrides(scopedBaseConfig, configs)),
+            completeEffectiveConfig(mergeConfigOverrides(scopedBaseConfig, configs)),
           ),
           effectiveTenantId,
           hiddenEndpoints,

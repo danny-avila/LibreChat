@@ -466,6 +466,67 @@ describe('initializeAgent — execution context', () => {
   });
 });
 
+describe('initializeAgent: allowed providers', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  /** The effective config serves `endpoints.agents.allowedProviders` in served names, so a
+   *  YAML `Ollama` arrives as `ollama`. The chat path's model check before this is covered in
+   *  `api/server/services/Endpoints/agents/initialize.spec.js`. */
+  it.each(['ollama', 'Ollama', 'OLLAMA'])(
+    'sets up an agent saved with provider %s on the served ollama endpoint',
+    async (provider) => {
+      const { agent, req, res, loadTools, db } = createMocks({
+        provider,
+        overrideProvider: Providers.OPENAI,
+      });
+
+      const result = await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set(['ollama']),
+          isInitialAgent: true,
+        },
+        db,
+      );
+
+      expect(mockGetProviderConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'ollama' }),
+      );
+      const { getOptions } = mockGetProviderConfig.mock.results[0].value;
+      expect(getOptions).toHaveBeenCalledWith(expect.objectContaining({ endpoint: 'ollama' }));
+      expect(result.endpoint).toBe('ollama');
+    },
+  );
+
+  it('rejects a provider the allowed list does not name', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: 'OpenRouter',
+      overrideProvider: Providers.OPENAI,
+    });
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set(['ollama']),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).rejects.toThrow(ErrorTypes.INVALID_AGENT_PROVIDER);
+  });
+});
+
 describe('initializeAgent: ChatProject context', () => {
   beforeEach(() => {
     jest.clearAllMocks();

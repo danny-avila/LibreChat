@@ -2513,6 +2513,113 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.upsertConfig).toHaveBeenCalledTimes(1);
     });
 
+    it('rejects one write that names a custom endpoint twice in spellings the runtime folds', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            endpoints: {
+              custom: [
+                { name: 'Ollama', baseURL: 'http://first:11434/v1' },
+                { name: 'ollama', baseURL: 'http://second:11434/v1' },
+              ],
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body?.issues).toEqual([
+        { path: 'endpoints.custom.0', code: 'duplicate_merge_key' },
+      ]);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it('accepts an override spelled `ollama` onto the YAML `Ollama` it merges into', async () => {
+      const { handlers, deps } = createHandlers({
+        getAppConfig: jest.fn().mockResolvedValue({
+          config: {
+            endpoints: {
+              custom: [
+                {
+                  name: 'Ollama',
+                  apiKey: 'ollama',
+                  baseURL: 'http://yaml-host:11434/v1',
+                  models: { default: ['llama3'] },
+                },
+              ],
+            },
+          },
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            endpoints: { custom: [{ name: 'ollama', modelDisplayLabel: 'Local' }] },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      expect(deps.upsertConfig).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the key a stored two-spelling `Ollama` document applies when a write omits it', async () => {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          priority: 10,
+          overrides: {
+            endpoints: {
+              custom: [
+                {
+                  name: 'Ollama',
+                  baseURL: 'http://override-first:11434/v1',
+                  apiKey: 'v3:test:sk-ollama-first-key',
+                  apiKeyPreview: '...-key',
+                },
+                { name: 'ollama', modelDisplayLabel: 'legacy-second' },
+              ],
+            },
+          },
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            endpoints: {
+              custom: [{ name: 'ollama', baseURL: 'http://override-first:11434/v1' }],
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      const saved = (deps.upsertConfig as jest.Mock).mock.calls[0][3] as {
+        endpoints: { custom: Array<Record<string, string>> };
+      };
+      expect(saved.endpoints.custom).toEqual([
+        {
+          name: 'ollama',
+          baseURL: 'http://override-first:11434/v1',
+          apiKey: 'v3:test:sk-ollama-first-key',
+          apiKeyPreview: '...-key',
+        },
+      ]);
+    });
+
     it('rejects a field patch with an invalid value and writes no entry', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
