@@ -368,14 +368,14 @@ function AskUserQuestionSingle({
         </Button>
         {(status === 'expired' || status === 'error') && (
           <span className="text-text-warning flex min-w-0 items-center text-xs">
-            <TriangleAlert className="mr-1.5 size-4 shrink-0" aria-hidden="true" />
+            <TriangleAlert className="me-1.5 size-4 shrink-0" aria-hidden="true" />
             {localize(status === 'expired' ? 'com_ui_approval_expired' : 'com_ui_approval_error')}
           </span>
         )}
         <Button
           size="sm"
           variant="submit"
-          className="ml-auto"
+          className="ms-auto"
           disabled={!canSubmit || locked}
           onClick={submitCombined}
         >
