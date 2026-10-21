@@ -45,6 +45,9 @@ export class ReactQueryChatState implements ChatState {
   private countedData?: unknown;
   private carried = 0;
   private reported?: number;
+  /** Data events the cache reported for the key, and how many `version` last accounted for. */
+  private changes = 0;
+  private countedChanges = 0;
 
   constructor(options: ReactQueryChatStateOptions) {
     this.options = options;
@@ -70,17 +73,19 @@ export class ReactQueryChatState implements ChatState {
     const query = this.options.queryClient.getQueryCache().get(this.queryHash);
     const data = query?.state.data;
     let version = this.carried + (query?.state.dataUpdateCount ?? 0) + this.revision;
-    const changed = query !== this.counted || data !== this.countedData;
+    const changed =
+      query !== this.counted || data !== this.countedData || this.changes !== this.countedChanges;
     if (changed && this.reported != null && version <= this.reported) {
       /**
        * The write count restarts when an entry is created with initial data, removed and created
-       * again, or reset, so a change of entry or data alone moves past the last version handed out.
+       * again, or reset, so any change the cache reported moves past the last version handed out.
        */
       this.carried += this.reported - version + 1;
       version = this.reported + 1;
     }
     this.counted = query;
     this.countedData = data;
+    this.countedChanges = this.changes;
     this.reported = version;
     return version;
   }
@@ -123,6 +128,7 @@ export class ReactQueryChatState implements ChatState {
     };
     const unsubscribe = this.options.queryClient.getQueryCache().subscribe((event) => {
       if (event.query.queryHash === this.queryHash && dataEvents.has(event.type)) {
+        this.changes += 1;
         deliver();
       }
     });
