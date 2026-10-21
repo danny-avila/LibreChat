@@ -14,6 +14,7 @@ import {
   useConversationsInfiniteQuery,
   usePinnedConversationsQuery,
   useTitleGeneration,
+  useGetStartupConfig,
 } from '~/data-provider';
 import { useLocalize, useAuthContext, useLocalStorage, useNavScrolling } from '~/hooks';
 import ProjectsSection from '~/components/Conversations/ProjectsSection';
@@ -32,6 +33,7 @@ const ConversationsSection = memo(() => {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { setSidebarOpen } = useSidebarToggle();
   const { isAuthenticated } = useAuthContext();
+  const { data: startupConfig } = useGetStartupConfig();
   useTitleGeneration(isAuthenticated);
 
   const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
@@ -185,7 +187,7 @@ const ConversationsSection = memo(() => {
         {/* `min-h-full` keeps the sections filling a tall sidebar, so the chats
             list still claims the space below them when there is little to show. */}
         <div ref={setScrollContent} className="flex min-h-full flex-col">
-          {!search.query && (
+          {!search.query && startupConfig?.interface?.projects !== false && (
             <ProjectsSection toggleNav={toggleNav} isAuthenticated={isAuthenticated} />
           )}
           {!search.query && (

@@ -18,6 +18,7 @@ const ctx: SettingsContextValue = {
   twoFactorEnabled: false,
   allowAccountDeletion: true,
   aboutEnabled: false,
+  speechEnabled: true,
   engineTTS: 'browser',
   langfuseConnectionAccess: false,
   adminPanelURL: '',

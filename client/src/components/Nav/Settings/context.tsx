@@ -34,6 +34,7 @@ export function useSettingsContext(): SettingsContextValue {
   const twoFactorEnabled = user?.twoFactorEnabled === true;
   const allowAccountDeletion = startupConfig?.allowAccountDeletion !== false;
   const aboutEnabled = startupConfig?.interface?.buildInfo !== false;
+  const speechEnabled = startupConfig?.interface?.speech !== false;
   const hasRemoteAgentsBool = hasRemoteAgents === true;
   const hasMultiConvoBool = hasMultiConvo === true;
   const hasPromptsBool = hasPrompts === true;
@@ -56,6 +57,7 @@ export function useSettingsContext(): SettingsContextValue {
       twoFactorEnabled,
       allowAccountDeletion,
       aboutEnabled,
+      speechEnabled,
       engineTTS,
       langfuseConnectionAccess,
       adminPanelURL,
@@ -73,6 +75,7 @@ export function useSettingsContext(): SettingsContextValue {
       twoFactorEnabled,
       allowAccountDeletion,
       aboutEnabled,
+      speechEnabled,
       engineTTS,
       langfuseConnectionAccess,
       adminPanelURL,

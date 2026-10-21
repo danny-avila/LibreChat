@@ -71,6 +71,9 @@ export async function loadDefaultInterface({
     skills: interfaceConfig?.skills,
     sharedLinks: interfaceConfig?.sharedLinks,
     schedules: interfaceConfig?.schedules,
+    projects: interfaceConfig?.projects,
+    files: interfaceConfig?.files,
+    speech: interfaceConfig?.speech,
   });
 
   return loadedInterface;

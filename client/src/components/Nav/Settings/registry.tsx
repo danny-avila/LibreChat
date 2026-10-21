@@ -39,7 +39,7 @@ import { ManageFiles } from '../SettingsTabs/Data/ManageFiles';
 import { smoothStreamingAtom } from '~/store/smoothStreaming';
 import { RevokeKeys } from '../SettingsTabs/Data/RevokeKeys';
 import { ClearChats } from '../SettingsTabs/Data/ClearChats';
-import { TokenCredits, AutoRefill } from './BillingControls';
+import { Usage } from './BillingControls';
 import AdminPanel from '../SettingsTabs/General/AdminPanel';
 import SharedLinks from '../SettingsTabs/Data/SharedLinks';
 import ImageResize from '../SettingsTabs/Chat/ImageResize';
@@ -54,7 +54,7 @@ import MemoryToggle from './MemoryToggle';
 import { TTSEndpoints } from '~/common';
 import store from '~/store';
 
-const { GENERAL, CHAT, SPEECH, DATA, ACCOUNT, ABOUT } = SettingsTabValues;
+const { GENERAL, CHAT, SPEECH, DATA, BALANCE, ACCOUNT, ABOUT } = SettingsTabValues;
 
 export const registry: SettingEntry[] = [
   // General · Appearance
@@ -726,22 +726,15 @@ export const registry: SettingEntry[] = [
     show: (ctx) => ctx.isLocalProvider && ctx.twoFactorEnabled,
     Component: BackupCodesItem,
   },
-  // Account · Billing
+  // Usage
   {
-    id: 'tokenCredits',
-    tab: ACCOUNT,
-    section: 'billing',
-    labelKey: 'com_ui_settings_label_credits',
+    id: 'usage',
+    tab: BALANCE,
+    section: 'usage',
+    labelKey: 'com_nav_setting_usage',
+    keywords: ['balance', 'credits', 'tokens', 'plan', 'tier', 'questions'],
     show: (ctx) => ctx.balanceEnabled,
-    Component: TokenCredits,
-  },
-  {
-    id: 'autoRefill',
-    tab: ACCOUNT,
-    section: 'billing',
-    labelKey: 'com_ui_settings_label_auto_refill',
-    show: (ctx) => ctx.balanceEnabled,
-    Component: AutoRefill,
+    Component: Usage,
   },
   // Account · Danger zone
   {

@@ -43,6 +43,7 @@ import PendingManualSkillsChips from './PendingManualSkillsChips';
 import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
+import TextQuestionsPopover from './TextQuestionsPopover';
 import InterruptSteerButton from './InterruptSteerButton';
 import PastedTextDialog from './Files/PastedTextDialog';
 import DuringRunSendButton from './DuringRunSendButton';
@@ -716,6 +717,9 @@ const ChatForm = memo(function ChatForm({
             <PromptsCommand index={index} textAreaRef={textAreaRef} submitPrompt={submitPrompt} />
             {index === 0 && (
               <AskUserQuestionPopover conversationId={conversationId} textAreaRef={textAreaRef} />
+            )}
+            {index === 0 && conversationId != null && (
+              <TextQuestionsPopover conversationId={conversationId} />
             )}
             {index === 0 && conversationId != null && (
               <PendingToolApprovalPanel conversationId={conversationId} />

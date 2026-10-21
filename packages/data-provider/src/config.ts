@@ -2337,6 +2337,12 @@ export const interfaceSchema = z
     /** Tool keys (and `'mcp'` or an MCP server name) pinned to the prompt bar by default */
     defaultPinnedTools: z.array(z.string()).optional(),
     buildInfo: z.boolean().optional(),
+    /** Shows the Projects section of the sidebar (default on). */
+    projects: z.boolean().optional(),
+    /** Shows the Files side panel (default on). */
+    files: z.boolean().optional(),
+    /** Shows the Speech settings tab (default on). */
+    speech: z.boolean().optional(),
     remoteAgents: z
       .object({
         use: z.boolean().optional(),
@@ -2826,6 +2832,8 @@ export const balanceSchema = z.object({
   refillIntervalValue: z.number().optional().default(30),
   refillIntervalUnit: z.enum(REFILL_INTERVAL_UNITS).optional().default('days'),
   refillAmount: z.number().optional().default(10000),
+  /** Typical credits one question costs; the usage page turns the balance into "about N questions left". */
+  creditsPerQuestion: z.number().positive().optional(),
   reservationTtlMs: z
     .number()
     .int()

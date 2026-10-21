@@ -19,7 +19,8 @@ import {
 } from '~/data-provider';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { askSubmitStatusAtom } from '~/components/Chat/ask/state';
-import { resolveAskUserQuestionPart } from '~/utils/approval';
+import { resolveAskUserQuestionPart, ASK_USER_DECLINED_ANSWER } from '~/utils/approval';
+import { TEXT_ASK_PREFIX, formatAnswers } from '~/utils/questions';
 import { ChatContext } from '~/Providers/ChatContext';
 import { useGetEphemeralAgent } from '~/store/agents';
 import store from '~/store';
@@ -514,6 +515,18 @@ export function useResumeSubmit() {
       resolution: string | Record<string, string>,
       opts?: { onSuccess?: () => void },
     ) => {
+      if (actionId.startsWith(TEXT_ASK_PREFIX) && typeof resolution !== 'string') {
+        // a text-block question has no paused run to resume: the answers are the next message
+        const answered = Object.fromEntries(
+          Object.entries(resolution).filter(([, answer]) => answer !== ASK_USER_DECLINED_ANSWER),
+        );
+        if (Object.keys(answered).length > 0) {
+          chatContext?.ask({ text: formatAnswers(answered) });
+        }
+        setAskStatus(actionId, 'submitted');
+        opts?.onSuccess?.();
+        return;
+      }
       const fields = buildResumeFields();
       const isBatch = typeof resolution !== 'string';
       const hasAnswer = isBatch ? Object.keys(resolution).length > 0 : resolution.length > 0;

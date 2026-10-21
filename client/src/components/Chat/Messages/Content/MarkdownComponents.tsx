@@ -11,6 +11,7 @@ import {
 import Mermaid, { MermaidErrorBoundary } from '~/components/Messages/Content/Mermaid';
 import { useCodeBlockContext, useMediaContext } from '~/Providers';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
+import QuestionsBlock from './QuestionsBlock';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
 import { useLocalize } from '~/hooks';
@@ -59,6 +60,8 @@ export const code: React.ElementType = memo(function MarkdownCode({
 
   if (isMath) {
     return <>{children}</>;
+  } else if (lang === 'questions') {
+    return <QuestionsBlock content={String(children)} />;
   } else if (isMermaid) {
     const content = typeof children === 'string' ? children : String(children);
     return (
@@ -94,6 +97,8 @@ export const codeNoExecution: React.ElementType = memo(function MarkdownCodeNoEx
 
   if (lang === 'math') {
     return children;
+  } else if (lang === 'questions') {
+    return <QuestionsBlock content={String(children)} />;
   } else if (lang === 'mermaid') {
     const content = typeof children === 'string' ? children : String(children);
     return <Mermaid>{content}</Mermaid>;

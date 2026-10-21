@@ -1586,6 +1586,18 @@ describe('Balance Reservations', () => {
       expect(refills[0].rawAmount).toBe(1000);
     });
 
+    test('tops the balance up to the refill amount instead of stacking (no rollover)', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await Balance.create({ user, ...refillable, tokenCredits: 400 });
+
+      const result = await reserve(user.toString(), 500);
+
+      expect(result?.reserved).toBe(true);
+      expect((await readState(user))?.tokenCredits).toBe(1000);
+      const refills = await Transaction.find({ user, context: 'autoRefill' }).lean();
+      expect(refills.map((refill) => refill.rawAmount)).toEqual([600]);
+    });
+
     test.each([
       ['lastRefill advances', { lastRefill: new Date() }, 0],
       ['auto-refill is disabled', { autoRefillEnabled: false }, 0],

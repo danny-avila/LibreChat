@@ -361,9 +361,12 @@ export function createTransactionMethods(
    */
   async function applyAutoRefill(record: IBalance, now: Date): Promise<boolean> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
+    const current = record.tokenCredits ?? 0;
+    /** Law Chat fork: a refill renews a monthly plan's allowance, it does not stack unused
+     *  credits on top (no rollover), so it tops the balance up to `refillAmount`. */
     const pendingRefill: IBalancePendingRefill = {
       transactionId: new mongoose.Types.ObjectId(),
-      rawAmount: record.refillAmount,
+      rawAmount: Math.max(0, record.refillAmount - current),
     };
     const result = await Balance.updateOne(
       {
@@ -379,7 +382,7 @@ export function createTransactionMethods(
       },
       {
         $set: {
-          tokenCredits: Math.max(0, (record.tokenCredits ?? 0) + record.refillAmount),
+          tokenCredits: Math.max(current, record.refillAmount),
           lastRefill: now,
           pendingRefill,
         },
@@ -390,7 +393,7 @@ export function createTransactionMethods(
     }
     logger.debug('[Balance.reserve] Auto-refill applied', {
       user: record.user,
-      rawAmount: record.refillAmount,
+      rawAmount: pendingRefill.rawAmount,
     });
     await settleAutoRefill(record._id, record.user, pendingRefill);
     return true;

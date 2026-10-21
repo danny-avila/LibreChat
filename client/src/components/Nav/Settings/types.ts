@@ -1,5 +1,5 @@
 import { createElement } from 'react';
-import { MessageSquare, Info } from 'lucide-react';
+import { MessageSquare, Info, Gauge } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
 import { GearIcon, DataIcon, UserIcon, SpeechIcon } from '@librechat/client';
 import type { ComponentType, ReactNode } from 'react';
@@ -11,6 +11,7 @@ export type SettingsTab =
   | SettingsTabValues.SPEECH
   | SettingsTabValues.LANGFUSE
   | SettingsTabValues.DATA
+  | SettingsTabValues.BALANCE
   | SettingsTabValues.ACCOUNT
   | SettingsTabValues.ABOUT;
 
@@ -34,7 +35,7 @@ export type SectionId =
   | 'danger'
   | 'profile'
   | 'security'
-  | 'billing'
+  | 'usage'
   | 'about';
 
 export interface SettingsContextValue {
@@ -50,6 +51,7 @@ export interface SettingsContextValue {
   twoFactorEnabled: boolean;
   allowAccountDeletion: boolean;
   aboutEnabled: boolean;
+  speechEnabled: boolean;
   engineTTS: string;
   langfuseConnectionAccess: boolean;
   adminPanelURL: string;
@@ -123,6 +125,7 @@ export const TABS: TabMeta[] = [
       { id: 'stt', labelKey: 'com_ui_settings_section_stt' },
       { id: 'tts', labelKey: 'com_ui_settings_section_tts' },
     ],
+    show: (ctx) => ctx.speechEnabled,
   },
   {
     id: SettingsTabValues.LANGFUSE,
@@ -150,13 +153,19 @@ export const TABS: TabMeta[] = [
     ],
   },
   {
+    id: SettingsTabValues.BALANCE,
+    labelKey: 'com_nav_setting_usage',
+    icon: createElement(Gauge, { className: 'icon-sm', 'aria-hidden': true }),
+    sections: [{ id: 'usage', labelKey: 'com_nav_setting_usage' }],
+    show: (ctx) => ctx.balanceEnabled,
+  },
+  {
     id: SettingsTabValues.ACCOUNT,
     labelKey: 'com_nav_setting_account',
     icon: createElement(UserIcon),
     sections: [
       { id: 'profile', labelKey: 'com_ui_settings_section_profile' },
       { id: 'security', labelKey: 'com_ui_settings_section_security' },
-      { id: 'billing', labelKey: 'com_ui_settings_section_billing' },
       { id: 'danger', labelKey: 'com_ui_settings_section_danger_zone', danger: true },
     ],
   },

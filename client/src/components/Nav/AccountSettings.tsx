@@ -13,7 +13,8 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/ArchivedChatsModal';
-import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import { useGetStartupConfig } from '~/data-provider';
+import { useUsage } from './Settings/BillingControls';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { openInNewTab } from '~/utils';
 import { useLocalize } from '~/hooks';
@@ -93,11 +94,9 @@ function HelpSubmenu({
 
 function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const localize = useLocalize();
-  const { user, isAuthenticated, logout } = useAuthContext();
+  const { user, logout } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
-  const balanceQuery = useGetUserBalance({
-    enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
-  });
+  const usage = useUsage();
   const [showSettings, setShowSettings] = useState(false);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const [showArchived, setShowArchived] = useState(false);
@@ -143,11 +142,13 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           {user?.email ?? localize('com_nav_user')}
         </div>
         <DropdownMenuSeparator />
-        {startupConfig?.balance?.enabled === true && balanceQuery.data != null && (
+        {startupConfig?.balance?.enabled === true && usage.loaded && (
           <>
             <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
-              {localize('com_nav_balance')}:{' '}
-              {new Intl.NumberFormat().format(Math.round(balanceQuery.data.tokenCredits))}
+              {usage.tier !== '' && `${usage.tier} · `}
+              {usage.questions != null
+                ? localize('com_ui_usage_questions_short', { 0: usage.questions })
+                : `${localize('com_ui_usage_left')}: ${new Intl.NumberFormat().format(Math.round(usage.left))}`}
             </div>
             <DropdownMenuSeparator />
           </>

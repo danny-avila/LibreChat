@@ -3057,5 +3057,14 @@
   "com_insights_invalid_date_range": "Choose an end date after the start date, within {{days}} days.",
   "com_insights_sparkline_accessibility": "{{label}} over time",
   "com_nav_mobile_drawer_strip": "Show chat beside the sidebar on mobile",
-  "com_nav_mobile_drawer_strip_info": "The sidebar stops short of the edge so a strip of the conversation stays visible. Tapping it closes the sidebar."
+  "com_nav_mobile_drawer_strip_info": "The sidebar stops short of the edge so a strip of the conversation stays visible. Tapping it closes the sidebar.",
+  "com_nav_setting_usage": "Usage",
+  "com_ui_usage_plan": "Plan",
+  "com_ui_usage_left": "Tokens left",
+  "com_ui_usage_of": "of",
+  "com_ui_usage_questions": "Questions left (approx.)",
+  "com_ui_usage_questions_short": "≈ {{0}} questions left",
+  "com_ui_usage_next_refill": "Renews on",
+  "com_ui_usage_info": "Each answer reads the matching law texts and rulings, so a question uses far more tokens than its visible text. The estimate is based on an average question; long documents and follow-ups cost more.",
+  "com_ui_answer_yourself": "Answer in your own words"
 }
