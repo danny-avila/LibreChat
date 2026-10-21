@@ -1649,8 +1649,15 @@ export class Chat {
         this.notify();
       }
     } else if (event.type === 'pending_action' && isExpired(event.data)) {
-      /** An expired pause a reconnect replays is stale, as one a status read restores is. */
-      if (this.action?.actionId === event.data.actionId) {
+      /**
+       * An expired pause a reconnect replays is stale, as one a status read restores is, and it
+       * still supersedes an older pause of its generation that the chat holds.
+       */
+      const generation = this.generationCreatedAt;
+      this.seePause(event.data, generation);
+      const held = this.action;
+      const superseded = held != null && generation != null && this.isOlderPause(held, generation);
+      if (held?.actionId === event.data.actionId || superseded) {
         this.clearAction();
       }
     } else if (
