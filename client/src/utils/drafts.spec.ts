@@ -1516,7 +1516,9 @@ describe('logical composer lifetime', () => {
           mode === 'blocked' ? pendingId : destination,
         );
         expect(captured()).toBe(false);
-        expect(captured.retainsFile('migrating-upload')).toBe(mode === 'owned' || mode === 'blocked');
+        expect(captured.retainsFile('migrating-upload')).toBe(
+          mode === 'owned' || mode === 'blocked',
+        );
         if (mode === 'owned') {
           captured.discardFile('migrating-upload');
           expect(getFilesDraft(conversationId).fileIds).toEqual([]);

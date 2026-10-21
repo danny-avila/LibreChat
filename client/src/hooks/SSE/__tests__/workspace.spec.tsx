@@ -26,6 +26,7 @@ import useEventHandlers from '../useEventHandlers';
 const mockStatus = jest.fn();
 const mockStartupConfig = jest.fn();
 const mockApplyAgentTemplate = jest.fn();
+const mockQueueTitleGeneration = jest.fn();
 const mockAnnounce = jest.fn();
 const mockReset = jest.fn();
 
@@ -66,6 +67,7 @@ jest.mock('~/data-provider', () => ({
   /** The barrel can be partially initialized through the hook imports above. Keep these
    * real hooks rather than snapshotting missing exports or replacing recovery with a stub. */
   ...jest.requireActual('~/data-provider/CodeEnvironments'),
+  queueTitleGeneration: (conversationId: string) => mockQueueTitleGeneration(conversationId),
   useCodeEnvironmentStatusQueries: () => mockStatus(),
   useGetStartupConfig: () => ({ data: mockStartupConfig() }),
 }));
@@ -153,6 +155,7 @@ describe('created composer identity', () => {
     localStorage.clear();
     clearFileSearchChoices();
     mockApplyAgentTemplate.mockClear();
+    mockQueueTitleGeneration.mockClear();
     mockStatus.mockReturnValue([]);
     mockStartupConfig.mockReturnValue({ codeEnvironmentDecisionVersion: 1 });
   });
@@ -324,6 +327,11 @@ describe('created composer identity', () => {
           }),
         );
         if (enabled) expect(getFileSearchChoice('saved-chat')?.revision).toBe(previousRevision);
+        if (event === 'final' && origin === 'resumable') {
+          expect(mockQueueTitleGeneration).toHaveBeenCalledWith('saved-chat');
+        } else {
+          expect(mockQueueTitleGeneration).not.toHaveBeenCalled();
+        }
       } finally {
         storage?.mockRestore();
         release();

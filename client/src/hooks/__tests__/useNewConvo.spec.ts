@@ -895,7 +895,7 @@ describe('useNewConvo reset cleanup', () => {
       await new Promise((resolve) => setTimeout(resolve, 320));
     });
     expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
-    expect(result.current.files.get(body.get('file_id') as string)?.progress).toBeLessThan(1);
+    expect(result.current.files.has(body.get('file_id') as string)).toBe(false);
     unmount();
     client.clear();
     window.history.replaceState({}, '', '/');
