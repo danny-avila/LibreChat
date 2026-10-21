@@ -1,8 +1,9 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
-import { useAtom } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useWatch } from 'react-hook-form';
+import { useAtom, useAtomValue } from 'jotai';
 import { useNavigate } from 'react-router-dom';
+import { useDirection } from '@radix-ui/react-direction';
 import { useSteering, showStopButtonByIndex, useComposerRestoreHost } from '@librechat/chat/react';
 import {
   composerSurfaceClasses,
@@ -61,6 +62,7 @@ import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import useComposerItems from '~/hooks/Input/useComposerItems';
 import useAttachTarget from '~/hooks/Input/useAttachTarget';
+import { chatDirectionAtom } from '~/store/chatDirection';
 import Hints, { composerHintId } from './Composer/Hints';
 import PastedTextDialog from './Files/PastedTextDialog';
 import DuringRunSendButton from './DuringRunSendButton';
@@ -186,7 +188,7 @@ const ChatForm = memo(function ChatForm({
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
-  const chatDirection = useRecoilValue(store.chatDirection);
+  const chatDirection = useAtomValue(chatDirectionAtom);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const { isTemporary } = useChatSettings();
@@ -237,10 +239,6 @@ const ChatForm = memo(function ChatForm({
    */
   const quotesEnabled = useMemo(() => !isAssistantsEndpoint(endpoint), [endpoint]);
 
-  const isRTL = useMemo(
-    () => (chatDirection != null ? chatDirection?.toLowerCase() === 'rtl' : false),
-    [chatDirection],
-  );
   const invalidAssistant = useMemo(
     () =>
       isAssistantsEndpoint(endpoint) &&
@@ -495,6 +493,11 @@ const ChatForm = memo(function ChatForm({
   });
 
   const textValue = useWatch({ control: methods.control, name: 'text' });
+  const interfaceDirection = useDirection();
+  /** An empty `dir="auto"` field resolves to LTR, which would park an RTL interface's placeholder on
+   *  the wrong edge, so the empty field follows the interface until text gives it a direction. */
+  const autoDirection = textValue ? 'auto' : interfaceDirection;
+  const textDirection = chatDirection === 'auto' ? autoDirection : chatDirection;
 
   /** The composer commits once per keystroke for the row count and the send
    *  button; a second commit for a row count that did not move (or that no
@@ -725,6 +728,9 @@ const ChatForm = memo(function ChatForm({
 
   return (
     <form
+      /* A forced direction mirrors the whole composer, chrome included; `auto`
+         leaves the layout to the page and lets the text field follow its text. */
+      dir={chatDirection === 'auto' ? undefined : chatDirection}
       onSubmit={methods.handleSubmit((data) => {
         if (!isPreparingFromUrl && submitComposerText(data) !== false) {
           clearSettingsError();
@@ -767,7 +773,6 @@ const ChatForm = memo(function ChatForm({
               className={cn(
                 'mx-4 -mb-3 flex min-w-0 flex-wrap items-center gap-1.5 rounded-t-2xl',
                 'border-border-light bg-surface-secondary border px-2 pt-2 pb-5',
-                isRTL && 'flex-row-reverse',
               )}
             >
               {project ? <ProjectLandingChip project={project} /> : null}
@@ -782,7 +787,7 @@ const ChatForm = memo(function ChatForm({
               ) : null}
             </div>
           )}
-          <div className={cn('flex w-full items-center', isRTL && 'flex-row-reverse')}>
+          <div className="flex w-full items-center">
             <Mention
               index={index}
               popoverAtom={plusPopoverAtom}
@@ -847,7 +852,6 @@ const ChatForm = memo(function ChatForm({
                 files={files}
                 setFiles={setFiles}
                 setFilesLoading={setFilesLoading}
-                isRTL={isRTL}
                 index={index}
                 isPastedTextFile={isPastedTextFile}
                 isPasteActionPending={isPasteActionPending}
@@ -860,7 +864,7 @@ const ChatForm = memo(function ChatForm({
                 onSave={pastedTextEdit.saveEdit}
               />
               {endpoint && (
-                <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
+                <div className="flex">
                   <div
                     className={cn(
                       'relative flex-1',
@@ -881,6 +885,7 @@ const ChatForm = memo(function ChatForm({
                   >
                     <TextareaAutosize
                       {...registerProps}
+                      dir={textDirection}
                       ref={(e) => {
                         ref(e);
                         (
@@ -937,7 +942,7 @@ const ChatForm = memo(function ChatForm({
                     {/* Sits over the fade scrim in the corner of the input
                         rather than in its own column beside it, so a long draft
                         does not push an orphaned control off to the side. */}
-                    <div className="absolute right-2 bottom-1 z-10">
+                    <div className="absolute inset-e-2 bottom-1 z-10">
                       <CollapseChat
                         isCollapsed={isCollapsed}
                         isScrollable={isMoreThanThreeRows && !answerMode.composerLocked}
@@ -973,7 +978,6 @@ const ChatForm = memo(function ChatForm({
               >
                 <Bar
                   index={index}
-                  isRTL={isRTL}
                   disabled={disableInputs}
                   agentId={conversation?.agent_id}
                   /* The RAW endpoint, not the effective type above: the attach
@@ -998,7 +1002,7 @@ const ChatForm = memo(function ChatForm({
                   speechDisabled={speechDisabled}
                   dictation={dictation}
                   approvalSlot={
-                    <div className={cn('flex items-center gap-1.5', isRTL && 'flex-row-reverse')}>
+                    <div className="flex items-center gap-1.5">
                       <CodeApprovalMenu
                         conversation={conversation}
                         addedConversation={addedConvo}

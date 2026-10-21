@@ -107,7 +107,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
           setIsEditing(true);
         }
       }}
-      className="text-text-primary hover:text-text-secondary h-8 min-w-0 flex-1 cursor-text truncate pl-2 text-left text-base font-semibold transition-colors focus:outline-hidden"
+      className="text-text-primary hover:text-text-secondary h-8 min-w-0 flex-1 cursor-text truncate ps-2 text-start text-base font-semibold transition-colors focus:outline-hidden"
       aria-label={localize('com_ui_edit') + ': ' + (newName ?? '')}
     >
       {newName}
@@ -121,7 +121,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
   );
 
   return (
-    <div className="group/title relative mr-2 flex h-8 min-w-0 flex-1 items-center">
+    <div className="group/title relative me-2 flex h-8 min-w-0 flex-1 items-center">
       {isEditing ? (
         <Input
           ref={inputRef}
@@ -137,7 +137,7 @@ const PromptName: React.FC<Props> = ({ name, isLoading = false, isError = false,
       ) : (
         readView
       )}
-      <div className="ml-1.5 flex shrink-0 items-center justify-center">
+      <div className="ms-1.5 flex shrink-0 items-center justify-center">
         {saveStatus === 'saving' && (
           <Loader2
             className="text-text-secondary size-4 animate-spin"
