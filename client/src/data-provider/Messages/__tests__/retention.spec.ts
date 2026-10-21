@@ -90,6 +90,65 @@ describe('retainMessages', () => {
     expect(isCached(queryClient, 'a')).toBe(false);
   });
 
+  it('remeasures same-reference writes even when their timestamp is unchanged', () => {
+    stop();
+    stop = retainMessages(queryClient, { isPinned: () => false, maxBytes: 1024 });
+    visit(queryClient, 'a');
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+    const key = [QueryKeys.messages, 'a'];
+    const messages = queryClient.getQueryData<TMessage[]>(key)!;
+    const updatedAt = queryClient.getQueryState(key)!.dataUpdatedAt;
+    const writes = queryClient.getQueryState(key)!.dataUpdateCount;
+    messages[0].text = 'x'.repeat(4096);
+
+    queryClient.setQueryData(key, messages, { updatedAt });
+    expect(queryClient.getQueryData(key)).toBe(messages);
+    expect(queryClient.getQueryState(key)!.dataUpdatedAt).toBe(updatedAt);
+    expect(queryClient.getQueryState(key)!.dataUpdateCount).toBe(writes + 1);
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+
+    expect(isCached(queryClient, 'a')).toBe(false);
+  });
+
+  it('remeasures an observed in-place write after its history becomes inactive again', () => {
+    stop();
+    stop = retainMessages(queryClient, { isPinned: () => false, maxBytes: 1024 });
+    visit(queryClient, 'a');
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+    const unmount = observe(queryClient, 'a');
+    const key = [QueryKeys.messages, 'a'];
+    const messages = queryClient.getQueryData<TMessage[]>(key)!;
+    messages[0].text = 'x'.repeat(4096);
+    queryClient.setQueryData(key, messages);
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+    expect(isCached(queryClient, 'a')).toBe(true);
+
+    unmount();
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+
+    expect(isCached(queryClient, 'a')).toBe(false);
+  });
+
+  it('reuses an estimate across observer and fetch-status events without data writes', () => {
+    stop();
+    stop = retainMessages(queryClient, { isPinned: () => false, maxBytes: 1024 });
+    const key = [QueryKeys.messages, 'a'];
+    const message = history('a')[0];
+    queryClient.setQueryData(key, [message]);
+    const readText = jest.fn(() => 'small');
+    Object.defineProperty(message, 'text', { enumerable: true, get: readText });
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+    expect(readText).toHaveBeenCalledTimes(1);
+
+    const unmount = observe(queryClient, 'a');
+    unmount();
+    queryClient.getQueryCache().find(key)!.setState({ fetchStatus: 'idle' });
+    jest.advanceTimersByTime(RELEASE_SETTLE_MS);
+
+    expect(isCached(queryClient, 'a')).toBe(true);
+    expect(readText).toHaveBeenCalledTimes(1);
+  });
+
   it('applies the payload budget across all recently left histories, newest first', () => {
     stop();
     stop = retainMessages(queryClient, { isPinned: () => false, recent: 3, maxBytes: 1024 });

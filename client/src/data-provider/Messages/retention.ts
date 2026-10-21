@@ -139,7 +139,7 @@ export function retainMessages(
 ): () => void {
   const cache = queryClient.getQueryCache();
   const leftAt = new Map<string, number>();
-  const payloadSizes = new WeakMap<object, number>();
+  const payloadSizes = new WeakMap<Query, { data: object; writes: number; bytes: number }>();
   const previousDefaults = queryClient.getQueryDefaults([QueryKeys.messages]);
   queryClient.setQueryDefaults([QueryKeys.messages], { ...previousDefaults, cacheTime: Infinity });
   cache.findAll([QueryKeys.messages]).forEach((query) => {
@@ -206,8 +206,13 @@ export function retainMessages(
         const data = entry.query.state.data;
         let bytes = 0;
         if (data != null && typeof data === 'object') {
-          bytes = payloadSizes.get(data) ?? estimatePayloadBytes(data, maxBytes);
-          payloadSizes.set(data, bytes);
+          const writes = entry.query.state.dataUpdateCount;
+          const cached = payloadSizes.get(entry.query);
+          bytes =
+            cached?.data === data && cached.writes === writes
+              ? cached.bytes
+              : estimatePayloadBytes(data, maxBytes);
+          payloadSizes.set(entry.query, { data, writes, bytes });
         }
         if (retainedBytes + bytes <= maxBytes) {
           retainedBytes += bytes;

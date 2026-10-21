@@ -466,6 +466,52 @@ describe('getBranchSiblingIndexesForTarget', () => {
   });
 });
 
+describe('rendered root branch ownership', () => {
+  it.each(['routed', 'override', 'promoted'] as const)(
+    'uses the rendered root selection for all tail readers during %s navigation',
+    (mode) => {
+      const queryClient = createQueryClient();
+      const jotaiStore = createStore();
+      const owner = mode === 'promoted' ? 'server-conversation' : 'destination';
+      const queryId = mode === 'promoted' ? 'new' : owner;
+      const messages = [
+        { ...userMessage, messageId: 'older-root', conversationId: owner, parentMessageId: null },
+        {
+          ...assistantMessage,
+          messageId: 'older-tail',
+          conversationId: owner,
+          parentMessageId: 'older-root',
+        },
+        { ...userMessage, messageId: 'newer-root', conversationId: owner, parentMessageId: null },
+      ];
+      queryClient.setQueryData([QueryKeys.messages, queryId], messages);
+      jotaiStore.set(siblingIdxFamily(owner), 1);
+      const override = mode === 'override' ? queryId : undefined;
+      const { result } = renderHook(
+        () => ({
+          message: useLatestMessage(0, override),
+          id: useLatestMessageId(0, override),
+          meta: useLatestMessageMeta(0, override),
+          read: useGetLatestMessage(0, override),
+        }),
+        {
+          wrapper: createWrapper(
+            queryClient,
+            ({ set }) => set(store.conversationByIndex(0), conversation),
+            mode === 'override' ? '/c/source' : `/c/${queryId}`,
+            jotaiStore,
+          ),
+        },
+      );
+
+      expect(result.current.message?.messageId).toBe('older-tail');
+      expect(result.current.id).toBe('older-tail');
+      expect(result.current.meta?.messageId).toBe('older-tail');
+      expect(result.current.read()?.messageId).toBe('older-tail');
+    },
+  );
+});
+
 describe('deep conversation branches', () => {
   const messages = Array.from({ length: 12_000 }, (_, index) => ({
     ...userMessage,
