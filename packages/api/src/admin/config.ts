@@ -1,6 +1,7 @@
 import {
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
+  BASE_ONLY_CONFIG_PATHS,
   PrincipalType,
   PrincipalModel,
   INTERFACE_PERMISSION_FIELDS,
@@ -12,10 +13,26 @@ import {
 } from 'librechat-data-provider';
 import {
   logger,
+  getAtPath,
+  unsetAtPath,
+  isPlainRecord,
   isDotFreePath,
+  isSegmentPrefix,
   parseFieldPath,
   setConfigFields,
+  applyConfigChange,
+  getConfigEntryKey,
   getConfigRevision,
+  isConfigEntryError,
+  isConfigRecordPath,
+  pruneEmptyAncestors,
+  isConfigArrayItemPath,
+  isAcceptedOverrideSection,
+  MAX_CONFIG_CHANGE_OPS,
+  getConfigChangeIssues,
+  getConfigArrayMergeKey,
+  getIndexedMergeKeyIssues,
+  getConfigChangeWrittenPaths,
   isConfigRevision,
   isConfigPathError,
   runConfigMutation,
@@ -33,6 +50,7 @@ import {
 import type {
   AppConfig,
   ConfigDraft,
+  ConfigChange,
   ConfigRecord,
   ConfigSection,
   ConfigRevision,
@@ -42,7 +60,15 @@ import type {
   ConfigPathInputs,
   ConfigOverrideIssue,
   ConfigPathErrorReason,
+  ConfigOverrideState,
+  ConfigEntryError,
+  AdminConfigChangeOp,
+  AdminConfigChangeRef,
+  AdminConfigSkipReason,
+  AdminConfigIgnoreReason,
+  AdminConfigChangesResponse,
   ConfigRevisionConflictError,
+  AdminConfigChangeErrorResponse,
 } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Response } from 'express';
@@ -57,6 +83,7 @@ import {
   getConfigSecretSections,
   isConfigSecretAncestorPath,
   isConfigSecretDescendantPath,
+  isConfigSecretKeyRename,
   isConfigSecretPreservablePatch,
   isConfigSecretRelatedSegments,
   preserveConfigSecrets,
@@ -121,10 +148,6 @@ export function isValidFieldPath(path: string): boolean {
 
 export function getTopLevelSection(fieldPath: string): string {
   return fieldPath.split('.')[0];
-}
-
-function isBaseOnlyFieldPath(fieldPath: string): boolean {
-  return BASE_ONLY_OVERRIDE_SECTIONS.has(getTopLevelSection(fieldPath));
 }
 
 function isProcessMCPServerFieldPath(fieldPath: string, value: unknown): boolean {
@@ -305,6 +328,161 @@ function normalizeInterfaceFieldPatch(fieldPath: string, value: unknown): unknow
     return value;
   }
   return normalizeRuntimeInterfaceValue(parts[1], value);
+}
+
+/** Sets a key as data, so a submitted `__proto__` key never becomes a prototype. */
+function defineKey(target: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
+/**
+ * Drops the role-permission fields from a whole `interface` override: a composite permission
+ * field keeps its UI-only sub-keys, a runtime field keeps its boolean form, and runtime disables
+ * are normalized. Returns what is left (`undefined` when nothing is) and the dropped paths
+ * relative to `interface`.
+ */
+function filterInterfaceOverride(iface: Record<string, unknown>): {
+  value?: Record<string, unknown>;
+  stripped: string[][];
+} {
+  const value: Record<string, unknown> = {};
+  const stripped: string[][] = [];
+  for (const [field, rawValue] of Object.entries(iface)) {
+    const fieldValue = normalizeRuntimeInterfaceValue(field, rawValue);
+    if (!INTERFACE_PERMISSION_FIELDS.has(field)) {
+      defineKey(value, field, fieldValue);
+      continue;
+    }
+    if (isPlainRecord(fieldValue)) {
+      const uiOnly: Record<string, unknown> = {};
+      for (const [sub, subValue] of Object.entries(fieldValue)) {
+        if (PERMISSION_SUB_KEYS.has(sub)) {
+          stripped.push([field, sub]);
+        } else {
+          defineKey(uiOnly, sub, subValue);
+        }
+      }
+      if (Object.keys(uiOnly).length > 0) {
+        defineKey(value, field, uiOnly);
+      }
+      continue;
+    }
+    if (RUNTIME_CONFIG_INTERFACE_FIELDS.has(field)) {
+      defineKey(value, field, fieldValue);
+      continue;
+    }
+    stripped.push([field]);
+  }
+  return { value: Object.keys(value).length > 0 ? value : undefined, stripped };
+}
+
+/** A failure a field guard answers with 400: a message and a stable code. */
+interface FieldGuardError {
+  error: string;
+  code: 'PROCESS_MCP_CONFIG' | 'LANGFUSE_HEADERS_CONFIG' | 'SECRET_PATH';
+}
+
+/** Why a field write at `fieldPath` is refused outright, checked before anything is read. */
+function getFieldWriteError(fieldPath: string, value: unknown): FieldGuardError | null {
+  if (isProcessMCPServerFieldPath(fieldPath, value)) {
+    return { error: PROCESS_MCP_CONFIG_ERROR, code: 'PROCESS_MCP_CONFIG' };
+  }
+  if (isLangfuseHeadersFieldPath(fieldPath)) {
+    return { error: LANGFUSE_HEADERS_CONFIG_ERROR, code: 'LANGFUSE_HEADERS_CONFIG' };
+  }
+  if (isConfigSecretDescendantPath(fieldPath)) {
+    return {
+      error: `Cannot patch inside protected secret path: ${fieldPath}`,
+      code: 'SECRET_PATH',
+    };
+  }
+  const secretInputError = getConfigSecretInputError(fieldPath, value);
+  if (secretInputError) {
+    return { error: secretInputError, code: 'SECRET_PATH' };
+  }
+  if (Array.isArray(value) && isConfigSecretAncestorPath(fieldPath)) {
+    return {
+      error: `Cannot patch protected secret ancestor as an array: ${fieldPath}`,
+      code: 'SECRET_PATH',
+    };
+  }
+  return null;
+}
+
+/** Why a removal or tombstone at `fieldPath` is refused outright. */
+function getFieldRemovalError(fieldPath: string): FieldGuardError | null {
+  const secretInputError = getConfigSecretInputError(fieldPath, undefined);
+  return secretInputError ? { error: secretInputError, code: 'SECRET_PATH' } : null;
+}
+
+/**
+ * Why the generic config API leaves a path alone instead of changing it: a section only
+ * librechat.yaml configures, a section with its own admin API, or an interface permission. The
+ * request still succeeds (owner decision: skip and report, never 400).
+ */
+function getFieldSkipReason(fieldPath: string): AdminConfigSkipReason | null {
+  const section = getTopLevelSection(fieldPath);
+  if (BASE_ONLY_OVERRIDE_SECTIONS.has(section)) {
+    return 'base_only_section';
+  }
+  if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
+    return 'dedicated_section';
+  }
+  return isInterfacePermissionPath(fieldPath) ? 'interface_permission' : null;
+}
+
+const SKIP_DESCRIPTIONS: Readonly<Record<AdminConfigSkipReason, string>> = {
+  base_only_section: 'base-only config field %s - configure it in librechat.yaml instead',
+  base_only_path: 'base-only config path %s - configure it in librechat.yaml instead',
+  dedicated_section: 'dedicated tenant-wide config field %s in the generic config API',
+  interface_permission: 'interface permission field %s — use role permissions instead',
+};
+
+/** Logs a skipped path; `action` is how the route words it (`Stripping`, `Ignoring tombstone for`). */
+function logSkippedField(action: string, fieldPath: string, reason: AdminConfigSkipReason): void {
+  logger.warn(
+    `[adminConfig] ${action} ${SKIP_DESCRIPTIONS[reason].replace('%s', JSON.stringify(fieldPath))}`,
+  );
+}
+
+/** Fields of overridable sections only librechat.yaml sets, as segments. */
+const BASE_ONLY_PATHS: ReadonlyArray<readonly string[]> = BASE_ONLY_CONFIG_PATHS.map((path) =>
+  path.split('.'),
+);
+
+/** Whether `segments` is a base-only field or lies inside one. */
+function isBaseOnlyPath(segments: readonly string[]): boolean {
+  return BASE_ONLY_PATHS.some((path) => isSegmentPrefix(path, segments));
+}
+
+/**
+ * Removes the base-only fields below `segments` from a value written there (`endpoints.agents`
+ * carrying `pullRequests.provider`), with the objects that leaves empty. Returns the value to
+ * store and the full paths it removed.
+ */
+function stripBaseOnlyPaths(
+  segments: readonly string[],
+  value: unknown,
+): { value: unknown; stripped: string[][] } {
+  let result = value;
+  const stripped: string[][] = [];
+  for (const path of BASE_ONLY_PATHS) {
+    if (path.length <= segments.length || !isSegmentPrefix(segments, path)) {
+      continue;
+    }
+    const relative = path.slice(segments.length);
+    if (!isPlainRecord(result) || getAtPath(result, relative) === undefined) {
+      continue;
+    }
+    result = pruneEmptyAncestors(unsetAtPath(result, relative), relative);
+    stripped.push([...path]);
+  }
+  return { value: result, stripped };
 }
 
 /**
@@ -512,10 +690,10 @@ function filterSectionsByReadAccess<T extends Record<string, unknown>>(
   return result as T;
 }
 
-function filterConfigDocForReadAccess(
-  config: ConfigRecord,
+function filterConfigDocForReadAccess<T extends ConfigRecord>(
+  config: T,
   readable: ReadableSections,
-): ConfigRecord {
+): T {
   const canRead = (section: string): boolean => canReadSection(readable, section);
   const filteredOverrides = filterSectionsByReadAccess(
     (config.overrides ?? {}) as Record<string, unknown>,
@@ -591,12 +769,20 @@ function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
   return safeConfig;
 }
 
-/** Reports only the paths and stable codes: schema messages can echo the submitted values. */
-function invalidOverrideResponse(res: Response, issues: ConfigOverrideIssue[]): Response {
+/**
+ * Reports only the paths and stable codes: schema messages can echo the submitted values.
+ * `report` adds what a route reports alongside them (a batch's `skipped`).
+ */
+function invalidOverrideResponse(
+  res: Response,
+  issues: ConfigOverrideIssue[],
+  report?: Pick<AdminConfigChangeErrorResponse, 'skipped'>,
+): Response {
   return res.status(400).json({
     error: 'Invalid config override',
     code: 'CONFIG_OVERRIDE_INVALID',
     issues: issues.map(({ path, code }) => ({ path, code })),
+    ...report,
   });
 }
 
@@ -641,6 +827,449 @@ function preservePatchedConfigSecretFields(
   return result;
 }
 
+// ── Change batches ───────────────────────────────────────────────────
+
+type ChangeOpKind = AdminConfigChangeOp['op'];
+
+const CHANGE_OPS: ReadonlySet<string> = new Set<ChangeOpKind>([
+  'set',
+  'unset',
+  'tombstone',
+  'upsertEntry',
+  'removeEntry',
+  'rename',
+]);
+
+type SkippedChange = AdminConfigChangeRef & { reason: AdminConfigSkipReason };
+type IgnoredChange = AdminConfigChangeRef & { reason: AdminConfigIgnoreReason };
+
+/** A 400 for one change of a batch; `opIndex` names it and nothing submitted is echoed. */
+interface ChangeFailure {
+  error: string;
+  code: string;
+  opIndex: number;
+  reason?: string;
+}
+
+/**
+ * A change of a batch, checked and prepared before the stored document is read: guards run,
+ * skipped parts are cut out, and submitted secrets are encrypted once. What depends on the
+ * stored document (secrets an object omits, entries to rename) is resolved while applying.
+ */
+interface PreparedChange {
+  index: number;
+  op: ChangeOpKind;
+  target: FieldTarget;
+  /** The entry key of `upsertEntry` and `removeEntry`; the old key of `rename`. */
+  key?: string;
+  /** The new key of `rename`. */
+  to?: string;
+  /** `set`: the value to store, after normalization and stripping. */
+  value?: unknown;
+  /** `set` on a dot-free path: `value` with secrets encrypted, plus any preview companion. */
+  fields?: Record<string, unknown>;
+  /** `upsertEntry`: the entry with secrets encrypted. */
+  entry?: Record<string, unknown>;
+  /**
+   * `unset` and `tombstone`: the paths removed together (a secret and its preview). `set`: the
+   * paths it resets instead, when nothing of its value is stored.
+   */
+  paths?: string[][];
+}
+
+type PreparedRead =
+  | {
+      ok: true;
+      /** Two changes with the same identity address the same location. */
+      identity: string;
+      section: string;
+      /** `null` when the whole change is skipped. */
+      change: PreparedChange | null;
+      skipped: SkippedChange[];
+    }
+  | { ok: false; failure: ChangeFailure };
+
+function changeFailure(
+  opIndex: number,
+  error: string,
+  code: string,
+  reason?: string,
+): PreparedRead {
+  return {
+    ok: false,
+    failure: reason ? { error, code, opIndex, reason } : { error, code, opIndex },
+  };
+}
+
+function toChangeRef(
+  change: Pick<PreparedChange, 'index' | 'op' | 'target' | 'key'>,
+): AdminConfigChangeRef {
+  const ref: AdminConfigChangeRef = {
+    opIndex: change.index,
+    op: change.op,
+    segments: [...change.target.segments],
+  };
+  if (change.key !== undefined && change.op !== 'rename') {
+    ref.key = change.key;
+  }
+  return ref;
+}
+
+function isEntryOp(op: ChangeOpKind): boolean {
+  return op === 'upsertEntry' || op === 'removeEntry' || op === 'rename';
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value !== '';
+}
+
+/** The paths an `unset` of `target` removes together: a secret and its preview companion. */
+function getRemovalPaths(target: FieldTarget): string[][] {
+  return target.dotFree
+    ? getConfigSecretMutationPaths(target.fieldPath).map(parseFieldPath)
+    : [target.segments];
+}
+
+/**
+ * Prepares a `set`: refuses what PATCH refuses, skips what PATCH strips, filters a whole
+ * `interface` object and base-only fields out of the value (reporting each), and encrypts it.
+ * A set replaces what is stored at its path with what is left of its value, so one whose
+ * whole value is filtered out resets the path, as an `unset` does.
+ */
+function prepareSet(
+  raw: Record<string, unknown>,
+  base: Pick<PreparedChange, 'index' | 'op' | 'target'>,
+  skipReason: AdminConfigSkipReason | null,
+): PreparedRead | { ok: true; change: PreparedChange | null; skipped: SkippedChange[] } {
+  const { index, target } = base;
+  if (!Object.prototype.hasOwnProperty.call(raw, 'value') || raw.value === undefined) {
+    return changeFailure(index, 'A set change needs a value', 'INVALID_CHANGE');
+  }
+  const guardError = getFieldWriteError(target.fieldPath, raw.value);
+  if (guardError) {
+    return changeFailure(index, guardError.error, guardError.code);
+  }
+  const ref = toChangeRef(base);
+  if (skipReason) {
+    return { ok: true, change: null, skipped: [{ ...ref, reason: skipReason }] };
+  }
+  let value = normalizeInterfaceFieldPatch(target.fieldPath, raw.value);
+  const skipped: SkippedChange[] = [];
+  if (target.segments.length === 1 && target.segments[0] === 'interface' && isPlainRecord(value)) {
+    const filtered = filterInterfaceOverride(value);
+    for (const path of filtered.stripped) {
+      skipped.push({ ...ref, segments: ['interface', ...path], reason: 'interface_permission' });
+    }
+    if (filtered.stripped.length > 0 && !filtered.value) {
+      return { ok: true, change: { ...base, paths: getRemovalPaths(target) }, skipped };
+    }
+    value = filtered.value ?? value;
+  }
+  const stripped = stripBaseOnlyPaths(target.segments, value);
+  for (const segments of stripped.stripped) {
+    skipped.push({ ...ref, segments, reason: 'base_only_path' });
+  }
+  if (
+    stripped.stripped.length > 0 &&
+    isPlainRecord(stripped.value) &&
+    Object.keys(stripped.value).length === 0
+  ) {
+    return { ok: true, change: { ...base, paths: getRemovalPaths(target) }, skipped };
+  }
+  value = stripped.value;
+  const fields = target.dotFree
+    ? encryptConfigSecretFields({ [target.fieldPath]: value })
+    : undefined;
+  return { ok: true, change: { ...base, value, fields }, skipped };
+}
+
+/** Prepares an entry change: the path must hold a merged-by-key array (or, to rename, a record). */
+function prepareEntryChange(
+  raw: Record<string, unknown>,
+  base: Pick<PreparedChange, 'index' | 'op' | 'target'>,
+  skipReason: AdminConfigSkipReason | null,
+): PreparedRead | { ok: true; change: PreparedChange | null; skipped: SkippedChange[] } {
+  const { index, op, target } = base;
+  const keyField = getConfigArrayMergeKey(target.segments);
+  let change: PreparedChange;
+  if (op === 'rename') {
+    if (!isNonEmptyString(raw.from) || !isNonEmptyString(raw.to)) {
+      return changeFailure(
+        index,
+        'A rename needs non-empty from and to',
+        'CONFIG_ENTRY_INVALID',
+        'invalid_entry',
+      );
+    }
+    if (!keyField) {
+      if (!isConfigRecordPath(target.segments)) {
+        return changeFailure(
+          index,
+          'A rename addresses a collection merged by key or a record of named entries',
+          'CONFIG_ENTRY_INVALID',
+          'not_collection',
+        );
+      }
+      for (const name of [raw.from, raw.to]) {
+        const keyTarget = readFieldTarget(undefined, [...target.segments, name]);
+        if (!keyTarget.ok) {
+          return changeFailure(index, keyTarget.error, 'CONFIG_PATH_INVALID', keyTarget.reason);
+        }
+      }
+      if (isConfigSecretKeyRename(target.segments, raw.from, raw.to)) {
+        return changeFailure(index, 'A rename cannot move a registered secret', 'SECRET_PATH');
+      }
+    }
+    change = { ...base, key: raw.from, to: raw.to };
+  } else if (!keyField) {
+    return changeFailure(
+      index,
+      'Entry changes address a collection merged by key, such as endpoints.custom',
+      'CONFIG_ENTRY_INVALID',
+      'not_collection',
+    );
+  } else if (op === 'removeEntry') {
+    if (!isNonEmptyString(raw.key)) {
+      return changeFailure(
+        index,
+        'removeEntry needs a non-empty key',
+        'CONFIG_ENTRY_INVALID',
+        'invalid_entry',
+      );
+    }
+    change = { ...base, key: raw.key };
+  } else {
+    const key = getConfigEntryKey(raw.entry, keyField);
+    if (key === undefined) {
+      return changeFailure(
+        index,
+        `upsertEntry needs an entry object with a non-empty ${keyField}`,
+        'CONFIG_ENTRY_INVALID',
+        'invalid_entry',
+      );
+    }
+    const guardError = getFieldWriteError(target.fieldPath, [raw.entry]);
+    if (guardError) {
+      return changeFailure(index, guardError.error, guardError.code);
+    }
+    const [entry] = encryptConfigSecrets([raw.entry as Record<string, unknown>], target.fieldPath);
+    change = { ...base, key, entry };
+  }
+  if (skipReason) {
+    return { ok: true, change: null, skipped: [{ ...toChangeRef(change), reason: skipReason }] };
+  }
+  return { ok: true, change, skipped: [] };
+}
+
+/**
+ * What a change addresses, for refusing two changes of a batch that address the same thing: a
+ * path, or one entry of a collection (by its key; a rename by the key it starts from).
+ */
+function getChangeIdentity(
+  raw: Record<string, unknown>,
+  op: ChangeOpKind,
+  segments: readonly string[],
+): string {
+  if (!isEntryOp(op)) {
+    return JSON.stringify(['path', segments]);
+  }
+  if (op === 'rename') {
+    return JSON.stringify(['entry', segments, raw.from]);
+  }
+  if (op === 'removeEntry') {
+    return JSON.stringify(['entry', segments, raw.key]);
+  }
+  const keyField = getConfigArrayMergeKey(segments);
+  return JSON.stringify([
+    'entry',
+    segments,
+    keyField ? getConfigEntryKey(raw.entry, keyField) : null,
+  ]);
+}
+
+/**
+ * Reads and checks one change of a batch without touching the stored document. A change
+ * refused outright fails the whole batch (400, by `opIndex`); one the API never stores
+ * (decision #2: base-only, deployment-owned, dedicated, interface permission) is reported as
+ * skipped and the rest of the batch still applies.
+ */
+function prepareChange(raw: unknown, index: number): PreparedRead {
+  if (!isPlainRecord(raw) || typeof raw.op !== 'string' || !CHANGE_OPS.has(raw.op)) {
+    return changeFailure(
+      index,
+      'Each change needs an op: set, unset, tombstone, upsertEntry, removeEntry or rename',
+      'INVALID_CHANGE',
+    );
+  }
+  const op = raw.op as ChangeOpKind;
+  const read = readFieldTarget(raw.fieldPath, raw.segments);
+  if (!read.ok) {
+    return changeFailure(
+      index,
+      read.error,
+      read.reason ? 'CONFIG_PATH_INVALID' : 'INVALID_FIELD_PATH',
+      read.reason,
+    );
+  }
+  const { target } = read;
+  const base = { index, op, target };
+  const section = target.segments[0];
+  /** Unsetting what an older server stored outside configSchema is cleanup, as DELETE allows. */
+  if (op !== 'unset' && !isAcceptedOverrideSection(section)) {
+    return changeFailure(index, 'Unknown config section', 'UNKNOWN_SECTION');
+  }
+  const sectionSkip = getFieldSkipReason(target.fieldPath);
+
+  let prepared:
+    | PreparedRead
+    | { ok: true; change: PreparedChange | null; skipped: SkippedChange[] };
+  if (op === 'set') {
+    prepared = prepareSet(
+      raw,
+      base,
+      sectionSkip ?? (isBaseOnlyPath(target.segments) ? 'base_only_path' : null),
+    );
+  } else if (isEntryOp(op)) {
+    prepared = prepareEntryChange(raw, base, sectionSkip);
+  } else {
+    if (op === 'tombstone' && !target.dotFree) {
+      return changeFailure(
+        index,
+        'A tombstone cannot name a key that contains a dot',
+        'CONFIG_PATH_INVALID',
+        'dotted_segment',
+      );
+    }
+    if (op === 'tombstone' && isConfigArrayItemPath(target.segments)) {
+      return changeFailure(
+        index,
+        'A tombstone can hide a whole array, not an element or a path inside one',
+        'CONFIG_PATH_INVALID',
+        'inside_array',
+      );
+    }
+    const removalError = target.dotFree ? getFieldRemovalError(target.fieldPath) : null;
+    if (removalError) {
+      return changeFailure(index, removalError.error, removalError.code);
+    }
+    /** Unsetting a stored base-only field is cleanup, so only a tombstone of one is skipped. */
+    const skipReason =
+      sectionSkip ??
+      (op === 'tombstone' && isBaseOnlyPath(target.segments) ? 'base_only_path' : null);
+    prepared = skipReason
+      ? { ok: true, change: null, skipped: [{ ...toChangeRef(base), reason: skipReason }] }
+      : { ok: true, change: { ...base, paths: getRemovalPaths(target) }, skipped: [] };
+  }
+  if (!prepared.ok) {
+    return prepared;
+  }
+  return {
+    ok: true,
+    identity: getChangeIdentity(raw, op, target.segments),
+    section,
+    change: prepared.change,
+    skipped: prepared.skipped,
+  };
+}
+
+/** The changes a prepared change applies, resolved against the document as it stands. */
+function expandChange(change: PreparedChange, overrides: unknown): ConfigChange[] {
+  const { segments } = change.target;
+  switch (change.op) {
+    case 'set': {
+      if (change.paths) {
+        return change.paths.map((path) => ({ op: 'unset', segments: path }));
+      }
+      if (!change.fields) {
+        return [{ op: 'set', segments, value: change.value }];
+      }
+      /** Secrets an object omits are kept from the document before this change. */
+      const fields = preservePatchedConfigSecretFields(change.fields, overrides);
+      return toOrderedWrites([{ target: change.target, value: change.value }], fields).map(
+        (write) => ({ op: 'set', segments: write.segments, value: write.value }),
+      );
+    }
+    case 'unset':
+    case 'tombstone':
+      return (change.paths ?? [segments]).map(
+        (path) => ({ op: change.op, segments: path }) as ConfigChange,
+      );
+    case 'upsertEntry': {
+      /** An entry that omits its secret keeps the one stored on the entry of the same key. */
+      const [entry] = preserveConfigSecrets(
+        [change.entry ?? {}],
+        overrides,
+        change.target.fieldPath,
+      );
+      return [{ op: 'upsertEntry', segments, entry }];
+    }
+    case 'removeEntry':
+      return [{ op: 'removeEntry', segments, key: change.key ?? '' }];
+    case 'rename':
+      return [{ op: 'rename', segments, from: change.key ?? '', to: change.to ?? '' }];
+  }
+}
+
+/** Whether `librechat.yaml` itself defines entry `name` of the collection a change addresses. */
+function isYamlEntry(base: unknown, change: PreparedChange, name: string): boolean {
+  const node = getAtPath(base, change.target.segments);
+  const keyField = getConfigArrayMergeKey(change.target.segments);
+  if (keyField) {
+    return (
+      Array.isArray(node) && node.some((item) => isPlainRecord(item) && item[keyField] === name)
+    );
+  }
+  return isPlainRecord(node) && Object.prototype.hasOwnProperty.call(node, name);
+}
+
+/** Names of the MCP servers `librechat.yaml` runs as local processes. */
+function getProcessServerNames(base: Partial<TCustomConfig>): Set<string> {
+  const servers = (base as { mcpServers?: unknown }).mcpServers;
+  if (!isPlainRecord(servers)) {
+    return new Set();
+  }
+  return new Set(
+    Object.entries(servers)
+      .filter(([, serverConfig]) => isProcessMCPServerConfig(serverConfig))
+      .map(([name]) => name),
+  );
+}
+
+/**
+ * The parts of an applied change the runtime merge drops: a write or tombstone under an MCP
+ * server librechat.yaml runs as a process, whose overrides the merge never applies.
+ */
+function getIgnoredSegments(
+  change: PreparedChange,
+  processServers: ReadonlySet<string>,
+): string[][] {
+  const [section, name] = change.target.segments;
+  if (section !== 'mcpServers' || processServers.size === 0) {
+    return [];
+  }
+  if (change.op !== 'set' && change.op !== 'tombstone') {
+    return [];
+  }
+  if (name !== undefined) {
+    return processServers.has(name) ? [[...change.target.segments]] : [];
+  }
+  if (change.op !== 'set' || !isPlainRecord(change.value)) {
+    return [];
+  }
+  return Object.keys(change.value)
+    .filter((server) => processServers.has(server))
+    .map((server) => ['mcpServers', server]);
+}
+
+/** How an applied change is named in audit metadata: its path, plus the entry it addressed. */
+function describeChange(change: PreparedChange): string {
+  const path = describeFieldTarget(change.target);
+  if (change.op === 'rename') {
+    return `${path}[${JSON.stringify(change.key)}->${JSON.stringify(change.to)}]`;
+  }
+  return change.key !== undefined ? `${path}[${JSON.stringify(change.key)}]` : path;
+}
+
 // ── Handler factory ──────────────────────────────────────────────────
 
 export function createAdminConfigHandlers(deps: AdminConfigDeps): {
@@ -651,6 +1280,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   patchConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
   tombstoneConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
   deleteConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
+  applyConfigChanges: (req: ServerRequest, res: Response) => Promise<Response>;
   deleteConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
   toggleConfig: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
@@ -952,40 +1582,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         }
       }
       const iface = (overrides as Record<string, unknown>).interface;
-      if (iface != null && typeof iface === 'object' && !Array.isArray(iface)) {
-        const filteredIface: Record<string, unknown> = {};
-        for (const [field, rawVal] of Object.entries(iface as Record<string, unknown>)) {
-          const val = normalizeRuntimeInterfaceValue(field, rawVal);
-          if (!INTERFACE_PERMISSION_FIELDS.has(field)) {
-            filteredIface[field] = val;
-          } else if (val != null && typeof val === 'object' && !Array.isArray(val)) {
-            // Composite permission field (e.g. mcpServers): strip permission
-            // sub-keys but preserve UI-only sub-keys like placeholder/trustCheckbox.
-            const uiOnly: Record<string, unknown> = {};
-            for (const [sub, subVal] of Object.entries(val as Record<string, unknown>)) {
-              if (!PERMISSION_SUB_KEYS.has(sub)) {
-                uiOnly[sub] = subVal;
-              } else {
-                logger.warn(
-                  `[adminConfig] Stripping interface permission sub-field "${field}.${sub}" — use role permissions instead`,
-                );
-              }
-            }
-            if (Object.keys(uiOnly).length > 0) {
-              filteredIface[field] = uiOnly;
-            }
-          } else if (RUNTIME_CONFIG_INTERFACE_FIELDS.has(field)) {
-            // Dual-purpose field: the boolean form is a runtime disable, not a
-            // permission toggle, so preserve it (e.g. schedules: false).
-            filteredIface[field] = val;
-          } else {
-            logger.warn(
-              `[adminConfig] Stripping interface permission field "${field}" — use role permissions instead`,
-            );
-          }
+      if (isPlainRecord(iface)) {
+        const { value, stripped } = filterInterfaceOverride(iface);
+        for (const path of stripped) {
+          logSkippedField('Stripping', ['interface', ...path].join('.'), 'interface_permission');
         }
-        if (Object.keys(filteredIface).length > 0) {
-          (filteredOverrides as Record<string, unknown>).interface = filteredIface;
+        if (value) {
+          (filteredOverrides as Record<string, unknown>).interface = value;
         } else {
           delete (filteredOverrides as Record<string, unknown>).interface;
         }
@@ -1159,27 +1762,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         if (!read.ok) {
           return fieldTargetErrorResponse(res, read);
         }
-        const { fieldPath } = read.target;
         const value = entry?.value;
-        if (isProcessMCPServerFieldPath(fieldPath, value)) {
-          return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
-        }
-        if (isLangfuseHeadersFieldPath(fieldPath)) {
-          return res.status(400).json({ error: LANGFUSE_HEADERS_CONFIG_ERROR });
-        }
-        if (isConfigSecretDescendantPath(fieldPath)) {
-          return res
-            .status(400)
-            .json({ error: `Cannot patch inside protected secret path: ${fieldPath}` });
-        }
-        const secretInputError = getConfigSecretInputError(fieldPath, value);
-        if (secretInputError) {
-          return res.status(400).json({ error: secretInputError });
-        }
-        if (Array.isArray(value) && isConfigSecretAncestorPath(fieldPath)) {
-          return res.status(400).json({
-            error: `Cannot patch protected secret ancestor as an array: ${fieldPath}`,
-          });
+        const guardError = getFieldWriteError(read.target.fieldPath, value);
+        if (guardError) {
+          return res.status(400).json({ error: guardError.error });
         }
         targets.push({ target: read.target, value });
       }
@@ -1195,25 +1781,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           value: normalizeInterfaceFieldPatch(target.fieldPath, value),
         }))
         .filter(({ target: { fieldPath } }) => {
-          if (isBaseOnlyFieldPath(fieldPath)) {
-            logger.warn(
-              `[adminConfig] Stripping base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
-            );
-            return false;
+          const skipReason = getFieldSkipReason(fieldPath);
+          if (skipReason) {
+            logSkippedField('Stripping', fieldPath, skipReason);
           }
-          if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(fieldPath))) {
-            logger.warn(
-              `[adminConfig] Stripping dedicated tenant-wide config field "${fieldPath}" from the generic config API`,
-            );
-            return false;
-          }
-          if (isInterfacePermissionPath(fieldPath)) {
-            logger.warn(
-              `[adminConfig] Stripping interface permission field "${fieldPath}" — use role permissions instead`,
-            );
-            return false;
-          }
-          return true;
+          return skipReason == null;
         });
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
@@ -1385,9 +1957,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         });
       }
       const { fieldPath } = read.target;
-      const secretInputError = getConfigSecretInputError(fieldPath, undefined);
-      if (secretInputError) {
-        return res.status(400).json({ error: secretInputError });
+      const removalError = getFieldRemovalError(fieldPath);
+      if (removalError) {
+        return res.status(400).json({ error: removalError.error });
       }
 
       const user = getCapabilityUser(req);
@@ -1412,23 +1984,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         });
       }
 
-      if (isBaseOnlyFieldPath(fieldPath)) {
-        logger.warn(
-          `[adminConfig] Ignoring tombstone for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
-        );
-        return noopResponse(res, 'No actionable field path provided', principalType, principalId);
-      }
-
-      if (isInterfacePermissionPath(fieldPath)) {
-        logger.warn(
-          `[adminConfig] Ignoring tombstone for interface permission field "${fieldPath}" — use role permissions instead`,
-        );
-        return noopResponse(res, 'No actionable field path provided', principalType, principalId);
-      }
-      if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
-        logger.warn(
-          `[adminConfig] Ignoring dedicated tenant-wide config tombstone "${fieldPath}" in the generic config API`,
-        );
+      const skipReason = getFieldSkipReason(fieldPath);
+      if (skipReason) {
+        logSkippedField('Ignoring tombstone for', fieldPath, skipReason);
         return noopResponse(res, 'No actionable field path provided', principalType, principalId);
       }
 
@@ -1502,9 +2060,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const { target } = read;
       const { fieldPath } = target;
-      const secretInputError = getConfigSecretInputError(fieldPath, undefined);
-      if (secretInputError) {
-        return res.status(400).json({ error: secretInputError });
+      const removalError = getFieldRemovalError(fieldPath);
+      if (removalError) {
+        return res.status(400).json({ error: removalError.error });
       }
 
       const user = getCapabilityUser(req);
@@ -1529,24 +2087,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         });
       }
 
-      if (isBaseOnlyFieldPath(fieldPath)) {
-        logger.warn(
-          `[adminConfig] Ignoring delete for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
-        );
-        return noopResponse(res, 'No actionable field path provided', principalType, principalId);
-      }
-
-      if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
-        logger.warn(
-          `[adminConfig] Ignoring dedicated tenant-wide config delete "${fieldPath}" in the generic config API`,
-        );
-        return noopResponse(res, 'No actionable field path provided', principalType, principalId);
-      }
-
-      if (isInterfacePermissionPath(fieldPath)) {
-        logger.warn(
-          `[adminConfig] Ignoring delete for interface permission field "${fieldPath}" — use role permissions instead`,
-        );
+      const skipReason = getFieldSkipReason(fieldPath);
+      if (skipReason) {
+        logSkippedField('Ignoring delete for', fieldPath, skipReason);
         return noopResponse(res, 'No actionable field path provided', principalType, principalId);
       }
 
@@ -1582,6 +2125,325 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     } catch (error) {
       logger.error('[adminConfig] deleteConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to delete config field' });
+    }
+  }
+
+  /**
+   * The document a write returns, as a read would show it to the caller: redacted, and limited
+   * to the sections they can read plus the ones they just managed (`manage:configs:<section>`
+   * does not imply reading other sections).
+   */
+  async function toReadableConfig(
+    user: CapabilityUser,
+    config: ConfigRecord,
+    access: { hasBroadManage: boolean; managedSections: readonly string[] },
+  ): Promise<ConfigResponse> {
+    const safeConfig = redactConfigForResponse(config);
+    if (access.hasBroadManage) {
+      return safeConfig;
+    }
+    const readable = await getReadableConfigSections(user, [
+      ...new Set(collectConfigSections(safeConfig)),
+    ] as ConfigSection[]);
+    const sections = new Set([...readable.sections, ...access.managedSections]);
+    return filterConfigDocForReadAccess(safeConfig, { broad: readable.broad, sections });
+  }
+
+  /**
+   * POST /:principalType/:principalId/changes — Apply a batch of changes atomically.
+   *
+   * Every change is checked before anything is read; then the stored document is read, the
+   * changes are applied in order as pure transforms (secrets an object omits are kept from the
+   * document as it stands before each change), the end state is validated on the deployment's
+   * librechat.yaml without the principal's tombstones, and the result is written with one
+   * compare-and-swap. Any failure leaves the document as it was.
+   */
+  async function applyChanges(req: ServerRequest, res: Response): Promise<Response> {
+    try {
+      const { principalType, principalId } = req.params as {
+        principalType: string;
+        principalId: string;
+      };
+
+      if (!validatePrincipalType(principalType)) {
+        return res.status(400).json({
+          error: `Invalid principalType: ${principalType}`,
+          code: 'INVALID_PRINCIPAL_TYPE',
+        });
+      }
+
+      const body = (req.body ?? {}) as {
+        ops?: unknown;
+        priority?: unknown;
+        dryRun?: unknown;
+        expectedRevision?: unknown;
+      };
+      const { ops, priority } = body;
+
+      if (
+        priority != null &&
+        (typeof priority !== 'number' || !Number.isFinite(priority) || priority < 0)
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'priority must be a non-negative number', code: 'INVALID_PRIORITY' });
+      }
+
+      if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') {
+        return res.status(400).json({ error: 'dryRun must be a boolean', code: 'INVALID_DRY_RUN' });
+      }
+      const dryRun = body.dryRun === true;
+
+      const expected = readExpectedRevision(body.expectedRevision);
+      if (!expected.ok) {
+        return invalidExpectedRevisionResponse(res);
+      }
+
+      if (!Array.isArray(ops) || ops.length === 0) {
+        return res
+          .status(400)
+          .json({ error: 'ops array is required and must not be empty', code: 'OPS_REQUIRED' });
+      }
+
+      if (ops.length > MAX_CONFIG_CHANGE_OPS) {
+        return res.status(400).json({
+          error: `ops array exceeds maximum of ${MAX_CONFIG_CHANGE_OPS}`,
+          code: 'TOO_MANY_OPS',
+        });
+      }
+
+      const changes: PreparedChange[] = [];
+      const skipped: SkippedChange[] = [];
+      const identities = new Set<string>();
+      const sections = new Set<string>();
+      for (let index = 0; index < ops.length; index++) {
+        const prepared = prepareChange(ops[index], index);
+        if (!prepared.ok) {
+          return res.status(400).json(prepared.failure);
+        }
+        if (identities.has(prepared.identity)) {
+          return res.status(400).json({
+            error: 'Two changes address the same path or entry',
+            code: 'DUPLICATE_FIELD_PATH',
+            opIndex: index,
+          });
+        }
+        identities.add(prepared.identity);
+        sections.add(prepared.section);
+        skipped.push(...prepared.skipped);
+        if (prepared.change) {
+          changes.push(prepared.change);
+        }
+      }
+
+      const user = getCapabilityUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
+        return res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+      }
+
+      const managedSections = [...sections];
+      if (!hasBroadManage) {
+        const allowed = await Promise.all(
+          managedSections.map((section) =>
+            hasConfigCapability(user, section as ConfigSection, 'manage'),
+          ),
+        );
+        const denied = managedSections.find((_, i) => !allowed[i]);
+        if (denied) {
+          return res.status(403).json({
+            error: `Insufficient permissions for config section: ${denied}`,
+            code: 'FORBIDDEN_SECTION',
+            section: denied,
+          });
+        }
+      }
+
+      if (priority != null && !hasBroadManage) {
+        logger.warn(
+          `[adminConfig] Ignoring caller-supplied priority on section-scoped changes to ${principalType}/${principalId}: only broad manage:configs may modify document priority`,
+        );
+      }
+      const requestedPriority = hasBroadManage ? (priority as number | undefined) : undefined;
+
+      const baseYaml = await getBaseYamlConfig(user.tenantId);
+      for (const change of changes) {
+        if (
+          change.op === 'rename' &&
+          (isYamlEntry(baseYaml, change, change.key ?? '') ||
+            isYamlEntry(baseYaml, change, change.to ?? ''))
+        ) {
+          return res.status(400).json({
+            error:
+              'An entry librechat.yaml defines cannot be renamed, and no entry can take its name',
+            code: 'CONFIG_ENTRY_INVALID',
+            reason: 'inherited_entry',
+            opIndex: change.index,
+          });
+        }
+      }
+      const processServers = getProcessServerNames(baseYaml);
+
+      interface ChangesReport {
+        applied: AdminConfigChangeRef[];
+        unchanged: AdminConfigChangeRef[];
+        ignored: IgnoredChange[];
+        appliedChanges: PreparedChange[];
+      }
+      type ChangesStop =
+        | { kind: 'issues'; issues: ConfigOverrideIssue[] }
+        | { kind: 'change'; failure: ChangeFailure };
+      type ChangesResult = { report: ChangesReport; stop?: never } | { stop: ChangesStop };
+
+      const plan = (
+        stored: ConfigRecord | null,
+      ): { draft: ConfigDraft | null; result: ChangesResult } => {
+        const report: ChangesReport = {
+          applied: [],
+          unchanged: [],
+          ignored: [],
+          appliedChanges: [],
+        };
+        const written: string[][] = [];
+        let state: ConfigOverrideState = toConfigOverrideState(stored);
+        for (const change of changes) {
+          const steps = expandChange(change, state.overrides);
+          let next = state;
+          try {
+            for (const step of steps) {
+              next = applyConfigChange(next, step);
+            }
+          } catch (error) {
+            if (!isConfigPathError(error) && !isConfigEntryError(error)) {
+              throw error;
+            }
+            const failure: ChangeFailure = {
+              error: 'Config change cannot be applied to the stored config',
+              code: (error as ConfigPathError | ConfigEntryError).code,
+              reason: (error as ConfigPathError | ConfigEntryError).reason,
+              opIndex: change.index,
+            };
+            return { draft: null, result: { stop: { kind: 'change', failure } } };
+          }
+          const ref = toChangeRef(change);
+          if (next === state) {
+            report.unchanged.push(ref);
+            continue;
+          }
+          for (const step of steps) {
+            written.push(...getConfigChangeWrittenPaths(step, next));
+          }
+          report.applied.push(ref);
+          report.appliedChanges.push(change);
+          for (const segments of getIgnoredSegments(change, processServers)) {
+            report.ignored.push({ ...ref, segments, reason: 'process_mcp_server' });
+          }
+          state = next;
+        }
+
+        /** Entries of a merged-by-key array are named by key: a write or a record rename that
+         *  reaches into one by position is refused. */
+        const indexed = getIndexedMergeKeyIssues(
+          changes
+            .filter((change) => change.op === 'set' || change.op === 'rename')
+            .map((change) => change.target.segments),
+        );
+        if (indexed.length > 0) {
+          return { draft: null, result: { stop: { kind: 'issues', issues: indexed } } };
+        }
+        const priorityChanged =
+          stored != null && requestedPriority != null && requestedPriority !== stored.priority;
+        if (report.applied.length === 0 && !priorityChanged) {
+          return { draft: null, result: { report } };
+        }
+        if (report.applied.length > 0) {
+          const issues = getConfigChangeIssues(state, baseYaml, stored, written);
+          if (issues.length > 0) {
+            return { draft: null, result: { stop: { kind: 'issues', issues } } };
+          }
+        }
+        if (dryRun) {
+          return { draft: null, result: { report } };
+        }
+        return {
+          draft: {
+            principalModel: principalModel(principalType),
+            priority: requestedPriority ?? stored?.priority ?? DEFAULT_CONFIG_PRIORITY,
+            overrides: state.overrides,
+            tombstones: state.tombstones,
+            isActive: stored?.isActive ?? true,
+          },
+          result: { report },
+        };
+      };
+
+      let outcome;
+      try {
+        outcome = await runConfigMutation<ChangesResult>(
+          {
+            read: () => readStoredConfig(principalType, principalId),
+            write: (draft, revision) =>
+              writeConfigDocument(principalType, principalId, draft, revision),
+          },
+          plan,
+          { expectedRevision: expected.value },
+        );
+      } catch (error) {
+        return await writeFailureResponse(res, error, principalType, principalId);
+      }
+
+      const result = outcome.result as ChangesResult;
+      if (result.stop?.kind === 'change') {
+        return res.status(400).json(result.stop.failure);
+      }
+      if (result.stop) {
+        return invalidOverrideResponse(res, result.stop.issues, { skipped });
+      }
+      const { report } = result;
+      const config = outcome.written ? outcome.record : outcome.current;
+
+      if (outcome.written) {
+        await invalidateCaches(user.tenantId, 'changes');
+        const paths = new Map<string, string[]>();
+        for (const change of report.appliedChanges) {
+          paths.set(change.op, [...(paths.get(change.op) ?? []), describeChange(change)]);
+        }
+        await emitAudit(req, {
+          action: outcome.previous == null ? 'config.created' : 'config.updated',
+          target: configTarget(principalType, principalId),
+          metadata: {
+            operation: 'batch',
+            changes: report.applied.length,
+            priority: outcome.record.priority,
+            ...Object.fromEntries([...paths].map(([op, described]) => [op, described.join(',')])),
+          },
+        });
+      }
+
+      return res.status(200).json({
+        ...(dryRun
+          ? {}
+          : {
+              config: config
+                ? await toReadableConfig(user, config, { hasBroadManage, managedSections })
+                : null,
+            }),
+        revision: config ? getConfigRevision(config) : null,
+        written: outcome.written,
+        dryRun,
+        applied: report.applied,
+        skipped,
+        ignored: report.ignored,
+        unchanged: report.unchanged,
+      } satisfies Omit<AdminConfigChangesResponse, 'config'> & { config?: ConfigResponse | null });
+    } catch (error) {
+      logger.error('[adminConfig] applyConfigChanges error:', getSafeErrorMetadata(error));
+      return res.status(500).json({ error: 'Failed to apply config changes' });
     }
   }
 
@@ -1747,6 +2609,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     patchConfigField,
     tombstoneConfigField,
     deleteConfigField,
+    applyConfigChanges: applyChanges,
     deleteConfigOverrides,
     toggleConfig,
   };

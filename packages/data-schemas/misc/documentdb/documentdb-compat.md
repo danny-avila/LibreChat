@@ -373,6 +373,10 @@ by their field-name rules. Values are never rewritten.
 - No dotted-path `$set`/`$unset` or `$pull`/`$addToSet` touches `overrides` or
   `tombstones`; every mutation is a pure transform followed by one
   compare-and-swap on `{_id, configVersion}`, which every engine supports.
+  The batch route (`POST /api/admin/config/:type/:id/changes`, `src/app/changes.ts`)
+  applies any mix of set, unset, tombstone and entry changes (upsert, remove, rename)
+  to the decoded document and stores the result with that same single write, so it
+  needs nothing from the engine beyond the contract.
 - Pre-release check on a real cluster: run the conformance runner
   (`misc/ferretdb/configStore.ferretdb.spec.ts`, any MongoDB-compatible URI in
   `FERRETDB_URI`) against DocumentDB 5.0 and Cosmos. It passes 24/24 against

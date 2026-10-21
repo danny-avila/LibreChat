@@ -26,6 +26,8 @@ import {
   getConfigRevision,
 } from './store';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
+import { toConfigOverrideState } from './mutations';
+import { applyConfigChanges } from './changes';
 
 export interface ConfigStoreHarness {
   readonly name: string;
@@ -454,6 +456,69 @@ export function describeConfigStoreConformance(harness: ConfigStoreHarness): voi
         });
         expect(shown.tombstones).toEqual(['memory.agent']);
         expect(shown.configVersion).toBe(4);
+      });
+
+      it('stores a batch of changes, renames and awkward keys included, as one write', async () => {
+        const headers = keyedObject(2);
+        const created = await store.write(
+          role('batch'),
+          draft({
+            endpoints: {
+              custom: [{ name: 'old', apiKey: 'v3:cipher', baseURL: 'https://old.example.com' }],
+            },
+            mcpServers: { a: { url: 'https://a.example.com', headers } },
+          }),
+          ABSENT_CONFIG_REVISION,
+        );
+
+        const { state, changed } = applyConfigChanges(toConfigOverrideState(created), [
+          { op: 'rename', segments: ['endpoints', 'custom'], from: 'old', to: 'new' },
+          { op: 'rename', segments: ['mcpServers'], from: 'a', to: 'b' },
+          {
+            op: 'set',
+            segments: ['mcpServers', 'b', 'headers', '$set'],
+            value: { 'x.y': '$', 'ünï.cödé': 1 },
+          },
+          {
+            op: 'set',
+            segments: [
+              'endpoints',
+              'bedrock',
+              'inferenceProfiles',
+              'us.anthropic.claude-sonnet-4-5',
+            ],
+            value: 'arn:aws:bedrock:us-east-1:1:inference-profile/x',
+          },
+          { op: 'tombstone', segments: ['memory', 'agent'] },
+          { op: 'unset', segments: ['mcpServers', 'missing'] },
+        ]);
+        expect(changed).toEqual([true, true, true, true, true, false]);
+
+        const written = await store.write(
+          role('batch'),
+          draft(state.overrides as Record<string, unknown>, { tombstones: state.tombstones }),
+          getConfigRevision(created),
+        );
+
+        expect(written.configVersion).toBe(2);
+        const stored = await store.read(role('batch'));
+        expect(stored?.overrides).toEqual({
+          endpoints: {
+            custom: [{ name: 'new', apiKey: 'v3:cipher', baseURL: 'https://old.example.com' }],
+            bedrock: {
+              inferenceProfiles: {
+                'us.anthropic.claude-sonnet-4-5': 'arn:aws:bedrock:us-east-1:1:inference-profile/x',
+              },
+            },
+          },
+          mcpServers: {
+            b: {
+              url: 'https://a.example.com',
+              headers: { ...headers, $set: { 'x.y': '$', 'ünï.cödé': 1 } },
+            },
+          },
+        });
+        expect(stored?.tombstones).toEqual(['memory.agent']);
       });
 
       it('surfaces a conflict when a caller-supplied revision is stale', async () => {

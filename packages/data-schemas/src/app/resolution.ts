@@ -13,7 +13,7 @@ import type { ConfigFieldWrite } from './mutations';
 import type { AppConfig, Config } from '~/types';
 import { setConfigFields, toConfigOverrideState } from './mutations';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
-import { parseFieldPath } from './paths';
+import { parseFieldPath, isDotFreePath } from './paths';
 import logger from '~/config/winston';
 
 type AnyObject = { [key: string]: unknown };
@@ -79,6 +79,18 @@ function isSafePath(path: string): boolean {
     return false;
   }
   return true;
+}
+
+/**
+ * The key field that identifies entries of the merged-by-key array at an override (YAML) path,
+ * such as `name` for `endpoints.custom`; `undefined` for any other path.
+ */
+export function getConfigArrayMergeKey(segments: readonly string[]): string | undefined {
+  if (segments.length === 0 || segments.some((segment) => segment.includes('.'))) {
+    return undefined;
+  }
+  const appConfigPath = remapOverridePath(segments.join('.'));
+  return hasOwn(ARRAY_MERGE_KEYS, appConfigPath) ? ARRAY_MERGE_KEYS[appConfigPath] : undefined;
 }
 
 function remapOverridePath(path: string): string {
@@ -282,6 +294,16 @@ function hasOwn(target: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(target, key);
 }
 
+/**
+ * Whether `key` is a top-level section an override may hold: one `configSchema` defines.
+ * Anything else names runtime state the merge would otherwise reach (`paths`, the raw-YAML
+ * `config`, the AppService aliases `interfaceConfig`/`mcpConfig`/`turnstileConfig`), so it is
+ * rejected on write and ignored at merge. Unknown keys inside a known section stay accepted.
+ */
+export function isAcceptedOverrideSection(key: string): boolean {
+  return hasOwn(configSchema.shape, key);
+}
+
 function toIssue(segments: string[], code: string): ConfigOverrideIssue {
   return { path: segments.join('.'), segments, code };
 }
@@ -460,6 +482,101 @@ function unwrapSchema(schema: SchemaNode): SchemaNode {
   return node;
 }
 
+/** The schema one segment below `node`, through objects, records, arrays and union options. */
+function getChildSchema(node: SchemaNode, segment: string, depth = 0): SchemaNode | undefined {
+  const inner = unwrapSchema(node);
+  const { typeName } = inner._def;
+  if (typeName === 'ZodObject' && inner.shape) {
+    return hasOwn(inner.shape, segment) ? inner.shape[segment] : undefined;
+  }
+  if (typeName === 'ZodRecord') {
+    return inner._def.valueType;
+  }
+  if (typeName === 'ZodArray') {
+    return /^(?:0|[1-9]\d*)$/.test(segment) ? inner._def.type : undefined;
+  }
+  if (
+    (typeName === 'ZodUnion' || typeName === 'ZodDiscriminatedUnion') &&
+    inner._def.options &&
+    depth < MAX_MERGE_DEPTH
+  ) {
+    for (const option of inner._def.options.values()) {
+      const child = getChildSchema(option, segment, depth + 1);
+      if (child) {
+        return child;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Whether {@link getChildSchema} reaches `segment` below `node` through an array. */
+function isArrayStep(node: SchemaNode, segment: string, depth = 0): boolean {
+  const inner = unwrapSchema(node);
+  const { typeName } = inner._def;
+  if (typeName === 'ZodArray') {
+    return true;
+  }
+  if (
+    (typeName !== 'ZodUnion' && typeName !== 'ZodDiscriminatedUnion') ||
+    !inner._def.options ||
+    depth >= MAX_MERGE_DEPTH
+  ) {
+    return false;
+  }
+  for (const option of inner._def.options.values()) {
+    if (getChildSchema(option, segment, depth + 1)) {
+      return isArrayStep(option, segment, depth + 1);
+    }
+  }
+  return false;
+}
+
+/**
+ * The `configSchema` node an override (YAML) path names (`undefined` when the schema does not
+ * define it), and whether the path continues past an array on the way.
+ */
+function resolveConfigSchemaPath(segments: readonly string[]): {
+  node?: SchemaNode;
+  throughArray: boolean;
+} {
+  const [section, ...rest] = segments;
+  const shape = configSchema.shape as unknown as Record<string, SchemaNode>;
+  if (section === undefined || !hasOwn(shape, section)) {
+    return { throughArray: false };
+  }
+  let node: SchemaNode | undefined = shape[section];
+  let throughArray = false;
+  for (const segment of rest) {
+    if (!node) {
+      break;
+    }
+    throughArray = throughArray || isArrayStep(node, segment);
+    node = getChildSchema(node, segment);
+  }
+  return { node, throughArray };
+}
+
+/**
+ * Whether an override (YAML) path names a record in `configSchema`: an object whose keys are
+ * names the operator chooses (`mcpServers`, a `headers` map, `inferenceProfiles`), so one key
+ * can be renamed to another without changing what the value means. Fixed-shape objects are not
+ * records.
+ */
+export function isConfigRecordPath(segments: readonly string[]): boolean {
+  const { node } = resolveConfigSchemaPath(segments);
+  return node != null && unwrapSchema(node)._def.typeName === 'ZodRecord';
+}
+
+/**
+ * Whether an override (YAML) path continues past an array of `configSchema`: it names an
+ * element of the array or a path inside one. A tombstone there hides nothing, because the
+ * merge removes inherited values from objects only (a whole array can be hidden).
+ */
+export function isConfigArrayItemPath(segments: readonly string[]): boolean {
+  return resolveConfigSchemaPath(segments).throughArray;
+}
+
 /**
  * Keys a union dropped: an object parses with the first union option that accepts it, and
  * that option strips keys it does not define, so a key another option defines (and would
@@ -608,15 +725,75 @@ export function applyConfigTombstones(
 }
 
 /**
+ * An item of a merged-by-key array is identified by its key, not its position: a write by index
+ * can rename the stored item, which the runtime merge then treats as a new one. Reports the
+ * array once for any write that addresses inside it by position.
+ */
+export function getIndexedMergeKeyIssues(
+  written: ReadonlyArray<readonly string[]>,
+): ConfigOverrideIssue[] {
+  return Object.keys(ARRAY_MERGE_KEYS).flatMap((arrayPath) => {
+    const arraySegments = arrayPath.split('.');
+    return written.some(
+      (segments) =>
+        segments.length > arraySegments.length && isRelatedPath([...segments], arraySegments),
+    )
+      ? [toIssue(arraySegments, 'indexed_merge_key_write')]
+      : [];
+  });
+}
+
+/**
+ * Checks a principal's next override document in its final state: `candidate` merged over
+ * `base` without the candidate's tombstones, so a batch that tombstones a field and sets its
+ * replacement is judged on the end result rather than step by step. An issue is reported when
+ * it touches a `written` path (in either direction), or when the change introduced it
+ * elsewhere (a related field the change made invalid); issues the stored document already had
+ * are left to merge time so they do not block an unrelated change.
+ *
+ * The stored document is judged on the base its own tombstones leave, so an issue that a
+ * removed tombstone brings back counts as new. `lifted` names stored tombstones to treat as
+ * already removed there: tombstones the change replaced with values of its own.
+ */
+export function getConfigChangeIssues(
+  candidate: { overrides?: unknown; tombstones?: unknown[] },
+  base: Partial<TCustomConfig>,
+  stored: { overrides?: unknown; tombstones?: unknown[] } | null | undefined,
+  written: ReadonlyArray<readonly string[]>,
+  lifted: Iterable<string> = [],
+): ConfigOverrideIssue[] {
+  const candidateState = toConfigOverrideState(candidate);
+  const storedState = toConfigOverrideState(stored);
+  const issueKey = (issue: ConfigOverrideIssue): string => JSON.stringify(issue.segments);
+  const existing = new Set(
+    getConfigOverrideIssues(
+      storedState.overrides,
+      applyConfigTombstones(base, storedState.tombstones, new Set(lifted)),
+    ).map(issueKey),
+  );
+  return getConfigOverrideIssues(
+    candidateState.overrides,
+    applyConfigTombstones(base, candidateState.tombstones),
+  ).filter(
+    (issue) =>
+      !existing.has(issueKey(issue)) ||
+      written.some((segments) => isRelatedPath(issue.segments, [...segments])),
+  );
+}
+
+/**
  * Checks field writes on top of the principal's stored config, building the result with the
  * same transform the write stores (`setConfigFields`): each path set in order, and the
  * tombstones those paths clear removed. `fields` is either a map of dotted field paths or a
  * list of segment writes (which can address keys that contain dots). A path the stored
  * document cannot take (below a scalar, or a named key of an array) throws a
- * `ConfigPathError`. The principal's remaining tombstones are applied to the base. An issue is
- * reported when it touches a written path, or when the write introduced it elsewhere (a
- * related field the write made invalid); issues the stored config already had are left to
- * merge time so they do not block an unrelated write.
+ * `ConfigPathError`. See {@link getConfigChangeIssues} for which issues are reported.
+ *
+ * A tombstone a write replaces with its own value counts as lifted for the stored document
+ * too, so a client that sends one field per request can switch a union's shape (set the new
+ * field, then reset the old ones). A tombstone a deeper write clears as a side effect does
+ * not: setting `memory.agent.enabled` under a hidden `memory.agent` brings the inherited agent
+ * back, and a conflict with the stored fields is reported instead of being dropped at merge.
  */
 export function getConfigFieldIssues(
   fields: Record<string, unknown> | readonly ConfigFieldWrite[],
@@ -630,34 +807,13 @@ export function getConfigFieldIssues(
         value,
       }));
   const written = writes.map(({ segments }) => [...segments]);
-  /**
-   * An item of a merged-by-key array is identified by its key, not its position: an indexed
-   * write can rename the stored item, which the runtime merge then treats as a new one.
-   */
-  const indexed = Object.keys(ARRAY_MERGE_KEYS).flatMap((arrayPath) => {
-    const arraySegments = arrayPath.split('.');
-    return written.some(
-      (segments) =>
-        segments.length > arraySegments.length && isRelatedPath(segments, arraySegments),
-    )
-      ? [toIssue(arraySegments, 'indexed_merge_key_write')]
-      : [];
-  });
+  const indexed = getIndexedMergeKeyIssues(written);
   if (indexed.length > 0) {
     return indexed;
   }
-  const storedState = toConfigOverrideState(stored);
-  const candidate = setConfigFields(storedState, writes);
-  const effectiveBase = applyConfigTombstones(base, candidate.tombstones);
-  const storedOverrides = storedState.overrides;
-  const existing = new Set(
-    getConfigOverrideIssues(storedOverrides, effectiveBase).map((issue) => issue.path),
-  );
-  return getConfigOverrideIssues(candidate.overrides, effectiveBase).filter(
-    (issue) =>
-      !existing.has(issue.path) ||
-      written.some((segments) => isRelatedPath(issue.segments, segments)),
-  );
+  const candidate = setConfigFields(toConfigOverrideState(stored), writes);
+  const lifted = written.filter(isDotFreePath).map((segments) => segments.join('.'));
+  return getConfigChangeIssues(candidate, base, stored, written, lifted);
 }
 
 function omitPath(target: unknown, segments: string[]): unknown {

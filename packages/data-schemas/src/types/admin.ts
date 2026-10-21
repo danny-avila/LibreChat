@@ -93,6 +93,122 @@ export type AdminConfigTombstoneRequest = AdminConfigWritePrecondition &
     priority?: number;
   };
 
+/**
+ * One change of a `POST …/changes` batch. The target is a `fieldPath` or `segments`, as in
+ * {@link AdminConfigFieldTarget}; for an entry change it names the collection.
+ *
+ * - `set` writes `value` at the path (encrypting registered secrets; an object that omits a
+ *   stored secret keeps it) and clears the tombstones the write covers. A whole object replaces
+ *   what is stored there; fields the API does not store are left out of it and reported as
+ *   skipped, and when nothing is left the path is reset as by `unset`.
+ * - `unset` removes the principal's override at the path, the objects that leaves empty, and
+ *   the tombstones at or below it: the path inherits again.
+ * - `tombstone` removes the override and hides inherited values at the path. Tombstones are
+ *   stored as dotted paths, so no segment may contain a dot, and hide whole arrays only: a path
+ *   to an element or inside one is refused.
+ *
+ * Only sections `configSchema` defines can be written or hidden; `unset` may also remove what
+ * an older server stored outside them.
+ * - `upsertEntry` replaces the principal's own entry of a merged-by-key array (`endpoints.custom`,
+ *   keyed by `name`) with `entry`, or appends it. An entry that omits a stored `apiKey` keeps it.
+ * - `removeEntry` removes the principal's own entry with that key; an inherited entry of the
+ *   same name shows again.
+ * - `rename` renames one of the principal's own entries of a merged-by-key array, or one key of
+ *   a record (`mcpServers`, a `headers` map). Everything stored on the entry moves with it,
+ *   encrypted secrets included, so a rename never needs the secret again. An entry
+ *   `librechat.yaml` defines cannot be renamed, and no entry can take the name of one.
+ */
+export type AdminConfigChangeOp = AdminConfigFieldTarget &
+  (
+    | { op: 'set'; value: unknown }
+    | { op: 'unset' }
+    | { op: 'tombstone' }
+    | { op: 'upsertEntry'; entry: Record<string, unknown> }
+    | { op: 'removeEntry'; key: string }
+    | { op: 'rename'; from: string; to: string }
+  );
+
+/**
+ * POST `/:principalType/:principalId/changes`: changes applied in array order to the stored
+ * document and written with one compare-and-swap, so all of them apply or none does. No two
+ * changes may address the same path, or the same entry of a collection.
+ */
+export type AdminConfigChangesRequest = AdminConfigWritePrecondition & {
+  /** 1 to 1000 changes. */
+  ops: AdminConfigChangeOp[];
+  /** Broad `manage:configs` only; anyone else's is ignored and the stored priority kept. */
+  priority?: number;
+  /** Validate and report without writing. */
+  dryRun?: boolean;
+};
+
+/**
+ * Why a change, or part of a `set` value, was not stored. The rest of the batch still applies.
+ * - `base_only_section`: a section only `librechat.yaml` configures (`filters`, …).
+ * - `base_only_path`: a field of an overridable section only `librechat.yaml` sets
+ *   (`endpoints.agents.pullRequests.provider`, …).
+ * - `dedicated_section`: a section with its own admin API (`langfuse`).
+ * - `interface_permission`: an interface field that is a role permission.
+ */
+export type AdminConfigSkipReason =
+  | 'base_only_section'
+  | 'base_only_path'
+  | 'dedicated_section'
+  | 'interface_permission';
+
+/**
+ * Why a stored change has no effect at runtime. `process_mcp_server`: the change addresses an
+ * MCP server `librechat.yaml` runs as a local process, whose configuration overrides never
+ * change.
+ */
+export type AdminConfigIgnoreReason = 'process_mcp_server';
+
+/** A change of the batch, by position, with the location it addressed. */
+export type AdminConfigChangeRef = {
+  /** Index of the change in the request's `ops`. */
+  opIndex: number;
+  op: AdminConfigChangeOp['op'];
+  segments: string[];
+  /** The entry key of an `upsertEntry` or `removeEntry`. */
+  key?: string;
+};
+
+/** 200 from `POST …/changes`. */
+export type AdminConfigChangesResponse = {
+  /**
+   * The stored document after the batch (redacted, and limited to the sections the caller can
+   * read or just wrote), or `null` when the principal has none. Absent on a dry run.
+   */
+  config?: AdminConfig | null;
+  /** The stored document's revision after the batch (before it, on a dry run). */
+  revision: string | null;
+  /** Whether a document was written: a batch that changes nothing writes nothing. */
+  written: boolean;
+  dryRun: boolean;
+  /** Changes that altered the document. */
+  applied: AdminConfigChangeRef[];
+  /** Changes, or parts of a `set` value (at their own `segments`), that were not stored. */
+  skipped: Array<AdminConfigChangeRef & { reason: AdminConfigSkipReason }>;
+  /** Applied changes the runtime merge does not use. */
+  ignored: Array<AdminConfigChangeRef & { reason: AdminConfigIgnoreReason }>;
+  /** Valid changes that left the document as it was (it was already in that state). */
+  unchanged: AdminConfigChangeRef[];
+};
+
+/**
+ * 400 from `POST …/changes`: a change that cannot apply, named by `opIndex`, or (code
+ * `CONFIG_OVERRIDE_INVALID`) the batch's end state failing validation, with its `issues` and
+ * the batch's `skipped` report.
+ */
+export type AdminConfigChangeErrorResponse = {
+  error: string;
+  code: string;
+  opIndex?: number;
+  reason?: string;
+  issues?: Array<{ path: string; code: string }>;
+  skipped?: AdminConfigChangesResponse['skipped'];
+};
+
 /* ── Audit log taxonomy ─────────────────────────────────────────────── */
 
 /**

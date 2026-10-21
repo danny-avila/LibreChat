@@ -43,6 +43,7 @@ router.put('/:principalType/:principalId', handlers.upsertConfigOverrides);
 router.patch('/:principalType/:principalId/fields', handlers.patchConfigField);
 router.post('/:principalType/:principalId/fields/tombstone', handlers.tombstoneConfigField);
 router.delete('/:principalType/:principalId/fields', handlers.deleteConfigField);
+router.post('/:principalType/:principalId/changes', handlers.applyConfigChanges);
 router.delete('/:principalType/:principalId', handlers.deleteConfigOverrides);
 router.patch('/:principalType/:principalId/active', handlers.toggleConfig);
 
