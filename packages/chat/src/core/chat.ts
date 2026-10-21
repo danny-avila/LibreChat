@@ -378,6 +378,22 @@ const getSettledAs = (result: ChatAbortResult): ChatStreamAbortResult['terminalS
     : undefined;
 };
 
+type PauseOrder = Pick<Agents.PendingAction, 'createdAt' | 'actionId'>;
+
+/**
+ * Orders two pauses of one generation: by when the server created them, then by action id, so
+ * two created in the same millisecond still order the same way for every status read and replay.
+ */
+const comparePauses = (a: PauseOrder, b: PauseOrder): number => {
+  if (a.createdAt !== b.createdAt) {
+    return a.createdAt - b.createdAt;
+  }
+  if (a.actionId === b.actionId) {
+    return 0;
+  }
+  return a.actionId < b.actionId ? -1 : 1;
+};
+
 /** A pause past its expiry, whose resume the server refuses. */
 const isExpired = (action: Agents.PendingAction): boolean =>
   action.expiresAt != null && action.expiresAt <= Date.now();
@@ -582,7 +598,7 @@ export class Chat {
   /** The newest generation a status read named, expired or not, below which a read is stale. */
   private newestRead?: number;
   /** The newest pause this chat saw within its generation, which an older one of that generation trails. */
-  private newestPause?: { generationCreatedAt: number; createdAt: number };
+  private newestPause?: { generationCreatedAt: number } & PauseOrder;
 
   constructor(init: ChatInit) {
     this.id = init.id;
@@ -1889,7 +1905,7 @@ export class Chat {
     return (
       newest != null &&
       newest.generationCreatedAt === generationCreatedAt &&
-      action.createdAt < newest.createdAt
+      comparePauses(action, newest) < 0
     );
   }
 
@@ -1898,7 +1914,11 @@ export class Chat {
     if (generationCreatedAt == null || this.isOlderPause(action, generationCreatedAt)) {
       return;
     }
-    this.newestPause = { generationCreatedAt, createdAt: action.createdAt };
+    this.newestPause = {
+      generationCreatedAt,
+      createdAt: action.createdAt,
+      actionId: action.actionId,
+    };
   }
 
   /** Adopts the conversation the server created for a chat started under `new`; a real id stays. */
