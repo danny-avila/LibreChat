@@ -605,7 +605,6 @@ export class Chat {
     /** A turn whose stream dropped: finding nothing running means it ended without this chat. */
     const dropped = this.detached;
     this.detached = undefined;
-    this.unaddressed = false;
     /**
      * Reattaching to a dropped turn's own generation continues its record, so the turn's identity
      * and a stop still in flight for it carry over.
@@ -669,9 +668,14 @@ export class Chat {
         active.controller.signal,
         (opened) => opened?.close(),
       );
+      /** The server answered for the conversation, so a lost start is no longer the caller's. */
+      this.unaddressed = false;
       if (!stream && generation.stopAnswered) {
         /** A stop still in flight decides how an empty reconnect ended. */
         await generation.stopAnswered;
+      }
+      if (!this.owns(active)) {
+        return;
       }
       if (!stream && generation.stopped) {
         this.settle(getStopOutcome(generation), active);
@@ -710,6 +714,10 @@ export class Chat {
    * chat holds no frame-backed identity for the generation.
    */
   async stop(): Promise<ChatStopResult> {
+    if (this.disposed) {
+      /** A disposed chat leaves the server's generation running, as dispose does. */
+      return { status: 'idle' };
+    }
     const active = this.active;
     if (!active && this.detached) {
       return this.stopDetached(this.detached);
@@ -748,7 +756,7 @@ export class Chat {
     }
     generation.paused ??= this.action?.actionId;
     const result = await this.stopGeneration(generation, target);
-    return this.endStopped(active, result);
+    return this.endStopped(active, generation, result);
   }
 
   /** Sends a stop and records its answer on the generation, where every attachment reads it. */
@@ -786,9 +794,13 @@ export class Chat {
   /** Ends the request attached to a generation the server confirmed stopped. */
   private async endStopped(
     active: ActiveRequest,
+    generation: Generation,
     result: ChatAbortResult,
   ): Promise<ChatStopResult> {
-    const { generation } = active;
+    if (active.generation !== generation) {
+      /** The request moved on to another generation while the stop was in flight; that one runs on. */
+      return getStopResult(result, generation.stoppedConversationId);
+    }
     if (result && 'runMessages' in result) {
       await this.mergeRunMessages(result.runMessages, () => this.active === active);
       active.controller.abort();
@@ -899,6 +911,9 @@ export class Chat {
    * a refusal rejects.
    */
   private async abortOnServer(target: Omit<ChatAbortRequest, 'chatId'>): Promise<ChatAbortResult> {
+    if (this.lifetime.signal.aborted) {
+      throw this.lifetime.signal.reason;
+    }
     const result = await untilAborted(
       this.init.transport.abort({ chatId: this.id, ...target }),
       this.lifetime.signal,
@@ -919,7 +934,7 @@ export class Chat {
     const active = this.active;
     if (!this.disposed && active?.generation === generation) {
       /** A reattachment took the generation over while the stop was in flight; it ends with it. */
-      return this.endStopped(active, result);
+      return this.endStopped(active, generation, result);
     }
     /** The dropped generation owns the chat only while no newer request does, such as a retry. */
     const owns = () => this.detached === detached && !this.active;
@@ -974,7 +989,8 @@ export class Chat {
     if (!endpoint) {
       throw new Error('The paused generation cannot be stopped without its endpoint');
     }
-    const generation = this.restored?.generation ?? {};
+    /** A pause no status read restored names no response this chat prepared or saw framed. */
+    const generation: Generation = this.restored?.generation ?? { responseUnknown: true };
     const result = await this.stopGeneration(generation, {
       endpoint,
       streamId: action.streamId,
@@ -983,16 +999,14 @@ export class Chat {
     const active = this.active;
     if (!this.disposed && active?.generation === generation) {
       /** A reattachment took the generation over while the stop was in flight; it ends with it. */
-      return this.endStopped(active, result);
+      return this.endStopped(active, generation, result);
     }
     if (this.disposed || this.action?.actionId !== action.actionId) {
       return getStopResult(result, generation.stoppedConversationId);
     }
     this.action = undefined;
     this.decisions.clear();
-    if (
-      this.publishUnframedStop(result, { stoppedConversationId: generation.stoppedConversationId })
-    ) {
+    if (this.publishUnframedStop(result, generation)) {
       return getStopResult(result, generation.stoppedConversationId);
     }
     if (this.status === 'error') {
@@ -1046,14 +1060,11 @@ export class Chat {
    * expired pause is not restored.
    */
   restorePendingAction(action: Agents.PendingAction, generationCreatedAt: number): void {
+    if (this.disposed) {
+      return;
+    }
     if (this.active) {
       throw new Error('A request is in flight; its stream reports the pause');
-    }
-    /** A status read names the running generation, which a stop then addresses. */
-    this.unaddressed = false;
-    if (this.detached && this.detached.target.generationCreatedAt !== generationCreatedAt) {
-      /** The pause belongs to a newer generation than the one whose stream dropped. */
-      this.detached = undefined;
     }
     if (this.resumed.has(action.actionId) && generationCreatedAt === this.generationCreatedAt) {
       /** A status read before the answer landed reports a pause this chat already resumed. */
@@ -1062,6 +1073,12 @@ export class Chat {
     if (generationCreatedAt === this.stoppedGeneration) {
       /** A status read before the stop landed reports a pause of a generation it ended. */
       return;
+    }
+    /** A current status read names the running generation, which a stop then addresses. */
+    this.unaddressed = false;
+    if (this.detached && this.detached.target.generationCreatedAt !== generationCreatedAt) {
+      /** The pause belongs to a newer generation than the one whose stream dropped. */
+      this.detached = undefined;
     }
     if (isExpired(action)) {
       /**
@@ -1080,10 +1097,17 @@ export class Chat {
     this.action = action;
     this.generationCreatedAt = generationCreatedAt;
     if (this.restored?.createdAt !== generationCreatedAt) {
-      this.restored = {
-        createdAt: generationCreatedAt,
-        generation: { conversationId: action.conversationId, paused: action.actionId },
-      };
+      this.restored = { createdAt: generationCreatedAt, generation: {} };
+    }
+    /** The record carries what the status read says of the generation, for a stop or reattachment. */
+    const { generation } = this.restored;
+    generation.paused = action.actionId;
+    generation.conversationId = action.conversationId ?? generation.conversationId;
+    if (action.responseMessageId) {
+      generation.responseId = action.responseMessageId;
+      generation.responseUnknown = false;
+    } else if (generation.responseId === undefined) {
+      generation.responseUnknown = true;
     }
     this.notify();
   }
@@ -1579,6 +1603,11 @@ export class Chat {
     });
   }
 
+  /** Whether `active` still holds this chat, which an async continuation checks before acting. */
+  private owns(active: ActiveRequest): boolean {
+    return !this.disposed && this.active === active;
+  }
+
   private release(active: ActiveRequest): void {
     if (this.active === active) {
       this.active = undefined;
@@ -1627,9 +1656,10 @@ export class Chat {
       if (this.action?.actionId !== action.actionId) {
         return;
       }
-      if (this.active?.reattach && !this.active.stream) {
+      const reattach = this.active && !this.active.stream ? this.active.reattach : undefined;
+      if (reattach && this.generationCreatedAt === generationCreatedAt) {
         /** A reconnect already opening attaches to the continuation, or finds it finished. */
-        this.active.reattach.continuation = true;
+        reattach.continuation = true;
       } else if (!this.active && !this.disposed) {
         /** A pause restored after a reload has no stream attached for the continuation. */
         void this.reattach(

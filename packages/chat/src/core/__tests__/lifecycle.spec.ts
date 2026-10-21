@@ -1,7 +1,13 @@
 import { StepEvents } from 'librechat-data-provider';
 import type { Agents, TMessage, TPayload, ChatEvent } from 'librechat-data-provider';
-import type { ChatStream, ChatStatus, ChatTransport, ChatConnection } from '../types';
-import type { ChatState, ChatStopResult, ChatFinishResult } from '../chat';
+import type {
+  ChatStream,
+  ChatStatus,
+  ChatTransport,
+  ChatConnection,
+  ChatAbortResult,
+} from '../types';
+import type { ChatInit, ChatState, ChatStopResult, ChatFinishResult } from '../chat';
 import { Chat } from '../chat';
 
 /**
@@ -104,8 +110,9 @@ type Harness = {
   outcome?: string;
 };
 
-const createHarness = (): Harness => {
-  let messages: TMessage[] = [];
+const createHarness = (init: Partial<ChatInit> & { messages?: TMessage[] } = {}): Harness => {
+  const { messages: initial = [], ...overrides } = init;
+  let messages: TMessage[] = initial;
   const state: ChatState = {
     status: 'ready' as ChatStatus,
     error: undefined,
@@ -143,6 +150,7 @@ const createHarness = (): Harness => {
     }),
     resumeSelection: () => ({ endpoint: 'agents' }),
     onFinish: (result) => finishes.push(result),
+    ...overrides,
   });
   return harness;
 };
@@ -708,5 +716,150 @@ describe('Chat lifecycle', () => {
     if (expected.outcome !== undefined) {
       expect(h.outcome).toContain(expected.outcome);
     }
+  });
+});
+
+/**
+ * The invariants every generation marker keeps, crossed with the states that hold one:
+ * (1) an async continuation acts only on the generation it captured;
+ * (2) a "may still be running" marker survives until the server answers for it;
+ * (3) a disposed chat reaches no transport method;
+ * (4) a generation record carries the response its source named, or counts it unknown.
+ */
+const lost = async (h: Harness) => {
+  await states.starting(h);
+  h.fail?.();
+  await flush();
+};
+
+const disposedCalls: Record<string, (h: Harness) => Promise<unknown>> = {
+  stop: (h) => h.chat.stop(),
+  resumeStream: (h) => h.chat.resumeStream({ streamId: 'convo-1' }),
+  sendMessage: (h) => h.chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] }),
+  answer: (h) => h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' }),
+  restore: async (h) => h.chat.restorePendingAction({ ...askAction, actionId: 'action-9' }, 600),
+};
+
+const transportCalls = (h: Harness) =>
+  h.transport.sendMessages.mock.calls.length +
+  h.transport.reconnectToStream.mock.calls.length +
+  h.transport.abort.mock.calls.length +
+  h.transport.resume.mock.calls.length;
+
+const withLost: Record<string, (h: Harness) => Promise<void>> = { ...states, lost };
+
+const disposedTable = Object.keys(withLost).flatMap((state) =>
+  Object.keys(disposedCalls).map((call) => [state, call] as const),
+);
+
+const restoredResponse: TMessage = { ...placeholder, messageId: 'response-9', text: 'Paused' };
+const laterMessage: TMessage = { ...placeholder, messageId: 'response-10', text: 'Later' };
+
+describe('Chat invariants', () => {
+  it.each(disposedTable)('(3) %s, disposed, then %s reaches no transport', async (state, call) => {
+    const h = createHarness();
+    await withLost[state](h);
+    h.chat.dispose();
+    await flush();
+    const before = transportCalls(h);
+    let settled = false;
+    disposedCalls[call](h).then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    await flush();
+
+    expect(transportCalls(h)).toBe(before);
+    expect(settled).toBe(true);
+  });
+
+  it.each([
+    ['a stream answer', { success: true }],
+    ['an Assistants answer', { final: true, conversation: {}, runMessages: [] }],
+  ])(
+    '(1) a stop answered with %s after its reattachment moved to another generation leaves that one running',
+    async (_label, answer) => {
+      const h = createHarness();
+      await states.detached(h);
+      let answerStop: (() => void) | undefined;
+      h.transport.abort.mockImplementation(
+        () => new Promise((resolve) => (answerStop = () => resolve(answer as ChatAbortResult))),
+      );
+      const other = createStream({ streamId: 'convo-1', generationCreatedAt: 300 });
+      let openOther: (() => void) | undefined;
+      h.transport.reconnectToStream.mockImplementation(
+        () => new Promise((resolve) => (openOther = () => resolve(other))),
+      );
+      h.chat.resumeStream({ streamId: 'convo-1' }).then(
+        () => undefined,
+        () => undefined,
+      );
+      await flush();
+      let stopped = false;
+      h.chat.stop().then(
+        () => (stopped = true),
+        () => (stopped = true),
+      );
+      await flush();
+      openOther?.();
+      await flush();
+      answerStop?.();
+      await flush();
+      other.push(stepEvent);
+      await flush();
+
+      expect(stopped).toBe(true);
+      expect(other.closed()).toBe(false);
+      expect(h.chat.status).toBe('streaming');
+      expect(h.chat.connection).toBe('live');
+    },
+  );
+
+  it("(2) a lost start stays the caller's through a reattachment that failed before any answer", async () => {
+    const h = createHarness({ resumeSelection: () => ({}) });
+    await lost(h);
+    h.transport.reconnectToStream.mockRejectedValueOnce(networkError());
+    await h.chat.resumeStream({ streamId: 'convo-1' }).catch(() => undefined);
+
+    await expect(h.chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+  });
+
+  it.each([
+    ['named by the status read', 'response-9', false],
+    ['the status read did not name', undefined, true],
+  ])(
+    '(4) an unframed stop of a restored pause reports the response %s',
+    async (_label, responseMessageId, unknown) => {
+      const h = createHarness({ messages: [userMessage, restoredResponse, laterMessage] });
+      h.transport.abort.mockResolvedValue({
+        success: true,
+        generationProtocolVersion: 2,
+        aborted: 'convo-1',
+        persistenceFailed: true,
+      });
+      h.chat.restorePendingAction({ ...askAction, responseMessageId }, 500);
+
+      await h.chat.stop();
+
+      expect(h.finishes).toHaveLength(1);
+      expect(h.finishes[0]).toMatchObject({ isResponseUnknown: unknown });
+      expect(h.finishes[0].message?.messageId).toBe(responseMessageId);
+    },
+  );
+
+  it('(4) a stop of a reattachment ends the pause a later status read restored for its generation', async () => {
+    const h = createHarness();
+    h.chat.restorePendingAction(askAction, 500);
+    h.chat.restorePendingAction({ ...askAction, actionId: 'action-2' }, 500);
+    h.transport.reconnectToStream.mockImplementation(() => new Promise(() => undefined));
+    h.chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 500 }).then(
+      () => undefined,
+      () => undefined,
+    );
+    await flush();
+
+    await h.chat.stop();
+
+    expect(h.chat.pendingAction).toBeUndefined();
   });
 });
