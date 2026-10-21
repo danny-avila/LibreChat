@@ -15,7 +15,8 @@ if (REDIS_KEY_PREFIX_VAR && REDIS_KEY_PREFIX) {
 // Optional prefix for Redis pub/sub channel names. ioredis keyPrefix applies to key
 // operations but NOT to pub/sub channels, so a separate prefix is needed when Redis
 // ACLs restrict channel patterns (e.g. per-tenant &<prefix>:* channel ACL rules).
-// When set, channels like `stream:{<id>}:events` become `<prefix>stream:{<id>}:events`.
+// When set, channels like `stream:{<id>}:events` become `<prefix>::stream:{<id>}:events`,
+// mirroring how REDIS_KEY_PREFIX produces `<prefix>::<key>`.
 const REDIS_CHANNEL_PREFIX = process.env.REDIS_CHANNEL_PREFIX || '';
 
 const USE_REDIS = isEnabled(process.env.USE_REDIS);

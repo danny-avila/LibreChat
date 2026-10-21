@@ -26,7 +26,9 @@ import { cacheConfig } from '~/cache/cacheConfig';
  * When `REDIS_CHANNEL_PREFIX` is set, channels are prefixed manually so they
  * match per-tenant Redis ACL channel patterns (e.g. `&<prefix>:*`).
  */
-const CHANNEL_PREFIX = cacheConfig.REDIS_CHANNEL_PREFIX;
+const CHANNEL_PREFIX = cacheConfig.REDIS_CHANNEL_PREFIX
+  ? `${cacheConfig.REDIS_CHANNEL_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}`
+  : '';
 const CHANNEL_EVENTS_RE = new RegExp(
   `^${CHANNEL_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}stream:\\{([^}]+)\\}:events$`,
 );

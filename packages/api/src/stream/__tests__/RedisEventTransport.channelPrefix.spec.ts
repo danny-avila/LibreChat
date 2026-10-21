@@ -85,7 +85,7 @@ describe('RedisEventTransport channel prefix', () => {
   });
 
   it('prefixes channel names when REDIS_CHANNEL_PREFIX is set', () => {
-    const { RedisEventTransport } = loadTransport('base:');
+    const { RedisEventTransport } = loadTransport('base');
     const publisher = createMockPublisher();
     const subscriber = createMockSubscriber();
     const transport = new RedisEventTransport(
@@ -97,11 +97,11 @@ describe('RedisEventTransport channel prefix', () => {
     transport.subscribe('test-stream', { onChunk });
 
     // The subscribe call should use the prefixed channel
-    expect(subscriber.subscribe).toHaveBeenCalledWith('base:stream:{test-stream}:events');
+    expect(subscriber.subscribe).toHaveBeenCalledWith('base::stream:{test-stream}:events');
 
     // Simulate a message on the prefixed channel — should be delivered
     const handler = getMessageHandler(subscriber);
-    deliverSequencedMessage(handler, 'base:stream:{test-stream}:events', {
+    deliverSequencedMessage(handler, 'base::stream:{test-stream}:events', {
       type: 'chunk',
       seq: 0,
       data: { delta: 'hello' },
@@ -112,7 +112,7 @@ describe('RedisEventTransport channel prefix', () => {
   });
 
   it('ignores unprefixed channels when prefix is set', () => {
-    const { RedisEventTransport } = loadTransport('base:');
+    const { RedisEventTransport } = loadTransport('base');
     const publisher = createMockPublisher();
     const subscriber = createMockSubscriber();
     const transport = new RedisEventTransport(
@@ -135,7 +135,7 @@ describe('RedisEventTransport channel prefix', () => {
   });
 
   it('ignores messages on wrong prefix', () => {
-    const { RedisEventTransport } = loadTransport('base:');
+    const { RedisEventTransport } = loadTransport('base');
     const publisher = createMockPublisher();
     const subscriber = createMockSubscriber();
     const transport = new RedisEventTransport(
@@ -158,7 +158,7 @@ describe('RedisEventTransport channel prefix', () => {
   });
 
   it('passes prefixed channel to eval for Lua publish', async () => {
-    const { RedisEventTransport } = loadTransport('base:');
+    const { RedisEventTransport } = loadTransport('base');
     const publisher = createMockPublisher();
     const subscriber = createMockSubscriber();
     const transport = new RedisEventTransport(
@@ -175,11 +175,11 @@ describe('RedisEventTransport channel prefix', () => {
     // eval is called with: script, numKeys, key1, key2, key3, channel, ...
     const evalCall = publisher.eval.mock.calls[0];
     const channelArg = evalCall[5]; // index 5 = channel (after 3 keys)
-    expect(channelArg).toBe('base:stream:{test-stream}:events');
+    expect(channelArg).toBe('base::stream:{test-stream}:events');
   });
 
   it('handles prefix with regex special characters', () => {
-    const { RedisEventTransport } = loadTransport('tenant.base:');
+    const { RedisEventTransport } = loadTransport('tenant.base');
     const publisher = createMockPublisher();
     const subscriber = createMockSubscriber();
     const transport = new RedisEventTransport(
@@ -190,10 +190,10 @@ describe('RedisEventTransport channel prefix', () => {
     const onChunk = jest.fn();
     transport.subscribe('test-stream', { onChunk });
 
-    expect(subscriber.subscribe).toHaveBeenCalledWith('tenant.base:stream:{test-stream}:events');
+    expect(subscriber.subscribe).toHaveBeenCalledWith('tenant.base::stream:{test-stream}:events');
 
     const handler = getMessageHandler(subscriber);
-    deliverSequencedMessage(handler, 'tenant.base:stream:{test-stream}:events', {
+    deliverSequencedMessage(handler, 'tenant.base::stream:{test-stream}:events', {
       type: 'chunk',
       seq: 0,
       data: { delta: 'hello' },
@@ -203,7 +203,7 @@ describe('RedisEventTransport channel prefix', () => {
   });
 
   it('passes prefixed channel to publish (non-Lua publish path)', async () => {
-    const { RedisEventTransport } = loadTransport('base:');
+    const { RedisEventTransport } = loadTransport('base');
     const publisher = createMockPublisher();
     const subscriber = createMockSubscriber();
     const transport = new RedisEventTransport(
@@ -215,7 +215,7 @@ describe('RedisEventTransport channel prefix', () => {
     await transport.publishAbortAcknowledgement('test-stream', 1, 'req-123');
 
     expect(publisher.publish).toHaveBeenCalledWith(
-      'base:stream:{test-stream}:events',
+      'base::stream:{test-stream}:events',
       expect.any(String),
     );
   });
