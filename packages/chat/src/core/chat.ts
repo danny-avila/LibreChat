@@ -728,6 +728,8 @@ export class Chat {
       generationCreatedAt?: number;
       /** The conversation the generation runs under, when the server named it. */
       conversationId?: string;
+      /** The endpoint an answer already resolved, so its continuation does not ask the host again. */
+      endpoint?: string;
     } & ChatRequestOptions,
     continuation: boolean,
   ): Promise<void> {
@@ -743,7 +745,8 @@ export class Chat {
       return;
     }
     /** The host's selection is read before any marker changes, so a throw leaves them all as they were. */
-    const selected = this.resumeEndpoint();
+    const { endpoint: resolved, ...reattachOptions } = options;
+    const selected = resolved ?? this.resumeEndpoint();
     /** A turn whose stream dropped: finding nothing running means it ended without this chat. */
     const dropped = this.detached;
     this.detached = undefined;
@@ -798,7 +801,7 @@ export class Chat {
     /** A restored pause names a running generation, so finding nothing means it ended elsewhere. */
     const restored = !superseded && this.action !== undefined;
     const { conversationId = generation.conversationId ?? this.conversationId, ...request } =
-      options;
+      reattachOptions;
     try {
       if (superseded) {
         /** A restored pause belongs to the generation it was restored with, not this one. */
@@ -2116,11 +2119,14 @@ export class Chat {
       return;
     }
     this.resuming = action.actionId;
+    /** Read once: the answer and the reattachment that follows it run on the same selection. */
+    let selection: ReturnType<NonNullable<ChatInit['resumeSelection']>> | undefined;
     try {
+      selection = this.init.resumeSelection?.();
       /** Disposal releases the submit; a late answer then finds nothing to change. */
       const result = await untilAborted(
         resume.call(this.init.transport, {
-          ...this.init.resumeSelection?.(),
+          ...selection,
           ...resolution,
           conversationId:
             action.conversationId ?? this.pausedConversationId() ?? this.conversationId,
@@ -2143,7 +2149,12 @@ export class Chat {
       } else if (!this.active && !this.disposed) {
         /** A pause restored after a reload has no stream attached for the continuation. */
         this.reattach(
-          { streamId: result.streamId, generationCreatedAt, conversationId: result.conversationId },
+          {
+            streamId: result.streamId,
+            generationCreatedAt,
+            conversationId: result.conversationId,
+            endpoint: selection?.endpoint ?? undefined,
+          },
           true,
         ).catch((error: unknown) =>
           this.callHost(
@@ -2167,6 +2178,7 @@ export class Chat {
           this.reattach(
             {
               streamId: action.streamId,
+              endpoint: selection?.endpoint ?? undefined,
               conversationId: action.conversationId ?? this.pausedConversationId(),
             },
             false,
@@ -2193,6 +2205,7 @@ export class Chat {
         this.reattach(
           {
             streamId: action.streamId,
+            endpoint: selection?.endpoint ?? undefined,
             generationCreatedAt,
             conversationId: action.conversationId ?? this.pausedConversationId(),
           },

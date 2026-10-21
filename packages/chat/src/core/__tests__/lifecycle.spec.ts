@@ -1616,19 +1616,21 @@ describe('Chat exception safety', () => {
     expect(h.transport.resume).toHaveBeenCalledTimes(where === 'resume' ? 2 : 1);
   });
 
-  it('(5) a continuation whose resume selection throws reports to onError instead of rejecting unseen', async () => {
+  it('(5) a continuation runs on the selection its answer read, so a host that throws later strands nothing', async () => {
     let calls = 0;
     const onError = jest.fn();
     const h = createHarness({
       onError,
       resumeSelection: () => {
         calls += 1;
-        if (calls === 2) {
+        if (calls > 1) {
           throw new Error('selection failed');
         }
         return { endpoint: 'agents' };
       },
     });
+    const continued = createStream({ streamId: 'convo-1', generationCreatedAt: 500 });
+    h.transport.reconnectToStream.mockResolvedValueOnce(continued);
     const unhandled = jest.fn();
     process.on('unhandledRejection', unhandled);
     try {
@@ -1636,9 +1638,19 @@ describe('Chat exception safety', () => {
       await h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' });
       await flush();
       expect(unhandled).not.toHaveBeenCalled();
-      expect(onError).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'selection failed' }),
+      expect(h.transport.reconnectToStream).toHaveBeenCalledWith(
+        expect.objectContaining({ generationCreatedAt: 500 }),
       );
+      h.transport.abort.mockResolvedValueOnce({ success: true });
+      continued.push(stepEvent);
+      await flush();
+      const stopped = h.chat.stop();
+      continued.push(finalEvent({ terminalStatus: 'aborted' }));
+      await stopped;
+      expect(h.transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ endpoint: 'agents', generationCreatedAt: 500 }),
+      );
+      expect(onError).not.toHaveBeenCalled();
     } finally {
       process.off('unhandledRejection', unhandled);
     }
