@@ -1563,8 +1563,10 @@ export class Chat {
       });
     }
     let outcome: Outcome | undefined;
-    if (streamingEvents.has(event.type) && this.status !== 'streaming') {
-      this.setStatus('streaming');
+    if (streamingEvents.has(event.type)) {
+      if (this.markStreaming()) {
+        this.notify();
+      }
     } else if (event.type === 'pending_action' && isExpired(event.data)) {
       /** An expired pause a reconnect replays is stale, as one a status read restores is. */
       if (this.action?.actionId === event.data.actionId) {
@@ -1572,10 +1574,8 @@ export class Chat {
       }
     } else if (event.type === 'pending_action' && !this.resumed.has(event.data.actionId)) {
       /** A pause this chat already resumed is stale when a reattached stream replays it. */
-      if (this.status !== 'streaming') {
-        /** A live pause is the generation running, however its first frame arrives. */
-        this.init.state.status = 'streaming';
-      }
+      /** A live pause is the generation running, however its first frame arrives. */
+      this.markStreaming();
       if (this.action?.actionId !== event.data.actionId) {
         /** A reconnect replays the same pause; decisions already made for it still stand. */
         this.decisions.clear();
@@ -1601,6 +1601,20 @@ export class Chat {
     }
     this.callHost(this.init.onEvent, event);
     return outcome;
+  }
+
+  /**
+   * Moves to `streaming` on a frame of a live generation, which also ends whatever failure a
+   * dropped connection reported. Returns whether anything changed.
+   */
+  private markStreaming(): boolean {
+    const { state } = this.init;
+    if (state.status === 'streaming' && state.error === undefined) {
+      return false;
+    }
+    state.error = undefined;
+    state.status = 'streaming';
+    return true;
   }
 
   private toOutcome(error: unknown, active: ActiveRequest): Outcome {

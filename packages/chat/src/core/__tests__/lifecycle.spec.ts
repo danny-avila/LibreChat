@@ -1336,6 +1336,30 @@ describe('Chat invariants', () => {
     },
   );
 
+  it.each([
+    ['a streamed frame', stepEvent],
+    ['a live pause', { type: 'pending_action', data: askAction } as ChatEvent],
+  ])(
+    "(4) a reattachment that recovers with %s ends the dropped connection's error",
+    async (_label, event) => {
+      const h = createHarness();
+      await states.detached(h);
+      expect(h.chat.status).toBe('error');
+      const resumed = createStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      h.transport.reconnectToStream.mockResolvedValueOnce(resumed);
+      h.chat.resumeStream({ streamId: 'convo-1' }).then(
+        () => undefined,
+        () => undefined,
+      );
+      await flush();
+      resumed.push(event);
+      await flush();
+
+      expect(h.chat.status).toBe('streaming');
+      expect(h.chat.error).toBeUndefined();
+    },
+  );
+
   it('(4) a fresh reattachment that drops before a frame names its response reports none', async () => {
     const h = createHarness({ messages: [userMessage, laterMessage] });
     const stream = createStream({ streamId: 'convo-1', generationCreatedAt: 700 });
