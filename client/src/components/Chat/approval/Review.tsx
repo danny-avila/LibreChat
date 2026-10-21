@@ -101,7 +101,8 @@ export const PendingToolApprovalPanel = memo(function PendingToolApprovalPanel({
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (!isCancelKey(e.nativeEvent) || e.nativeEvent.isComposing) {
+    const isComposing = e.nativeEvent.isComposing || e.key === 'Process' || e.keyCode === 229;
+    if (!isCancelKey(e.nativeEvent) || isComposing) {
       return;
     }
     e.preventDefault();

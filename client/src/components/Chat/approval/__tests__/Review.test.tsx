@@ -168,6 +168,7 @@ describe('PendingToolApproval', () => {
       approve.focus();
 
       fireEvent.keyDown(approve, { key: 'Escape', isComposing: true });
+      fireEvent.keyDown(approve, { key: 'Escape', keyCode: 229 });
       fireEvent.keyDown(approve, { key: 'Escape', shiftKey: true });
       expect(screen.getByRole('region', { name: 'Review 2 actions' })).toBeInTheDocument();
 

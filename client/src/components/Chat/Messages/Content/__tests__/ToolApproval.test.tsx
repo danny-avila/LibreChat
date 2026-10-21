@@ -2,7 +2,7 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { Provider, createStore } from 'jotai';
 import { activeGenerationCreatedAtByConvoId } from '@librechat/chat/react';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { Agents } from 'librechat-data-provider';
 import type { ShortcutBinding } from '~/utils/shortcuts';
 import {
@@ -358,8 +358,13 @@ describe('ToolApproval', () => {
       allowed: Agents.ToolApprovalDecisionType[],
       {
         enterToSend = true,
+        shortcutsEnabled = true,
         submitOverride,
-      }: { enterToSend?: boolean; submitOverride?: ShortcutBinding } = {},
+      }: {
+        enterToSend?: boolean;
+        shortcutsEnabled?: boolean;
+        submitOverride?: ShortcutBinding | null;
+      } = {},
     ) => {
       const store = createStore();
       store.set(activeGenerationCreatedAtByConvoId(conversationId), 1000);
@@ -373,7 +378,7 @@ describe('ToolApproval', () => {
                   maximizeChatSpace: false,
                   showScrollButton: false,
                   composerBindings: {
-                    shortcutsEnabled: true,
+                    shortcutsEnabled,
                     submitOverride,
                     yieldedChords: new Set(),
                   },
@@ -475,6 +480,37 @@ describe('ToolApproval', () => {
       renderLive(['reject', 'edit'], { submitOverride: ctrlJ });
       fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
       fireEvent.keyDown(screen.getByRole('textbox', { name: 'Edit' }), { key: 'j', ctrlKey: true });
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+
+    test('Ctrl+Enter in the JSON edit field follows the composer submit chord', () => {
+      const altEnter: ShortcutBinding = {
+        key: 'Enter',
+        ctrl: false,
+        meta: false,
+        alt: true,
+        shift: false,
+      };
+      const cases: Array<{ shortcutsEnabled?: boolean; submitOverride: ShortcutBinding | null }> = [
+        { shortcutsEnabled: false, submitOverride: null },
+        { submitOverride: null },
+        { submitOverride: altEnter },
+      ];
+      for (const options of cases) {
+        cleanup();
+        renderLive(['approve', 'edit'], options);
+        fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+        const editor = screen.getByRole('textbox', { name: 'Edit' });
+        fireEvent.change(editor, { target: { value: '{ "a": 2 }' } });
+        expect(fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true })).toBe(true);
+        expect(fireEvent.keyDown(editor, { key: 'Enter', metaKey: true })).toBe(true);
+      }
+      expect(mockMutate).not.toHaveBeenCalled();
+
+      fireEvent.keyDown(screen.getByRole('textbox', { name: 'Edit' }), {
+        key: 'Enter',
+        altKey: true,
+      });
       expect(mockMutate).toHaveBeenCalledTimes(1);
     });
   });

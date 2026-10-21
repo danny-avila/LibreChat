@@ -16,6 +16,7 @@ import {
   isReboundSubmitChord,
   resolveComposerKeyDown,
   bindingFromEvent,
+  bindingsMatch,
   bindingHash,
 } from '~/utils/shortcuts';
 import { useComposerPresentsApproval } from '~/components/Chat/approval/state';
@@ -309,8 +310,9 @@ export default function ToolApproval({
     }
   };
 
-  /** The edit field holds JSON, where Enter is always a newline; only
-   *  Ctrl/Cmd+Enter, or a submit shortcut rebound off Enter, submits. */
+  /** The edit field holds JSON, where plain Enter is always a newline. The
+   *  submit chord is the composer's: Ctrl/Cmd+Enter by default, the rebound
+   *  chord when one is set, and none while shortcuts are off or unbound. */
   const handleEditKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (isComposingKey(e)) {
       return;
@@ -320,11 +322,16 @@ export default function ToolApproval({
       submitFromField(e.repeat);
       return;
     }
-    if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) {
+    const binding = bindingFromEvent(e.nativeEvent);
+    if (binding == null || binding.key !== 'Enter' || yieldedChords.has(bindingHash(binding))) {
       return;
     }
-    const binding = bindingFromEvent(e.nativeEvent);
-    if (binding != null && yieldedChords.has(bindingHash(binding))) {
+    const isPlainEnter = !binding.ctrl && !binding.meta && !binding.alt && !binding.shift;
+    const isSubmitChord =
+      submitOverride === undefined
+        ? (binding.ctrl || binding.meta) && !binding.shift && !binding.alt
+        : !isPlainEnter && bindingsMatch(binding, submitOverride);
+    if (!isSubmitChord) {
       return;
     }
     e.preventDefault();
