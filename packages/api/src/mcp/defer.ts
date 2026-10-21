@@ -13,24 +13,58 @@ import { formatMCPServerTools } from '~/mcp/tools';
 const serverPinPrefix = `${Constants.mcp_server}${Constants.mcp_delimiter}`;
 
 /**
- * Whether the catalog holds a selected tool, matching the definitions loader: the key itself,
+ * The catalog key a selected tool resolves to, matching the definitions loader: the key itself,
  * or the server-prefix-stripped key whose entry keeps the stored spelling as `serverToolName`.
  */
-function catalogHasTool(
+function catalogKeyFor(
   catalog: LCAvailableTools,
   tool: string,
   toolPart: string,
   keyServerName: string,
-): boolean {
+): string | undefined {
   if (catalog[tool] != null) {
-    return true;
+    return tool;
   }
   const strippedPart = stripServerNamePrefix(toolPart, keyServerName);
   if (strippedPart === toolPart) {
-    return false;
+    return undefined;
   }
-  const entry = catalog[`${strippedPart}${Constants.mcp_delimiter}${keyServerName}`];
-  return entry?.serverToolName === toolPart;
+  const strippedKey = `${strippedPart}${Constants.mcp_delimiter}${keyServerName}`;
+  return catalog[strippedKey]?.serverToolName === toolPart ? strippedKey : undefined;
+}
+
+/**
+ * The tool's other spelling, from which the definitions loader's `aliasMCPToolOptions` heals
+ * `tool_options`: the current catalog key for a stored pre-strip key, or the pre-strip name for
+ * a current key whose entry keeps one.
+ */
+function optionsAliasFor(
+  catalog: LCAvailableTools,
+  tool: string,
+  catalogKey: string,
+  keyServerName: string,
+): string | undefined {
+  if (catalogKey !== tool) {
+    return catalogKey;
+  }
+  const serverToolName = catalog[catalogKey]?.serverToolName;
+  if (!serverToolName) {
+    return undefined;
+  }
+  const alias = `${serverToolName}${Constants.mcp_delimiter}${keyServerName}`;
+  return alias !== tool ? alias : undefined;
+}
+
+/** The options the loader reads for a tool, after aliasing them across its spellings. */
+function withAliasedOptions(
+  tool: string,
+  aliasName: string | undefined,
+  toolOptions: AgentToolOptions | undefined,
+): AgentToolOptions | undefined {
+  if (!toolOptions || toolOptions[tool] != null || !aliasName || toolOptions[aliasName] == null) {
+    return toolOptions;
+  }
+  return { ...toolOptions, [tool]: toolOptions[aliasName] };
 }
 
 /**
@@ -74,17 +108,22 @@ export function shouldDeferMCPOAuthSignIn({
     if (toolServerName !== serverName && toolServerName !== keyServerName) {
       continue;
     }
-    const options = toolOptions?.[tool];
-    /** A background call runs detached and could not pause for the sign-in it would trigger. */
-    if (
-      isMCPAllPlaceholder(tool) ||
-      options?.defer_loading !== true ||
-      (backgroundToolsEnabled &&
-        resolveToolOption(tool, 'run_in_background', toolOptions)?.value === true)
-    ) {
+    if (isMCPAllPlaceholder(tool)) {
       return false;
     }
-    if (catalog && !catalogHasTool(catalog, tool, toolPart, keyServerName)) {
+    const catalogKey = catalog && catalogKeyFor(catalog, tool, toolPart, keyServerName);
+    if (catalog && !catalogKey) {
+      return false;
+    }
+    const aliasName =
+      catalog && catalogKey ? optionsAliasFor(catalog, tool, catalogKey, keyServerName) : undefined;
+    const options = withAliasedOptions(tool, aliasName, toolOptions);
+    /** A background call runs detached and could not pause for the sign-in it would trigger. */
+    if (
+      options?.[tool]?.defer_loading !== true ||
+      (backgroundToolsEnabled &&
+        resolveToolOption(tool, 'run_in_background', options)?.value === true)
+    ) {
       return false;
     }
     selected++;

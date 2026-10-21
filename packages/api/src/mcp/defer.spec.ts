@@ -124,6 +124,47 @@ describe('shouldDeferMCPOAuthSignIn', () => {
     ).toBe(false);
   });
 
+  it('reads options saved under the other spelling of a selected tool', () => {
+    const stored = key('sheets_read', 'sheets');
+    const current = key('read', 'sheets');
+    const catalog = {
+      [current]: { serverToolName: 'sheets_read' },
+    } as unknown as LCAvailableTools;
+
+    expect(
+      decide({ tools: [stored], toolOptions: { [current]: { defer_loading: true } }, catalog }),
+    ).toBe(true);
+    expect(
+      decide({ tools: [current], toolOptions: { [stored]: { defer_loading: true } }, catalog }),
+    ).toBe(true);
+    expect(
+      decide({
+        tools: [current],
+        toolOptions: { [stored]: { defer_loading: true, run_in_background: true } },
+        backgroundToolsEnabled: true,
+        catalog,
+      }),
+    ).toBe(false);
+  });
+
+  it('prefers options saved under the selected spelling over its alias', () => {
+    const stored = key('sheets_read', 'sheets');
+    const current = key('read', 'sheets');
+    const catalog = {
+      [current]: { serverToolName: 'sheets_read' },
+    } as unknown as LCAvailableTools;
+    const toolOptions = { [stored]: { defer_loading: false }, [current]: { defer_loading: true } };
+
+    expect(decide({ tools: [stored], toolOptions, catalog })).toBe(false);
+  });
+
+  it('does not alias options without a catalog proving the identity', () => {
+    const stored = key('sheets_read', 'sheets');
+    const toolOptions = { [key('read', 'sheets')]: { defer_loading: true } };
+
+    expect(decide({ tools: [stored], toolOptions })).toBe(false);
+  });
+
   it('does not require OAuth to be configured up front', () => {
     expect(decide({ serverConfig: { ...onUseConfig, requiresOAuth: false } })).toBe(true);
   });
