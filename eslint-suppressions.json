@@ -924,12 +924,12 @@
   },
   "client/src/components/Prompts/fields/Command.tsx": {
     "shadcn/no-restyle": {
-      "count": 2
+      "count": 1
     }
   },
   "client/src/components/Prompts/fields/Description.tsx": {
     "shadcn/no-restyle": {
-      "count": 2
+      "count": 1
     }
   },
   "client/src/components/Prompts/fields/PromptName.tsx": {
@@ -1323,11 +1323,6 @@
   "client/src/components/Skills/forms/SkillForm.tsx": {
     "shadcn/no-restyle": {
       "count": 5
-    }
-  },
-  "client/src/components/Skills/lists/SkillListItem.tsx": {
-    "shadcn/no-inline-styles": {
-      "count": 1
     }
   },
   "client/src/components/Skills/tree/SkillFileEditor.tsx": {
