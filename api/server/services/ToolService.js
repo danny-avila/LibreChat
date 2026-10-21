@@ -822,6 +822,8 @@ const isBuiltInTool = (toolName) =>
  * @param {AbortSignal} [params.signal] - Effective run cancellation signal
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
  * @param {import('@librechat/api').UpstreamTokenProviderResolver} [params.upstreamTokenProviderResolver]
+ * @param {boolean} [params.skipMCPOAuthWait=false] - Do not emit login steps for, or wait on,
+ *   MCP servers pending OAuth: their tools are left out (subagents)
  * @returns {Promise<{
  *   toolDefinitions?: import('@librechat/api').LCTool[];
  *   toolRegistry?: Map<string, import('@librechat/api').LCTool>;
@@ -845,6 +847,7 @@ async function loadToolDefinitionsWrapper({
   signal,
   upstreamTokenProvider: suppliedUpstreamTokenProvider,
   upstreamTokenProviderResolver,
+  skipMCPOAuthWait = false,
 }) {
   if (!agent.tools || agent.tools.length === 0) {
     return { toolDefinitions: [] };
@@ -1417,7 +1420,11 @@ async function loadToolDefinitionsWrapper({
     }
   }
 
-  if (pendingOAuthServers.size > 0 && (res || streamId)) {
+  if (pendingOAuthServers.size > 0 && skipMCPOAuthWait) {
+    logger.info(
+      `[Tool Definitions] MCP OAuth required for ${pendingOAuthServers.size} server(s); not waiting, their tools are left out`,
+    );
+  } else if (pendingOAuthServers.size > 0 && (res || streamId)) {
     const serverNames = Array.from(pendingOAuthServers);
     logger.info(
       `[Tool Definitions] MCP OAuth required for ${serverNames.length} server(s); emitting events and waiting`,
@@ -1659,6 +1666,7 @@ async function loadToolDefinitionsWrapper({
  *   where tools are loaded on-demand during execution.
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
  * @param {import('@librechat/api').UpstreamTokenProviderResolver} [params.upstreamTokenProviderResolver]
+ * @param {boolean} [params.skipMCPOAuthWait=false] - See loadToolDefinitionsWrapper
  */
 async function loadAgentTools({
   req,
@@ -1677,6 +1685,7 @@ async function loadAgentTools({
   accessibleMcpServerNames,
   upstreamTokenProvider,
   upstreamTokenProviderResolver,
+  skipMCPOAuthWait = false,
 }) {
   if (definitionsOnly) {
     try {
@@ -1695,6 +1704,7 @@ async function loadAgentTools({
         signal,
         upstreamTokenProvider,
         upstreamTokenProviderResolver,
+        skipMCPOAuthWait,
       });
     } catch (error) {
       if (

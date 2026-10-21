@@ -1998,6 +1998,54 @@ describe('ToolService - Action Capability Gating', () => {
       );
     });
 
+    it('does not emit or wait on pending MCP OAuth when skipMCPOAuthWait is set (subagents)', async () => {
+      const serverName = 'Google-Workspace';
+      const authorizationUrl = 'https://auth.example.com/Google-Workspace';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      const res = { writableEnded: false };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://demo.librechat.ai/mcp',
+        requiresOAuth: true,
+      });
+      mockGetMCPServerTools.mockResolvedValue(null);
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'PENDING',
+        createdAt: Date.now(),
+        metadata: { authorizationUrl },
+      });
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        const serverTools = await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: serverTools ? Object.keys(serverTools) : [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+
+      const result = await loadAgentTools({
+        req,
+        res,
+        agent: { id: 'agent_subagent', tools: [mcpTool] },
+        definitionsOnly: true,
+        skipMCPOAuthWait: true,
+      });
+
+      expect(result.toolDefinitions).toEqual([]);
+      expect(reinitMCPServer).not.toHaveBeenCalledWith(
+        expect.objectContaining({ returnOnOAuth: false }),
+      );
+      expect(mockSendEvent).not.toHaveBeenCalledWith(
+        res,
+        expect.objectContaining({
+          data: expect.objectContaining({ id: `step_oauth_login_${serverName}` }),
+        }),
+      );
+    });
+
     it('should not join in-flight MCP initialization before replaying pending OAuth prompts', async () => {
       const serverName = 'Google-Workspace';
       const authorizationUrl = 'https://auth.example.com/Google-Workspace';

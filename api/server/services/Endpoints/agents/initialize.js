@@ -144,6 +144,7 @@ function createToolLoader(
   jobCreatedAt,
   upstreamTokenProvider,
   upstreamTokenProviderResolver,
+  skipMCPOAuthWait = false,
 ) {
   /**
    * @param {object} params
@@ -189,6 +190,7 @@ function createToolLoader(
         accessibleMcpServerNames,
         upstreamTokenProvider,
         upstreamTokenProviderResolver,
+        skipMCPOAuthWait,
       });
     } catch (error) {
       if (isFatalAgentInitializationError(error, { signal }) || isContentFilterError(error)) {
@@ -1402,6 +1404,9 @@ const initializeClientWithProvider = async ({
             req,
             res,
             agent: routedAgent,
+            /** A subagent does not wait for MCP OAuth: its login step would land
+             *  on the parent's content index already held by the subagent call,
+             *  so the user never sees the link while the run waits for it. */
             loadTools: createToolLoader(
               req,
               res,
@@ -1411,6 +1416,7 @@ const initializeClientWithProvider = async ({
               jobCreatedAt,
               upstreamTokenProvider,
               upstreamTokenProviderResolver,
+              true,
             ),
             requestFiles,
             authorizedRunFiles: getAuthorizedRunFileSnapshot({
