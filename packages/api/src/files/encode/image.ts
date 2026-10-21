@@ -11,6 +11,7 @@ import type { IMongoFile } from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
 import type { AxiosInstance } from 'axios';
 import type { ServerRequest, StrategyFunctions } from '~/types';
+import { getOutboundTimeoutMs, outboundRequestBudget } from '~/utils/timeouts';
 import { getFileStream, isAttachmentObjectNotFoundError } from './utils';
 import { validateImage } from '~/files/validation';
 import { sniffImageMimeType } from '~/files/mime';
@@ -138,9 +139,11 @@ export async function encodeAndFormatImages(
     if (source !== FileSources.local && effectiveEndpoint && base64Only.has(effectiveEndpoint)) {
       const entry = await runGuardedEncode<ImageEntry>(file.bytes ?? 0, async () => {
         const [preparedFile, imageURL] = await preparePayload(req, file);
+        const fetchTimeoutMs = getOutboundTimeoutMs(req.config, 'imageFetchMs');
         try {
           const response = await httpClient.get<ArrayBuffer>(imageURL, {
             responseType: 'arraybuffer',
+            ...outboundRequestBudget(fetchTimeoutMs, 'imageFetchMs'),
           });
           return [preparedFile, Buffer.from(response.data).toString('base64')];
         } catch (error) {
