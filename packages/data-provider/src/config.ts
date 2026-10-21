@@ -5256,6 +5256,12 @@ export enum Constants {
 }
 
 /**
+ * This package's own version, swapped in from `packages/data-provider/package.json` at build
+ * time like `Constants.VERSION`, so a server can report which schema package it validates with.
+ */
+export const DATA_PROVIDER_VERSION: string = '__DATA_PROVIDER_VERSION__';
+
+/**
  * Normalizes a server name into the character set tool keys are built from.
  * Tool keys embed this output, so any candidate list matched against a key must
  * be normalized the same way.

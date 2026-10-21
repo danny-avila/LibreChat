@@ -65,6 +65,7 @@ const {
   waitForKeyvRedisClient,
   warnOnUnreachableDeliveryPaths,
   createCodeApiUploadRegistry,
+  createRequestSanitizer,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -379,7 +380,7 @@ const startServer = async () => {
     next();
   });
 
-  app.use(mongoSanitize());
+  app.use(createRequestSanitizer(mongoSanitize));
   app.use(cors());
   app.use(cookieParser());
 
