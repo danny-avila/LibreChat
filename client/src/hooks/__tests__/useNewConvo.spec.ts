@@ -554,6 +554,8 @@ describe('useNewConvo reset cleanup', () => {
       const next = renderHook(() => useNewConvo(2), { wrapper });
       if (reset) act(() => next.result.current.newConversation());
       const submission = {
+        isTemporary: false,
+        endpointOption: { endpoint },
         conversation: launch,
         messages: [],
         userMessage: { messageId: 'sync-user', text: 'Hello', isCreatedByUser: true },
