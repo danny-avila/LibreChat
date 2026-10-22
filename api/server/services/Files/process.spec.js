@@ -122,6 +122,7 @@ jest.mock('@librechat/api', () => {
   );
   return {
     ...jest.requireActual('../../../../packages/api/src/files/storage'),
+    ...jest.requireActual('../../../../packages/api/src/files/finalize'),
     sanitizeFilename: jest.fn((n) => n),
     /** Grants both; these specs vary the capability set, not the role. */
     resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),
@@ -2657,13 +2658,22 @@ describe('processDeleteRequest', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     db.clearFileEmbeddings.mockResolvedValue(true);
+    db.deleteFiles.mockImplementation(async (ids) => ({
+      deletedCount: ids.length,
+      deletedFileIds: ids,
+      failedFileIds: [],
+    }));
   });
 
   it('removes metadata when backing storage is already missing', async () => {
     const missingError = Object.assign(new Error('no such file'), { code: 'ENOENT' });
     const deleteFile = jest.fn().mockRejectedValue(missingError);
     getStrategyFunctions.mockReturnValue({ deleteFile });
-    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    db.deleteFiles.mockImplementation(async (ids) => ({
+      deletedCount: ids.length,
+      deletedFileIds: ids,
+      failedFileIds: [],
+    }));
     const req = {
       body: {},
       config: { fileConfig: { retainedFileCleanup: true } },
@@ -2752,7 +2762,11 @@ describe('processDeleteRequest', () => {
         ? { deleteFile: vectorDelete }
         : { deleteFile: primaryDelete },
     );
-    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    db.deleteFiles.mockImplementation(async (ids) => ({
+      deletedCount: ids.length,
+      deletedFileIds: ids,
+      failedFileIds: [],
+    }));
     const req = {
       body: {},
       config: { fileConfig: { retainedFileCleanup: true } },
@@ -2871,7 +2885,11 @@ describe('processDeleteRequest', () => {
     expect(file.embedded).toBe(false);
     expect(file.metadata.searchDestination).toBe(true);
 
-    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    db.deleteFiles.mockImplementation(async (ids) => ({
+      deletedCount: ids.length,
+      deletedFileIds: ids,
+      failedFileIds: [],
+    }));
     expect(await processDeleteRequest({ req, files: [file] })).toEqual({
       deletedFileIds: ['retry-file'],
       failedFileIds: [],
@@ -2968,7 +2986,11 @@ describe('processDeleteRequest', () => {
             : Promise.resolve(undefined),
         ),
     });
-    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    db.deleteFiles.mockImplementation(async (ids) => ({
+      deletedCount: ids.length,
+      deletedFileIds: ids,
+      failedFileIds: [],
+    }));
     const req = {
       body: { agent_id: 'agent_1', tool_resource: 'file_search' },
       config: { fileConfig: { retainedFileCleanup: true } },
@@ -2987,6 +3009,24 @@ describe('processDeleteRequest', () => {
     expect(db.removeAgentResourceFilesFromAllAgents).toHaveBeenCalledWith({
       file_ids: ['gone-file'],
     });
+  });
+
+  it('finalizes successful file references while retaining a concurrent replacement', async () => {
+    getStrategyFunctions.mockReturnValue({
+      deleteFile: jest.fn().mockResolvedValue({ deleted: true }),
+    });
+    db.deleteFiles.mockResolvedValue({
+      deletedCount: 1,
+      deletedFileIds: ['gone'],
+      failedFileIds: ['kept'],
+    });
+    const req = { body: {}, config: {}, user: { id: 'user-123' } };
+    const files = ['gone', 'kept'].map((file_id) => ({ file_id, source: FileSources.local }));
+    expect(await processDeleteRequest({ req, files })).toEqual({
+      deletedFileIds: ['gone'],
+      failedFileIds: ['kept'],
+    });
+    expect(db.removeAgentResourceFilesFromAllAgents).toHaveBeenCalledWith({ file_ids: ['gone'] });
   });
 
   it('keeps agent references when the metadata delete fails', async () => {
@@ -3054,7 +3094,11 @@ describe('processDeleteRequest', () => {
         ? { deleteFile: vectorDelete }
         : { deleteFile: primaryDelete },
     );
-    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    db.deleteFiles.mockImplementation(async (ids) => ({
+      deletedCount: ids.length,
+      deletedFileIds: ids,
+      failedFileIds: [],
+    }));
     const req = {
       body: {},
       config: { fileConfig: { retainedFileCleanup: true } },
@@ -3087,7 +3131,11 @@ describe('processDeleteRequest', () => {
         ? { deleteFile: codeDelete }
         : { deleteFile: primaryDelete },
     );
-    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    db.deleteFiles.mockImplementation(async (ids) => ({
+      deletedCount: ids.length,
+      deletedFileIds: ids,
+      failedFileIds: [],
+    }));
     const req = {
       body: {},
       config: { fileConfig: { retainedFileCleanup: true } },

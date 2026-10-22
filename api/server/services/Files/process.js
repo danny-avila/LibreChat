@@ -32,6 +32,7 @@ const {
   sanitizeFilename,
   isMissingStorageError,
   createDeleteFileWithSecondaryStorage,
+  finalizeFileDeletion,
   parseText,
   processAudioFile,
   extractInspectableFileText,
@@ -282,33 +283,19 @@ const processDeleteRequest = async ({ req, files }) => {
   }
 
   await Promise.allSettled(promises);
-  const deletedFileIds = [...resolvedFileIds];
-  let metadataDeletedFileIds = deletedFileIds;
-  if (deletedFileIds.length > 0) {
-    try {
-      await db.deleteFiles(deletedFileIds, undefined, { files, userId: req.user.id });
-    } catch (error) {
-      logger.error('Error deleting file metadata after storage deletion', error);
-      deletedFileIds.forEach((fileId) => failedFileIds.add(fileId));
-      metadataDeletedFileIds = [];
-      throw error;
-    }
-    /* The only place a delete removes agent references, and it runs after the metadata delete
-       succeeded: a file that kept its storage, its chunks or its record keeps its references too,
-       so the agent it was removed from can be asked again (see issue #12776). */
-    if (metadataDeletedFileIds.length > 0) {
-      try {
-        await db.removeAgentResourceFilesFromAllAgents({ file_ids: metadataDeletedFileIds });
-      } catch (error) {
-        logger.error('Error cleaning up orphaned agent file references', error);
-      }
-    }
-  }
-
-  return {
-    deletedFileIds: metadataDeletedFileIds,
-    failedFileIds: [...failedFileIds],
-  };
+  return finalizeFileDeletion(
+    {
+      deletedFileIds: [...resolvedFileIds],
+      failedFileIds: [...failedFileIds],
+      files,
+      userId: req.user.id,
+    },
+    {
+      deleteFiles: db.deleteFiles,
+      removeAgentResourceFilesFromAllAgents: db.removeAgentResourceFilesFromAllAgents,
+      logger,
+    },
+  );
 };
 
 /**

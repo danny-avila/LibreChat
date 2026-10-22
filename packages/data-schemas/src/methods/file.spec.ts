@@ -893,14 +893,18 @@ describe('File Methods', () => {
       await seed({ embedded: false, metadata: { codeEnvRefs: {}, codeDestination: true } });
       await seed({ tenantId: 'tenant-b' });
       expect(await fileMethods.isFileStorageClean(check)).toBe(true);
-      expect(await fileMethods.deleteFiles([snapshot.file_id], undefined, options)).toEqual(
-        expect.objectContaining({ deletedCount: 1 }),
-      );
+      expect(await fileMethods.deleteFiles([snapshot.file_id], undefined, options)).toEqual({
+        deletedCount: 1,
+        deletedFileIds: [snapshot.file_id],
+        failedFileIds: [],
+      });
       expect(await File.collection.countDocuments({ file_id: snapshot.file_id })).toBe(1);
       expect(await fileMethods.isFileStorageClean(check)).toBe(false);
-      expect(await fileMethods.deleteFiles([snapshot.file_id], undefined, options)).toEqual(
-        expect.objectContaining({ deletedCount: 0 }),
-      );
+      expect(await fileMethods.deleteFiles([snapshot.file_id], undefined, options)).toEqual({
+        deletedCount: 0,
+        deletedFileIds: [snapshot.file_id],
+        failedFileIds: [],
+      });
     });
 
     it.each([
@@ -918,7 +922,11 @@ describe('File Methods', () => {
         expect(await fileMethods.isFileStorageClean(check)).toBe(false);
         await expect(
           fileMethods.deleteFiles([snapshot.file_id], undefined, options),
-        ).rejects.toThrow('File storage snapshot changed before metadata deletion');
+        ).resolves.toEqual({
+          deletedCount: 0,
+          deletedFileIds: [],
+          failedFileIds: [snapshot.file_id],
+        });
         expect(await File.collection.findOne({ file_id: snapshot.file_id })).toEqual(before);
       },
     );
@@ -926,18 +934,178 @@ describe('File Methods', () => {
     it('does not delete a copy attached between the metadata read and conditional delete', async () => {
       await seed();
       const deleteMany = File.collection.deleteMany.bind(File.collection);
-      jest.spyOn(File.collection, 'deleteMany').mockImplementationOnce(async (...args) => {
-        await File.collection.updateOne(
-          { file_id: snapshot.file_id },
-          { $set: { 'metadata.codeEnvRefs.default': { file_id: 'late-copy' } } },
-        );
-        return deleteMany(...args);
+      jest
+        .spyOn(File.collection, 'deleteMany')
+        .mockImplementationOnce(async (filter, deleteOptions) => {
+          await File.collection.updateOne(
+            { file_id: snapshot.file_id },
+            { $set: { 'metadata.codeEnvRefs.default': { file_id: 'late-copy' } } },
+          );
+          return deleteMany(filter, deleteOptions);
+        });
+      await expect(
+        fileMethods.deleteFiles([snapshot.file_id], undefined, options),
+      ).resolves.toEqual({
+        deletedCount: 0,
+        deletedFileIds: [],
+        failedFileIds: [snapshot.file_id],
       });
-      await expect(fileMethods.deleteFiles([snapshot.file_id], undefined, options)).rejects.toThrow(
-        'File storage snapshot changed before metadata deletion',
-      );
       const stored = await File.collection.findOne({ file_id: snapshot.file_id });
       expect(stored?.metadata?.codeEnvRefs?.default?.file_id).toBe('late-copy');
+    });
+
+    it('returns both receipt arrays without touching the database for an empty guarded batch', async () => {
+      const find = jest.spyOn(mongoose.models.File, 'find');
+      const remove = jest.spyOn(mongoose.models.File, 'deleteMany');
+      expect(await fileMethods.deleteFiles([], undefined, options)).toEqual({
+        deletedCount: 0,
+        deletedFileIds: [],
+        failedFileIds: [],
+      });
+      expect(find).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it('detaches only confirmed successes after a mixed conditional delete in system scope', async () => {
+      const successful = { ...snapshot, file_id: 'cleanup-success' };
+      await seed();
+      await seed(successful);
+      const ChatProject = mongoose.models.ChatProject as mongoose.Model<IChatProject>;
+      const ids = [snapshot.file_id, successful.file_id];
+      const project = await ChatProject.collection.insertOne({
+        user: user.toString(),
+        tenantId: snapshot.tenantId,
+        file_ids: ids,
+        contextRevision: 4,
+      });
+      const otherTenant = await ChatProject.collection.insertOne({
+        user: user.toString(),
+        tenantId: 'tenant-b',
+        file_ids: ids,
+        contextRevision: 4,
+      });
+      const deleteMany = File.collection.deleteMany.bind(File.collection);
+      jest
+        .spyOn(File.collection, 'deleteMany')
+        .mockImplementationOnce(async (filter, deleteOptions) => {
+          await File.collection.updateOne(
+            { file_id: snapshot.file_id },
+            { $set: { 'metadata.codeEnvRefs.default': { file_id: 'late-copy' } } },
+          );
+          return deleteMany(filter, deleteOptions);
+        });
+      expect(
+        await runAsSystem(() =>
+          fileMethods.deleteFiles(ids, undefined, { ...options, files: [snapshot, successful] }),
+        ),
+      ).toEqual({
+        deletedCount: 1,
+        deletedFileIds: [successful.file_id],
+        failedFileIds: [snapshot.file_id],
+      });
+      expect(await File.collection.findOne({ file_id: successful.file_id })).toBeNull();
+      expect(
+        (await File.collection.findOne({ file_id: snapshot.file_id }))?.metadata?.codeEnvRefs,
+      ).toEqual({ default: { file_id: 'late-copy' } });
+      expect(await ChatProject.collection.findOne({ _id: project.insertedId })).toMatchObject({
+        file_ids: [snapshot.file_id],
+        contextRevision: 5,
+      });
+      expect(await ChatProject.collection.findOne({ _id: otherTenant.insertedId })).toMatchObject({
+        file_ids: ids,
+        contextRevision: 4,
+      });
+    });
+
+    it.each([undefined, null, 'tenant-a'])(
+      'detaches already-absent input only from its snapshot owner and tenant: %s',
+      async (tenantId) => {
+        const ChatProject = mongoose.models.ChatProject as mongoose.Model<IChatProject>;
+        const project = await ChatProject.collection.insertOne({
+          user: user.toString(),
+          ...(tenantId === undefined ? {} : { tenantId }),
+          file_ids: [snapshot.file_id],
+          contextRevision: 1,
+        });
+        const otherTenant = await ChatProject.collection.insertOne({
+          user: user.toString(),
+          tenantId: 'tenant-b',
+          file_ids: [snapshot.file_id],
+          contextRevision: 1,
+        });
+        const otherOwner = await ChatProject.collection.insertOne({
+          user: new mongoose.Types.ObjectId().toString(),
+          tenantId,
+          file_ids: [snapshot.file_id],
+          contextRevision: 1,
+        });
+        expect(
+          await runAsSystem(() =>
+            fileMethods.deleteFiles([snapshot.file_id], undefined, {
+              userId: new mongoose.Types.ObjectId().toString(),
+              files: [{ ...snapshot, tenantId }],
+            }),
+          ),
+        ).toEqual({ deletedCount: 0, deletedFileIds: [snapshot.file_id], failedFileIds: [] });
+        expect(await ChatProject.collection.findOne({ _id: project.insertedId })).toMatchObject({
+          file_ids: [],
+          contextRevision: 2,
+        });
+        for (const inserted of [otherTenant, otherOwner]) {
+          expect(await ChatProject.collection.findOne({ _id: inserted.insertedId })).toMatchObject({
+            file_ids: [snapshot.file_id],
+            contextRevision: 1,
+          });
+        }
+      },
+    );
+
+    it('does not delete a replacement row that was absent from the candidate read', async () => {
+      await seed();
+      const deleteMany = File.collection.deleteMany.bind(File.collection);
+      jest
+        .spyOn(File.collection, 'deleteMany')
+        .mockImplementationOnce(async (filter, deleteOptions) => {
+          await deleteMany({ file_id: snapshot.file_id });
+          await seed();
+          return deleteMany(filter, deleteOptions);
+        });
+      expect(await fileMethods.deleteFiles([snapshot.file_id], undefined, options)).toEqual({
+        deletedCount: 0,
+        deletedFileIds: [],
+        failedFileIds: [snapshot.file_id],
+      });
+      expect(await File.collection.countDocuments({ file_id: snapshot.file_id })).toBe(1);
+    });
+
+    it('propagates operational database failures rather than issuing a receipt', async () => {
+      jest
+        .spyOn(File.collection, 'deleteMany')
+        .mockRejectedValueOnce(new Error('mongo unavailable'));
+      await expect(fileMethods.deleteFiles([snapshot.file_id], undefined, options)).rejects.toThrow(
+        'mongo unavailable',
+      );
+    });
+
+    it('returns the successful receipt when best-effort project cleanup fails', async () => {
+      await seed();
+      jest.spyOn(mongoose.models.ChatProject, 'updateMany').mockImplementationOnce(() => {
+        throw new Error('cleanup failed');
+      });
+      expect(await fileMethods.deleteFiles([snapshot.file_id], undefined, options)).toEqual({
+        deletedCount: 1,
+        deletedFileIds: [snapshot.file_id],
+        failedFileIds: [],
+      });
+      expect(await File.collection.findOne({ file_id: snapshot.file_id })).toBeNull();
+    });
+
+    it('rejects an unknown id before attempting deletion', async () => {
+      const remove = jest.spyOn(mongoose.models.File, 'deleteMany');
+      await expect(fileMethods.deleteFiles(['unknown'], undefined, options)).rejects.toThrow(
+        'Missing file deletion snapshot',
+      );
+      expect(remove).not.toHaveBeenCalled();
     });
 
     it.each([FileSources.openai, FileSources.azure])(
@@ -984,7 +1152,11 @@ describe('File Methods', () => {
       expect(await fileMethods.isFileStorageClean(primary)).toBe(false);
       await expect(
         fileMethods.deleteFiles([snapshot.file_id], undefined, { ...options, files: [vector] }),
-      ).rejects.toThrow('File storage snapshot changed');
+      ).resolves.toEqual({
+        deletedCount: 0,
+        deletedFileIds: [],
+        failedFileIds: [snapshot.file_id],
+      });
     });
   });
 

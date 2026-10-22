@@ -25,6 +25,12 @@ export type FileDeletionSnapshot = Omit<FileStorageCleanupParams, 'userId' | 'em
   metadata?: { embeddedEntities?: string[] };
 };
 
+export type DeleteFilesResult = {
+  deletedCount?: number;
+  deletedFileIds?: string[];
+  failedFileIds?: string[];
+};
+
 export type DeleteFilesOptions = {
   files: FileDeletionSnapshot[];
   userId: string;

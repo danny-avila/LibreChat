@@ -14,6 +14,7 @@ import type {
   ClearFileCodeEnvRefsParams,
   FileStorageCleanupParams,
   DeleteFilesOptions,
+  DeleteFilesResult,
 } from '~/types/file';
 import type { IChatProjectDocument } from '~/types';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
@@ -421,7 +422,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     file_ids: string[],
     user?: string,
     options?: DeleteFilesOptions,
-  ) => Promise<{ deletedCount?: number }>;
+  ) => Promise<DeleteFilesResult>;
   deleteFileByFilter: (filter: FilterQuery<IMongoFile>) => Promise<IMongoFile | null>;
   batchUpdateFiles: (
     updates: Array<{
@@ -1491,22 +1492,32 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    * keeps a dangling reference, bumping the revision of every project it changes.
    */
   async function detachFilesFromProjects(
-    files: Pick<IMongoFile, 'file_id' | 'user'>[],
+    files: { file_id: string; user: { toString(): string }; tenantId?: string | null }[],
   ): Promise<void> {
     const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument> | undefined;
     if (!ChatProject || files.length === 0) {
       return;
     }
-    const idsByUser = new Map<string, string[]>();
+    const idsByScope = new Map<
+      string,
+      { user: string; tenantId: string | null; fileIds: string[] }
+    >();
     for (const file of files) {
-      const user = String(file.user);
-      idsByUser.set(user, [...(idsByUser.get(user) ?? []), file.file_id]);
+      const user = file.user.toString();
+      const tenantId = file.tenantId ?? null;
+      const key = JSON.stringify([user, tenantId]);
+      const scope = idsByScope.get(key);
+      if (scope) {
+        scope.fileIds.push(file.file_id);
+      } else {
+        idsByScope.set(key, { user, tenantId, fileIds: [file.file_id] });
+      }
     }
     try {
       await Promise.all(
-        [...idsByUser].map(([user, fileIds]) =>
+        [...idsByScope.values()].map(({ user, tenantId, fileIds }) =>
           ChatProject.updateMany(
-            { user, file_ids: { $in: fileIds } },
+            { user, $and: [{ tenantId }], file_ids: { $in: fileIds } },
             { $pull: { file_ids: { $in: fileIds } }, $inc: { contextRevision: 1 } },
           ),
         ),
@@ -1570,11 +1581,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     file_ids: string[],
     user?: string,
     options?: DeleteFilesOptions,
-  ): Promise<{ deletedCount?: number }> {
+  ): Promise<DeleteFilesResult> {
     const File = mongoose.models.File as Model<IMongoFile>;
     if (options) {
       const ids = new Set(file_ids);
-      if (ids.size === 0) return { deletedCount: 0 };
+      if (ids.size === 0) return { deletedCount: 0, deletedFileIds: [], failedFileIds: [] };
       const snapshots = new Map(options.files.map((file) => [file.file_id, file]));
       const scopes = [...ids].map((id) => {
         const file = snapshots.get(id);
@@ -1590,22 +1601,36 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         };
       });
       const deleteQuery = { $or: scopes.map(fileStorageCleanupFilter) };
-      const doomed = await File.find(deleteQuery)
-        .select({ file_id: 1, user: 1 })
-        .lean<IMongoFile[]>();
-      const result = await File.deleteMany(deleteQuery);
-      if (result.deletedCount !== ids.size) {
-        const retained = await File.exists({
-          $or: scopes.map((scope) => ({
-            file_id: scope.file_id,
-            user: scope.userId,
-            $and: [{ tenantId: scope.tenantId ?? null }],
-          })),
-        });
-        if (retained) throw new Error('File storage snapshot changed before metadata deletion');
+      const candidates = await File.find(deleteQuery)
+        .select({ _id: 1, file_id: 1, user: 1, tenantId: 1 })
+        .lean<Pick<IMongoFile, '_id' | 'file_id' | 'user' | 'tenantId'>[]>();
+      const result = await File.deleteMany({
+        ...deleteQuery,
+        _id: { $in: candidates.map((file) => file._id) },
+      });
+      const remaining = await File.find({
+        $or: scopes.map((scope) => ({
+          file_id: scope.file_id,
+          user: scope.userId,
+          $and: [{ tenantId: scope.tenantId ?? null }],
+        })),
+      })
+        .select({ file_id: 1 })
+        .lean<Pick<IMongoFile, 'file_id'>[]>();
+      const remainingIds = new Set(remaining.map((file) => file.file_id));
+      const deletedFileIds: string[] = [];
+      const failedFileIds: string[] = [];
+      const detached = [];
+      for (const scope of scopes) {
+        if (remainingIds.has(scope.file_id)) {
+          failedFileIds.push(scope.file_id);
+        } else {
+          deletedFileIds.push(scope.file_id);
+          detached.push({ file_id: scope.file_id, user: scope.userId, tenantId: scope.tenantId });
+        }
       }
-      await detachFilesFromProjects(doomed);
-      return result;
+      await detachFilesFromProjects(detached);
+      return { deletedCount: result.deletedCount, deletedFileIds, failedFileIds };
     }
     if (user) {
       const result = await File.deleteMany({ user });
@@ -1614,7 +1639,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     }
     const deleteQuery: FilterQuery<IMongoFile> = { file_id: { $in: file_ids } };
     const doomed = await File.find(deleteQuery)
-      .select({ file_id: 1, user: 1 })
+      .select({ file_id: 1, user: 1, tenantId: 1 })
       .lean<IMongoFile[]>();
     const result = await File.deleteMany(deleteQuery);
     await detachFilesFromProjects(doomed);
