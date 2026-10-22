@@ -171,7 +171,7 @@ function spellsRecipe(value, need) {
     const recipe = RECIPE_VARIANTS.get(variants[marker]);
     if (!(need.topology === 'any' || recipe === need.topology)) return false;
     if (need.important && !match[1] && !match[2]) return false;
-    if (!dimEnclosing.some((variant) => variant.startsWith('['))) {
+    if (!dimEnclosing.some((variant) => variant.startsWith('[') || /^\*{1,2}$/.test(variant))) {
       return variants
         .filter((_, i) => i !== marker)
         .every((variant) => dimEnclosing.includes(variant));

@@ -211,6 +211,10 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
       errors: [missing('[&_button]:disabled:opacity-50')],
     },
     {
+      code: "cn('*:disabled:opacity-50', 'theme-disabled:*:opacity-100')",
+      errors: [missing('*:disabled:opacity-50')],
+    },
+    {
       code: "cn('[&:disabled]:opacity-40')",
       errors: [missing('[&:disabled]:opacity-40')],
     },
