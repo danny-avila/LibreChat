@@ -1615,6 +1615,8 @@ export const agentsEndpointSchema = baseEndpointSchema
       workspaceAttachments: z
         .object({
           timeoutMs: z.number().int().min(1_000).max(120_000).optional().default(10_000),
+          /** Workspace requests in flight for the turn, across every agent it primes. */
+          concurrency: z.number().int().min(1).max(16).optional().default(3),
         })
         .optional(),
       /** Budget and cache configuration for resolving an agent's linked prompt-group

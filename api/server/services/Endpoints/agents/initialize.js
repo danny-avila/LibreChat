@@ -606,6 +606,7 @@ const initializeClientWithProvider = async ({
       recordImport: db.recordFileWorkspaceImport,
       codeApiMaxRetryWaitMs: appConfig?.endpoints?.agents?.codeApiMaxRetryWaitMs,
       timeoutMs: appConfig?.endpoints?.agents?.workspaceAttachments?.timeoutMs,
+      concurrency: appConfig?.endpoints?.agents?.workspaceAttachments?.concurrency,
     },
   });
 

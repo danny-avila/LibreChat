@@ -1262,6 +1262,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const result = await File.updateOne(
       { file_id, user, tenantId: tenantId ?? null },
       { $set: update },
+      /** Bookkeeping, not a content change: project resource versions include `updatedAt`. */
+      { timestamps: false },
     );
     return result.matchedCount > 0;
   }

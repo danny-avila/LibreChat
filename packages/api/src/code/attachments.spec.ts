@@ -14,7 +14,7 @@ import {
   assignAttachmentNames,
   primeWorkspaceAttachments,
   importWorkspaceAttachments,
-  resetWorkspaceAttachmentGitignoreCache,
+  createWorkspaceAttachmentTurn,
 } from './attachments';
 import { prepareQueuedCodeFileContext } from '~/files/code/queued';
 import { executeWorkspaceTool } from './workspace';
@@ -46,7 +46,13 @@ function createFakeWorker({
   objects = new Map<string, string>(),
   delayMs = 0,
   denyWrites = false,
-}: { objects?: Map<string, string>; delayMs?: number; denyWrites?: boolean } = {}) {
+  truncateReads = false,
+}: {
+  objects?: Map<string, string>;
+  delayMs?: number;
+  denyWrites?: boolean;
+  truncateReads?: boolean;
+} = {}) {
   const files = new Map<string, string>();
   const requests: WorkspaceRequest[] = [];
   const reply = (status: number, body: object) =>
@@ -74,7 +80,8 @@ function createFakeWorker({
         content,
         startLine: 1,
         endLine: content.split('\n').length,
-        truncated: false,
+        truncated: truncateReads,
+        ...(truncateReads ? { nextStartLine: content.split('\n').length + 1 } : {}),
       });
     }
     if (denyWrites) {
@@ -236,7 +243,6 @@ function agentWith(
 }
 
 beforeEach(() => {
-  resetWorkspaceAttachmentGitignoreCache();
   sourceOf.clear();
 });
 
@@ -468,7 +474,7 @@ describe('primeWorkspaceAttachments', () => {
     );
   });
 
-  it('writes the ignore file once per workspace', async () => {
+  it('creates the ignore file once and checks it again on a later turn', async () => {
     const worker = createFakeWorker();
     const { deps } = createDeps(worker);
     const files = ['a.txt', 'b.txt', 'c.txt'].map((name) =>
@@ -478,10 +484,104 @@ describe('primeWorkspaceAttachments', () => {
     const later = remember(chatFile('d.txt', 'd', worker.objects));
     await primeWorkspaceAttachments({ agents: [agentWith(attachedContext(), [later])], deps });
 
-    expect(worker.requests.filter((request) => request.operation === 'write_file')).toHaveLength(1);
+    expect(worker.requests.filter((request) => request.operation === 'write_file')).toHaveLength(2);
+    expect(worker.requests.filter((request) => request.operation === 'read_file')).toHaveLength(1);
     expect(worker.requests.filter((request) => request.operation === 'import_file')).toHaveLength(
       4,
     );
+    expect(worker.files.get('root:.librechat/attachments/.gitignore')).toBe('*\n');
+  });
+
+  it('stops copying once the user changes the ignore file', async () => {
+    const worker = createFakeWorker();
+    const { deps } = createDeps(worker);
+    const first = remember(chatFile('a.txt', 'a', worker.objects));
+    await primeWorkspaceAttachments({ agents: [agentWith(attachedContext(), [first])], deps });
+    worker.files.set('root:.librechat/attachments/.gitignore', '*.log\n');
+
+    const later = remember(chatFile('b.txt', 'b', worker.objects));
+    const agent = agentWith(attachedContext(), [later]);
+    await primeWorkspaceAttachments({ agents: [agent], deps });
+
+    expect(worker.files.has('root:.librechat/attachments/b.txt')).toBe(false);
+    expect(agent.dynamicToolContextMap?.[Tools.execute_code]).toContain(
+      'b.txt (attached by user): the existing .librechat/attachments/.gitignore',
+    );
+  });
+
+  it('treats a truncated read of the ignore file as not ignored', async () => {
+    const worker = createFakeWorker({ truncateReads: true });
+    worker.files.set('root:.librechat/attachments/.gitignore', '*\n');
+    const { deps } = createDeps(worker);
+    const file = remember(chatFile('keep.txt', 'k', worker.objects));
+    const agent = agentWith(attachedContext(), [file]);
+
+    await primeWorkspaceAttachments({ agents: [agent], deps });
+
+    expect(worker.files.has('root:.librechat/attachments/keep.txt')).toBe(false);
+  });
+
+  it('names a converted image for the bytes it holds', async () => {
+    const worker = createFakeWorker();
+    const { deps } = createDeps(worker);
+    const photo = remember(chatFile('photo.heic', 'webp', worker.objects, { type: 'image/webp' }));
+    const agent = agentWith(attachedContext(), [photo]);
+
+    await primeWorkspaceAttachments({ agents: [agent], deps });
+
+    expect(worker.files.get('root:.librechat/attachments/photo.webp')).toBe('webp');
+    expect(agent.dynamicToolContextMap?.[Tools.execute_code]).toContain(
+      '.librechat/attachments/photo.webp (attached by user) (uploaded as photo.heic)',
+    );
+  });
+
+  it('caps workspace requests for the whole turn, across agents', async () => {
+    const worker = createFakeWorker({ delayMs: 20 });
+    const { deps } = createDeps(worker);
+    let inFlight = 0;
+    let peak = 0;
+    const counted: typeof worker.fetchImpl = async (input, init) => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      try {
+        return await worker.fetchImpl(input, init);
+      } finally {
+        inFlight--;
+      }
+    };
+    const firstFiles = ['a', 'b', 'c'].map((name) =>
+      remember(chatFile(`${name}.txt`, name, worker.objects)),
+    );
+    const secondFiles = ['d', 'e', 'f'].map((name) =>
+      remember(chatFile(`${name}.txt`, name, worker.objects)),
+    );
+    const first = agentWith(attachedContext(), firstFiles);
+    const second = { ...agentWith(attachedContext(), secondFiles), id: 'agent-2' };
+
+    await primeWorkspaceAttachments({
+      agents: [first, second],
+      deps: { ...deps, fetchImpl: counted, concurrency: 2 },
+    });
+
+    expect(worker.requests.filter((request) => request.operation === 'import_file')).toHaveLength(
+      6,
+    );
+    expect(peak).toBeLessThanOrEqual(2);
+  });
+
+  it('admits no more tasks than the limit at once', async () => {
+    const turn = createWorkspaceAttachmentTurn(2);
+    let active = 0;
+    let peak = 0;
+    const task = () =>
+      turn.limit(async () => {
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active--;
+      });
+    await Promise.all(Array.from({ length: 7 }, task));
+    expect(peak).toBe(2);
   });
 
   it('keeps an ignore file the user already has when it ignores the folder', async () => {

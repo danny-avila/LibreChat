@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import { Constants as AgentConstants } from '@librechat/agents';
-import { Tools, Constants, getCodeEnvRefForProfile } from 'librechat-data-provider';
+import {
+  Tools,
+  Constants,
+  getCodeEnvRefForProfile,
+  resolveSandboxFilename,
+} from 'librechat-data-provider';
 import type {
   TFile,
   TurnFileConsumers,
@@ -27,18 +32,19 @@ import {
 } from '~/files/code/priming';
 import { codeExecutionAuthHeaders, getCodeExecutionRouteKey } from '~/agents/execution';
 import { isAttachedFileWriteDenied } from '~/agents/hitl/byom';
+import { getSafeErrorMetadata } from '~/utils/errors';
 
 /** Workspace-relative folder chat attachments are copied into. */
 export const WORKSPACE_ATTACHMENTS_DIRECTORY = '.librechat/attachments';
 /** The whole import phase, provisioning included, never holds a turn longer than this. */
 export const WORKSPACE_ATTACHMENT_IMPORT_TIMEOUT_MS = 10_000;
-const WORKSPACE_ATTACHMENT_IMPORT_CONCURRENCY = 3;
+/** Workspace requests in flight for the whole turn, across every agent it primes. */
+export const WORKSPACE_ATTACHMENT_IMPORT_CONCURRENCY = 3;
 const WORKSPACE_ATTACHMENTS_GITIGNORE = `${WORKSPACE_ATTACHMENTS_DIRECTORY}/.gitignore`;
 const MAX_ATTACHMENT_NAME_LENGTH = 120;
 const MAX_EXTENSION_LENGTH = 16;
 /** Conflicting names tried after the first before a file is reported as unavailable. */
 const MAX_CONFLICT_RETRIES = 3;
-const MAX_GITIGNORE_CACHE_ENTRIES = 1_000;
 const QUEUED_CODE_FILES_CONTEXT_KEY = 'queued_code_files';
 const PROGRAMMATIC_TOOL_NAMES: ReadonlySet<string> = new Set([
   AgentConstants.PROGRAMMATIC_TOOL_CALLING,
@@ -46,9 +52,6 @@ const PROGRAMMATIC_TOOL_NAMES: ReadonlySet<string> = new Set([
 ]);
 const UNSAFE_NAME_CHARACTERS: ReadonlySet<string> = new Set('<>:"/\\|?*');
 const RESERVED_WINDOWS_NAME = /^(?:con|prn|aux|nul|com\d|lpt\d)(?:\.|$)/i;
-
-/** Workspace targets that already hold the ignore file, so a busy chat writes it once. */
-const gitignoreTargets = new Set<string>();
 
 export type WorkspaceAttachmentUnavailableReason =
   | 'unsupported'
@@ -108,6 +111,8 @@ export interface WorkspaceAttachmentDeps {
   codeApiMaxRetryWaitMs?: number;
   fetchImpl?: CodeBridgeFetch;
   timeoutMs?: number;
+  /** Workspace requests in flight for the turn; defaults to three. */
+  concurrency?: number;
 }
 
 export interface WorkspaceAttachmentCandidate {
@@ -271,22 +276,47 @@ function classifyImportFailure(error: unknown): WorkspaceAttachmentUnavailableRe
   return 'failed';
 }
 
-/** Runs `task` over `items` with at most `limit` in flight, preserving input order. */
-async function mapConcurrent<T, R>(
-  items: readonly T[],
-  limit: number,
-  task: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    while (next < items.length) {
-      const index = next++;
-      results[index] = await task(items[index]);
+/** Admits at most `limit` tasks at once; a finishing task hands its slot to the next waiter. */
+function createLimiter(limit: number): <T>(task: () => Promise<T>) => Promise<T> {
+  let active = 0;
+  const waiting: Array<() => void> = [];
+  return async <T>(task: () => Promise<T>): Promise<T> => {
+    if (active >= limit) {
+      await new Promise<void>((resolve) => waiting.push(resolve));
+    } else {
+      active++;
+    }
+    try {
+      return await task();
+    } finally {
+      const next = waiting.shift();
+      if (next) {
+        next();
+      } else {
+        active--;
+      }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
+}
+
+/**
+ * What one turn shares across the agents it primes: copies and ignore checks already started,
+ * so each file and each folder is handled once, and one cap on concurrent workspace requests.
+ */
+export interface WorkspaceAttachmentTurn {
+  imports: Map<string, Promise<WorkspaceAttachmentOutcome>>;
+  ignores: Map<string, Promise<WorkspaceAttachmentUnavailableReason | null>>;
+  limit: <T>(task: () => Promise<T>) => Promise<T>;
+}
+
+export function createWorkspaceAttachmentTurn(
+  concurrency: number = WORKSPACE_ATTACHMENT_IMPORT_CONCURRENCY,
+): WorkspaceAttachmentTurn {
+  return {
+    imports: new Map(),
+    ignores: new Map(),
+    limit: createLimiter(Math.max(1, Math.floor(concurrency))),
+  };
 }
 
 /** Resolves when `signal` aborts; never rejects, so it can bound a race. */
@@ -318,14 +348,13 @@ export async function importWorkspaceAttachments({
   candidates,
   deps,
   signal,
-  shared,
+  turn = createWorkspaceAttachmentTurn(deps.concurrency),
 }: {
   context: CodeExecutionContext;
   candidates: readonly WorkspaceAttachmentCandidate[];
   deps: WorkspaceAttachmentDeps;
   signal: AbortSignal;
-  /** Imports already started by another agent of this turn, so a file is copied once. */
-  shared?: Map<string, Promise<WorkspaceAttachmentOutcome>>;
+  turn?: WorkspaceAttachmentTurn;
 }): Promise<Map<string, WorkspaceAttachmentOutcome>> {
   const outcomes = new Map<string, WorkspaceAttachmentOutcome>();
   const workspace = context.codeWorkspace;
@@ -349,31 +378,45 @@ export async function importWorkspaceAttachments({
   );
   const pending = ordered.map((candidate, index) => ({
     candidate,
-    name:
-      recordedNames[index] ?? claimAttachmentName(taken, toAttachmentName(candidate.file.filename)),
+    name: recordedNames[index] ?? claimAttachmentName(taken, getAttachmentBaseName(candidate.file)),
   }));
 
-  let gitignore: Promise<WorkspaceAttachmentUnavailableReason | null> | undefined;
-  const ensureIgnored = (): Promise<WorkspaceAttachmentUnavailableReason | null> =>
-    (gitignore ??= ensureAttachmentsIgnored({ target, deps, signal }));
-
-  await mapConcurrent(pending, WORKSPACE_ATTACHMENT_IMPORT_CONCURRENCY, async (item) => {
-    const sharedKey = JSON.stringify([
-      context.baseUrl,
-      context.bridgeWorkerId ?? null,
-      target.workspaceId,
-      target.workspaceInstanceId ?? null,
-      item.candidate.file.file_id,
-    ]);
-    let outcome = shared?.get(sharedKey);
-    if (outcome == null) {
-      outcome = importOne({ ...item, target, taken, deps, signal, ensureIgnored });
-      shared?.set(sharedKey, outcome);
+  const workspaceKey = JSON.stringify([
+    context.baseUrl,
+    context.bridgeWorkerId ?? null,
+    target.workspaceId,
+    target.workspaceInstanceId ?? null,
+  ]);
+  /** Checked once per turn and folder, never cached longer: the user may edit the file. */
+  const ensureIgnored = (): Promise<WorkspaceAttachmentUnavailableReason | null> => {
+    let check = turn.ignores.get(workspaceKey);
+    if (check == null) {
+      check = ensureAttachmentsIgnored({ target, deps, signal });
+      turn.ignores.set(workspaceKey, check);
     }
-    outcomes.set(item.candidate.file.file_id, await outcome);
-  });
-  await gitignore;
+    return check;
+  };
+
+  await Promise.all(
+    pending.map(async (item) => {
+      const importKey = JSON.stringify([workspaceKey, item.candidate.file.file_id]);
+      let outcome = turn.imports.get(importKey);
+      if (outcome == null) {
+        outcome = turn.limit(() =>
+          importOne({ ...item, target, taken, deps, signal, ensureIgnored }),
+        );
+        turn.imports.set(importKey, outcome);
+      }
+      outcomes.set(item.candidate.file.file_id, await outcome);
+    }),
+  );
   return outcomes;
+}
+
+/** The portable name for a file's stored bytes: a converted image takes its stored type's
+ *  extension, as the sandbox copy does, so tools decode what is actually there. */
+function getAttachmentBaseName(file: TFile): string {
+  return toAttachmentName(resolveSandboxFilename(file.filename, file.type));
 }
 
 /** The name an earlier turn copied this file under, kept so its path never moves. */
@@ -466,7 +509,7 @@ async function importOne({
         if (reason !== 'conflict' || attempt >= MAX_CONFLICT_RETRIES || signal.aborted) {
           throw error;
         }
-        attemptName = claimAttachmentName(taken, toAttachmentName(file.filename), 2);
+        attemptName = claimAttachmentName(taken, getAttachmentBaseName(file), 2);
       }
     }
   } catch (error) {
@@ -579,7 +622,7 @@ async function persistImport({
   } catch (error) {
     logger.warn(
       `[workspaceAttachments] Could not record the import of file ${file.file_id}; it is resent next turn`,
-      error,
+      getSafeErrorMetadata(error),
     );
   }
 }
@@ -612,16 +655,6 @@ async function ensureAttachmentsIgnored({
   deps: WorkspaceAttachmentDeps;
   signal: AbortSignal;
 }): Promise<WorkspaceAttachmentUnavailableReason | null> {
-  const cacheKey = JSON.stringify([
-    deps.userId,
-    target.context.baseUrl,
-    target.context.bridgeWorkerId ?? null,
-    target.workspaceId,
-    target.workspaceInstanceId ?? null,
-  ]);
-  if (gitignoreTargets.has(cacheKey)) {
-    return null;
-  }
   const workspace = {
     workspaceId: target.workspaceId,
     ...(target.workspaceInstanceId ? { workspaceInstanceId: target.workspaceInstanceId } : {}),
@@ -640,7 +673,10 @@ async function ensureAttachmentsIgnored({
     });
   } catch (error) {
     if (classifyImportFailure(error) !== 'conflict') {
-      logger.warn('[workspaceAttachments] Could not create the attachments .gitignore', error);
+      logger.warn(
+        '[workspaceAttachments] Could not create the attachments .gitignore',
+        getSafeErrorMetadata(error),
+      );
       return classifyImportFailure(error);
     }
     if (target.context.codeWorkspace?.operations.includes('read_file') !== true) {
@@ -657,24 +693,23 @@ async function ensureAttachmentsIgnored({
           maxLines: 200,
         },
       });
-      if (existing.operation !== 'read_file' || !ignoresWholeFolder(existing.content)) {
+      /** A rule past the part read could re-include a file, so only a whole read counts. */
+      if (
+        existing.operation !== 'read_file' ||
+        existing.truncated ||
+        !ignoresWholeFolder(existing.content)
+      ) {
         return 'not_ignored';
       }
     } catch (readError) {
-      logger.warn('[workspaceAttachments] Could not read the attachments .gitignore', readError);
+      logger.warn(
+        '[workspaceAttachments] Could not read the attachments .gitignore',
+        getSafeErrorMetadata(readError),
+      );
       return classifyImportFailure(readError);
     }
   }
-  if (gitignoreTargets.size >= MAX_GITIGNORE_CACHE_ENTRIES) {
-    gitignoreTargets.delete(gitignoreTargets.values().next().value!);
-  }
-  gitignoreTargets.add(cacheKey);
   return null;
-}
-
-/** Test seam: forget which workspaces already hold the ignore file. */
-export function resetWorkspaceAttachmentGitignoreCache(): void {
-  gitignoreTargets.clear();
 }
 
 /**
@@ -817,7 +852,7 @@ async function provisionQueued({
       (error: unknown) => {
         logger.warn(
           `[workspaceAttachments] Provisioning attachments for agent ${agent.id} failed`,
-          error,
+          getSafeErrorMetadata(error),
         );
         return [];
       },
@@ -866,6 +901,7 @@ export function createWorkspaceAttachmentPrimer({
   options?: WorkspaceAttachmentPrimeOptions,
 ) => Promise<void> {
   const primed = new WeakSet<WorkspaceAttachmentAgent>();
+  const turn = createWorkspaceAttachmentTurn(deps.concurrency);
   return (agents, options = {}) => {
     const pending = agents.filter(
       (agent): agent is WorkspaceAttachmentAgent => agent != null && !primed.has(agent),
@@ -878,6 +914,7 @@ export function createWorkspaceAttachmentPrimer({
       toolContexts: options.toolContexts ?? toolContexts,
       provisionFiles: options.provisionFiles ?? getProvisionFiles?.(),
       signal: options.signal,
+      turn,
       deps,
     });
   };
@@ -896,11 +933,14 @@ export async function primeWorkspaceAttachments({
   provisionFiles,
   signal,
   deps,
+  turn = createWorkspaceAttachmentTurn(deps.concurrency),
 }: {
   agents: ReadonlyArray<WorkspaceAttachmentAgent | null | undefined>;
   toolContexts?: ReadonlyMap<string, WorkspaceAttachmentToolContext>;
   provisionFiles?: ProvisionFiles;
   signal?: AbortSignal;
+  /** Shared with later priming of the same turn, such as a lazily selected subagent. */
+  turn?: WorkspaceAttachmentTurn;
   deps: WorkspaceAttachmentDeps;
 }): Promise<void> {
   const eligibleAgents = agents.flatMap((agent) =>
@@ -914,7 +954,6 @@ export async function primeWorkspaceAttachments({
   }
   signal?.throwIfAborted();
   const deadline = new AbortController();
-  const shared = new Map<string, Promise<WorkspaceAttachmentOutcome>>();
   const timeoutMs = deps.timeoutMs ?? WORKSPACE_ATTACHMENT_IMPORT_TIMEOUT_MS;
   const timer = setTimeout(() => deadline.abort(), timeoutMs);
   const abortOnTurn = () => deadline.abort(signal?.reason);
@@ -929,7 +968,7 @@ export async function primeWorkspaceAttachments({
           provisionFiles,
           turnSignal: signal,
           deadline: deadline.signal,
-          shared,
+          turn,
           deps,
         }).catch((error: unknown) => {
           if (signal?.aborted) {
@@ -938,7 +977,7 @@ export async function primeWorkspaceAttachments({
           /** The primed note still stands; only the copy is skipped this turn. */
           logger.error(
             `[workspaceAttachments] Preparing attachments for agent ${agent.id} failed`,
-            error,
+            getSafeErrorMetadata(error),
           );
         }),
       ),
@@ -957,7 +996,7 @@ async function primeAgentAttachments({
   provisionFiles,
   turnSignal,
   deadline,
-  shared,
+  turn,
   deps,
 }: {
   agent: WorkspaceAttachmentAgent;
@@ -966,7 +1005,7 @@ async function primeAgentAttachments({
   provisionFiles?: ProvisionFiles;
   turnSignal?: AbortSignal;
   deadline: AbortSignal;
-  shared: Map<string, Promise<WorkspaceAttachmentOutcome>>;
+  turn: WorkspaceAttachmentTurn;
   deps: WorkspaceAttachmentDeps;
 }): Promise<void> {
   const primed: WorkspaceAttachmentCandidate[] = agent.codeContextEntries ?? [];
@@ -1010,7 +1049,7 @@ async function primeAgentAttachments({
       candidates: importable,
       deps,
       signal: deadline,
-      shared,
+      turn,
     });
     for (const [fileId, outcome] of imported) {
       outcomes.set(fileId, outcome);

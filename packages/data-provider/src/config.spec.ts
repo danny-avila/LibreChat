@@ -264,11 +264,17 @@ describe('workspace attachment configuration', () => {
     expect(agentsEndpointSchema.parse({}).workspaceAttachments).toBeUndefined();
     expect(agentsEndpointSchema.parse({ workspaceAttachments: {} }).workspaceAttachments).toEqual({
       timeoutMs: 10_000,
+      concurrency: 3,
     });
     expect(
       agentsEndpointSchema.parse({ workspaceAttachments: { timeoutMs: 30_000 } })
         .workspaceAttachments,
-    ).toEqual({ timeoutMs: 30_000 });
+    ).toEqual({ timeoutMs: 30_000, concurrency: 3 });
+    for (const concurrency of [0, 17, 1.5]) {
+      expect(
+        agentsEndpointSchema.safeParse({ workspaceAttachments: { concurrency } }).success,
+      ).toBe(false);
+    }
     for (const timeoutMs of [0, 999, 120_001, 1.5]) {
       expect(agentsEndpointSchema.safeParse({ workspaceAttachments: { timeoutMs } }).success).toBe(
         false,
