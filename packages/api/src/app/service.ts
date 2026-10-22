@@ -351,6 +351,8 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
   clearAppConfigCache: () => Promise<void>;
   clearOverrideCache: (tenantId?: string) => Promise<void>;
+  /** The TTL in ms this service caches per-principal merged configs for. */
+  overrideCacheTtl: number;
 } {
   const {
     loadBaseConfig,
@@ -658,6 +660,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     getAppConfig,
     clearAppConfigCache,
     clearOverrideCache,
+    overrideCacheTtl,
   };
 }
 
