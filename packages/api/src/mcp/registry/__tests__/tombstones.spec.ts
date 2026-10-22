@@ -4,6 +4,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { CacheKeys, PrincipalType } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { Response } from 'express';
+import type { MCPOAuthFlowServer } from '~/mcp/oauth/target';
 import type { GetAppConfigOptions } from '~/app/service';
 import type { ServerRequest } from '~/types/http';
 import type * as t from '~/mcp/types';
@@ -22,6 +23,7 @@ type AdminConfigHandlers = ReturnType<typeof import('~/admin/config').createAdmi
 
 const GITHUB_URL = 'https://github.example.com/mcp';
 const DOCS_HEADERS = { Authorization: 'Bearer {{DOCS_TOKEN}}', 'X-Team': 'core' };
+const DOCS_OAUTH_HEADERS = { 'X-Client-Key': 'docs-client', 'X-Team': 'core' };
 const YAML_SERVERS: t.MCPServers = {
   github: { type: 'streamable-http', url: GITHUB_URL },
   docs: {
@@ -29,6 +31,7 @@ const YAML_SERVERS: t.MCPServers = {
     url: 'https://docs.example.com/mcp',
     timeout: 30000,
     headers: DOCS_HEADERS,
+    oauth_headers: DOCS_OAUTH_HEADERS,
   },
   local: { type: 'stdio', command: 'node', args: ['tools.js'] },
 };
@@ -433,5 +436,72 @@ describe('the principal config read behind a hiding decision', () => {
     await registry.resolveHiddenServerNames({ userId: outsiderId, role: 'USER' });
 
     expect(findUser).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('an MCP OAuth flow step resolves its server in the principal config', () => {
+  type OAuthTarget = typeof import('~/mcp/oauth/target');
+  type OAuthCleanup = typeof import('~/mcp/oauth/cleanup');
+  let resolveMCPOAuthTarget: OAuthTarget['resolveMCPOAuthTarget'];
+  let getMCPServerGeneration: OAuthCleanup['getMCPServerGeneration'];
+
+  beforeAll(async () => {
+    ({ resolveMCPOAuthTarget } = await import('~/mcp/oauth/target'));
+    ({ getMCPServerGeneration } = await import('~/mcp/oauth/cleanup'));
+  });
+
+  /** As the OAuth initiation and callback routes wire it. */
+  function resolveDocsFor(userId: string, flow: MCPOAuthFlowServer) {
+    return resolveMCPOAuthTarget(
+      { serverName: 'docs', flow, principal: { userId } },
+      { getAppConfig, getServerConfigs: (principal) => catalogFor(principal.userId), registry },
+    );
+  }
+
+  async function admittedFlow(userId: string): Promise<MCPOAuthFlowServer> {
+    const admitted = (await catalogFor(userId)).docs;
+    return {
+      serverName: 'docs',
+      serverUrl: admitted.url,
+      serverGeneration: getMCPServerGeneration(admitted),
+    };
+  }
+
+  it('ends a flow admitted before a profile hid the server, for that principal only', async () => {
+    const flow = await admittedFlow(memberId);
+    await expect(resolveDocsFor(memberId, flow)).resolves.toMatchObject({ ok: true });
+
+    await tombstone(PrincipalType.USER, memberId, 'mcpServers.docs');
+    try {
+      await expect(resolveDocsFor(memberId, flow)).resolves.toEqual({
+        ok: false,
+        error: { code: 'server_not_found' },
+      });
+      await expect(resolveDocsFor(outsiderId, flow)).resolves.toMatchObject({ ok: true });
+    } finally {
+      await restore(PrincipalType.USER, memberId, 'mcpServers.docs');
+    }
+  });
+
+  it("sends the principal's OAuth headers, never librechat.yaml's, once a profile removed one", async () => {
+    const flow = await admittedFlow(memberId);
+    /** A flow started before flows recorded a generation or a header snapshot. */
+    const legacyFlow = { serverName: 'docs', serverUrl: flow.serverUrl };
+
+    await tombstone(PrincipalType.USER, memberId, 'mcpServers.docs.oauth_headers.X-Client-Key');
+    try {
+      const member = await resolveDocsFor(memberId, legacyFlow);
+      const outsider = await resolveDocsFor(outsiderId, legacyFlow);
+
+      expect(member.ok && member.value.oauthHeaders).toEqual({ 'X-Team': 'core' });
+      expect(outsider.ok && outsider.value.oauthHeaders).toEqual(DOCS_OAUTH_HEADERS);
+      /** A flow admitted with the header belongs to a definition the member no longer has. */
+      await expect(resolveDocsFor(memberId, flow)).resolves.toEqual({
+        ok: false,
+        error: { code: 'server_changed' },
+      });
+    } finally {
+      await restore(PrincipalType.USER, memberId, 'mcpServers.docs.oauth_headers.X-Client-Key');
+    }
   });
 });
