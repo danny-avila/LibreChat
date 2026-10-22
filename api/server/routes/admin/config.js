@@ -1,5 +1,5 @@
 const express = require('express');
-const { createAdminConfigHandlers } = require('@librechat/api');
+const { createAdminConfigHandlers, rejectUnsafeConfigKeys } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
   hasCapability,
@@ -8,7 +8,11 @@ const {
   hasAnyConfigReadAccess,
   getReadableConfigSections,
 } = require('~/server/middleware/roles/capabilities');
-const { getAppConfig, invalidateConfigCaches } = require('~/server/services/Config');
+const {
+  getAppConfig,
+  overrideCacheTtl,
+  invalidateConfigCaches,
+} = require('~/server/services/Config');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
 
@@ -19,8 +23,7 @@ const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const handlers = createAdminConfigHandlers({
   listAllConfigs: db.listAllConfigs,
   findConfigByPrincipal: db.findConfigByPrincipal,
-  upsertConfig: db.upsertConfig,
-  patchConfigFields: db.patchConfigFields,
+  writeConfigDocument: db.writeConfigDocument,
   tombstoneConfigField: db.tombstoneConfigField,
   unsetConfigField: db.unsetConfigField,
   deleteConfig: db.deleteConfig,
@@ -33,17 +36,20 @@ const handlers = createAdminConfigHandlers({
   invalidateConfigCaches,
   recordAuditEntry: db.recordAuditEntry,
   auditFailClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
+  overrideCacheTtlMs: overrideCacheTtl,
 });
 
-router.use(requireJwtAuth, requireAdminAccess);
+router.use(requireJwtAuth, requireAdminAccess, rejectUnsafeConfigKeys);
 
 router.get('/', handlers.listConfigs);
+router.get('/meta', handlers.getConfigMeta);
 router.get('/base', handlers.getBaseConfig);
 router.get('/:principalType/:principalId', handlers.getConfig);
 router.put('/:principalType/:principalId', handlers.upsertConfigOverrides);
 router.patch('/:principalType/:principalId/fields', handlers.patchConfigField);
 router.post('/:principalType/:principalId/fields/tombstone', handlers.tombstoneConfigField);
 router.delete('/:principalType/:principalId/fields', handlers.deleteConfigField);
+router.post('/:principalType/:principalId/changes', handlers.applyConfigChanges);
 router.delete('/:principalType/:principalId', handlers.deleteConfigOverrides);
 router.patch('/:principalType/:principalId/active', handlers.toggleConfig);
 

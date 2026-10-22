@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.3.17
+version: 1.3.18
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -1511,6 +1511,14 @@ endpoints:
 # # https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/assistants_endpoint
 
 # Web Search Configuration (optional)
+# Keys and URLs are usually `${ENV_VAR}` references. A literal value, or a key saved
+# through the admin config API (encrypted at rest), is used as a system credential.
+# A key reaches a URL written in config only when both are set in the same place
+# (this file, or one admin config profile), and a later profile that changes, blanks
+# or removes that URL without storing the key again drops it. An environment key or
+# a user's own key never reaches a URL written in config. Reference both from the
+# environment, or set both together. The admin config API asks for a stored key
+# again when a write changes or removes the URL beside it.
 # webSearch:
 #   # Jina Reranking Configuration
 #   jinaApiKey: '${JINA_API_KEY}'  # Your Jina API key

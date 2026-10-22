@@ -657,6 +657,7 @@ describe('scheduled resource bearer with real MCP SDK and HTTP', () => {
     const manager = new MCPManager();
     const registry = jest.spyOn(MCPServersRegistry, 'getInstance').mockReturnValue({
       isAppServerConfig: async () => false,
+      isHiddenFromPrincipal: async () => false,
       resolveAllowlists: async () => ({
         allowedDomains: ['127.0.0.1'],
         allowedAddresses: [`127.0.0.1:${server.port}`],
@@ -783,6 +784,7 @@ describe('scheduled resource bearer with real MCP SDK and HTTP', () => {
       const upstreamTokenProvider = jest.fn(async () => ({ access_token: 'browser-only' }));
       const registry = jest.spyOn(MCPServersRegistry, 'getInstance').mockReturnValue({
         isAppServerConfig: async () => false,
+        isHiddenFromPrincipal: async () => false,
         resolveAllowlists: async () => ({
           allowedDomains: ['127.0.0.1'],
           allowedAddresses: [`127.0.0.1:${server.port}`],
@@ -874,6 +876,7 @@ describe('scheduled resource bearer with real MCP SDK and HTTP', () => {
       const manager = new MCPManager();
       const registry = jest.spyOn(MCPServersRegistry, 'getInstance').mockReturnValue({
         isAppServerConfig: async () => false,
+        isHiddenFromPrincipal: async () => false,
         resolveAllowlists: async () => ({
           allowedDomains: ['127.0.0.1'],
           allowedAddresses: [`127.0.0.1:${server.port}`],
@@ -984,6 +987,7 @@ describe('scheduled resource bearer with real MCP SDK and HTTP', () => {
     const manager = new MCPManager();
     const registry = jest.spyOn(MCPServersRegistry, 'getInstance').mockReturnValue({
       isAppServerConfig: async () => false,
+      isHiddenFromPrincipal: async () => false,
       resolveAllowlists: async () => ({
         allowedDomains: ['127.0.0.1'],
         allowedAddresses: [`127.0.0.1:${server.port}`],
@@ -1030,6 +1034,7 @@ describe('scheduled resource bearer with real MCP SDK and HTTP', () => {
     const manager = new MCPManager();
     const registry = jest.spyOn(MCPServersRegistry, 'getInstance').mockReturnValue({
       isAppServerConfig: async () => false,
+      isHiddenFromPrincipal: async () => false,
       resolveAllowlists: async () => ({
         allowedDomains: ['127.0.0.1'],
         allowedAddresses: [`127.0.0.1:${server.port}`],

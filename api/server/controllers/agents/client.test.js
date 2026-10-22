@@ -5672,7 +5672,7 @@ describe('AgentClient - titleConvo', () => {
       });
 
       // Verify formatInstructionsForContext was called with correct server names
-      expect(mockFormatInstructions).toHaveBeenCalledWith(['server1', 'server2'], {});
+      expect(mockFormatInstructions).toHaveBeenCalledWith(['server1', 'server2'], {}, mockReq.user);
 
       // Verify the instructions do NOT contain [object Promise]
       expect(client.options.agent.instructions).not.toContain('[object Promise]');
@@ -5754,6 +5754,7 @@ describe('AgentClient - titleConvo', () => {
       expect(mockFormatInstructions).toHaveBeenCalledWith(
         ['ephemeral-server1', 'ephemeral-server2'],
         {},
+        mockReq.user,
       );
 
       // Verify no [object Promise] in instructions
