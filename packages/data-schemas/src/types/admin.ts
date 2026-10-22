@@ -242,11 +242,37 @@ export type AdminConfigChangeErrorResponse = {
  * - `sectionAllowlist`: writes to a top-level key `configSchema` does not define are rejected,
  *   and stored ones are ignored at merge.
  * - `readFilteredWriteResponses`: write responses are filtered by the caller's read access.
+ * - `webSearchStoredKeys`: web search uses a key stored in config (encrypted by the admin API,
+ *   or a `librechat.yaml` literal) at runtime, not only a `${VAR}` reference, and stores
+ *   `webSearch.keenableApiKey` encrypted like the other web search keys. A stored key reaches a
+ *   URL stored in config only when the same layer set both; it is kept over an inherited
+ *   `${VAR}` or default URL. A later layer that changes, blanks or removes the paired URL drops
+ *   the key, and a write that changes or removes the URL beside a stored key must enter the key
+ *   again (400 `CONFIG_SECRET_REENTRY_REQUIRED`).
+ * - `expectedRevision`: every config document a response returns carries `revision`
+ *   (`<id>:<configVersion>`), and a write with nothing to apply answers `{ message, revision }`.
+ *   PUT, PATCH `/fields`, POST `/fields/tombstone` and PATCH `/active` take `expectedRevision` in
+ *   the body, and both DELETE routes take it in the query: `absent` (create-only) or a returned
+ *   revision. A mismatch answers 409 `CONFIG_VERSION_CONFLICT` with `currentRevision` and changes
+ *   nothing; a malformed value answers 400 `INVALID_EXPECTED_REVISION`. Without one, a write that
+ *   loses a race re-reads the document and applies itself again, answering 409 after 3 attempts.
+ * - `prunesEmptyParents`: a field delete or tombstone also removes the objects it leaves empty,
+ *   stopping at arrays (whose elements stay), so no `{}` shell remains; tombstones elsewhere stay.
+ *   A document holding only such shells counts as empty for assign-only lifecycle calls.
+ * - `awaitedInvalidation`: a write answers only after this server has cleared its config caches
+ *   (and, with Redis, told the other instances to clear theirs); GET `/base` merges the stored
+ *   overrides rather than a cached merge, and a merge read before a clear is never cached. A read
+ *   after a write's response therefore shows it; another instance shows it once the broadcast
+ *   arrives, or, without Redis, within `limits.overrideCacheTtlMs`.
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'
   | 'sectionAllowlist'
-  | 'readFilteredWriteResponses';
+  | 'readFilteredWriteResponses'
+  | 'webSearchStoredKeys'
+  | 'expectedRevision'
+  | 'prunesEmptyParents'
+  | 'awaitedInvalidation';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
 

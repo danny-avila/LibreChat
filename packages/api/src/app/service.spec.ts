@@ -1410,6 +1410,74 @@ describe('createAppConfigService', () => {
       });
     });
 
+    /** An async store (Redis) can land a write after the delete of a clear that overtook it. */
+    describe('when the cache write lands after the clear', () => {
+      const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+      function holdNextSet(cache: ReturnType<typeof createMockCache>, prefix: string) {
+        let release: (() => void) | undefined;
+        cache.set.mockImplementationOnce((setKey, value) => {
+          expect(setKey.startsWith(prefix)).toBe(true);
+          return new Promise((resolve) => {
+            release = () => {
+              cache._store.set(`app_config:${setKey}`, value);
+              resolve(undefined);
+            };
+          });
+        });
+        return async () => {
+          while (!release) {
+            await tick();
+          }
+          return release;
+        };
+      }
+
+      it('removes the overtaken base so the next read reloads', async () => {
+        const deps = createDeps({
+          loadBaseConfig: jest
+            .fn()
+            .mockResolvedValueOnce({ x: 'first' })
+            .mockResolvedValueOnce({ x: 'stale' })
+            .mockResolvedValue({ x: 'fresh' }),
+        });
+        const service = createAppConfigService(deps);
+        await service.getAppConfig({ baseOnly: true });
+        await service.clearAppConfigCache();
+        const held = holdNextSet(deps._cache, '_BASE_');
+
+        const staleRead = service.getAppConfig({ baseOnly: true });
+        const release = await held();
+        await service.clearAppConfigCache();
+        release();
+
+        expect(((await staleRead) as TestConfig).x).toBe('stale');
+        expect(deps._cache._store.has('app_config:_BASE_')).toBe(false);
+        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).x).toBe('fresh');
+      });
+
+      it('removes the overtaken merge so the next read merges again', async () => {
+        const deps = createDeps({
+          getApplicableConfigs: jest
+            .fn()
+            .mockResolvedValueOnce([{ priority: 10, overrides: { x: 'stale' }, isActive: true }])
+            .mockResolvedValue([{ priority: 10, overrides: { x: 'fresh' }, isActive: true }]),
+        });
+        const service = createAppConfigService(deps);
+        await service.getAppConfig({ baseOnly: true });
+        const held = holdNextSet(deps._cache, '_OVERRIDE_:__default__:global:ADMIN:');
+
+        const staleRead = service.getAppConfig({ role: 'ADMIN' });
+        const release = await held();
+        await service.clearOverrideCache();
+        release();
+
+        expect(((await staleRead) as TestConfig).x).toBe('stale');
+        expect(((await service.getAppConfig({ role: 'ADMIN' })) as TestConfig).x).toBe('fresh');
+        expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
+      });
+    });
+
     it('does not cache a merge built on the base it read before the clear', async () => {
       let releasePrincipals: (principals: unknown[]) => void = () => undefined;
       const principals = [{ principalType: 'role', principalId: 'USER' }];

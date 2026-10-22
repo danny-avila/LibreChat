@@ -1,6 +1,7 @@
 import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
+import type { ConfigRecord } from '~/app/store';
 import type { IConfig } from '~/types';
 import { createConfigMethods } from './config';
 import configSchema from '~/schema/config';
@@ -713,16 +714,34 @@ describe('key encoding at rest', () => {
     $top: { 'a.b': '$value.stays' },
   };
 
-  it('stores no dotted or `$` keys and reads them back decoded', async () => {
+  /** Makes the engine refuse a dotted or `$` field name anywhere in a stored value, as DocumentDB, Cosmos or MongoDB 4.4 may. */
+  function refuseRawKeyNames() {
+    const collection = mongoose.models.Config.collection;
+    const findOneAndUpdate = collection.findOneAndUpdate.bind(collection);
+    const hasRawName = (value: unknown) =>
+      collectKeys(value).some((key) => key.includes('.') || key.startsWith('$'));
+    return jest.spyOn(collection, 'findOneAndUpdate').mockImplementation((async (
+      filter: Record<string, unknown>,
+      update: { $set?: Record<string, unknown>; $setOnInsert?: Record<string, unknown> },
+      options: Record<string, unknown>,
+    ) => {
+      if (hasRawName(update.$set?.overrides) || hasRawName(update.$setOnInsert?.overrides)) {
+        throw new mongoose.mongo.MongoServerError({
+          ok: 0,
+          code: 57,
+          errmsg: "The dotted field 'us.a.b' in 'overrides' is not valid for storage.",
+        });
+      }
+      return findOneAndUpdate(filter, update as never, options);
+    }) as unknown as typeof collection.findOneAndUpdate);
+  }
+
+  it('stores record keys raw where the engine accepts them, as servers before the encoding read them', async () => {
     await methods.upsertConfig(PrincipalType.ROLE, 'enc', PrincipalModel.ROLE, dotted as never, 10);
 
     const stored = await raw().findOne({ principalId: 'enc' });
-    const keys = collectKeys(stored!.overrides);
-    expect(keys.length).toBeGreaterThan(0);
-    expect(keys.filter((key) => key.includes('.') || key.startsWith('$'))).toEqual([]);
-    expect(stored!.keyEncoding).toBe(1);
-    expect(stored!.overrides.$top).toBeUndefined();
-    expect(stored!.overrides['%24top']).toEqual({ 'a%2Eb': '$value.stays' });
+    expect(stored!.overrides).toEqual(dotted);
+    expect(stored!.keyEncoding).toBeUndefined();
 
     const read = await methods.findConfigByPrincipal(PrincipalType.ROLE, 'enc');
     expect(read!.overrides).toEqual(dotted);
@@ -732,7 +751,79 @@ describe('key encoding at rest', () => {
     ).toEqual(dotted);
   });
 
-  it('keeps encoding when a field under a dotted record key is patched by segments of its parent', async () => {
+  it('encodes keys once the engine refuses a raw key name, and reads them back decoded', async () => {
+    const refusing = createConfigMethods(mongoose);
+    const findOneAndUpdate = refuseRawKeyNames();
+
+    await refusing.upsertConfig(
+      PrincipalType.ROLE,
+      'enc',
+      PrincipalModel.ROLE,
+      dotted as never,
+      10,
+    );
+
+    const stored = await raw().findOne({ principalId: 'enc' });
+    expect(
+      collectKeys(stored!.overrides).filter((key) => key.includes('.') || key.startsWith('$')),
+    ).toEqual([]);
+    expect(stored!.keyEncoding).toBe(1);
+    expect(stored!.overrides['%24top']).toEqual({ 'a%2Eb': '$value.stays' });
+    expect((await refusing.findConfigByPrincipal(PrincipalType.ROLE, 'enc'))!.overrides).toEqual(
+      dotted,
+    );
+
+    findOneAndUpdate.mockClear();
+    const patched = await refusing.patchConfigFields(
+      PrincipalType.ROLE,
+      'enc',
+      PrincipalModel.ROLE,
+      {
+        'endpoints.bedrock.inferenceProfiles': { 'eu.meta.llama': 'arn:eu' },
+      },
+    );
+    expect(findOneAndUpdate).toHaveBeenCalledTimes(1);
+    expect(patched.overrides.endpoints).toMatchObject({
+      bedrock: { inferenceProfiles: { 'eu.meta.llama': 'arn:eu' } },
+    });
+  });
+
+  it('restores a deleted document with dotted keys in the form the engine accepts', async () => {
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'snap',
+      PrincipalModel.ROLE,
+      dotted as never,
+      10,
+    );
+    const deleted = await methods.deleteConfig(PrincipalType.ROLE, 'snap');
+
+    expect(await methods.restoreConfig(deleted!)).toBe(true);
+    expect((await raw().findOne({ principalId: 'snap' }))!.overrides).toEqual(dotted);
+
+    const refusing = createConfigMethods(mongoose);
+    const updateOne = jest
+      .spyOn(mongoose.models.Config.collection, 'updateOne')
+      .mockRejectedValueOnce(
+        new mongoose.mongo.MongoServerError({
+          ok: 0,
+          code: 57,
+          errmsg: "The dotted field 'us.a.b' in 'overrides' is not valid for storage.",
+        }),
+      );
+    const again = await refusing.deleteConfig(PrincipalType.ROLE, 'snap');
+
+    expect(await refusing.restoreConfig(again!)).toBe(true);
+    expect(updateOne).toHaveBeenCalledTimes(2);
+    const stored = await raw().findOne({ principalId: 'snap' });
+    expect(stored!.keyEncoding).toBe(1);
+    expect(stored!.overrides['%24top']).toEqual({ 'a%2Eb': '$value.stays' });
+    expect((await refusing.findConfigByPrincipal(PrincipalType.ROLE, 'snap'))!.overrides).toEqual(
+      dotted,
+    );
+  });
+
+  it('keeps a field under a dotted record key raw when it is patched by segments of its parent', async () => {
     await methods.upsertConfig(
       PrincipalType.ROLE,
       'enc2',
@@ -758,7 +849,7 @@ describe('key encoding at rest', () => {
     });
     const stored = await raw().findOne({ principalId: 'enc2' });
     expect(stored!.overrides.endpoints.bedrock.inferenceProfiles).toEqual({
-      'eu%2Emeta%2Ellama': 'arn:eu',
+      'eu.meta.llama': 'arn:eu',
     });
   });
 
@@ -806,7 +897,7 @@ describe('key encoding at rest', () => {
     });
   });
 
-  it('re-encodes a legacy document on its next write without changing its keys', async () => {
+  it('keeps a legacy document raw on its next write without changing its keys', async () => {
     const legacyOverrides = {
       endpoints: { azureOpenAI: { 'gpt-4.1': true, 'literal%2Ekey': 1 } },
       interface: { customWelcome: 'hi' },
@@ -828,58 +919,114 @@ describe('key encoding at rest', () => {
       { 'interface.customWelcome': 'hello' },
     );
 
-    expect(written.overrides).toEqual({
-      ...legacyOverrides,
-      interface: { customWelcome: 'hello' },
-    });
+    const expected = { ...legacyOverrides, interface: { customWelcome: 'hello' } };
+    expect(written.overrides).toEqual(expected);
     expect(written.configVersion).toBe(1);
     const stored = await raw().findOne({ principalId: 'lazy' });
-    expect(stored!.keyEncoding).toBe(1);
-    expect(stored!.overrides.endpoints.azureOpenAI).toEqual({
-      'gpt-4%2E1': true,
-      'literal%252Ekey': 1,
-    });
+    expect(stored!.keyEncoding).toBeUndefined();
+    expect(stored!.overrides).toEqual(expected);
     expect((await methods.findConfigByPrincipal(PrincipalType.ROLE, 'lazy'))!.overrides).toEqual(
-      written.overrides,
+      expected,
     );
   });
 
-  it('reads a plain key an outside writer added to an encoded document', async () => {
+  it('encodes a document whose raw keys a read would take for escape sequences', async () => {
+    const overrides = { endpoints: { custom: [{ name: 'gw', headers: { 'X-Ratio%25': 'a' } }] } };
+
     await methods.upsertConfig(
       PrincipalType.ROLE,
-      'outside',
+      'pct',
       PrincipalModel.ROLE,
-      dotted as never,
+      overrides as never,
       10,
     );
-    await raw().updateOne(
-      { principalId: 'outside' },
-      { $set: { 'overrides.interface.contextCost': true } },
-    );
 
-    const read = await methods.findConfigByPrincipal(PrincipalType.ROLE, 'outside');
-
-    expect(read!.overrides).toEqual({ ...dotted, interface: { contextCost: true } });
-  });
-
-  it('restores a deleted document with dotted keys, encoding them exactly once', async () => {
-    await methods.upsertConfig(
-      PrincipalType.ROLE,
-      'snap',
-      PrincipalModel.ROLE,
-      dotted as never,
-      10,
-    );
-    const deleted = await methods.deleteConfig(PrincipalType.ROLE, 'snap');
-
-    expect(await methods.restoreConfig(deleted!)).toBe(true);
-
-    expect((await methods.findConfigByPrincipal(PrincipalType.ROLE, 'snap'))!.overrides).toEqual(
-      dotted,
-    );
-    const stored = await raw().findOne({ principalId: 'snap' });
+    const stored = await raw().findOne({ principalId: 'pct' });
     expect(stored!.keyEncoding).toBe(1);
-    expect(stored!.overrides['%24top']).toEqual({ 'a%2Eb': '$value.stays' });
+    expect(stored!.overrides.endpoints.custom[0].headers).toEqual({ 'X-Ratio%2525': 'a' });
+    expect((await methods.findConfigByPrincipal(PrincipalType.ROLE, 'pct'))!.overrides).toEqual(
+      overrides,
+    );
+  });
+
+  describe('documents an older server wrote over', () => {
+    const encoded = {
+      endpoints: { bedrock: { inferenceProfiles: { 'us%2Eanthropic%2Eclaude': 'arn:aws:x' } } },
+      '%24top': { 'a%2Eb': 1 },
+    };
+    const decoded = {
+      endpoints: { bedrock: { inferenceProfiles: { 'us.anthropic.claude': 'arn:aws:x' } } },
+      $top: { 'a.b': 1 },
+    };
+
+    async function insert(principalId: string, document: Record<string, unknown>) {
+      await raw().insertOne({
+        principalType: 'role',
+        principalId,
+        principalModel: 'Role',
+        priority: 10,
+        isActive: true,
+        configVersion: 2,
+        tombstones: [],
+        ...document,
+      });
+    }
+
+    it('decodes an encoded document whose marker an older server dropped', async () => {
+      /** A pre-encoding schema has no `keyEncoding`, so its restore re-inserts the keys without it. */
+      await insert('dropped', { overrides: encoded });
+
+      const read = await methods.findConfigByPrincipal(PrincipalType.ROLE, 'dropped');
+
+      expect(read!.overrides).toEqual(decoded);
+    });
+
+    it('reads raw keys an older server wrote under a marker it left in place', async () => {
+      await insert('stale', {
+        keyEncoding: 1,
+        overrides: { endpoints: { azureOpenAI: { 'gpt-4.1': true } }, interface: { a: 1 } },
+      });
+
+      const read = await methods.findConfigByPrincipal(PrincipalType.ROLE, 'stale');
+
+      expect(read!.overrides).toEqual({
+        endpoints: { azureOpenAI: { 'gpt-4.1': true } },
+        interface: { a: 1 },
+      });
+    });
+
+    it('reads raw keys an older server added beside encoded ones', async () => {
+      await insert('mixed', { keyEncoding: 1, overrides: encoded });
+      await raw().updateOne(
+        { principalId: 'mixed' },
+        {
+          $set: {
+            'overrides.interface.contextCost': true,
+            'overrides.endpoints.azureOpenAI': { models: { 'gpt-4.1': true } },
+          },
+        },
+      );
+
+      const read = await methods.findConfigByPrincipal(PrincipalType.ROLE, 'mixed');
+
+      expect(read!.overrides).toEqual({
+        ...decoded,
+        endpoints: { ...decoded.endpoints, azureOpenAI: { models: { 'gpt-4.1': true } } },
+        interface: { contextCost: true },
+      });
+    });
+
+    it('rewrites an encoded document raw on its next write and clears the marker', async () => {
+      await insert('rewrite', { keyEncoding: 1, overrides: encoded });
+
+      await methods.patchConfigFields(PrincipalType.ROLE, 'rewrite', PrincipalModel.ROLE, {
+        'interface.customWelcome': 'hi',
+      });
+
+      const stored = await raw().findOne({ principalId: 'rewrite' });
+      expect(stored!.keyEncoding).toBeUndefined();
+      expect(stored!.overrides).toEqual({ ...decoded, interface: { customWelcome: 'hi' } });
+    });
   });
 });
 
@@ -1199,5 +1346,255 @@ describe('pruning emptied parents', () => {
     expect(
       await methods.deleteConfig(PrincipalType.ROLE, 'shells', undefined, { expectEmpty: true }),
     ).not.toBeNull();
+  });
+});
+
+/** The write preconditions web search binding writes rely on, carried by store revisions. */
+describe('web search write preconditions', () => {
+  const ROLE = 'precondition-role';
+  const revisionOf = (config: { _id: string; configVersion: number }) =>
+    `${config._id}:${config.configVersion}`;
+
+  function seed(): Promise<ConfigRecord> {
+    return methods.patchConfigFields(PrincipalType.ROLE, ROLE, PrincipalModel.ROLE, {
+      'webSearch.searxngInstanceUrl': 'https://searx.example.com',
+    });
+  }
+
+  function readStored() {
+    return raw().findOne({ principalId: ROLE });
+  }
+
+  type Write = (expectedRevision: string) => Promise<ConfigRecord | null>;
+  const writes: Array<{ name: string; write: Write }> = [
+    {
+      name: 'patchConfigFields',
+      write: (expectedRevision) =>
+        methods.patchConfigFields(
+          PrincipalType.ROLE,
+          ROLE,
+          PrincipalModel.ROLE,
+          { 'webSearch.searxngInstanceUrl': 'https://attacker.example.com' },
+          10,
+          undefined,
+          { expectedRevision },
+        ),
+    },
+    {
+      name: 'upsertConfig',
+      write: (expectedRevision) =>
+        methods.upsertConfig(
+          PrincipalType.ROLE,
+          ROLE,
+          PrincipalModel.ROLE,
+          { webSearch: { searxngInstanceUrl: 'https://attacker.example.com' } },
+          10,
+          undefined,
+          { expectedRevision },
+        ),
+    },
+    {
+      name: 'tombstoneConfigField',
+      write: (expectedRevision) =>
+        methods.tombstoneConfigField(
+          PrincipalType.ROLE,
+          ROLE,
+          PrincipalModel.ROLE,
+          'webSearch.searxngInstanceUrl',
+          10,
+          undefined,
+          { expectedRevision },
+        ),
+    },
+  ];
+
+  /** Makes the database refuse every write, after `beforeRefusal` runs. */
+  function refuseWrites(beforeRefusal: () => Promise<void> = async () => undefined) {
+    const collection = mongoose.models.Config.collection;
+    jest.spyOn(collection, 'findOneAndUpdate').mockImplementation((async () => {
+      await beforeRefusal();
+      throw new mongoose.mongo.MongoServerError({
+        ok: 0,
+        code: 57,
+        errmsg: "The dotted field 'us.a.b' in 'overrides' is not valid for storage.",
+      });
+    }) as unknown as typeof collection.findOneAndUpdate);
+  }
+
+  it.each(writes)('$name applies at the revision the caller read', async ({ write }) => {
+    const seeded = await seed();
+
+    const result = await write(revisionOf(seeded));
+
+    expect(result!.configVersion).toBe(seeded.configVersion + 1);
+    expect(result!._id).toBe(seeded._id);
+  });
+
+  it.each(writes)(
+    '$name changes nothing once another write moved the revision',
+    async ({ write }) => {
+      const seeded = await seed();
+      const moved = await methods.patchConfigFields(
+        PrincipalType.ROLE,
+        ROLE,
+        PrincipalModel.ROLE,
+        { 'webSearch.searxngApiKey': 'v3:concurrent' },
+        10,
+      );
+      const before = await readStored();
+
+      await expect(write(revisionOf(seeded))).rejects.toMatchObject({
+        code: 'CONFIG_VERSION_CONFLICT',
+        currentRevision: revisionOf(moved),
+      });
+      expect(await readStored()).toEqual(before);
+    },
+  );
+
+  it.each(writes)('$name creates the document the caller saw absent', async ({ write }) => {
+    const result = await write('absent');
+
+    expect(result!.configVersion).toBe(1);
+    expect(result!.createdAt).toBeInstanceOf(Date);
+    expect(await raw().countDocuments({ principalId: ROLE })).toBe(1);
+  });
+
+  it.each(writes)(
+    '$name changes nothing when a document appeared after the caller saw none',
+    async ({ write }) => {
+      await seed();
+      const before = await readStored();
+
+      await expect(write('absent')).rejects.toMatchObject({ code: 'CONFIG_VERSION_CONFLICT' });
+      expect(await readStored()).toEqual(before);
+    },
+  );
+
+  it.each(writes)(
+    '$name does not recreate a document deleted since the read',
+    async ({ write }) => {
+      const seeded = await seed();
+      await methods.deleteConfig(PrincipalType.ROLE, ROLE);
+
+      await expect(write(revisionOf(seeded))).rejects.toMatchObject({
+        code: 'CONFIG_VERSION_CONFLICT',
+        currentRevision: null,
+      });
+      expect(await raw().countDocuments({ principalId: ROLE })).toBe(0);
+    },
+  );
+
+  it('detects a document that appeared without relying on the unique index', async () => {
+    const seeded = await seed();
+    const before = await readStored();
+    const Config = mongoose.models.Config;
+    await Config.collection.dropIndexes();
+    try {
+      await expect(
+        methods.writeConfigDocument(
+          PrincipalType.ROLE,
+          ROLE,
+          {
+            principalModel: PrincipalModel.ROLE,
+            priority: 10,
+            overrides: { webSearch: { searxngInstanceUrl: 'https://attacker.example.com' } },
+            tombstones: [],
+            isActive: true,
+          },
+          'absent',
+        ),
+      ).rejects.toMatchObject({
+        code: 'CONFIG_VERSION_CONFLICT',
+        currentRevision: revisionOf(seeded),
+      });
+      expect(await raw().countDocuments({ principalId: ROLE })).toBe(1);
+      expect(await readStored()).toEqual(before);
+    } finally {
+      await Config.syncIndexes();
+    }
+  });
+
+  it.each(writes)(
+    '$name leaves no document when the database refuses a write the caller saw absent',
+    async ({ write }) => {
+      refuseWrites();
+
+      await expect(write('absent')).rejects.toMatchObject({ code: 57 });
+      expect(await raw().countDocuments({ principalId: ROLE })).toBe(0);
+    },
+  );
+
+  it('keeps a document another write created before the database refused this one', async () => {
+    refuseWrites(async () => {
+      await raw().insertOne({
+        principalType: PrincipalType.ROLE,
+        principalId: ROLE,
+        principalModel: PrincipalModel.ROLE,
+        priority: 10,
+        isActive: true,
+        configVersion: 1,
+        overrides: { webSearch: { safeSearch: 2 } },
+      });
+    });
+
+    await expect(writes[0].write('absent')).rejects.toMatchObject({ code: 57 });
+    expect(await readStored()).toMatchObject({
+      configVersion: 1,
+      overrides: { webSearch: { safeSearch: 2 } },
+    });
+  });
+
+  it.each(writes)(
+    '$name leaves the stored document as it was when the database refuses the write',
+    async ({ write }) => {
+      const seeded = await seed();
+      const before = await readStored();
+      refuseWrites();
+
+      await expect(write(revisionOf(seeded))).rejects.toMatchObject({ code: 57 });
+      expect(await readStored()).toEqual(before);
+    },
+  );
+
+  it('unsetConfigField removes a field only at the revision the caller read', async () => {
+    const seeded = await seed();
+    const unset = (expectedRevision: string) =>
+      methods.unsetConfigField(
+        PrincipalType.ROLE,
+        ROLE,
+        'webSearch.searxngInstanceUrl',
+        undefined,
+        { expectedRevision },
+      );
+
+    await expect(unset(`${seeded._id}:${seeded.configVersion + 1}`)).rejects.toMatchObject({
+      code: 'CONFIG_VERSION_CONFLICT',
+    });
+    expect(await readStored()).toMatchObject({
+      overrides: { webSearch: { searxngInstanceUrl: 'https://searx.example.com' } },
+    });
+
+    const result = await unset(revisionOf(seeded));
+    expect(result!.configVersion).toBe(seeded.configVersion + 1);
+    expect(result!.overrides).toEqual({});
+  });
+
+  it('keeps unconditioned upsertConfig calls that race to create the document', async () => {
+    const results = await Promise.all(
+      [1, 2].map((safeSearch) =>
+        methods.upsertConfig(
+          PrincipalType.ROLE,
+          ROLE,
+          PrincipalModel.ROLE,
+          { webSearch: { safeSearch } },
+          10,
+        ),
+      ),
+    );
+
+    expect(results.map((result) => result!.configVersion).sort()).toEqual([1, 2]);
+    expect(await raw().countDocuments({ principalId: ROLE })).toBe(1);
+    const stored = await methods.findConfigByPrincipal(PrincipalType.ROLE, ROLE);
+    expect(stored!.configVersion).toBe(2);
   });
 });

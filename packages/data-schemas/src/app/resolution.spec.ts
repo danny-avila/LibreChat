@@ -1,5 +1,9 @@
-import { INTERFACE_PERMISSION_FIELDS, PermissionTypes } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
+import {
+  PermissionTypes,
+  SearchProviders,
+  INTERFACE_PERMISSION_FIELDS,
+} from 'librechat-data-provider';
+import type { TCustomConfig, TWebSearchConfigInput } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
 import {
   isConfigRecordPath,
@@ -18,6 +22,8 @@ import {
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { toConfigOverrideState } from './mutations';
 import { applyConfigChanges } from './changes';
+import { loadWebSearchConfig } from './web';
+import logger from '~/config/winston';
 
 function fakeConfig(
   overrides: Record<string, unknown>,
@@ -1257,6 +1263,178 @@ describe('mergeConfigOverrides: invalid stored overrides', () => {
     ]) as unknown as { registration: Record<string, unknown> };
 
     expect(merged.registration.enabled).toBe(false);
+  });
+});
+
+describe('mergeConfigOverrides: web search keys follow the layer that set their URL', () => {
+  type WebSearch = Record<string, string | number | undefined>;
+  const yaml = {
+    searchProvider: SearchProviders.KEENABLE,
+    keenableApiUrl: 'https://keenable.operator.example.com',
+    keenableApiKey: 'kn-yaml-literal-0001',
+  } satisfies TWebSearchConfigInput;
+  const base = {
+    config: { webSearch: yaml },
+    webSearch: loadWebSearchConfig(yaml),
+  } as unknown as AppConfig;
+
+  function baseProfile(webSearch: WebSearch, tombstones?: string[]): IConfig {
+    return fakeConfig({ webSearch }, 0, tombstones, BASE_CONFIG_PRINCIPAL_ID);
+  }
+
+  function roleProfile(webSearch: WebSearch, tombstones?: string[]): IConfig {
+    return fakeConfig({ webSearch }, 10, tombstones, 'ADMIN');
+  }
+
+  function mergedWebSearch(...configs: IConfig[]): WebSearch {
+    return mergeConfigOverrides(base, configs).webSearch as WebSearch;
+  }
+
+  let warn: jest.SpyInstance;
+  beforeEach(() => {
+    warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  it('drops a key stored in the base profile when a role profile sets only its URL', () => {
+    const webSearch = mergedWebSearch(
+      baseProfile({
+        searxngInstanceUrl: 'https://searx.operator.example.com',
+        searxngApiKey: 'sx-base-secret-0001',
+      }),
+      roleProfile({ searxngInstanceUrl: 'https://capture.example.com' }),
+    );
+
+    expect(webSearch.searxngInstanceUrl).toBe('https://capture.example.com');
+    expect(webSearch).not.toHaveProperty('searxngApiKey');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `webSearch.searxngApiKey from role/${BASE_CONFIG_PRINCIPAL_ID}: webSearch.searxngInstanceUrl is set by role/ADMIN`,
+      ),
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('sx-base-secret-0001');
+  });
+
+  it('drops a librechat.yaml key when an override sets its URL', () => {
+    const webSearch = mergedWebSearch(
+      baseProfile({ keenableApiUrl: 'https://capture.example.com' }),
+    );
+
+    expect(webSearch.keenableApiUrl).toBe('https://capture.example.com');
+    expect(webSearch).not.toHaveProperty('keenableApiKey');
+  });
+
+  it('drops a key a layer stores for a URL it inherits', () => {
+    const webSearch = mergedWebSearch(roleProfile({ keenableApiKey: 'kn-role-0001' }));
+
+    expect(webSearch.keenableApiUrl).toBe(yaml.keenableApiUrl);
+    expect(webSearch).not.toHaveProperty('keenableApiKey');
+  });
+
+  it('keeps a key stored in the same layer as its URL', () => {
+    expect(mergedWebSearch(roleProfile({ safeSearch: 0 }))).toMatchObject({
+      keenableApiUrl: yaml.keenableApiUrl,
+      keenableApiKey: yaml.keenableApiKey,
+    });
+    expect(
+      mergedWebSearch(
+        baseProfile({
+          searxngInstanceUrl: 'https://searx.operator.example.com',
+          searxngApiKey: 'sx-base-secret-0001',
+        }),
+        roleProfile({
+          keenableApiUrl: 'https://keenable.role.example.com',
+          keenableApiKey: 'kn-role-0001',
+        }),
+      ),
+    ).toMatchObject({
+      searxngInstanceUrl: 'https://searx.operator.example.com',
+      searxngApiKey: 'sx-base-secret-0001',
+      keenableApiUrl: 'https://keenable.role.example.com',
+      keenableApiKey: 'kn-role-0001',
+    });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: 'points it at an environment variable', url: '${OTHER_SERVICE_URL}' },
+    { name: 'blanks it', url: '' },
+  ])('drops a base profile key when a role profile $name', ({ url }) => {
+    const webSearch = mergedWebSearch(
+      baseProfile({
+        searxngInstanceUrl: 'https://searx.operator.example.com',
+        searxngApiKey: 'sx-base-secret-0001',
+      }),
+      roleProfile({ searxngInstanceUrl: url }),
+    );
+
+    expect(webSearch.searxngInstanceUrl).toBe(url);
+    expect(webSearch).not.toHaveProperty('searxngApiKey');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('webSearch.searxngInstanceUrl is set by role/ADMIN'),
+    );
+  });
+
+  it('drops a librechat.yaml key when an override points its URL at the environment', () => {
+    const webSearch = mergedWebSearch(
+      baseProfile({ keenableApiUrl: '${KEENABLE_API_URL}' }),
+      roleProfile({ firecrawlApiUrl: 'https://firecrawl.role.example.com' }),
+    );
+
+    expect(webSearch.keenableApiUrl).toBe('${KEENABLE_API_URL}');
+    expect(webSearch).not.toHaveProperty('keenableApiKey');
+    expect(webSearch.searxngApiKey).toBe('${SEARXNG_API_KEY}');
+  });
+
+  it('drops the key when a later layer tombstones its URL', () => {
+    const webSearch = mergedWebSearch(roleProfile({}, ['webSearch.keenableApiUrl']));
+
+    expect(webSearch).not.toHaveProperty('keenableApiUrl');
+    expect(webSearch).not.toHaveProperty('keenableApiKey');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'webSearch.keenableApiKey from the base config: webSearch.keenableApiUrl is removed by role/ADMIN',
+      ),
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(yaml.keenableApiKey);
+  });
+
+  it('keeps a key a profile stores over an environment URL it inherits', () => {
+    expect(
+      mergedWebSearch(
+        baseProfile({ firecrawlApiKey: 'fc-base-0001' }),
+        roleProfile({ safeSearch: 0 }),
+      ),
+    ).toMatchObject({ firecrawlApiUrl: '${FIRECRAWL_API_URL}', firecrawlApiKey: 'fc-base-0001' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('keeps a key the same profile stores beside its own tombstone of the URL', () => {
+    const webSearch = mergedWebSearch(
+      roleProfile({ keenableApiKey: 'kn-role-0001' }, ['webSearch.keenableApiUrl']),
+    );
+
+    expect(webSearch).not.toHaveProperty('keenableApiUrl');
+    expect(webSearch.keenableApiKey).toBe('kn-role-0001');
+  });
+
+  it('keeps a key a later profile stores with the URL a lower profile removed', () => {
+    const webSearch = mergedWebSearch(
+      baseProfile({}, ['webSearch']),
+      roleProfile({
+        keenableApiUrl: 'https://keenable.role.example.com',
+        keenableApiKey: 'kn-role-0001',
+      }),
+    );
+
+    expect(webSearch).toMatchObject({
+      keenableApiUrl: 'https://keenable.role.example.com',
+      keenableApiKey: 'kn-role-0001',
+    });
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 

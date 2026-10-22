@@ -1,5 +1,13 @@
 import { runInNewContext } from 'vm';
-import { decodeStoredKey, encodeStoredKey, decodeStoredKeys, encodeStoredKeys } from './encoding';
+import {
+  toStoredKeys,
+  readStoredKeys,
+  decodeStoredKey,
+  encodeStoredKey,
+  decodeStoredKeys,
+  encodeStoredKeys,
+  getStoredKeyForms,
+} from './encoding';
 
 const NUL = String.fromCharCode(0);
 
@@ -70,5 +78,64 @@ describe('config key encoding', () => {
     expect(JSON.stringify(encodeStoredKeys({ endpoints: foreign }))).toBe(
       JSON.stringify({ endpoints: { groups: [{ models: { 'gpt-4%2E1': true } }] } }),
     );
+  });
+
+  describe('the form a write stores', () => {
+    it.each([
+      ['plain keys', { a: { b: 1 } }, ['raw']],
+      ['a `%` that spells no escape sequence', { headers: { '100%': 1 } }, ['raw']],
+      ['a dotted key', { models: { 'gpt-4.1': true } }, ['raw', 'encoded']],
+      ['a `$` key', { $top: 1 }, ['raw', 'encoded']],
+      ['a dotted key beside an escape-like one', { 'a.b': 1, 'c%2Ed': 2 }, ['raw', 'encoded']],
+      ['escape-like keys and no raw-only key', { headers: { 'X%2E': 1 } }, ['encoded']],
+    ])('writes %s as %j', (_label, value, forms) => {
+      expect(getStoredKeyForms(value, false)).toEqual(forms);
+    });
+
+    it('skips the raw attempt once the engine has refused one', () => {
+      expect(getStoredKeyForms({ 'gpt-4.1': true }, true)).toEqual(['encoded']);
+      expect(getStoredKeyForms({ plain: true }, true)).toEqual(['raw']);
+    });
+
+    it('reads back every form it writes, marked only when encoded', () => {
+      const values = [
+        { a: { b: 1 } },
+        { headers: { '100%': 1 } },
+        { models: { 'gpt-4.1': true }, $top: { 'x.y': '%2E' } },
+        { 'a.b': 1, 'c%2Ed': 2 },
+        { headers: { 'X%2E': 1, 'Y%25': 2 } },
+      ];
+      for (const value of values) {
+        for (const form of getStoredKeyForms(value, false)) {
+          const stored = toStoredKeys(value, form);
+          expect(readStoredKeys(stored, form === 'encoded')).toEqual(value);
+        }
+      }
+    });
+  });
+
+  describe('reading a stored document', () => {
+    it('decodes a marked document, leaving raw keys an older writer added', () => {
+      expect(readStoredKeys({ 'gpt-4%2E1': 1, 'raw.key': 2, plain: 3 }, true)).toEqual({
+        'gpt-4.1': 1,
+        'raw.key': 2,
+        plain: 3,
+      });
+    });
+
+    it('decodes an unmarked document that holds no raw-only key, as one whose marker was dropped', () => {
+      expect(readStoredKeys({ 'us%2Eanthropic': 1, '%24top': 2 }, false)).toEqual({
+        'us.anthropic': 1,
+        $top: 2,
+      });
+    });
+
+    it('reads an unmarked document with a raw dotted or `$` key verbatim', () => {
+      const raw = { 'gpt-4.1': 1, 'literal%2Ekey': 2 };
+      const dollar = { $top: { 'literal%24': 1 } };
+
+      expect(readStoredKeys(raw, false)).toBe(raw);
+      expect(readStoredKeys(dollar, false)).toBe(dollar);
+    });
   });
 });
