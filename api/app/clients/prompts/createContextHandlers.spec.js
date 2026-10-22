@@ -6,7 +6,6 @@ jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn((value) => value === 'true'),
   generateShortLivedToken: jest.fn(() => 'signed-token'),
   logAxiosError: jest.fn(),
-  hasEntityEmbeddings: jest.fn(),
 }));
 jest.mock('~/models', () => ({ getAgents: jest.fn() }));
 

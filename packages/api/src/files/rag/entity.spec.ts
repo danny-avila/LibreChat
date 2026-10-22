@@ -3,7 +3,6 @@ import { FileContext } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createMethods, createModels } from '@librechat/data-schemas';
 import type { TGetFileSearchAgents, EntityFile } from './entity';
-import type { THasEntityEmbeddings } from '~/agents/resources';
 import { createEntityResolver } from './entity';
 
 let mongo: MongoMemoryServer;
@@ -63,95 +62,68 @@ async function createFile(
   return file;
 }
 
-/** Answers like rag-api: true only when the entity owns chunks of the file. */
-function ownedBy(owners: Record<string, string[]>): jest.MockedFunction<THasEntityEmbeddings> {
-  return jest.fn(async ({ file_id, entity_id }) => owners[file_id]?.includes(entity_id) ?? false);
-}
-
 describe('createEntityResolver', () => {
-  it('resolves the agent recorded on the file', async () => {
+  it('lists the agent recorded on a file no agent lists', async () => {
     const file = await createFile('f1', FileContext.agents, ['agent_a']);
-    const resolve = createEntityResolver({ userId, getAgents });
-    expect(await resolve(file)).toBe('agent_a');
-    expect(getAgents).not.toHaveBeenCalled();
+    const resolve = createEntityResolver({ getAgents });
+    expect(await resolve(file)).toEqual(['agent_a']);
   });
 
-  it('sends the agent and never the user when both namespaces are recorded', async () => {
+  it('never lists the user namespace recorded beside an agent', async () => {
     const file = await createFile('f1', FileContext.agents, [userId, 'agent_a']);
     expect(userId < 'agent_a').toBe(true);
-    const hasEntityEmbeddings = ownedBy({ f1: ['agent_a', userId] });
-    const resolve = createEntityResolver({ userId, getAgents, hasEntityEmbeddings });
-    expect(await resolve(file)).toBe('agent_a');
-    expect(hasEntityEmbeddings).not.toHaveBeenCalled();
+    const resolve = createEntityResolver({ getAgents });
+    expect(await resolve(file)).toEqual(['agent_a']);
   });
 
-  it('resolves nothing when only the user namespace is recorded', async () => {
+  it('recovers the original agent of a legacy upload later provisioned for the user', async () => {
     const file = await createFile('f1', FileContext.agents, [userId]);
     await createAgent('agent_a', ['f1']);
-    const resolve = createEntityResolver({ userId, getAgents });
-    expect(await resolve(file)).toBeUndefined();
-    expect(getAgents).not.toHaveBeenCalled();
+    const resolve = createEntityResolver({ getAgents });
+    expect(await resolve(file)).toEqual(['agent_a']);
   });
 
-  it('looks up the listing agent for a legacy file without probing', async () => {
-    const file = await createFile('f1', FileContext.agents);
-    await createAgent('agent_a', ['f1']);
-    const hasEntityEmbeddings = ownedBy({ f1: ['agent_a'] });
-    const resolve = createEntityResolver({ userId, getAgents, hasEntityEmbeddings });
-    expect(await resolve(file)).toBe('agent_a');
-    expect(hasEntityEmbeddings).not.toHaveBeenCalled();
-  });
-
-  it('resolves nothing for a legacy file no agent lists', async () => {
-    const file = await createFile('f1', FileContext.agents);
-    await createAgent('agent_a', ['other']);
-    const resolve = createEntityResolver({ userId, getAgents });
-    expect(await resolve(file)).toBeUndefined();
-  });
-
-  it('picks the listing agent that holds the vectors, not the lowest id', async () => {
-    const file = await createFile('f1', FileContext.agents);
+  it('keeps a listed original agent behind a newer recorded copy', async () => {
+    const file = await createFile('f1', FileContext.agents, ['agent_b']);
     await createAgent('agent_a', ['f1']);
     await createAgent('agent_b', ['f1']);
-    const hasEntityEmbeddings = ownedBy({ f1: ['agent_b'] });
-    const resolve = createEntityResolver({ userId, getAgents, hasEntityEmbeddings });
-    expect(await resolve(file)).toBe('agent_b');
-    expect(hasEntityEmbeddings).toHaveBeenCalledWith(
-      expect.objectContaining({ userId, file_id: 'f1', query: 'f1.pdf' }),
-    );
+    const resolve = createEntityResolver({ getAgents });
+    expect(await resolve(file)).toEqual(['agent_b', 'agent_a']);
   });
 
-  it('picks the recorded agent that holds the vectors', async () => {
-    const file = await createFile('f1', FileContext.agents, ['agent_b', 'agent_a']);
-    const hasEntityEmbeddings = ownedBy({ f1: ['agent_b'] });
-    const resolve = createEntityResolver({ userId, getAgents, hasEntityEmbeddings });
-    expect(await resolve(file)).toBe('agent_b');
+  it('lists every agent that lists a legacy file, lowest id first', async () => {
+    const file = await createFile('f1', FileContext.agents);
+    await createAgent('agent_b', ['f1']);
+    await createAgent('agent_a', ['f1']);
+    const resolve = createEntityResolver({ getAgents });
+    expect(await resolve(file)).toEqual(['agent_a', 'agent_b']);
   });
 
-  it('falls back to the lowest candidate when the probe rejects', async () => {
-    const file = await createFile('f1', FileContext.agents, ['agent_b', 'agent_a']);
-    const hasEntityEmbeddings = jest.fn(async () => {
-      throw new Error('RAG unavailable');
-    });
-    const resolve = createEntityResolver({ userId, getAgents, hasEntityEmbeddings });
-    expect(await resolve(file)).toBe('agent_a');
+  it('lists nothing for a legacy file no agent lists', async () => {
+    const file = await createFile('f1', FileContext.agents);
+    await createAgent('agent_a', ['other']);
+    const resolve = createEntityResolver({ getAgents });
+    expect(await resolve(file)).toEqual([]);
   });
 
-  it('resolves nothing for a file outside the agents context', async () => {
+  it('lists nothing for a file outside the agents context, without a lookup', async () => {
     const file = await createFile('f1', FileContext.message_attachment);
     await createAgent('agent_a', ['f1']);
-    const resolve = createEntityResolver({ userId, getAgents });
-    expect(await resolve(file)).toBeUndefined();
+    const resolve = createEntityResolver({ getAgents });
+    expect(await resolve(file)).toEqual([]);
     expect(getAgents).not.toHaveBeenCalled();
   });
 
-  it('looks up every legacy file of a turn in one query', async () => {
+  it('looks up every agent file of a turn in one query', async () => {
     const first = await createFile('f1', FileContext.agents);
-    const second = await createFile('f2', FileContext.agents);
+    const second = await createFile('f2', FileContext.agents, ['agent_c']);
     await createAgent('agent_a', ['f1']);
     await createAgent('agent_b', ['f2']);
-    const resolve = createEntityResolver({ userId, getAgents });
-    expect(await Promise.all([resolve(first), resolve(second)])).toEqual(['agent_a', 'agent_b']);
+    const resolve = createEntityResolver({ getAgents });
+    expect(await Promise.all([resolve(first), resolve(second)])).toEqual([
+      ['agent_a'],
+      ['agent_c', 'agent_b'],
+    ]);
     expect(getAgents).toHaveBeenCalledTimes(1);
   });
 });

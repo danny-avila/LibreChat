@@ -1,7 +1,6 @@
 import { FileContext } from 'librechat-data-provider';
 import type { IAgent } from '@librechat/data-schemas';
 import type { TFile } from 'librechat-data-provider';
-import type { THasEntityEmbeddings } from '~/agents/resources';
 
 export type EntityFile = Pick<TFile, 'file_id' | 'filename' | 'context' | 'metadata'>;
 
@@ -12,19 +11,11 @@ export type TGetFileSearchAgents = (
   select: { id: 1; 'tool_resources.file_search.file_ids': 1 },
 ) => Promise<FileSearchAgent[] | null>;
 
-interface EntityResolverOptions {
-  /** The requesting user, who is always the file's uploader on this path. */
-  userId: string;
-  getAgents?: TGetFileSearchAgents;
-  hasEntityEmbeddings?: THasEntityEmbeddings;
-  timeoutMs?: number;
-}
-
 const isAgentId = (id: string): boolean => id.startsWith('agent_');
 
 /**
  * Finds the agents whose File Search lists each file. Lookups requested in the same tick
- * share one query, so a turn with several legacy files costs a single round trip.
+ * share one query, so a turn with several agent files costs a single round trip.
  */
 function createListingLookup(getAgents?: TGetFileSearchAgents) {
   let pending: { fileIds: Set<string>; listings: Promise<Map<string, string[]>> } | undefined;
@@ -62,46 +53,24 @@ function createListingLookup(getAgents?: TGetFileSearchAgents) {
 }
 
 /**
- * Resolves the agent namespace that holds a file's vectors, for files first embedded into
- * an agent's File Search and later attached outside that agent's chat.
- * Resolves `undefined` when the file belongs to no agent namespace.
+ * Lists the agent namespaces that may hold a file's vectors, for files first embedded into
+ * an agent's File Search and later attached outside that agent's chat: the agents recorded
+ * on the file, then, for agent files, the agents whose File Search lists it. The recorded
+ * list can be incomplete, since re-provisioning records only the new namespace, so agent
+ * files always consult the listing too. Resolves an empty list for any other file.
  */
 export function createEntityResolver({
-  userId,
   getAgents,
-  hasEntityEmbeddings,
-  timeoutMs,
-}: EntityResolverOptions): (file: EntityFile) => Promise<string | undefined> {
+}: {
+  getAgents?: TGetFileSearchAgents;
+}): (file: EntityFile) => Promise<string[]> {
   const listedBy = createListingLookup(getAgents);
 
-  const candidatesFor = async (file: EntityFile): Promise<string[]> => {
-    const recorded = file.metadata?.embeddedEntities;
-    if (recorded != null) {
-      return recorded.filter(isAgentId).sort();
-    }
-    if (file.context !== FileContext.agents) {
-      return [];
-    }
-    return listedBy(file.file_id);
-  };
-
-  const holdsVectors = (file: EntityFile, entity_id: string): Promise<boolean> =>
-    hasEntityEmbeddings
-      ? hasEntityEmbeddings({
-          userId,
-          file_id: file.file_id,
-          entity_id,
-          query: file.filename || file.file_id,
-          timeoutMs,
-        }).catch(() => false)
-      : Promise.resolve(false);
-
   return async (file) => {
-    const candidates = await candidatesFor(file);
-    if (candidates.length <= 1 || !hasEntityEmbeddings) {
-      return candidates[0];
+    const recorded = (file.metadata?.embeddedEntities ?? []).filter(isAgentId).sort();
+    if (file.context !== FileContext.agents) {
+      return recorded;
     }
-    const held = await Promise.all(candidates.map((candidate) => holdsVectors(file, candidate)));
-    return candidates[held.indexOf(true)] ?? candidates[0];
+    return [...new Set([...recorded, ...(await listedBy(file.file_id))])];
   };
 }
