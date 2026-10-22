@@ -1616,6 +1616,8 @@ export class Chat {
       let stream: ChatStream | null = null;
       if (result.status === 'stream') {
         stream = result.stream;
+        /** A start the server attached to a generation already running is an attachment too. */
+        active.attached = result.stream.resumed === true;
         const { generationCreatedAt } = stream;
         if (
           generationCreatedAt != null &&
@@ -1626,6 +1628,12 @@ export class Chat {
           active.inheritedGeneration = generationCreatedAt;
         }
       } else if (result.status === 'replaced') {
+        if (added.size > 0) {
+          /** The server ran another generation instead, so this turn's optimistic rows go. */
+          await this.executor.run(() => {
+            this.write(this.messages.filter((message) => !added.has(message.messageId)));
+          });
+        }
         const generationCreatedAt = result.generationCreatedAt ?? undefined;
         /** The target is recorded before anyone hears of the reconnect, so a stop can reach it. */
         this.generationCreatedAt = generationCreatedAt;
