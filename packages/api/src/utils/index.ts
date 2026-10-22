@@ -1,4 +1,6 @@
 export * from './axios';
+export * from './streams';
+export * from './timeouts';
 export * from './azure';
 export * from './code';
 export * from './common';

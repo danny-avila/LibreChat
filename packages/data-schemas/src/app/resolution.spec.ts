@@ -3,9 +3,11 @@ import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
 import {
   foldConfigMergeKey,
+  getConfigMergeRules,
   mergeConfigOverrides,
   getConfigFieldIssues,
   applyConfigTombstones,
+  getDottedSectionIssues,
   getConfigOverrideIssues,
   combineFoldedConfigItems,
 } from './resolution';
@@ -1052,6 +1054,28 @@ describe('mergeConfigOverrides: invalid stored overrides', () => {
     });
   });
 
+  it('ignores a stored dotted key at a fixed-shape position and merges dotted record keys', () => {
+    const profile = 'us.anthropic.claude-sonnet-4-6';
+    const arn = 'arn:aws:bedrock:us-east-1:1:inference-profile/x';
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig(
+        {
+          'registration.allowedDomains': ['dotted.com'],
+          registration: { 'oauthStateTtlMs.x': 1, allowedDomains: ['override.com'] },
+          endpoints: { bedrock: { inferenceProfiles: { [profile]: arn } } },
+        },
+        10,
+      ),
+    ]) as unknown as Record<string, Record<string, unknown>>;
+
+    expect(merged['registration.allowedDomains']).toBeUndefined();
+    expect(merged.registration).toEqual({
+      oauthStateTtlMs: 600_000,
+      allowedDomains: ['override.com'],
+    });
+    expect(merged.endpoints.bedrock).toEqual({ inferenceProfiles: { [profile]: arn } });
+  });
+
   it('drops only the invalid field of a merged array item', () => {
     const merged = mergeConfigOverrides(base, [
       fakeConfig(
@@ -1387,6 +1411,80 @@ describe('getConfigOverrideIssues', () => {
     ).toEqual([expect.objectContaining({ segments: ['mcpServers', 'team.prod', 'timeout'] })]);
   });
 
+  it('reports a dotted key where the schema has a fixed shape', () => {
+    const issues = getConfigOverrideIssues({
+      'webSearch.serperApiKey': 'x',
+      registration: { 'socialLogins.0': 'github' },
+      interface: { theme: { 'modes.light': { colors: {} } } },
+      endpoints: {
+        azureOpenAI: {
+          groups: [{ group: 'g', apiKey: 'k', models: { 'gpt-4.1': true }, 'models.x': {} }],
+        },
+      },
+    });
+    expect(issues.filter((issue) => issue.code === 'dotted_key')).toEqual([
+      { path: 'webSearch.serperApiKey', segments: ['webSearch.serperApiKey'], code: 'dotted_key' },
+      {
+        path: 'registration.socialLogins.0',
+        segments: ['registration', 'socialLogins.0'],
+        code: 'dotted_key',
+      },
+      {
+        path: 'interface.theme.modes.light',
+        segments: ['interface', 'theme', 'modes.light'],
+        code: 'dotted_key',
+      },
+      {
+        path: 'endpoints.azureOpenAI.groups.0.models.x',
+        segments: ['endpoints', 'azureOpenAI', 'groups', '0', 'models.x'],
+        code: 'dotted_key',
+      },
+    ]);
+  });
+
+  it('keeps dotted keys where the schema has a record', () => {
+    expect(
+      getConfigOverrideIssues({
+        endpoints: {
+          bedrock: {
+            inferenceProfiles: {
+              'us.anthropic.claude-sonnet-4-6': 'arn:aws:bedrock:us-east-1:1:inference-profile/x',
+            },
+          },
+          azureOpenAI: {
+            groups: [
+              {
+                group: 'eastus',
+                apiKey: '${AZURE_KEY}',
+                instanceName: 'east',
+                models: { 'gpt-4.1': true, 'gpt-4.1-mini': { deploymentName: 'mini' } },
+                addParams: { 'reasoning.effort': 'high' },
+              },
+            ],
+          },
+          custom: [
+            {
+              name: 'gateway',
+              apiKey: 'k',
+              baseURL: 'https://gw',
+              models: { default: ['gpt-4.1'] },
+              headers: { 'x-portkey.config': 'cfg' },
+              tokenConfig: { 'gpt-4.1': { prompt: 1, completion: 2, context: 1000 } },
+            },
+          ],
+        },
+        fileConfig: {
+          defaultLLMDeliveryPath: {
+            overrides: {
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'text',
+            },
+          },
+        },
+        mcpServers: { 'team.prod': { url: 'https://mcp.example.com', headers: { 'X-A.B': 'v' } } },
+      }),
+    ).toEqual([]);
+  });
+
   it('accepts keys the schema does not define and stored secret shapes', () => {
     expect(
       getConfigOverrideIssues({ unknownSection: 5, registration: { enabled: false } }),
@@ -1657,6 +1755,29 @@ describe('combineFoldedConfigItems', () => {
     const items = [{ name: 'Ollama' }, { name: 'ollama' }];
 
     expect(combineFoldedConfigItems('modelSpecs.list', items)).toBe(items);
+  });
+});
+
+describe('getDottedSectionIssues', () => {
+  it('reports only top-level keys holding a dot', () => {
+    expect(getDottedSectionIssues({ 'filters.x': 1, registration: { 'a.b': 1 } })).toEqual([
+      { path: 'filters.x', segments: ['filters.x'], code: 'dotted_key' },
+    ]);
+    expect(getDottedSectionIssues(['stray'])).toEqual([]);
+  });
+});
+
+describe('getConfigMergeRules', () => {
+  it('names merge paths by their override (YAML) keys', () => {
+    expect(getConfigMergeRules()).toEqual({
+      arrayMergeKeys: { 'endpoints.custom': 'name' },
+      atomicMergePaths: ['interface.theme'],
+      overrideKeyMap: {
+        mcpServers: 'mcpConfig',
+        interface: 'interfaceConfig',
+        turnstile: 'turnstileConfig',
+      },
+    });
   });
 });
 

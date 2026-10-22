@@ -30,17 +30,13 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
 
-jest.mock('~/hooks/Chat/useSteerRecovery', () => ({
-  __esModule: true,
-  default: () => ({ retry: mockRetry, sendAsNew: mockSendAsNew }),
-}));
-
 jest.mock('@librechat/chat/react', () => ({
   ...jest.requireActual('@librechat/chat/react'),
   useSteerEscalate: () => mockEscalate,
   useSteerCancel: () => jest.fn(),
   useSteerMoveToQueue: () => mockMoveToQueue,
   useSteerRehome: () => mockRehome,
+  useSteerRecovery: () => ({ retry: mockRetry, sendAsNew: mockSendAsNew }),
 }));
 
 jest.mock('~/Providers', () => ({
@@ -176,7 +172,7 @@ describe('PendingSteers', () => {
     const cancel = screen.getByRole('button', { name: 'com_ui_cancel' });
     expect(cancel).toBeEnabled();
     expect(cancel.parentElement).toHaveClass('flex-wrap', 'justify-end');
-    expect(cancel.parentElement).not.toHaveClass('pl-9');
+    expect(cancel.parentElement).not.toHaveClass('ps-9');
   });
 
   it('aligns failed-steer recovery actions with the bubble and allows wrapping', () => {
@@ -184,7 +180,7 @@ describe('PendingSteers', () => {
 
     const retry = screen.getByRole('button', { name: 'com_ui_retry' });
     expect(retry.parentElement).toHaveClass('flex-wrap', 'justify-end');
-    expect(retry.parentElement).not.toHaveClass('pl-9');
+    expect(retry.parentElement).not.toHaveClass('ps-9');
   });
 
   it.each(['sending', 'pending', 'failed'] as const)(

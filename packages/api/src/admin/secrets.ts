@@ -7,6 +7,7 @@ import {
   foldConfigMergeKey,
   combineFoldedConfigItems,
 } from '@librechat/data-schemas';
+import type { AdminConfigRules } from '@librechat/data-schemas';
 import { isUserProvided } from '~/utils/common';
 
 const ENCRYPTED_PREFIX = 'v3:';
@@ -147,6 +148,29 @@ export function normalizeStoredPreview(preview: string): string {
 /** Top-level config sections containing registered secret fields. */
 export function getConfigSecretSections(): readonly string[] {
   return SECRET_SECTIONS;
+}
+
+/** The secret registries as plain data, for admin clients that render secret inputs. */
+export function getConfigSecretRules(): Pick<
+  AdminConfigRules,
+  'secretFields' | 'arraySecretFields' | 'refusedMaps'
+> {
+  return {
+    secretFields: CONFIG_SECRET_FIELDS.map(({ path, previewPath, allowEnvPlaceholder }) => ({
+      path,
+      previewPath,
+      allowEnvPlaceholder: allowEnvPlaceholder === true,
+    })),
+    arraySecretFields: ARRAY_SECRET_FIELDS.map(
+      ({ arrayPath, secretKey, previewKey, identityKey }) => ({
+        arrayPath,
+        secretKey,
+        previewKey,
+        identityKey,
+      }),
+    ),
+    refusedMaps: [...CONFIG_SECRET_MAP_FIELDS],
+  };
 }
 
 function normalizeSecretString(value: unknown): string | undefined {

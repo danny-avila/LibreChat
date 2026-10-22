@@ -229,7 +229,6 @@ router.get('/', async function (req, res) {
   try {
     const preLoginPayload = buildPreLoginPayload();
     const publicSharePayload = buildPublicSharePayload();
-    const rum = getRumConfig();
 
     if (!req.user) {
       const tenantId = getTenantId();
@@ -240,7 +239,7 @@ router.get('/', async function (req, res) {
         ...preLoginPayload,
         socialLogins: baseConfig?.registration?.socialLogins ?? defaultSocialLogins,
         turnstile: baseConfig?.turnstileConfig,
-        ...(rum ? { rum } : {}),
+        rum: getRumConfig(baseConfig?.config?.telemetry),
       };
 
       const interfaceConfig = baseConfig?.interfaceConfig;
@@ -349,7 +348,7 @@ router.get('/', async function (req, res) {
       ...resolveCodeWorkspaceInheritanceCapability(process.env.CODE_ENVIRONMENT_DECISION_VERSION),
       ...(codeEnvironmentTransitionVersion != null ? { codeEnvironmentTransitionVersion } : {}),
       ...(cloudFront ? { cloudFront } : {}),
-      ...(rum ? { rum } : {}),
+      rum: getRumConfig(appConfig?.config?.telemetry),
       fileUploadSseEnabled: isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED),
       endpointsDropParamsMap: endpointsDropParamsMap,
     };
@@ -388,7 +387,7 @@ router.get('/', async function (req, res) {
     return res.status(200).send(payload);
   } catch (err) {
     logger.error('Error in startup config', err);
-    return res.status(500).send({ error: err.message });
+    return res.status(500).send({ error: 'Failed to load startup config' });
   }
 });
 
