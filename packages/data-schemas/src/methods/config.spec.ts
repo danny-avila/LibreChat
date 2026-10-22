@@ -828,9 +828,9 @@ describe('expectedVersion write precondition', () => {
     const collection = mongoose.models.Config.collection;
     const findOneAndUpdate = collection.findOneAndUpdate.bind(collection);
     jest.spyOn(collection, 'findOneAndUpdate').mockImplementation((async (
-      filter: object,
-      update: { $inc?: object },
-      options: object,
+      filter: Record<string, unknown>,
+      update: { $inc?: Record<string, number> },
+      options: Record<string, unknown>,
     ) => {
       if (update.$inc == null) {
         return findOneAndUpdate(filter, update, options);
