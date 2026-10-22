@@ -1388,8 +1388,14 @@ describe('createAppConfigService', () => {
     /** A reload that read librechat.yaml before a clear must not be what the clear leaves cached. */
     describe('while a reload is in flight', () => {
       const tick = () => new Promise((resolve) => setImmediate(resolve));
-      const stale = { x: 'stale', availableTools: { staleTool: {} } } as unknown as TestConfig;
-      const fresh = { x: 'fresh', availableTools: { freshTool: {} } } as unknown as TestConfig;
+      const stale = {
+        version: 'stale',
+        availableTools: { staleTool: {} },
+      } as unknown as TestConfig;
+      const fresh = {
+        version: 'fresh',
+        availableTools: { freshTool: {} },
+      } as unknown as TestConfig;
 
       async function startStaleReload() {
         const deps = createDeps();
@@ -1420,10 +1426,12 @@ describe('createAppConfigService', () => {
         expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
         settleStale(stale);
 
-        expect(((await staleRead) as TestConfig).x).toBe('stale');
-        expect(((await freshRead) as TestConfig).x).toBe('fresh');
+        expect(((await staleRead) as TestConfig).version).toBe('stale');
+        expect(((await freshRead) as TestConfig).version).toBe('fresh');
         expect(deps.loadBaseConfig).toHaveBeenCalledTimes(3);
-        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).x).toBe('fresh');
+        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).version).toBe(
+          'fresh',
+        );
         expect(deps.loadBaseConfig).toHaveBeenCalledTimes(3);
         expect(deps.setCachedTools).not.toHaveBeenCalledWith(stale.availableTools);
         expect(deps.setCachedTools).toHaveBeenLastCalledWith(fresh.availableTools);
@@ -1436,7 +1444,9 @@ describe('createAppConfigService', () => {
         await staleRead;
 
         expect(deps._cache._store.has('app_config:_BASE_')).toBe(false);
-        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).x).toBe('fresh');
+        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).version).toBe(
+          'fresh',
+        );
       });
 
       it('does not restore the last good config over the clear when the stale reload fails', async () => {
@@ -1446,7 +1456,9 @@ describe('createAppConfigService', () => {
 
         expect(await staleRead).toEqual(deps._baseConfig);
         expect(deps._cache._store.has('app_config:_BASE_')).toBe(false);
-        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).x).toBe('fresh');
+        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).version).toBe(
+          'fresh',
+        );
       });
     });
 
@@ -1477,9 +1489,9 @@ describe('createAppConfigService', () => {
         const deps = createDeps({
           loadBaseConfig: jest
             .fn()
-            .mockResolvedValueOnce({ x: 'first' })
-            .mockResolvedValueOnce({ x: 'stale' })
-            .mockResolvedValue({ x: 'fresh' }),
+            .mockResolvedValueOnce({ version: 'first' })
+            .mockResolvedValueOnce({ version: 'stale' })
+            .mockResolvedValue({ version: 'fresh' }),
         });
         const service = createAppConfigService(deps);
         await service.getAppConfig({ baseOnly: true });
@@ -1491,17 +1503,21 @@ describe('createAppConfigService', () => {
         await service.clearAppConfigCache();
         release();
 
-        expect(((await staleRead) as TestConfig).x).toBe('stale');
+        expect(((await staleRead) as TestConfig).version).toBe('stale');
         expect(deps._cache._store.has('app_config:_BASE_')).toBe(false);
-        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).x).toBe('fresh');
+        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).version).toBe(
+          'fresh',
+        );
       });
 
       it('removes the overtaken merge so the next read merges again', async () => {
         const deps = createDeps({
           getApplicableConfigs: jest
             .fn()
-            .mockResolvedValueOnce([{ priority: 10, overrides: { x: 'stale' }, isActive: true }])
-            .mockResolvedValue([{ priority: 10, overrides: { x: 'fresh' }, isActive: true }]),
+            .mockResolvedValueOnce([
+              { priority: 10, overrides: { version: 'stale' }, isActive: true },
+            ])
+            .mockResolvedValue([{ priority: 10, overrides: { version: 'fresh' }, isActive: true }]),
         });
         const service = createAppConfigService(deps);
         await service.getAppConfig({ baseOnly: true });
@@ -1512,8 +1528,10 @@ describe('createAppConfigService', () => {
         await service.clearOverrideCache();
         release();
 
-        expect(((await staleRead) as TestConfig).x).toBe('stale');
-        expect(((await service.getAppConfig({ role: 'ADMIN' })) as TestConfig).x).toBe('fresh');
+        expect(((await staleRead) as TestConfig).version).toBe('stale');
+        expect(((await service.getAppConfig({ role: 'ADMIN' })) as TestConfig).version).toBe(
+          'fresh',
+        );
         expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
       });
     });
@@ -1524,8 +1542,8 @@ describe('createAppConfigService', () => {
       const deps = createDeps({
         loadBaseConfig: jest
           .fn()
-          .mockResolvedValueOnce({ x: 'before' })
-          .mockResolvedValue({ x: 'after' }),
+          .mockResolvedValueOnce({ version: 'before' })
+          .mockResolvedValue({ version: 'after' }),
         getUserPrincipals: jest
           .fn()
           .mockImplementationOnce(() => new Promise((resolve) => (releasePrincipals = resolve)))
@@ -1538,11 +1556,11 @@ describe('createAppConfigService', () => {
       await new Promise((resolve) => setImmediate(resolve));
       await clearAppConfigCache();
       releasePrincipals(principals);
-      expect(((await inFlight) as TestConfig).x).toBe('before');
+      expect(((await inFlight) as TestConfig).version).toBe('before');
 
       const next = (await getAppConfig({ role: 'USER', userId: 'uid1' })) as TestConfig;
 
-      expect(next.x).toBe('after');
+      expect(next.version).toBe('after');
     });
   });
 
@@ -1617,8 +1635,8 @@ describe('createAppConfigService', () => {
       ['the same tenant', 'tenant-a', 'tenant-a'],
     ])('drops a merge read before a clear of %s', async (_label, cleared, tenantId) => {
       let releaseRead: (configs: unknown[]) => void = () => undefined;
-      const stale = [{ priority: 10, overrides: { x: 'stale' }, isActive: true }];
-      const fresh = [{ priority: 10, overrides: { x: 'fresh' }, isActive: true }];
+      const stale = [{ priority: 10, overrides: { version: 'stale' }, isActive: true }];
+      const fresh = [{ priority: 10, overrides: { version: 'fresh' }, isActive: true }];
       const deps = createDeps({
         getApplicableConfigs: jest
           .fn()
@@ -1631,11 +1649,11 @@ describe('createAppConfigService', () => {
       await new Promise((resolve) => setImmediate(resolve));
       await clearOverrideCache(cleared);
       releaseRead(stale);
-      expect(((await inFlight) as TestConfig).x).toBe('stale');
+      expect(((await inFlight) as TestConfig).version).toBe('stale');
 
       const next = (await getAppConfig({ role: 'ADMIN', tenantId })) as TestConfig;
 
-      expect(next.x).toBe('fresh');
+      expect(next.version).toBe('fresh');
       expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
     });
 
@@ -1652,7 +1670,7 @@ describe('createAppConfigService', () => {
       const inFlight = getAppConfig({ role: 'ADMIN', tenantId: 'tenant-a' });
       await new Promise((resolve) => setImmediate(resolve));
       await clearOverrideCache('tenant-b');
-      releaseRead([{ priority: 10, overrides: { x: 1 }, isActive: true }]);
+      releaseRead([{ priority: 10, overrides: { version: '1' }, isActive: true }]);
       await inFlight;
       await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-a' });
 
@@ -1665,9 +1683,13 @@ describe('createAppConfigService', () => {
       const deps = createDeps({
         getApplicableConfigs: jest
           .fn()
-          .mockResolvedValueOnce([{ priority: 10, overrides: { x: 'first' }, isActive: true }])
-          .mockResolvedValueOnce([{ priority: 10, overrides: { x: 'second' }, isActive: true }])
-          .mockResolvedValue([{ priority: 10, overrides: { x: 'third' }, isActive: true }]),
+          .mockResolvedValueOnce([
+            { priority: 10, overrides: { version: 'first' }, isActive: true },
+          ])
+          .mockResolvedValueOnce([
+            { priority: 10, overrides: { version: 'second' }, isActive: true },
+          ])
+          .mockResolvedValue([{ priority: 10, overrides: { version: 'third' }, isActive: true }]),
       });
       const { getAppConfig } = createAppConfigService(deps);
 
@@ -1679,9 +1701,9 @@ describe('createAppConfigService', () => {
       })) as TestConfig;
       const again = (await getAppConfig({ role: 'ADMIN' })) as TestConfig;
 
-      expect(cached.x).toBe('first');
-      expect(bypassed.x).toBe('second');
-      expect(again.x).toBe('first');
+      expect(cached.version).toBe('first');
+      expect(bypassed.version).toBe('second');
+      expect(again.version).toBe('first');
       expect(deps._cache.set).not.toHaveBeenCalled();
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
     });
@@ -1692,7 +1714,7 @@ describe('createAppConfigService', () => {
       const deps = createDeps({
         getApplicableConfigs: jest
           .fn()
-          .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+          .mockResolvedValue([{ priority: 10, overrides: { version: '1' }, isActive: true }]),
       });
       const { getAppConfig } = createAppConfigService(deps);
       const resolvedPrincipals = [{ principalType: 'group', principalId: 'g1' }];
@@ -1723,7 +1745,7 @@ describe('createAppConfigService', () => {
       createDeps({
         getApplicableConfigs: jest
           .fn()
-          .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+          .mockResolvedValue([{ priority: 10, overrides: { version: '1' }, isActive: true }]),
         ...overrides,
       });
 
