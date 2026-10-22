@@ -107,6 +107,7 @@ describe('ChatProject methods', () => {
         projectId,
         conversationId: 'output-chat',
         fileId: 'output',
+        projectFileIds: [],
         contextRevision: 0,
       };
     }
@@ -170,7 +171,13 @@ describe('ChatProject methods', () => {
     it('keeps the output in the chat when the configured project limit is reached', async () => {
       const input = await setupOutput();
       await ChatProject.updateOne({ _id: input.projectId }, { $set: { file_ids: ['existing'] } });
-      expect(await methods.addGeneratedProjectFile({ ...input, maxFiles: 1 })).toEqual({
+      expect(
+        await methods.addGeneratedProjectFile({
+          ...input,
+          projectFileIds: ['existing'],
+          maxFiles: 1,
+        }),
+      ).toEqual({
         ok: false,
         error: { code: 'project_file_limit' },
       });
@@ -178,6 +185,18 @@ describe('ChatProject methods', () => {
         'existing',
       ]);
       expect(await File.exists({ file_id: 'output' })).not.toBeNull();
+    });
+
+    it('does not overwrite project files from a stale snapshot', async () => {
+      const input = await setupOutput();
+      await ChatProject.updateOne({ _id: input.projectId }, { $set: { file_ids: ['existing'] } });
+      expect(await methods.addGeneratedProjectFile(input)).toEqual({
+        ok: false,
+        error: { code: 'project_changed' },
+      });
+      expect((await methods.getChatProject(owner, input.projectId))?.file_ids).toEqual([
+        'existing',
+      ]);
     });
 
     it.each(['user', 'tenant', 'conversation', 'expiry', 'storage'] as const)(

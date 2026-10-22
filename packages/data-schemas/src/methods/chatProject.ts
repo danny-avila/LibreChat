@@ -61,7 +61,7 @@ export type GeneratedProjectFileInput = {
   projectId: string;
   conversationId: string;
   fileId: string;
-  projectFileIds?: readonly string[];
+  projectFileIds: readonly string[];
   contextRevision: number;
   maxFiles?: number;
 };
@@ -695,7 +695,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     projectId,
     conversationId,
     fileId,
-    projectFileIds = [],
+    projectFileIds,
     contextRevision,
     maxFiles: configuredMaxFiles,
   }: GeneratedProjectFileInput): Promise<GeneratedProjectFileResult> {
@@ -736,31 +736,16 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
             .filter((entry) => entry.file_id !== fileId && entry.filename === file.filename)
             .map((entry) => entry.file_id)
         : [];
-    const retained = {
-      $filter: {
-        input: '$file_ids',
-        as: 'id',
-        cond: { $not: { $in: ['$$id', { $literal: replaced }] } },
-      },
-    };
-    const previous = await ChatProject.findOneAndUpdate(
-      {
-        ...projectFilter,
-        contextRevision,
-        file_ids: { $ne: fileId },
-        $expr: { $lt: [{ $size: retained }, maxFiles] },
-      },
-      [
-        {
-          $set: {
-            file_ids: { $concatArrays: [retained, { $literal: [fileId] }] },
-            contextRevision: { $add: ['$contextRevision', 1] },
-          },
-        },
-      ],
-      { new: false, runValidators: true },
-    ).lean<IChatProject>();
-    if (!previous) {
+    const nextIds = [...projectFileIds.filter((id) => !replaced.includes(id)), fileId];
+    const project =
+      nextIds.length > maxFiles || projectFileIds.includes(fileId)
+        ? null
+        : await ChatProject.findOneAndUpdate(
+            { ...projectFilter, contextRevision, file_ids: projectFileIds },
+            { $set: { file_ids: nextIds }, $inc: { contextRevision: 1 } },
+            { new: true, runValidators: true },
+          ).lean<IChatProject>();
+    if (!project) {
       const current = await ChatProject.findOne(projectFilter).lean<IChatProject>();
       if (!current || current.contextRevision !== contextRevision) {
         return { ok: false, error: { code: 'project_changed' } };
@@ -768,32 +753,29 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
       if (current.file_ids?.includes(fileId)) {
         return { ok: true, value: { project: current, file: normalizeProjectFileRecord(file) } };
       }
+      if (
+        current.file_ids?.length !== projectFileIds.length ||
+        current.file_ids.some((id, index) => id !== projectFileIds[index])
+      ) {
+        return { ok: false, error: { code: 'project_changed' } };
+      }
       return { ok: false, error: { code: 'project_file_limit' } };
     }
-    const previousIds = previous.file_ids ?? [];
-    const project = {
-      file_ids: [...previousIds.filter((id) => !replaced.includes(id)), fileId],
-      contextRevision: contextRevision + 1,
-    };
     const [stillAttached, stillAvailable] = await Promise.all([
       Conversation.exists({ ...owner, conversationId, chatProjectId: projectId }),
       File.exists({ _id: file._id, ...owner }),
     ]);
     if (!stillAttached || !stillAvailable) {
-      await ChatProject.updateOne({ ...projectFilter, file_ids: fileId }, [
-        {
-          $set: {
-            file_ids: {
-              $cond: [
-                { $eq: ['$contextRevision', project.contextRevision] },
-                { $literal: previousIds },
-                { $setDifference: ['$file_ids', { $literal: [fileId] }] },
-              ],
-            },
-            contextRevision: { $add: ['$contextRevision', 1] },
-          },
-        },
-      ]);
+      const restored = await ChatProject.updateOne(
+        { ...projectFilter, contextRevision: project.contextRevision, file_ids: nextIds },
+        { $set: { file_ids: projectFileIds }, $inc: { contextRevision: 1 } },
+      );
+      if (restored.matchedCount === 0) {
+        await ChatProject.updateOne(
+          { ...projectFilter, file_ids: fileId },
+          { $pull: { file_ids: fileId }, $inc: { contextRevision: 1 } },
+        );
+      }
       return {
         ok: false,
         error: { code: stillAvailable ? 'project_changed' : 'project_file_unavailable' },
