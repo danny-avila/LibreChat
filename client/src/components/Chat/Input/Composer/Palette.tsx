@@ -411,6 +411,7 @@ function Palette({
   );
   const isUnifiedMode = isUnifiedUploadMode(endpointFileConfig, canAttach);
   const attach = useAttachItems({
+    index,
     agentId,
     endpoint,
     endpointType,

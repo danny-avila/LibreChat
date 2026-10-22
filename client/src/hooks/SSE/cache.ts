@@ -11,6 +11,8 @@ import type { TMessage, TSubmission, TConversation } from 'librechat-data-provid
 import type { ResumableCache } from '@librechat/chat';
 import type { ActiveJobsResponse } from '~/data-provider';
 import {
+  adoptComposerConversation,
+  bindComposerLaunch,
   upsertConvoInAllQueries,
   removeConvoFromAllQueries,
   invalidateConversationLists,
@@ -20,11 +22,13 @@ import {
   streamStatusQueryKey,
   fetchConversationMessages,
 } from '~/data-provider';
+import { transferFileSearchPreference } from '~/hooks/Files/search';
 import { fetchConvoSnapshot } from '~/utils/convos';
 
 /** The app's query cache, as a resumable run reads and refreshes it. */
 export default function useResumableCache(
   getMessages: () => TMessage[] | undefined,
+  runIndex = 0,
 ): ResumableCache {
   const queryClient = useQueryClient();
 
@@ -81,9 +85,20 @@ export default function useResumableCache(
       );
       upsertConvoInAllQueries(queryClient, optimisticConversation);
 
-      return hydrateSubmissionMessages(currentSubmission, conversationId);
+      const hydrated = hydrateSubmissionMessages(currentSubmission, conversationId);
+      if (
+        adoptComposerConversation(
+          currentSubmission.conversation,
+          conversationId,
+          runIndex,
+          transferFileSearchPreference,
+        )
+      ) {
+        bindComposerLaunch(hydrated.conversation, runIndex);
+      }
+      return hydrated;
     },
-    [getMessages, queryClient],
+    [getMessages, queryClient, runIndex],
   );
 
   return useMemo<ResumableCache>(

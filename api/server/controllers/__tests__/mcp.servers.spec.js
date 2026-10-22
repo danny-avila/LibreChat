@@ -342,6 +342,14 @@ describe('DB-backed server mutation fencing', () => {
       mockMcpManager.disconnectUserConnection.mock.invocationCallOrder[0],
     );
     expect(res.status).toHaveBeenCalledWith(200);
+    /** The OBO lockdown checks the stored server, which a profile hide must not bypass. */
+    expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
+      'github',
+      user.id,
+      undefined,
+      undefined,
+      { includeHidden: true },
+    );
   });
 
   it('does not fence the valid catalog when update inspection or persistence fails', async () => {
@@ -469,6 +477,13 @@ describe('DB-backed server mutation fencing', () => {
       mockMaybeUninstallOAuthMCP,
     );
 
+    expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
+      'github',
+      user.id,
+      undefined,
+      undefined,
+      { includeHidden: true },
+    );
     const { invalidateCachedTools } = require('~/server/services/Config');
     expect(invalidateCachedTools).toHaveBeenCalledWith({ userId: user.id, serverName: 'github' });
     expect(invalidateCachedTools).toHaveBeenCalledTimes(2);

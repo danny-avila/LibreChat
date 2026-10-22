@@ -58,6 +58,7 @@ const {
   createCodeApiUploadRegistry,
   cacheConfig,
   createClusteredFileSweep,
+  createRequestSanitizer,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -614,7 +615,7 @@ if (cluster.isMaster) {
       next();
     });
 
-    app.use(mongoSanitize());
+    app.use(createRequestSanitizer(mongoSanitize));
     app.use(cors());
     app.use(cookieParser());
 
