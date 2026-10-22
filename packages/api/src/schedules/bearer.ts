@@ -442,7 +442,7 @@ export async function resolveScheduledMCPBearerConfig(
   const { context } = input;
   if (context?.quiesceStarted) throw new MCPRequestQuiescedError();
   const scope = context && scopes.get(context);
-  /** Cleanup ends scheduled authority only; an unscheduled pooled call may outlive its turn. */
+  /** Cleanup ends scheduled authority only; request-scoped checkout refuses a closed context. */
   if (!context || !scope) return input.config;
   if (context.cleanupStarted)
     throw new ScheduledMCPBearerError('binding_mismatch', input.serverName);

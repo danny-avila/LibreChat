@@ -187,6 +187,18 @@ function createServerConfig(url: string): ParsedServerConfig {
   };
 }
 
+/** Static headers keep the connection pooled per user instead of per request. */
+function createPooledConfig(url: string): ParsedServerConfig {
+  return {
+    type: 'streamable-http',
+    url,
+    source: 'yaml',
+    requiresOAuth: false,
+    initTimeout: 500,
+    headers: { 'X-Run-Id': 'static' },
+  };
+}
+
 function callEcho({
   manager,
   config,
@@ -544,18 +556,10 @@ describe('request-scoped MCP lifecycle integration', () => {
 
   it('lets a pooled call outlive the turn that cleaned its context, keeping request-scoped servers closed', async () => {
     const turn = createContext();
-    const pooled: ParsedServerConfig = {
-      type: 'streamable-http',
-      url: server.url,
-      source: 'yaml',
-      requiresOAuth: false,
-      initTimeout: 500,
-      headers: { 'X-Run-Id': 'static' },
-    };
     const callPooled = () =>
       callEcho({
         manager,
-        config: pooled,
+        config: createPooledConfig(server.url),
         requestScopedConnections: turn,
         runId: 'run-1',
         value: 'select 1',
@@ -585,6 +589,30 @@ describe('request-scoped MCP lifecycle integration', () => {
     } finally {
       await manager.disconnectUserConnection(user.id, 'pooled').catch(() => undefined);
       MCPConnection.clearCooldown('pooled');
+    }
+  });
+
+  it('creates a pooled connection on the first call after its turn cleaned the context', async () => {
+    const turn = createContext();
+    await cleanupMCPRequestContext(turn);
+    expect(turn.cleanupStarted).toBe(true);
+    try {
+      // A detached child's first call to a server its parent never used.
+      await expect(
+        callEcho({
+          manager,
+          config: createPooledConfig(server.url),
+          requestScopedConnections: turn,
+          runId: 'run-1',
+          value: 'select 1',
+          serverName: 'pooled-late',
+        }),
+      ).resolves.toBeDefined();
+      expect(server.toolCallCount()).toBe(1);
+      expect(turn.connections.size).toBe(0);
+    } finally {
+      await manager.disconnectUserConnection(user.id, 'pooled-late').catch(() => undefined);
+      MCPConnection.clearCooldown('pooled-late');
     }
   });
 });
