@@ -265,6 +265,11 @@ export type AdminConfigChangeErrorResponse = {
  * - `sectionAllowlist`: writes to a top-level key `configSchema` does not define are rejected,
  *   and stored ones are ignored at merge.
  * - `readFilteredWriteResponses`: write responses are filtered by the caller's read access.
+ * - `preAuthBaseOverrides`: Base (`__base__`) overrides apply before sign-in: the signed-out
+ *   `GET /api/config` serves Base `registration.socialLogins` and the pre-login interface fields,
+ *   and Base `registration.allowedDomains` gates email registration, password reset and LDAP,
+ *   OpenID, SAML and social sign-in (a role profile's list then applies to that role's accounts,
+ *   new ones included). Turnstile stays on librechat.yaml (`turnstile` is base-only).
  * - `webSearchStoredKeys`: web search uses a key stored in config (encrypted by the admin API,
  *   or a `librechat.yaml` literal) at runtime, not only a `${VAR}` reference, and stores
  *   `webSearch.keenableApiKey` encrypted like the other web search keys. A stored key reaches a
@@ -363,6 +368,7 @@ export type AdminConfigFeatureFlag =
   | 'dottedKeys'
   | 'sectionAllowlist'
   | 'readFilteredWriteResponses'
+  | 'preAuthBaseOverrides'
   | 'webSearchStoredKeys'
   | 'expectedRevision'
   | 'prunesEmptyParents'

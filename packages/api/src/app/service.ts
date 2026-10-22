@@ -646,7 +646,8 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    *
    * When `baseOnly` is true, returns the YAML-derived config without any DB queries.
    * `role` and `userId` are ignored; tenantId still scopes YAML custom endpoints.
-   * Use this for startup, auth strategies, and other pre-tenant code paths.
+   * Use this for startup and other paths that must not read overrides; sign-in decisions
+   * read the `__base__` override through `resolvePreAuthAppConfig`.
    */
   async function getAppConfig(options: GetAppConfigOptions = {}): Promise<AppConfig> {
     const {
@@ -692,9 +693,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       return scopedBaseConfig;
     }
 
-    // Strict isolation + no tenant anywhere (neither param nor ALS) is pathological: a
-    // middleware bypass or an unauthenticated startup call. Pre-tenant calls should use
-    // baseOnly:true and admin calls carry an explicit tenantId. Return the base config
+    // Strict isolation + no tenant anywhere (neither param nor ALS): a middleware bypass,
+    // or a signed-out request that named no tenant (strict mode refuses config reads without
+    // one). Admin calls carry an explicit tenantId. Return the base config
     // without caching it under the shared `__default__` bucket. When ALS has a tenant,
     // overrideCacheKey scopes the key to it, so we fall through and cache per-tenant.
     if (principals.length === 0 && !tenantId && !getTenantId() && isStrictOverrideMode()) {

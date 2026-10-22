@@ -1480,6 +1480,71 @@ describe('POST …/changes: skipped, not refused (owner decision #2)', () => {
   });
 });
 
+describe('POST …/changes: Turnstile and policy links', () => {
+  it('skips Turnstile, which stays on librechat.yaml, and stores a mailto: policy link', async () => {
+    const params = nextParams();
+
+    const set = await send(
+      {
+        ops: [
+          { op: 'set', fieldPath: 'turnstile.siteKey', value: 'stored-key' },
+          {
+            op: 'set',
+            fieldPath: 'interface.privacyPolicy.externalUrl',
+            value: 'mailto:privacy@example.com',
+          },
+        ],
+      },
+      params,
+    );
+    const tombstone = await send({ ops: [{ op: 'tombstone', fieldPath: 'turnstile' }] }, params);
+
+    expect(set.status).toBe(200);
+    expect(set.body.skipped.map(({ opIndex, reason }) => [opIndex, reason])).toEqual([
+      [0, 'base_only_section'],
+    ]);
+    expect(tombstone.status).toBe(200);
+    expect(tombstone.body.skipped.map(({ opIndex, reason }) => [opIndex, reason])).toEqual([
+      [0, 'base_only_section'],
+    ]);
+    const stored = await storedDocument(params.principalId);
+    expect(stored!.overrides).toEqual({
+      interface: { privacyPolicy: { externalUrl: 'mailto:privacy@example.com' } },
+    });
+    expect(stored!.tombstones).toEqual([]);
+  });
+
+  it('refuses a policy link that would run script, writing nothing', async () => {
+    const params = nextParams();
+
+    const { status, body, deps } = await send(
+      {
+        ops: [
+          { op: 'set', fieldPath: 'interface.customWelcome', value: 'hi' },
+          {
+            op: 'set',
+            fieldPath: 'interface.termsOfService',
+            value: { externalUrl: '\u00a0JavaScript:alert(document.domain)' },
+          },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(400);
+    expect(body.code).toBe('CONFIG_OVERRIDE_INVALID');
+    expect(body.issues).toEqual([
+      {
+        path: 'interface.termsOfService.externalUrl',
+        segments: ['interface', 'termsOfService', 'externalUrl'],
+        code: 'custom',
+      },
+    ]);
+    expect(deps.writeConfigDocument).not.toHaveBeenCalled();
+    expect(await storedDocument(params.principalId)).toBeNull();
+  });
+});
+
 describe('POST …/changes: no-ops, dry runs and preconditions', () => {
   it('writes nothing for a batch that changes nothing, keeping the revision', async () => {
     const params = nextParams();

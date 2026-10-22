@@ -23,6 +23,12 @@ import { parseFieldPath } from './paths';
  * (`./mutations`) applied between a read and that write, so a second engine (PostgreSQL/JSONB)
  * implements five operations and inherits the rest.
  *
+ * Every engine also scopes documents to the caller's tenant as `~/tenant/conformance` requires,
+ * and keeps role documents (whose ids every tenant reuses) and every `listActive` read to one
+ * tenant partition (`tenantPartition`), so a merge never mixes tenants. Only a `list` that asks
+ * for `acrossTenants` reads every partition the caller's scope can see, for reports that name
+ * each document's tenant.
+ *
  * `./conformance` is the suite an engine must pass.
  */
 
@@ -81,11 +87,20 @@ export type ConfigTombstones = Pick<
   'principalType' | 'principalId' | 'tenantId' | 'tombstones'
 >;
 
+/**
+ * Which documents a `list` returns: only active or inactive ones, and with `acrossTenants`, the
+ * role documents of every tenant partition the caller's scope can read instead of one partition's.
+ */
+export interface ConfigListFilter {
+  isActive?: boolean;
+  acrossTenants?: boolean;
+}
+
 export interface ConfigStore {
   /** The principal's document, active or not, or `null` when it has none. */
   read(principal: ConfigPrincipal): Promise<ConfigRecord | null>;
-  /** Every document (optionally only active or inactive ones), in {@link compareConfigRecords} order. */
-  list(filter?: { isActive?: boolean }): Promise<ConfigRecord[]>;
+  /** Every document the filter selects, in {@link compareConfigRecords} order. */
+  list(filter?: ConfigListFilter): Promise<ConfigRecord[]>;
   /** The active documents of exactly these principals, in {@link compareConfigRecords} order. */
   listActive(principals: readonly ConfigPrincipal[]): Promise<ConfigRecord[]>;
   /**
@@ -417,7 +432,7 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
    */
   async function listTombstones(fieldPath: string): Promise<ConfigTombstones[]> {
     const found: ConfigTombstones[] = [];
-    for (const record of await store.list({ isActive: true })) {
+    for (const record of await store.list({ isActive: true, acrossTenants: true })) {
       if (record.tombstones.some((path) => isPathOrDescendant(path, fieldPath))) {
         found.push(toTombstones(record));
       }
