@@ -465,14 +465,14 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
     expect(updated.code_environment_id).toBe(a.environmentId);
     expect(updated.code_environment_ids).toEqual([b.environmentId]);
     await page.goto(`/c/new?agent_id=${encodeURIComponent(coding.id)}`);
-    await expect(page.getByTestId('code-workspace')).toContainText('Acceptance a');
-    await page.getByTestId('code-workspace').click();
+    await expect(page.getByTestId('code-machine')).toContainText('Acceptance a');
+    await page.getByTestId('code-machine').click();
     await page.getByRole('menuitem', { name: 'Acceptance b', exact: true }).click();
     await page
       .locator(`[data-code-environment-id="${b.environmentId}"]`)
       .getByRole('menuitemradio', { name: /workspace/ })
       .click();
-    await expect(page.getByTestId('code-workspace')).toContainText('Acceptance b');
+    await expect(page.getByTestId('code-machine')).toContainText('Acceptance b');
     selectedWorker = b;
     expect(await turn('read')).toContain('native-original');
     const runtimeChat = new URL(page.url()).pathname.slice(3);
@@ -485,7 +485,7 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
     ]);
     expect(await turn('read')).toContain('native-original');
     await page.goto(`/c/new?agent_id=${encodeURIComponent(coding.id)}`);
-    await expect(page.getByTestId('code-workspace')).toContainText('Acceptance a');
+    await expect(page.getByTestId('code-machine')).toContainText('Acceptance a');
     selectedWorker = a;
     expect(await turn('read')).toContain('native-edited');
     const applicationChat = new URL(page.url()).pathname.slice(3);
@@ -516,7 +516,7 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
       body: { subagents: { enabled: true, allowSelf: false, agent_ids: [reviewer.id] } },
     });
     await page.goto(`/c/new?agent_id=${encodeURIComponent(coding.id)}`);
-    await page.getByTestId('code-workspace').click();
+    await page.getByTestId('code-machine').click();
     await page.getByRole('menuitem', { name: 'Acceptance b', exact: true }).click();
     await page
       .locator(`[data-code-environment-id="${b.environmentId}"]`)
