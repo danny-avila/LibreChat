@@ -77,11 +77,11 @@ describe('invalidateConfigCaches', () => {
   it('clears the YAML base config, the override caches and the MCP config caches', async () => {
     await invalidateConfigCaches();
 
-    expect(invalidationOptions.clears.map(({ label }) => label)).toEqual([
-      'clearAppConfigCache',
-      'clearOverrideCache',
-      'clearMcpConfigCache',
-    ]);
+    const labels = invalidationOptions.clears.map(({ label }) => label);
+    expect(labels).toHaveLength(3);
+    expect(labels).toEqual(
+      expect.arrayContaining(['clearAppConfigCache', 'clearOverrideCache', 'clearMcpConfigCache']),
+    );
     expect(mockClearAppConfigCache).toHaveBeenCalledTimes(1);
     expect(mockClearOverrideCache).toHaveBeenCalledTimes(1);
     expect(mockClearMcpConfigCache).toHaveBeenCalledTimes(1);

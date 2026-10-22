@@ -1,9 +1,12 @@
 import Redis from 'ioredis';
+import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
+import type { AppConfig } from '@librechat/data-schemas';
 import type { ConfigCacheInvalidation, ConfigInvalidationPubSub } from './invalidation';
 import type { RespServer } from '~/cache/__tests__/resp.helper';
 import { createConfigCacheInvalidation, createRedisConfigInvalidationPubSub } from './invalidation';
 import { startRespServer, waitFor } from '~/cache/__tests__/resp.helper';
+import { createAppConfigService } from './service';
 
 /**
  * Cross-instance invalidation over real ioredis connections: each instance owns the publisher
@@ -84,6 +87,65 @@ describe('createRedisConfigInvalidationPubSub', () => {
     expect(second.clearOverrides).toHaveBeenCalledWith('tenant-a');
     expect(first.clearOverrides).toHaveBeenCalledTimes(1);
     expect(other.clearOverrides).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Composed like `api/server/services/Config/app.js`: the base clear rides the broadcast, so a
+   * write taken by one instance makes every instance reload librechat.yaml.
+   */
+  it('reloads librechat.yaml on the other instances of the deployment', async () => {
+    let yamlVersion = 'v1';
+    const startServiceInstance = async () => {
+      const store = new Map<string, unknown>();
+      const keyv = new Keyv({ store, namespace: 'APP_CONFIG' });
+      const cache = {
+        get: (key: string) => keyv.get(key),
+        set: (key: string, value: unknown, ttl?: number) => keyv.set(key, value, ttl),
+        delete: (key: string) => keyv.delete(key),
+        opts: { store: { keys: () => store.keys() } },
+      };
+      const service = createAppConfigService({
+        loadBaseConfig: async () => ({ config: { version: yamlVersion } }) as AppConfig,
+        setCachedTools: async () => undefined,
+        getCache: () => cache,
+        cacheKeys: { APP_CONFIG: 'APP_CONFIG' },
+        getApplicableConfigs: async () => [],
+        getUserPrincipals: async () => [],
+      });
+      const clearBase = jest.fn(service.clearAppConfigCache);
+      const pubsub = createRedisConfigInvalidationPubSub({
+        useRedis: true,
+        client: await connect(),
+        namespace: 'deploy-a',
+      });
+      if (!pubsub) {
+        throw new Error('expected a Redis pub/sub pair');
+      }
+      const invalidation = createConfigCacheInvalidation({
+        clears: [
+          { label: 'clearAppConfigCache', clear: () => clearBase() },
+          { label: 'clearOverrideCache', clear: service.clearOverrideCache },
+        ],
+        pubsub,
+      });
+      opened.push({ invalidation, pubsub });
+      const readVersion = async () =>
+        (await service.getAppConfig({ baseOnly: true })).config?.version;
+      return { invalidation, clearBase, readVersion };
+    };
+    const writer = await startServiceInstance();
+    const reader = await startServiceInstance();
+    await waitFor(subscribed('librechat:config:invalidate:deploy-a', 2));
+    expect(await writer.readVersion()).toBe('v1');
+    expect(await reader.readVersion()).toBe('v1');
+
+    yamlVersion = 'v2';
+    expect(await reader.readVersion()).toBe('v1');
+    await writer.invalidation.invalidate();
+
+    expect(await writer.readVersion()).toBe('v2');
+    await waitFor(() => reader.clearBase.mock.calls.length === 1);
+    expect(await reader.readVersion()).toBe('v2');
   });
 
   it('uses the default channel when the deployment has no key prefix', async () => {
