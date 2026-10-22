@@ -3606,6 +3606,7 @@ export const webSearchSchema = z.object({
   tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
   tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
   keenableApiKey: z.string().optional().default('${KEENABLE_API_KEY}'),
+  keenableApiKeyPreview: apiKeyPreviewSchema,
   keenableApiUrl: z.string().optional().default('${KEENABLE_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiKeyPreview: apiKeyPreviewSchema,
@@ -5260,7 +5261,7 @@ export enum Constants {
    */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.17',
+  CONFIG_VERSION = '1.3.18',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
