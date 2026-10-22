@@ -12,6 +12,7 @@ const {
   waitForGenerationPersistence,
   createArchiveAllHandler,
   createSubagentActivityStreamHandler,
+  createSubagentTaskContentHandler,
   createSubagentControlHandler,
   isValidSubagentControlRequest,
   exemptAgentTriggerFromIpLimiter,
@@ -157,6 +158,17 @@ const subagentActivityStreamHandler = createSubagentActivityStreamHandler(
     subscribe: subagentThreadTaskStore.subscribeActivity.bind(subagentThreadTaskStore),
   },
 );
+const subagentTaskContentHandler = createSubagentTaskContentHandler(
+  {
+    getConvoOwnership: db.getConvoOwnership,
+    getSubagentThreadForParent: db.getSubagentThreadForParent,
+    getMessages: db.getMessages,
+    getSubagentContentHead: db.getSubagentContentHead,
+    streamSubagentContentBatches: db.streamSubagentContentBatches,
+  },
+  () => subagentThreadTaskStore.contentPageBytes,
+  () => subagentThreadTaskStore.contentRecoveryGraceMs,
+);
 const subagentControlHandler = createSubagentControlHandler({
   getConvoOwnership: db.getConvoOwnership,
   getSubagentThreadForParent: db.getSubagentThreadForParent,
@@ -258,6 +270,10 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get(
+  '/:parentConversationId/subagents/:threadId/tasks/:taskId/content',
+  subagentTaskContentHandler,
+);
 router.get(
   '/:parentConversationId/subagents/:threadId/tasks/:taskId/activity',
   subagentActivityStreamHandler,

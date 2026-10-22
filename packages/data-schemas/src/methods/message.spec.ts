@@ -3313,6 +3313,51 @@ describe('Message Operations', () => {
   });
 
   describe('getMessagesForSubagentThreadView', () => {
+    it('projects recovery enrollment without exposing private journal metadata', async () => {
+      const conversationId = uuidv4();
+      for (const captured of [false, true, 'deleted'] as const) {
+        await saveMessage(mockCtx, {
+          messageId: `captured-${captured}:user`,
+          conversationId,
+          user: 'user123',
+          text: 'Input',
+          ...(captured
+            ? {
+                subagentContent: {
+                  version: 1 as const,
+                  throughSequence: 12,
+                  ...(captured === 'deleted' ? { deleted: true } : {}),
+                },
+              }
+            : {}),
+        });
+      }
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 3,
+        textCodePointLimit: 100,
+      });
+      expect(messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            messageId: 'captured-true:user',
+            contentRecoveryAvailable: true,
+          }),
+          expect.objectContaining({
+            messageId: 'captured-false:user',
+            contentRecoveryAvailable: false,
+          }),
+          expect.objectContaining({
+            messageId: 'captured-deleted:user',
+            contentRecoveryAvailable: false,
+          }),
+        ]),
+      );
+      expect(JSON.stringify(messages)).not.toContain('subagentContent');
+      expect(JSON.stringify(messages)).not.toContain('throughSequence');
+    });
+
     it('bounds text in MongoDB before returning the public projection', async () => {
       const conversationId = uuidv4();
       await saveMessage(mockCtx, {
@@ -4071,6 +4116,28 @@ describe('Message Operations', () => {
   });
 
   describe('deleteMessages', () => {
+    it('does not discover journals for an exact ordinary message id', async () => {
+      const messageId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId,
+        conversationId: uuidv4(),
+        user: 'user123',
+        text: 'Ordinary chat',
+      });
+      const find = jest.spyOn(Message, 'find');
+      const journalDelete = jest.spyOn(mongoose.models.SubagentContent, 'deleteMany');
+      try {
+        await expect(deleteMessages({ user: 'user123', messageId })).resolves.toMatchObject({
+          deletedCount: 1,
+        });
+        expect(find).not.toHaveBeenCalled();
+        expect(journalDelete).not.toHaveBeenCalled();
+      } finally {
+        find.mockRestore();
+        journalDelete.mockRestore();
+      }
+    });
+
     it('should delete messages with the correct filter', async () => {
       // Save some messages for different users
       await saveMessage(mockCtx, mockMessageData);
