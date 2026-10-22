@@ -934,6 +934,56 @@ describe('Chat attachments and reported conversations', () => {
     );
   });
 
+  it('reports a resumed start that fails over HTTP as a disconnect', async () => {
+    const stream = Object.assign(createStream({ streamId: 'convo-1', generationCreatedAt: 100 }), {
+      resumed: true,
+    });
+    const { chat, onFinish } = setup(
+      {},
+      { sendMessages: jest.fn(async () => ({ status: 'stream' as const, stream })) },
+    );
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push({ type: 'error', status: 500, data: 'failed' } as ChatEvent);
+    await sent;
+
+    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isDisconnect: true }));
+  });
+
+  it('drops the optimistic rows of a start the server replaced before attaching', async () => {
+    const earlier: TMessage = { ...placeholder, messageId: 'earlier-1', text: 'Earlier' };
+    const stream = createStream({ streamId: 'stream-2', generationCreatedAt: 200 });
+    let attachedWith: string[] = [];
+    const { chat } = setup(
+      {
+        state: createState([earlier]),
+        prepareRequest: jest.fn(() => ({
+          payload,
+          messages: (current: TMessage[]) => [...current, userMessage, placeholder],
+        })),
+      },
+      {
+        sendMessages: jest.fn(async () => ({
+          status: 'replaced' as const,
+          generationProtocolVersion: 2,
+          conversationId: 'convo-1',
+          streamId: 'stream-2',
+          generationCreatedAt: 200,
+        })),
+        reconnectToStream: jest.fn(async () => {
+          attachedWith = chat.messages.map((message) => message.messageId);
+          return stream;
+        }),
+      },
+    );
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push(finalEvent({ requestMessage: null, responseMessage: null }));
+    await sent;
+
+    expect(attachedWith).toEqual(['earlier-1']);
+  });
+
   it('reports an error the generation itself sent on an attachment as terminal', async () => {
     const stream = createStream({ streamId: 'stream-2', generationCreatedAt: 200 });
     const { chat, onFinish } = replacing(stream);

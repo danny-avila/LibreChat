@@ -537,11 +537,18 @@ export class Chat {
         active.controller.signal,
       );
       active.generation.responseId = prepared.responseMessageId;
+      /** The rows the optimistic write added, which a start the server replaced never admitted. */
+      let added: Set<string> = new Set();
       if (prepared.messages) {
         const optimistic = prepared.messages;
         await this.executor.run(() => {
           if (!active.controller.signal.aborted) {
-            this.write(typeof optimistic === 'function' ? optimistic(this.messages) : optimistic);
+            const held = new Set(this.messages.map((message) => message.messageId));
+            const next = typeof optimistic === 'function' ? optimistic(this.messages) : optimistic;
+            added = new Set(
+              next.filter((message) => !held.has(message.messageId)).map((m) => m.messageId),
+            );
+            this.write(next);
           }
         });
       }
@@ -583,7 +590,15 @@ export class Chat {
       let stream: ChatStream | null = null;
       if (result.status === 'stream') {
         stream = result.stream;
+        /** A start the server attached to a generation already running is an attachment too. */
+        active.attached = result.stream.resumed === true;
       } else if (result.status === 'replaced') {
+        if (added.size > 0) {
+          /** The server ran a newer generation instead, so this turn's optimistic rows go. */
+          await this.executor.run(() => {
+            this.write(this.messages.filter((message) => !added.has(message.messageId)));
+          });
+        }
         /** The replacement's response is not this turn's placeholder; its first frame names it. */
         active.generation.responseId = undefined;
         active.generation.responseUnknown = true;
