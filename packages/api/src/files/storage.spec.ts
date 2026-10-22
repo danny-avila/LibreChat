@@ -76,6 +76,52 @@ describe('createDeleteFileWithSecondaryStorage', () => {
     expect(file.tenantId).toBe('tenant-a');
   });
 
+  it.each([FileSources.openai, FileSources.azure])(
+    'deletes an authorized provider-only assistant file from %s without a local row',
+    async (source) => {
+      const { primary, isFileStorageClean, getDeleteFile, clearFileEmbeddings, logger } =
+        setup(source);
+      const remove = createDeleteFileWithSecondaryStorage({
+        source,
+        deleteFile: primary,
+        getDeleteFile,
+        clearFileEmbeddings,
+        isFileStorageClean,
+        logger,
+      });
+      isFileStorageClean.mockImplementation(
+        async (snapshot) => snapshot.allowMissingFileRecord === true,
+      );
+      const providerFile = { file_id: 'provider-only', embedded: false };
+      await remove({ ...req, body: { assistant_id: 'assistant' } }, providerFile, client);
+      expect(isFileStorageClean).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file_id: providerFile.file_id,
+          userId: req.user.id,
+          tenantId: req.user.tenantId,
+          allowMissingFileRecord: true,
+        }),
+      );
+      expect(primary).toHaveBeenCalledWith(expect.anything(), providerFile, client);
+    },
+  );
+
+  it.each([FileSources.local, FileSources.openai, FileSources.azure])(
+    'does not treat a persisted %s file as provider-only',
+    async (source) => {
+      const { primary, isFileStorageClean, remove } = setup(source);
+      isFileStorageClean.mockResolvedValue(false);
+      const assistantRequest = { ...req, body: { assistant_id: 'assistant' } };
+      await expect(remove(assistantRequest, file, client)).rejects.toThrow(
+        'File storage cleanup was not confirmed',
+      );
+      expect(isFileStorageClean).toHaveBeenCalledWith(
+        expect.not.objectContaining({ allowMissingFileRecord: true }),
+      );
+      expect(primary).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(['replacement', 'failure'])(
     'retains primary bytes when final code-only cleanup has a %s',
     async (mode) => {

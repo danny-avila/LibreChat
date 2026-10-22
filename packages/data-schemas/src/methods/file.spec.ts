@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { EToolResources, FileContext } from 'librechat-data-provider';
+import { EToolResources, FileContext, FileSources } from 'librechat-data-provider';
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { IChatProject, IMongoFile } from '~/types';
 import { _resetStrictCache } from '~/models/plugins/tenantIsolation';
@@ -938,6 +938,28 @@ describe('File Methods', () => {
       );
       const stored = await File.collection.findOne({ file_id: snapshot.file_id });
       expect(stored?.metadata?.codeEnvRefs?.default?.file_id).toBe('late-copy');
+    });
+
+    it.each([FileSources.openai, FileSources.azure])(
+      'permits an authorized missing %s record but never a changed local snapshot',
+      async (source) => {
+        const providerOnly = { ...check, source, allowMissingFileRecord: true };
+        expect(await fileMethods.isFileStorageClean({ ...check, source })).toBe(false);
+        expect(await fileMethods.isFileStorageClean(providerOnly)).toBe(true);
+        await seed({ source, metadata: { codeEnvRefs: { default: { file_id: 'new-copy' } } } });
+        expect(await fileMethods.isFileStorageClean(providerOnly)).toBe(false);
+        await File.collection.updateOne(
+          { file_id: snapshot.file_id },
+          { $unset: { metadata: '' }, $set: { updatedAt: new Date(updatedAt.getTime() + 1) } },
+        );
+        expect(await fileMethods.isFileStorageClean(providerOnly)).toBe(false);
+      },
+    );
+
+    it('does not allow missing local records through the provider-only exception', async () => {
+      expect(await fileMethods.isFileStorageClean({ ...check, allowMissingFileRecord: true })).toBe(
+        false,
+      );
     });
 
     it('accepts primary vector cleanup only for its original namespace snapshot', async () => {

@@ -73,6 +73,7 @@ export function createDeleteFileWithSecondaryStorage<
   TRequest extends {
     user: { id: string; tenantId?: string };
     config?: { fileConfig?: { retainedFileCleanup?: boolean } };
+    body?: { assistant_id?: string };
   },
   TFile extends StorageFile,
   TClient,
@@ -94,6 +95,13 @@ export function createDeleteFileWithSecondaryStorage<
   return async (req, file, client) => {
     const hasCodeEnvRef =
       getCodeEnvRefs(file.metadata as CodeEnvReferenceSet | undefined).length > 0;
+    const providerOnly =
+      (source === FileSources.openai || source === FileSources.azure) &&
+      req.body?.assistant_id != null &&
+      file.user == null &&
+      file.updatedAt == null &&
+      file.embedded !== true &&
+      !hasCodeEnvRef;
     if (
       (file.embedded === true || hasCodeEnvRef) &&
       req.config?.fileConfig?.retainedFileCleanup !== true
@@ -179,8 +187,9 @@ export function createDeleteFileWithSecondaryStorage<
           !(await isFileStorageClean({
             file_id: file.file_id,
             userId: file.user?.toString() ?? req.user.id,
-            tenantId: file.tenantId,
+            tenantId: providerOnly ? req.user.tenantId : file.tenantId,
             updatedAt: file.updatedAt,
+            ...(providerOnly ? { allowMissingFileRecord: true } : {}),
             source,
             embedded: file.embedded,
             embeddedEntities: readEmbeddedEntities(file.metadata?.embeddedEntities),

@@ -1370,7 +1370,20 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   /** Checks the final content/presence snapshot before removing primary storage. */
   async function isFileStorageClean(data: FileStorageCleanupParams): Promise<boolean> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return (await File.exists(fileStorageCleanupFilter(data))) != null;
+    if ((await File.exists(fileStorageCleanupFilter(data))) != null) return true;
+    if (
+      !data.allowMissingFileRecord ||
+      (data.source !== FileSources.openai && data.source !== FileSources.azure)
+    ) {
+      return false;
+    }
+    return (
+      (await File.exists({
+        file_id: data.file_id,
+        user: data.userId,
+        $and: [{ tenantId: data.tenantId ?? null }],
+      })) == null
+    );
   }
 
   /**

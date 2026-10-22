@@ -16,6 +16,8 @@ export type FileStorageCleanupParams = {
   source?: string;
   embedded?: boolean;
   embeddedEntities?: string[];
+  /** Authorized provider-only assistant files have no persisted local snapshot. */
+  allowMissingFileRecord?: boolean;
 };
 
 export type FileDeletionSnapshot = Omit<FileStorageCleanupParams, 'userId' | 'embeddedEntities'> & {
