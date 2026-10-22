@@ -18,6 +18,7 @@ let isConfigSecretDescendantPath: typeof import('./secrets').isConfigSecretDesce
 let isConfigSecretKeyRename: typeof import('./secrets').isConfigSecretKeyRename;
 let preserveConfigSecrets: typeof import('./secrets').preserveConfigSecrets;
 let redactConfigSecrets: typeof import('./secrets').redactConfigSecrets;
+let redactResolvedConfigSecrets: typeof import('./secrets').redactResolvedConfigSecrets;
 let resolveConfigSecret: typeof import('./secrets').resolveConfigSecret;
 let resolveStoredConfigSecret: typeof import('./secrets').resolveStoredConfigSecret;
 let getConfigSecretRules: typeof import('./secrets').getConfigSecretRules;
@@ -41,6 +42,7 @@ beforeAll(async () => {
     isConfigSecretKeyRename,
     preserveConfigSecrets,
     redactConfigSecrets,
+    redactResolvedConfigSecrets,
     resolveConfigSecret,
     resolveStoredConfigSecret,
     getConfigSecretRules,
@@ -1027,6 +1029,50 @@ describe('Custom endpoint config secrets', () => {
     expect(decryptV3(spaced.apiKey)).toBe('sk-prod-spaced-key');
   });
 
+  it('matches endpoint names the runtime folds together as one identity', () => {
+    const existing = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'Ollama', apiKey: 'sk-ollama-stored-key' },
+        { name: 'OpenRouter', apiKey: 'sk-or-stored-value' },
+      ]),
+    );
+    const next = encryptConfigSecrets(endpointsWith([{ name: 'ollama' }, { name: 'openrouter' }]));
+
+    const preserved = preserveConfigSecrets(next, existing);
+    const [ollama, openRouter] = preserved.endpoints.custom as Array<Record<string, string>>;
+
+    expect(decryptV3(ollama.apiKey)).toBe('sk-ollama-stored-key');
+    expect(ollama.apiKeyPreview).toBe('...-key');
+    expect(openRouter.apiKey).toBeUndefined();
+  });
+
+  /** A document stored before names were folded may hold both spellings; the runtime merge
+   *  combines them in order, so an omitted key keeps the key that merge applies. */
+  it.each([
+    ['only the earlier item holds a key', [{ apiKey: 'sk-ollama-first-key' }, {}], 'first'],
+    [
+      'both items hold a key',
+      [{ apiKey: 'sk-ollama-first-key' }, { apiKey: 'sk-ollama-second-key' }],
+      'second',
+    ],
+  ])('keeps the combined key of two stored spellings when %s', (_case, keys, expected) => {
+    const existing = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'Ollama', baseURL: 'http://first/v1', ...keys[0] },
+        { name: 'ollama', modelDisplayLabel: 'Second', ...keys[1] },
+      ]),
+    );
+
+    const preserved = preserveConfigSecrets(
+      encryptConfigSecrets(endpointsWith([{ name: 'ollama' }])),
+      existing,
+    );
+
+    const [entry] = preserved.endpoints.custom as Array<Record<string, string>>;
+    expect(decryptV3(entry.apiKey)).toBe(`sk-ollama-${expected}-key`);
+    expect(entry.apiKeyPreview).toBe('...-key');
+  });
+
   it('does not preserve keys for duplicated endpoint identities', () => {
     const existing = encryptConfigSecrets(
       endpointsWith([
@@ -1099,6 +1145,109 @@ describe('Custom endpoint config secrets', () => {
     expect(resolved.apiKey).toBe('sk-runtime');
     const passthrough = { name: 'B', apiKey: 'user_provided' };
     expect(resolveCustomEndpointSecrets(passthrough)).toBe(passthrough);
+  });
+});
+
+describe('Resolved config secrets (Azure groups and the Vertex service key)', () => {
+  const SERVICE_KEY_JSON =
+    '{"type":"service_account","private_key":"-----BEGIN PRIVATE KEY-----x"}';
+
+  it('removes literal Azure group keys from groupMap, merged groups and the raw YAML copy', () => {
+    const azure = () => ({
+      groups: [
+        { group: 'east', apiKey: 'azure-literal-east-key', instanceName: 'east' },
+        { group: 'west', apiKey: '${WEST_API_KEY}', instanceName: 'west' },
+        { group: 'user', apiKey: 'user_provided', instanceName: 'user' },
+        { group: 'blank', apiKey: '', instanceName: 'blank' },
+      ],
+      groupMap: {
+        east: {
+          apiKey: 'azure-literal-east-key',
+          instanceName: 'east',
+          models: { 'gpt-4o': true },
+        },
+        west: { apiKey: ' ${WEST_API_KEY} ', instanceName: 'west' },
+        user: { apiKey: 'user_provided', instanceName: 'user' },
+      },
+    });
+    const resolved = redactResolvedConfigSecrets({
+      endpoints: { azureOpenAI: azure() },
+      config: { endpoints: { azureOpenAI: azure() } },
+    });
+    redactResolvedConfigSecrets(resolved.config);
+
+    expect(JSON.stringify(resolved)).not.toContain('azure-literal-east-key');
+    for (const target of [resolved.endpoints.azureOpenAI, resolved.config.endpoints.azureOpenAI]) {
+      expect(target.groups.map((group) => group.apiKey)).toEqual([
+        undefined,
+        '${WEST_API_KEY}',
+        'user_provided',
+        '',
+      ]);
+      expect(target.groups[0]).toEqual({ group: 'east', instanceName: 'east' });
+    }
+    expect(resolved.endpoints.azureOpenAI.groupMap).toEqual({
+      east: { instanceName: 'east', models: { 'gpt-4o': true } },
+      west: { apiKey: ' ${WEST_API_KEY} ', instanceName: 'west' },
+      user: { apiKey: 'user_provided', instanceName: 'user' },
+    });
+  });
+
+  it('removes the Vertex service key unless it is an unresolved environment reference', () => {
+    const resolved = redactResolvedConfigSecrets({
+      endpoints: {
+        anthropic: {
+          vertex: { serviceKeyFile: SERVICE_KEY_JSON, region: 'us-east5' },
+          vertexConfig: { serviceKeyFile: '/secrets/vertex.json', region: 'us-east5' },
+        },
+      },
+    });
+    expect(resolved.endpoints.anthropic).toEqual({
+      vertex: { region: 'us-east5' },
+      vertexConfig: { region: 'us-east5' },
+    });
+
+    const referenced = redactResolvedConfigSecrets({
+      endpoints: {
+        anthropic: {
+          vertex: { serviceKeyFile: '${GOOGLE_SERVICE_KEY_FILE}' },
+          vertexConfig: { serviceKeyFile: '${GOOGLE_SERVICE_KEY_FILE}' },
+        },
+      },
+    });
+    expect(referenced.endpoints.anthropic.vertex.serviceKeyFile).toBe('${GOOGLE_SERVICE_KEY_FILE}');
+    expect(referenced.endpoints.anthropic.vertexConfig.serviceKeyFile).toBe(
+      '${GOOGLE_SERVICE_KEY_FILE}',
+    );
+
+    const userProvided = redactResolvedConfigSecrets({
+      endpoints: { anthropic: { vertex: { serviceKeyFile: 'user_provided' } } },
+    });
+    expect(userProvided.endpoints.anthropic.vertex).toEqual({});
+  });
+
+  it('fails closed on malformed shapes: non-string values and swapped containers', () => {
+    const resolved = redactResolvedConfigSecrets({
+      endpoints: {
+        azureOpenAI: {
+          groups: { east: { apiKey: 'azure-literal-in-record' } },
+          groupMap: [{ apiKey: 'azure-literal-in-array' }, { apiKey: { nested: 'object-key' } }],
+        },
+        anthropic: { vertex: { serviceKeyFile: { private_key: 'object-key' } } },
+      },
+    });
+
+    expect(JSON.stringify(resolved)).not.toMatch(/azure-literal|object-key/);
+  });
+
+  it('leaves configs without these endpoints, and unrelated fields, untouched', () => {
+    const config = {
+      endpoints: { custom: [{ name: 'A', apiKey: 'custom-literal' }], azureOpenAI: null },
+      speech: { tts: { openai: { apiKey: 'speech-literal' } } },
+    };
+    expect(redactResolvedConfigSecrets(structuredClone(config))).toEqual(config);
+    expect(redactResolvedConfigSecrets(null)).toBeNull();
+    expect(redactResolvedConfigSecrets('text')).toBe('text');
   });
 });
 

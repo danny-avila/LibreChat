@@ -21,8 +21,8 @@ import { getConfigSecretRules } from './secrets';
  */
 export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   dottedKeys: true,
-  sectionAllowlist: false,
-  readFilteredWriteResponses: false,
+  sectionAllowlist: true,
+  readFilteredWriteResponses: true,
   webSearchStoredKeys: true,
   expectedRevision: true,
   prunesEmptyParents: true,
@@ -58,7 +58,7 @@ export function buildAdminConfigMeta(limits: AdminConfigMeta['limits']): AdminCo
         runtimeFields: [...RUNTIME_CONFIG_INTERFACE_FIELDS],
         permissionSubKeys: [...PERMISSION_SUB_KEYS],
       },
-      titleResolution: 'block',
+      titleResolution: 'field',
     },
   };
 }

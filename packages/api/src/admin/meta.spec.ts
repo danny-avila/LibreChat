@@ -15,6 +15,7 @@ import {
   PrincipalModel,
   configSchema,
   RerankerTypes,
+  EModelEndpoint,
   SearchProviders,
   ScraperProviders,
   PERMISSION_SUB_KEYS,
@@ -41,6 +42,7 @@ import { createRequestSanitizer, rejectUnsafeConfigKeys } from '~/middleware/san
 import { redactConfigSecrets, encryptConfigSecretFields } from './secrets';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { createMCPPolicyResolver } from '~/mcp/registry/policy';
+import { resolveTitleConfig } from '~/endpoints/config';
 import { createAppConfigService } from '~/app/service';
 import { createAdminConfigHandlers } from './config';
 import { ADMIN_CONFIG_FEATURES } from './meta';
@@ -57,6 +59,12 @@ type ResponseBody = { config?: { overrides: Doc; revision?: string }; [key: stri
 type MockRes = Response & { statusCode: number; body: ResponseBody | undefined };
 type MockReqInit = Omit<Partial<ServerRequest>, 'body'> & { body?: object };
 type PatchEntry = { fieldPath: string; value: unknown };
+type WriteHandler =
+  | 'upsertConfigOverrides'
+  | 'patchConfigField'
+  | 'tombstoneConfigField'
+  | 'deleteConfigField'
+  | 'applyConfigChanges';
 
 function mockRes(): MockRes {
   const res = { statusCode: 200, body: undefined } as MockRes;
@@ -107,26 +115,31 @@ async function getMeta(): Promise<{ status: number; meta: AdminConfigMeta }> {
   return { status: res.statusCode, meta: res.body as AdminConfigMeta };
 }
 
-async function patch(
-  entries: PatchEntry[],
+async function write(
+  handler: WriteHandler,
+  init: MockReqInit,
   overrides: Partial<AdminConfigDeps> = {},
 ): Promise<MockRes> {
   const res = mockRes();
-  await createHandlers(overrides).patchConfigField(
-    mockReq({ params: { principalType: 'role', principalId: 'r1' }, body: { entries } }),
+  await createHandlers(overrides)[handler](
+    mockReq({ params: { principalType: 'role', principalId: 'r1' }, ...init }),
     res,
   );
   return res;
 }
 
-function storedConfig(overrides: Doc): ConfigRecord {
+function patch(entries: PatchEntry[], overrides: Partial<AdminConfigDeps> = {}): Promise<MockRes> {
+  return write('patchConfigField', { body: { entries } }, overrides);
+}
+
+function storedConfig(overrides: Doc, tombstones: string[] = []): ConfigRecord {
   return {
     _id: 'c1',
     principalType: 'role',
     principalId: 'r1',
     priority: 10,
     overrides,
-    tombstones: [],
+    tombstones,
     isActive: true,
     configVersion: 1,
   } as Partial<ConfigRecord> as ConfigRecord;
@@ -229,6 +242,21 @@ describe('GET /api/admin/config/meta', () => {
     ]);
   });
 
+  it('reports every admin config behaviour this server ships as on', async () => {
+    const { meta } = await getMeta();
+    expect(meta.features).toEqual({
+      dottedKeys: true,
+      sectionAllowlist: true,
+      readFilteredWriteResponses: true,
+      webSearchStoredKeys: true,
+      expectedRevision: true,
+      prunesEmptyParents: true,
+      awaitedInvalidation: true,
+      changesBatch: true,
+      yamlMcpHide: true,
+    });
+  });
+
   it('reports the override cache TTL the app config service runs with', async () => {
     const res = mockRes();
     await createHandlers({ overrideCacheTtlMs: 15_000 }).getConfigMeta(mockReq(), res);
@@ -266,7 +294,17 @@ describe('meta rules equal the rules the server applies', () => {
       runtimeFields: [...RUNTIME_CONFIG_INTERFACE_FIELDS],
       permissionSubKeys: [...PERMISSION_SUB_KEYS],
     });
-    expect(meta.rules.titleResolution).toBe('block');
+  });
+
+  it('reports per-field title resolution exactly when titles resolve endpoints.all per field', () => {
+    const { titleModel } = resolveTitleConfig({
+      appConfig: {
+        endpoints: { all: { streamRate: 1 }, openAI: { titleModel: 'x' } },
+      } as Partial<AppConfig> as AppConfig,
+      endpoint: EModelEndpoint.openAI,
+    });
+    expect(meta.rules.titleResolution).toBe(titleModel === 'x' ? 'field' : 'block');
+    expect(meta.rules.titleResolution).toBe('field');
   });
 
   it('lists exactly the secret fields reads withhold, with their preview companions', () => {
@@ -376,23 +414,78 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     return keepsDots && unsafe.statusCode === 400 && flagsFixedShape;
   },
   async sectionAllowlist() {
-    return getConfigOverrideIssues({ paths: { uploads: '/tmp' } }).length > 0;
+    const put = await write('upsertConfigOverrides', {
+      body: { overrides: { paths: { uploads: '/tmp' } } },
+    });
+    const fieldWrites = await Promise.all([
+      patch([{ fieldPath: 'paths.uploads', value: '/tmp' }]),
+      write('tombstoneConfigField', { body: { fieldPath: 'paths' } }),
+      write('applyConfigChanges', {
+        body: { ops: [{ op: 'set', fieldPath: 'paths.uploads', value: '/tmp' }] },
+      }),
+    ]);
+    const merged = mergeConfigOverrides(
+      { config: {}, paths: { uploads: '/srv/uploads' } } as Partial<AppConfig> as AppConfig,
+      [storedConfig({ paths: { uploads: '/tmp' } }), storedConfig({}, ['paths'])],
+    );
+    return (
+      put.statusCode === 400 &&
+      JSON.stringify(put.body?.issues) ===
+        JSON.stringify([{ path: 'paths', segments: ['paths'], code: 'unknown_section' }]) &&
+      fieldWrites.every((res) => res.statusCode === 400 && res.body?.code === 'UNKNOWN_SECTION') &&
+      merged.paths?.uploads === '/srv/uploads'
+    );
   },
   async readFilteredWriteResponses() {
-    const res = await patch([{ fieldPath: 'endpoints.openAI.titleModel', value: 'gpt-4o-mini' }], {
-      hasConfigCapability: jest.fn(
-        async (_user, section, verb = 'manage') => verb === 'manage' && section === 'endpoints',
-      ),
-      getReadableConfigSections: jest.fn().mockResolvedValue({ broad: false, sections: new Set() }),
-      writeConfigDocument: jest.fn().mockResolvedValue(
-        storedConfig({
-          endpoints: { openAI: { titleModel: 'gpt-4o-mini' } },
-          memory: { disabled: true },
-        }),
-      ),
+    const written = storedConfig({
+      endpoints: { openAI: { titleModel: 'gpt-4o-mini' } },
+      memory: { disabled: true },
     });
-    const overrides = res.body?.config?.overrides;
-    return res.statusCode === 200 && overrides != null && !('memory' in overrides);
+    /** Each request gets its own store; a grant lookup made after its write fails the request. */
+    const scopedDeps = (): Partial<AdminConfigDeps> => {
+      let committed = false;
+      const commit = jest.fn(async () => {
+        committed = true;
+        return written;
+      });
+      return {
+        hasConfigCapability: jest.fn(
+          async (_user, section, verb = 'manage') => verb === 'manage' && section === 'endpoints',
+        ),
+        getReadableConfigSections: jest.fn(async () => {
+          if (committed) {
+            throw new Error('read access resolved after the write');
+          }
+          return { broad: false, sections: new Set<string>() };
+        }),
+        writeConfigDocument: commit,
+        tombstoneConfigField: commit,
+        unsetConfigField: commit,
+      };
+    };
+    const responses = await Promise.all([
+      patch([{ fieldPath: 'endpoints.openAI.titleModel', value: 'gpt-4o-mini' }], scopedDeps()),
+      write('tombstoneConfigField', { body: { fieldPath: 'endpoints.bedrock' } }, scopedDeps()),
+      write('deleteConfigField', { query: { fieldPath: 'endpoints.bedrock' } }, scopedDeps()),
+      write(
+        'applyConfigChanges',
+        {
+          body: {
+            ops: [{ op: 'set', fieldPath: 'endpoints.openAI.titleModel', value: 'gpt-4o-mini' }],
+          },
+        },
+        scopedDeps(),
+      ),
+    ]);
+    return responses.every((res) => {
+      const overrides = res.body?.config?.overrides;
+      return (
+        res.statusCode === 200 &&
+        overrides != null &&
+        'endpoints' in overrides &&
+        !('memory' in overrides)
+      );
+    });
   },
   async webSearchStoredKeys() {
     const keys = {
