@@ -337,4 +337,55 @@ test.describe('the built @librechat/chat package', () => {
       cached: 1,
     });
   });
+
+  test('a host sees a start it stopped before the answer as possibly still running @scenario:a-host-sees-a-stopped-start-as-possibly-still-running', () => {
+    test.setTimeout(120_000);
+    const dist = resolve(repoRoot, 'packages/chat/dist');
+    expect(existsSync(dist), 'packages/chat/dist is missing: run npm run build').toBe(true);
+
+    /** The start reaches the transport and never answers; the stop cannot name the generation,
+     *  so the turn finishes as a disconnect and every later stop stays the host's to make. */
+    const probe = `
+      const { Chat } = require('@librechat/chat');
+      let messages = [];
+      const statuses = [];
+      const finishes = [];
+      const chat = new Chat({
+        id: 'convo-1',
+        state: {
+          error: undefined,
+          connection: 'idle',
+          get status() { return statuses[statuses.length - 1] || 'ready'; },
+          set status(value) { statuses.push(value); },
+          get messages() { return messages; },
+          replaceMessages(next) { messages = next; },
+        },
+        transport: {
+          sendMessages: () => new Promise(() => {}),
+          reconnectToStream: async () => null,
+          abort: async () => { throw new Error('no stop should be sent'); },
+        },
+        prepareRequest: () => ({
+          payload: { endpoint: 'agents' },
+          messages: [{ messageId: 'r1', text: '' }],
+        }),
+        onFinish: ({ isAbort, isDisconnect }) => finishes.push({ isAbort, isDisconnect }),
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      setTimeout(async () => {
+        const first = await chat.stop();
+        await sent;
+        const second = await chat.stop();
+        process.stdout.write(JSON.stringify({ first, second, finishes, status: chat.status }));
+      }, 0);
+    `;
+    const loaded = run(process.execPath, ['-e', probe], { cwd: resolve(repoRoot, 'client') });
+    expect(loaded.status, loaded.output).toBe(0);
+    expect(JSON.parse(loaded.stdout)).toEqual({
+      first: { status: 'unaddressable' },
+      second: { status: 'unaddressable' },
+      finishes: [{ isAbort: false, isDisconnect: true }],
+      status: 'error',
+    });
+  });
 });
