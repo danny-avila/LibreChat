@@ -36,8 +36,14 @@ import {
   createSubagentThreadTaskStore,
   SubagentThreadTaskStore,
 } from './subagentThreads';
+import {
+  createMCPRequestContext,
+  cleanupMCPRequestContext,
+  getMCPRequestSignal,
+} from '~/mcp/request';
 import { controlFingerprint, SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { snapshotActivity, snapshotActivitySummary } from './digest';
+import { resolveScheduledMCPBearerConfig } from '~/schedules/bearer';
 import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createSubagentAttemptKey } from './subagentThreadIds';
 import { SubagentActivityStream } from './subagentActivity';
@@ -308,6 +314,88 @@ describe('SubagentThreadTaskStore', () => {
     expect(automaticStore.controlTask).toEqual(expect.any(Function));
     await expect(automaticStore.hasTasks(automatic.scopeId)).resolves.toBe(false);
     await expect(automaticStore.listTasks(automatic.scopeId)).resolves.toEqual([]);
+  });
+
+  it.each([false, true])(
+    'retains MCP ownership after parent settlement (wakeups: %s)',
+    async (completionWakeups) => {
+      const userId = 'retained-mcp-user';
+      const parentConversationId = randomUUID();
+      await saveParent(userId, parentConversationId);
+      const store = new SubagentThreadTaskStore(methods);
+      const context = createMCPRequestContext();
+      const signal = getMCPRequestSignal(context);
+      const disconnect = jest.fn(async () => undefined);
+      context.connections.set('retained', { disconnect });
+      const config = buildSubagentThreadTaskConfig(
+        store,
+        { userId, parentConversationId },
+        { completionWakeups, requestScopedConnections: context },
+      );
+      const request = taskRequest(config.scopeId, {
+        run: async () => {
+          await cleanupMCPRequestContext(context);
+          expect(signal.aborted).toBe(false);
+          expect(disconnect).not.toHaveBeenCalled();
+          await expect(
+            resolveScheduledMCPBearerConfig({
+              context,
+              serverName: 'retained',
+              config: { type: 'stdio', command: 'node', args: [], source: 'yaml' },
+            }),
+          ).resolves.toMatchObject({ command: 'node' });
+          return { content: 'MCP scope remains open for the child.' };
+        },
+      });
+      const started = config.store.start(request);
+      expect(config.store.start(request)).toMatchObject({ accepted: true, isNew: false });
+      await waitForSettled(store, config.scopeId, started);
+      expect(store.get(config.scopeId, requireAccepted(started).task.taskId)?.status).toBe(
+        'completed',
+      );
+      await waitUntil(() => disconnect.mock.calls.length === 1, 'last child MCP cleanup');
+      expect(signal.aborted).toBe(true);
+      await cleanupMCPRequestContext(context);
+      expect(disconnect).toHaveBeenCalledTimes(1);
+      store.destroyActivityStream();
+    },
+  );
+
+  it('releases retained MCP ownership when preparation fails before provider work', async () => {
+    const store = new SubagentThreadTaskStore(methods);
+    const context = createMCPRequestContext();
+    const config = buildSubagentThreadTaskConfig(
+      store,
+      { userId: 'missing-mcp-parent', parentConversationId: randomUUID() },
+      { requestScopedConnections: context },
+    );
+    const run = jest.fn(taskRequest('').run);
+    const started = config.store.start(taskRequest(config.scopeId, { run }));
+    await cleanupMCPRequestContext(context);
+    expect(context.cleanupStarted).toBe(false);
+    await waitForSettled(store, config.scopeId, started);
+    expect(run).not.toHaveBeenCalled();
+    expect(context.cleanupStarted).toBe(true);
+    store.destroyActivityStream();
+  });
+
+  it('releases retained MCP ownership when cancellation prevents the launch callback', async () => {
+    const store = new SubagentThreadTaskStore(methods);
+    const context = createMCPRequestContext();
+    const config = buildSubagentThreadTaskConfig(
+      store,
+      { userId: 'cancelled-mcp-user', parentConversationId: randomUUID() },
+      { requestScopedConnections: context },
+    );
+    const run = jest.fn(taskRequest('').run);
+    const started = config.store.start(taskRequest(config.scopeId, { run }));
+    config.store.control(config.scopeId, requireAccepted(started).task.taskId, {
+      action: 'cancel',
+    });
+    await cleanupMCPRequestContext(context);
+    await waitUntil(() => context.cleanupStarted, 'cancelled child MCP release');
+    expect(run).not.toHaveBeenCalled();
+    store.destroyActivityStream();
   });
 
   it('scopes the plain agent-name lookup to the execution tenant', async () => {

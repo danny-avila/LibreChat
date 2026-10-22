@@ -1121,6 +1121,7 @@ const executeResponse = async (envelope, { req, res }) => {
             logger,
             mcpManager,
             configServers,
+            user: req.user,
             runContext: { memory: memoryContext, agentFiles: agentScopedContext.get(runAgent.id) },
           });
         }),

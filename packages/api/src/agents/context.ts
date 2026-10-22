@@ -3,7 +3,7 @@ import { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { Agent, TEphemeralAgent } from 'librechat-data-provider';
 import type { LCTool } from '@librechat/agents';
 import type { Logger } from 'winston';
-import type { ParsedServerConfig } from '~/mcp/types';
+import type { MCPLookupUser, ParsedServerConfig } from '~/mcp/types';
 import type { MCPManager } from '~/mcp/MCPManager';
 import { ContextPartKeys, contributeContext } from './systemParts';
 
@@ -60,6 +60,7 @@ export function extractMCPServers(agent: AgentWithTools): string[] {
  * @param {string[]} mcpServers - Array of MCP server names
  * @param {MCPManager} mcpManager - MCP manager instance
  * @param {Logger} [logger] - Optional logger instance
+ * @param {MCPLookupUser} [user] - The acting user; servers hidden from them are left out
  * @returns {Promise<string>} MCP instructions string, empty if none
  */
 export async function getMCPInstructionsForServers(
@@ -67,6 +68,7 @@ export async function getMCPInstructionsForServers(
   mcpManager: MCPManager,
   logger?: Logger,
   configServers?: Record<string, ParsedServerConfig>,
+  user?: MCPLookupUser,
 ): Promise<string> {
   if (!mcpServers.length) {
     return '';
@@ -75,6 +77,7 @@ export async function getMCPInstructionsForServers(
     const mcpInstructions = await mcpManager.formatInstructionsForContext(
       mcpServers,
       configServers,
+      user,
     );
     if (mcpInstructions && logger) {
       logger.debug('[AgentContext] Fetched MCP instructions', {
@@ -132,6 +135,7 @@ export interface RunContext {
  * @param {Object} [params.ephemeralAgent] - Ephemeral agent config (for MCP override)
  * @param {string} [params.agentId] - Agent ID for logging
  * @param {Logger} [params.logger] - Optional logger instance
+ * @param {MCPLookupUser} [params.user] - The acting user, whose hidden MCP servers contribute no instructions
  * @returns {Promise<void>}
  */
 export async function applyContextToAgent({
@@ -142,6 +146,7 @@ export async function applyContextToAgent({
   agentId,
   logger,
   configServers,
+  user,
   mcpServers: fixedMcpServers,
 }: {
   agent: AgentWithTools;
@@ -151,6 +156,7 @@ export async function applyContextToAgent({
   agentId?: string;
   logger?: Logger;
   configServers?: Record<string, ParsedServerConfig>;
+  user?: MCPLookupUser;
   /** Servers whose instructions to add; `[]` when the turn context renders them from its anchor. */
   mcpServers?: string[];
 }): Promise<void> {
@@ -168,6 +174,7 @@ export async function applyContextToAgent({
       mcpManager,
       logger,
       configServers,
+      user,
     );
 
     agent.instructions = buildAgentInstructions({

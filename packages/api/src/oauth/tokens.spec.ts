@@ -177,6 +177,37 @@ describe('action OAuth token exchange validation', () => {
     expect(params.get('grant_type')).toBe('refresh_token');
     expect(params.get('client_id')).toBe('client-id');
     expect(params.get('client_secret')).toBe('client-secret');
+    expect(config.timeout).toBe(300_000);
+  });
+
+  it('bounds the refresh-token exchange by the caller timeout', async () => {
+    await refreshAccessToken(
+      {
+        ...baseFields,
+        refresh_token: 'refresh-token',
+        token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        timeout: 5_000,
+      },
+      createTokenMethods(),
+    );
+
+    expect(getAxiosConfig().timeout).toBe(5_000);
+  });
+
+  it('bounds the authorization-code exchange by the caller timeout', async () => {
+    await getAccessToken(
+      {
+        ...baseFields,
+        code: 'authorization-code',
+        redirect_uri: 'https://chat.example.com/api/actions/action-1/oauth/callback',
+        token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
+        timeout: 5_000,
+      },
+      createTokenMethods(),
+    );
+
+    expect(getAxiosConfig().timeout).toBe(5_000);
+    expect(getAxiosConfig().signal).toBeInstanceOf(AbortSignal);
   });
 
   it('uses Basic auth for refresh-token exchanges without putting client secrets in the body', async () => {
