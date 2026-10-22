@@ -495,13 +495,19 @@ function unstorableKeyResponse(res: Response, operation: string): Response {
 
 /**
  * Rejects a write that would send a stored secret to a destination it was not
- * entered for. Reports only paths and stable codes, never a value.
+ * entered for. Reports only locations and stable codes, never a value; `segments`
+ * names the location key by key, as other config issues do.
  */
 function secretReentryResponse(res: Response, issues: SecretReentryIssue[]): Response {
   return res.status(400).json({
     error: 'Enter the stored API key again when changing the URL it is sent to',
     code: 'CONFIG_SECRET_REENTRY_REQUIRED',
-    issues: issues.map(({ path, code, secretPath }) => ({ path, code, secretPath })),
+    issues: issues.map(({ path, segments, code, secretPath }) => ({
+      path,
+      segments,
+      code,
+      secretPath,
+    })),
   });
 }
 

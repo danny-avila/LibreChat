@@ -820,6 +820,55 @@ describe('expectedVersion write precondition', () => {
     },
   );
 
+  /**
+   * Makes the database refuse the version-checked write, the way an engine that cannot store a
+   * key name does, after `beforeRefusal` runs. The created empty document's upsert still lands.
+   */
+  function refuseVersionedWrites(beforeRefusal: () => Promise<void> = async () => undefined) {
+    const collection = mongoose.models.Config.collection;
+    const findOneAndUpdate = collection.findOneAndUpdate.bind(collection);
+    jest.spyOn(collection, 'findOneAndUpdate').mockImplementation((async (
+      filter: object,
+      update: { $inc?: object },
+      options: object,
+    ) => {
+      if (update.$inc == null) {
+        return findOneAndUpdate(filter, update, options);
+      }
+      await beforeRefusal();
+      throw new mongoose.mongo.MongoServerError({
+        ok: 0,
+        code: 57,
+        errmsg: "The dotted field 'us.a.b' in 'overrides' is not valid for storage.",
+      });
+    }) as unknown as typeof collection.findOneAndUpdate);
+  }
+
+  it.each(writes)(
+    '$name leaves no document when the database refuses a write the caller saw absent',
+    async ({ write }) => {
+      refuseVersionedWrites();
+
+      await expect(write(null)).rejects.toMatchObject({ code: 57 });
+      expect(await mongoose.models.Config.countDocuments({ principalId: ROLE })).toBe(0);
+    },
+  );
+
+  it('keeps a document another write changed before the database refused this one', async () => {
+    refuseVersionedWrites(async () => {
+      await mongoose.models.Config.updateOne(
+        { principalId: ROLE },
+        { $set: { 'overrides.webSearch.safeSearch': 2 }, $inc: { configVersion: 1 } },
+      );
+    });
+
+    await expect(writes[0].write(null)).rejects.toMatchObject({ code: 57 });
+    expect(await readStored()).toMatchObject({
+      configVersion: 1,
+      overrides: { webSearch: { safeSearch: 2 } },
+    });
+  });
+
   it('unsetConfigField removes a field only at the version the caller read', async () => {
     const seeded = await seed();
     const unset = (expectedVersion: number) =>

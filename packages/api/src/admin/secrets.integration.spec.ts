@@ -776,6 +776,7 @@ describe('config secret registry — real handlers against a real Config collect
     const NEW_URL = 'https://collector.example.com';
     const SEARXNG_REENTRY = {
       path: 'webSearch.searxngInstanceUrl',
+      segments: ['webSearch', 'searxngInstanceUrl'],
       code: 'secret_reentry_required',
       secretPath: 'webSearch.searxngApiKey',
     };
@@ -890,11 +891,13 @@ describe('config secret registry — real handlers against a real Config collect
         reentryRequired([
           {
             path: 'webSearch.tavilySearchUrl',
+            segments: ['webSearch', 'tavilySearchUrl'],
             code: 'secret_reentry_required',
             secretPath: 'webSearch.tavilyApiKey',
           },
           {
             path: 'webSearch.tavilyExtractUrl',
+            segments: ['webSearch', 'tavilyExtractUrl'],
             code: 'secret_reentry_required',
             secretPath: 'webSearch.tavilyApiKey',
           },
@@ -926,6 +929,7 @@ describe('config secret registry — real handlers against a real Config collect
       expect(res.body!.issues).toEqual([
         {
           path: 'webSearch.keenableApiUrl',
+          segments: ['webSearch', 'keenableApiUrl'],
           code: 'secret_reentry_required',
           secretPath: 'webSearch.keenableApiKey',
         },
