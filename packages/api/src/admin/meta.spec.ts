@@ -3,11 +3,14 @@ import mongoose from 'mongoose';
 import { readFileSync } from 'fs';
 import mongoSanitize from 'express-mongo-sanitize';
 import {
+  getConfigRevision,
   loadWebSearchConfig,
   mergeConfigOverrides,
+  ABSENT_CONFIG_REVISION,
   createConfigOperations,
   getConfigOverrideIssues,
   isConfigOverrideStateEmpty,
+  ConfigRevisionConflictError,
 } from '@librechat/data-schemas';
 import {
   Constants,
@@ -28,16 +31,20 @@ import {
 } from 'librechat-data-provider';
 import type {
   AdminConfigFeatureFlag,
+  ConfigOverrideLayer,
+  ConfigPrincipal,
   AdminConfigMeta,
   ConfigRecord,
   ConfigStore,
   ConfigDraft,
   AppConfig,
+  IRole,
 } from '@librechat/data-schemas';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { AdminConfigDeps } from './config';
+import type { AdminRolesDeps } from './roles';
 import { createRequestSanitizer, rejectUnsafeConfigKeys } from '~/middleware/sanitize';
 import { redactConfigSecrets, encryptConfigSecretFields } from './secrets';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
@@ -45,6 +52,7 @@ import { createMCPPolicyResolver } from '~/mcp/registry/policy';
 import { resolveTitleConfig } from '~/endpoints/config';
 import { createAppConfigService } from '~/app/service';
 import { createAdminConfigHandlers } from './config';
+import { createAdminRolesHandlers } from './roles';
 import { ADMIN_CONFIG_FEATURES } from './meta';
 import { loadWebSearchAuth } from '~/web';
 
@@ -97,7 +105,6 @@ function createHandlers(overrides: Partial<AdminConfigDeps> = {}) {
       async (_type: string, _id: string, draft: ConfigDraft): Promise<ConfigRecord> =>
         storedConfig(draft.overrides ?? {}),
     ),
-    tombstoneConfigField: jest.fn().mockResolvedValue(null),
     unsetConfigField: jest.fn().mockResolvedValue(null),
     deleteConfig: jest.fn().mockResolvedValue(null),
     toggleConfigActiveTracked: jest.fn().mockResolvedValue(null),
@@ -181,6 +188,58 @@ function getIn(target: object, path: string): unknown {
     );
 }
 
+/**
+ * A config store over a map, for probes that run the store contract's real operations: whole
+ * document writes under a revision precondition, and removals.
+ */
+function createMapStore(): ConfigStore {
+  const documents = new Map<string, ConfigRecord>();
+  let sequence = 0;
+  const keyOf = ({ principalType, principalId }: ConfigPrincipal) =>
+    `${principalType}:${principalId}`;
+  const revisionOf = (record?: ConfigRecord) =>
+    record ? getConfigRevision(record) : ABSENT_CONFIG_REVISION;
+  return {
+    read: async (principal) => documents.get(keyOf(principal)) ?? null,
+    list: async () => [...documents.values()],
+    listActive: async () => [...documents.values()].filter((record) => record.isActive),
+    async write(principal, draft, expected) {
+      const current = documents.get(keyOf(principal));
+      if (expected !== revisionOf(current)) {
+        throw new ConfigRevisionConflictError(current ? revisionOf(current) : null);
+      }
+      sequence += 1;
+      const record: ConfigRecord = {
+        ...draft,
+        ...principal,
+        _id: current?._id ?? String(sequence).padStart(24, '0'),
+        configVersion: (current?.configVersion ?? 0) + 1,
+      };
+      documents.set(keyOf(principal), record);
+      return record;
+    },
+    async remove(principal, expected) {
+      const current = documents.get(keyOf(principal));
+      if (expected !== undefined && expected !== revisionOf(current)) {
+        throw new ConfigRevisionConflictError(current ? revisionOf(current) : null);
+      }
+      documents.delete(keyOf(principal));
+      return current ?? null;
+    },
+    restore: async () => false,
+  };
+}
+
+/** Config handler deps that read and write `store` through the admin API's own calls. */
+function storeDeps(store: ConfigStore): Partial<AdminConfigDeps> {
+  return {
+    findConfigByPrincipal: (principalType, principalId) =>
+      store.read({ principalType, principalId: principalId.toString() }),
+    writeConfigDocument: (principalType, principalId, draft, expected) =>
+      store.write({ principalType, principalId }, draft, expected),
+  };
+}
+
 describe('GET /api/admin/config/meta', () => {
   it('answers 401 without a user and 403 without any config read access', async () => {
     const anonymous = mockRes();
@@ -212,10 +271,14 @@ describe('GET /api/admin/config/meta', () => {
     expect(Object.keys(meta.features).sort()).toEqual([
       'awaitedInvalidation',
       'changesBatch',
+      'deterministicPrecedence',
       'dottedKeys',
       'expectedRevision',
+      'principalCheck',
+      'priorityRoute',
       'prunesEmptyParents',
       'readFilteredWriteResponses',
+      'roleRenameMovesProfile',
       'sectionAllowlist',
       'webSearchStoredKeys',
       'yamlMcpHide',
@@ -254,6 +317,10 @@ describe('GET /api/admin/config/meta', () => {
       awaitedInvalidation: true,
       changesBatch: true,
       yamlMcpHide: true,
+      deterministicPrecedence: true,
+      priorityRoute: true,
+      principalCheck: true,
+      roleRenameMovesProfile: true,
     });
   });
 
@@ -459,7 +526,6 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
           return { broad: false, sections: new Set<string>() };
         }),
         writeConfigDocument: commit,
-        tombstoneConfigField: commit,
         unsetConfigField: commit,
       };
     };
@@ -645,6 +711,309 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
 
     return held && res.statusCode === 200 && bypassed && dropsStaleMerge;
   },
+  async deterministicPrecedence() {
+    const layer = (
+      principalType: PrincipalType,
+      principalId: string,
+      priority: number,
+      _id: string,
+    ): ConfigOverrideLayer => ({
+      principalType,
+      principalId,
+      priority,
+      _id,
+      overrides: { interface: { customWelcome: principalId } },
+    });
+    const winner = (...configs: ConfigOverrideLayer[]) =>
+      mergeConfigOverrides({ config: {} } as AppConfig, configs).interfaceConfig?.customWelcome;
+    const base = layer(PrincipalType.ROLE, '__base__', 50, 'a3');
+    const role = layer(PrincipalType.ROLE, 'r1', 5, 'a2');
+    const group = layer(PrincipalType.GROUP, 'g1', 5, 'a1');
+    const user = layer(PrincipalType.USER, 'u1', 5, 'a0');
+    const later = layer(PrincipalType.GROUP, 'g2', 5, 'a4');
+    const ordered =
+      winner(role, base) === 'r1' &&
+      winner(base, role) === 'r1' &&
+      winner(group, role) === 'g1' &&
+      winner(role, group) === 'g1' &&
+      winner(user, group, role) === 'u1' &&
+      winner(later, group) === 'g2' &&
+      winner(group, later) === 'g2';
+
+    const store = createMapStore();
+    const handlers = createHandlers(storeDeps(store));
+    const put = async (principalType: PrincipalType, principalId: string, body: object) => {
+      await handlers.upsertConfigOverrides(
+        mockReq({ params: { principalType, principalId }, body }),
+        mockRes(),
+      );
+      return (await store.read({ principalType, principalId }))?.priority;
+    };
+    const overrides = { interface: { customWelcome: 'hi' } };
+    const defaults = await Promise.all([
+      put(PrincipalType.ROLE, 'r1', { overrides }),
+      put(PrincipalType.GROUP, 'g1', { overrides }),
+      put(PrincipalType.USER, 'u1', { overrides }),
+    ]);
+    await put(PrincipalType.ROLE, 'r1', { overrides, priority: 33 });
+    const kept = await put(PrincipalType.ROLE, 'r1', {
+      overrides: { interface: { customWelcome: 'again' } },
+    });
+    await handlers.applyConfigChanges(
+      mockReq({
+        params: { principalType: PrincipalType.GROUP, principalId: 'g0' },
+        body: { ops: [{ op: 'set', fieldPath: 'interface.customWelcome', value: 'hi' }] },
+      }),
+      mockRes(),
+    );
+    const batchDefault = (
+      await store.read({ principalType: PrincipalType.GROUP, principalId: 'g0' })
+    )?.priority;
+
+    const operations = createConfigOperations(store);
+    await operations.setFields(
+      { principalType: PrincipalType.ROLE, principalId: '__base__' },
+      PrincipalModel.ROLE,
+      { 'interface.customWelcome': 'base' },
+      500,
+    );
+    await operations.setPriority({ principalType: PrincipalType.GROUP, principalId: 'g0' }, 33);
+    const listed = mockRes();
+    await createHandlers({ listAllConfigs: () => operations.listConfigs() }).listConfigs(
+      mockReq(),
+      listed,
+    );
+    const listOrder = (listed.body?.configs as ConfigRecord[] | undefined)
+      ?.map(({ principalId }) => principalId)
+      .join();
+
+    /** Statuses of a PATCH `/fields` and a dry-run batch setting `memory.agent.model` on a role
+     *  over `yaml`, with Base tombstoning `tombstones` and setting `fields`. */
+    const floorStatuses = async (
+      yaml: object,
+      tombstones: string[],
+      fields: Record<string, unknown>,
+    ) => {
+      const floorStore = createMapStore();
+      const floorOperations = createConfigOperations(floorStore);
+      const base = { principalType: PrincipalType.ROLE, principalId: '__base__' };
+      await floorOperations.tombstoneFields(base, PrincipalModel.ROLE, tombstones);
+      await floorOperations.setFields(base, PrincipalModel.ROLE, fields);
+      const floorHandlers = createHandlers({
+        ...storeDeps(floorStore),
+        getAppConfig: jest.fn().mockResolvedValue({ config: yaml }),
+      });
+      const params = { principalType: PrincipalType.ROLE, principalId: 'r2' };
+      const batch = mockRes();
+      await floorHandlers.applyConfigChanges(
+        mockReq({
+          params,
+          body: {
+            ops: [{ op: 'set', fieldPath: 'memory.agent.model', value: 'gpt-4.1' }],
+            dryRun: true,
+          },
+        }),
+        batch,
+      );
+      const patched = await patch([{ fieldPath: 'memory.agent.model', value: 'gpt-4.1' }], {
+        ...storeDeps(floorStore),
+        getAppConfig: jest.fn().mockResolvedValue({ config: yaml }),
+      });
+      return `${patched.statusCode},${batch.statusCode}`;
+    };
+    const validOnlyOverBase = await floorStatuses(
+      { memory: { agent: { id: 'agent_1' } } },
+      ['memory.agent.id'],
+      { 'memory.agent.provider': 'openAI', 'memory.agent.model': 'gpt-4o' },
+    );
+    const invalidOnlyOverBase = await floorStatuses(
+      { memory: { agent: { provider: 'openAI', model: 'gpt-4o' } } },
+      ['memory.agent.provider', 'memory.agent.model'],
+      { 'memory.agent.id': 'agent_9' },
+    );
+
+    return (
+      ordered &&
+      defaults.join() === '10,20,100' &&
+      kept === 33 &&
+      batchDefault === 20 &&
+      listOrder === '__base__,g1,r1,g0,u1' &&
+      validOnlyOverBase === '200,200' &&
+      invalidOnlyOverBase === '400,400'
+    );
+  },
+  async priorityRoute() {
+    const store = createMapStore();
+    const operations = createConfigOperations(store);
+    const principal = { principalType: PrincipalType.ROLE, principalId: 'r1' };
+    await operations.setFields(principal, PrincipalModel.ROLE, { 'interface.customWelcome': 'x' });
+    await operations.tombstoneFields(principal, PrincipalModel.ROLE, 'memory.agent');
+    await operations.setActive(principal, false);
+    const before = await store.read(principal);
+
+    const setConfigPriority: AdminConfigDeps['setConfigPriority'] = (type, id, priority, options) =>
+      operations.setPriority({ principalType: type, principalId: id }, priority, options);
+    const route = async (
+      principalId: string,
+      body: object,
+      deps: Partial<AdminConfigDeps> = {},
+    ) => {
+      const res = mockRes();
+      await createHandlers({ setConfigPriority, ...deps }).updateConfigPriority(
+        mockReq({ params: { principalType: PrincipalType.ROLE, principalId }, body }),
+        res,
+      );
+      return res;
+    };
+    const updated = await route('r1', { priority: 42 });
+    const after = await store.read(principal);
+    const missing = await route('nobody', { priority: 1 });
+    const invalid = await route('r1', { priority: -1 });
+    const sectionScoped = await route(
+      'r1',
+      { priority: 7 },
+      { hasConfigCapability: jest.fn(async (_user, section) => section != null) },
+    );
+    return (
+      updated.statusCode === 200 &&
+      after?.priority === 42 &&
+      JSON.stringify(after.overrides) === JSON.stringify(before?.overrides) &&
+      JSON.stringify(after.tombstones) === JSON.stringify(before?.tombstones) &&
+      after.isActive === false &&
+      missing.statusCode === 404 &&
+      missing.body?.code === 'CONFIG_NOT_FOUND' &&
+      invalid.statusCode === 400 &&
+      invalid.body?.code === 'INVALID_PRIORITY' &&
+      sectionScoped.statusCode === 403 &&
+      (await store.read(principal))?.priority === 42
+    );
+  },
+  async principalCheck() {
+    const store = createMapStore();
+    const principalExists = jest.fn(async (_type: PrincipalType, id: string) => id === 'editor');
+    const handlers = createHandlers({ ...storeDeps(store), principalExists });
+    const write = async (
+      handler:
+        | 'upsertConfigOverrides'
+        | 'patchConfigField'
+        | 'tombstoneConfigField'
+        | 'applyConfigChanges',
+      principalId: string,
+      body: object,
+    ) => {
+      const res = mockRes();
+      await handlers[handler](
+        mockReq({ params: { principalType: PrincipalType.ROLE, principalId }, body }),
+        res,
+      );
+      return res;
+    };
+    const refused = await Promise.all([
+      write('upsertConfigOverrides', 'ghost', { overrides: { interface: { customWelcome: 'x' } } }),
+      write('patchConfigField', 'ghost', {
+        entries: [{ fieldPath: 'interface.customWelcome', value: 'x' }],
+      }),
+      write('tombstoneConfigField', 'ghost', { fieldPath: 'interface.customWelcome' }),
+      write('applyConfigChanges', 'ghost', {
+        ops: [{ op: 'set', fieldPath: 'interface.customWelcome', value: 'x' }],
+      }),
+      write('applyConfigChanges', 'ghost', {
+        ops: [{ op: 'unset', fieldPath: 'interface.customWelcome' }],
+        priority: 5,
+      }),
+    ]);
+    const created = await write('upsertConfigOverrides', 'editor', {
+      overrides: {},
+      expectedRevision: ABSENT_CONFIG_REVISION,
+    });
+    const again = await write('upsertConfigOverrides', 'editor', {
+      overrides: {},
+      expectedRevision: ABSENT_CONFIG_REVISION,
+    });
+
+    /** A tombstone checks the document it writes over: here a DELETE lands after its read. */
+    const retired = { principalType: PrincipalType.ROLE, principalId: 'retired' };
+    await createConfigOperations(store).setFields(retired, PrincipalModel.ROLE, {
+      'interface.customWelcome': 'old',
+    });
+    let removedConcurrently = false;
+    const raced = mockRes();
+    await createHandlers({
+      ...storeDeps(store),
+      principalExists,
+      findConfigByPrincipal: async (principalType, principalId) => {
+        const found = await store.read({ principalType, principalId });
+        if (found && !removedConcurrently) {
+          removedConcurrently = true;
+          await store.remove({ principalType, principalId });
+        }
+        return found;
+      },
+    }).tombstoneConfigField(
+      mockReq({ params: retired, body: { fieldPath: 'interface.customWelcome' } }),
+      raced,
+    );
+
+    return (
+      refused.every((res) => res.statusCode === 404 && res.body?.code === 'PRINCIPAL_NOT_FOUND') &&
+      (await store.read({ principalType: PrincipalType.ROLE, principalId: 'ghost' })) === null &&
+      created.statusCode === 201 &&
+      again.statusCode === 409 &&
+      again.body?.code === 'CONFIG_VERSION_CONFLICT' &&
+      removedConcurrently &&
+      raced.statusCode === 404 &&
+      raced.body?.code === 'PRINCIPAL_NOT_FOUND' &&
+      (await store.read(retired)) === null
+    );
+  },
+  async roleRenameMovesProfile() {
+    const store = createMapStore();
+    const operations = createConfigOperations(store);
+    const role = (principalId: string) => ({ principalType: PrincipalType.ROLE, principalId });
+    await operations.setFields(role('editor'), PrincipalModel.ROLE, {
+      'interface.customWelcome': 'moved',
+    });
+    await operations.setFields(role('taken'), PrincipalModel.ROLE, {
+      'interface.customWelcome': 'kept',
+    });
+    const moveGrantsToPrincipal = jest.fn().mockResolvedValue([]);
+    const moveAclEntriesToPrincipal = jest.fn().mockResolvedValue([]);
+    const deps: Partial<AdminRolesDeps> = {
+      getRoleByName: jest.fn(async (name: string) =>
+        name === 'editor' ? ({ name } as IRole) : null,
+      ),
+      updateRoleByName: jest.fn(async (_name: string, updates: Partial<IRole>) => updates as IRole),
+      findUserIdsByRole: jest.fn().mockResolvedValue([]),
+      updateUsersByRole: jest.fn().mockResolvedValue(undefined),
+      findConfigByPrincipal: (type, id) => store.read({ principalType: type, principalId: id }),
+      renameConfigPrincipal: (_type, from, to) => operations.movePrincipal(role(from), role(to)),
+      moveGrantsToPrincipal,
+      moveAclEntriesToPrincipal,
+    };
+    const handlers = createAdminRolesHandlers(deps as AdminRolesDeps);
+    const rename = async (name: string) => {
+      const res = mockRes();
+      await handlers.updateRole(mockReq({ params: { name: 'editor' }, body: { name } }), res);
+      return res;
+    };
+    const conflict = await rename('taken');
+    const reserved = await rename('__base__');
+    const renamed = await rename('reviewer');
+    const moved = await store.read(role('reviewer'));
+    return (
+      conflict.statusCode === 409 &&
+      conflict.body?.code === 'ROLE_CONFIG_CONFLICT' &&
+      reserved.statusCode === 400 &&
+      reserved.body?.code === 'ROLE_NAME_RESERVED' &&
+      renamed.statusCode === 200 &&
+      (await store.read(role('editor'))) === null &&
+      getIn(moved?.overrides ?? {}, 'interface.customWelcome') === 'moved' &&
+      getIn((await store.read(role('taken')))?.overrides ?? {}, 'interface.customWelcome') ===
+        'kept' &&
+      moveGrantsToPrincipal.mock.calls[0]?.slice(0, 3).join() === 'role,editor,reviewer' &&
+      moveAclEntriesToPrincipal.mock.calls[0]?.slice(0, 3).join() === 'role,editor,reviewer'
+    );
+  },
   async changesBatch() {
     const writeConfigDocument = jest.fn(
       async (_type: string, _id: string, draft: ConfigDraft): Promise<ConfigRecord> => ({
@@ -702,27 +1071,19 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     const yaml = { docs, local };
     const principal = { id: 'u1', role: 'USER' };
 
-    const stored = memoryConfigOperations(storedConfig({}));
+    const store = createMapStore();
     const written = mockRes();
-    await createHandlers({
-      tombstoneConfigField: (type, id, model, paths, priority, _session, options) =>
-        stored.operations.tombstoneFields(
-          { principalType: type, principalId: id },
-          model,
-          paths,
-          priority,
-          options,
-        ),
-    }).tombstoneConfigField(
+    await createHandlers(storeDeps(store)).tombstoneConfigField(
       mockReq({
         params: { principalType: 'role', principalId: 'r1' },
         body: { fieldPath: 'mcpServers.docs' },
       }),
       written,
     );
-    const record = stored.current();
-    const storesTombstone =
-      written.statusCode === 200 && record.tombstones.includes('mcpServers.docs');
+    const record = await store.read({ principalType: PrincipalType.ROLE, principalId: 'r1' });
+    if (written.statusCode !== 200 || !record?.tombstones.includes('mcpServers.docs')) {
+      return false;
+    }
 
     const merged = mergeConfigOverrides(
       { config: { mcpServers: yaml }, mcpConfig: yaml } as Partial<AppConfig> as AppConfig,
@@ -754,7 +1115,7 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     unreadable.setYamlServerOptions(yaml);
     const failsClosed = (await unreadable.resolveHiddenServerNames({ userId: 'u2' })).has('docs');
 
-    return storesTombstone && withheld && refusesCheckout && !hidden.has('local') && failsClosed;
+    return withheld && refusesCheckout && !hidden.has('local') && failsClosed;
   },
 };
 

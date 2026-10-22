@@ -829,7 +829,8 @@ describe('createAdminLangfuseHandlers', () => {
       expect(deps.findConfigByPrincipal).toHaveBeenCalledWith('role', '__base__', {
         includeInactive: true,
       });
-      expect(deps.patchConfigFields.mock.calls[0][4]).toBe(42);
+      /** No priority is sent, so the store keeps the stored 42. */
+      expect(deps.patchConfigFields.mock.calls[0][4]).toBeUndefined();
       expect(deps.toggleConfigActive).toHaveBeenCalledWith('role', '__base__', true);
       expect(res.body).toMatchObject({ configured: true, enabled: true });
     });

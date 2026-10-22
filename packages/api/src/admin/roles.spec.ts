@@ -297,7 +297,25 @@ describe('createAdminRolesHandlers', () => {
       await handlers.createRole(req, res);
 
       expect(status).toHaveBeenCalledWith(400);
-      expect(json).toHaveBeenCalledWith({ error: 'name is a reserved path segment' });
+      expect(json).toHaveBeenCalledWith({
+        error: 'name is a reserved path segment',
+        code: 'ROLE_NAME_RESERVED',
+      });
+      expect(deps.createRoleByName).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when name is the base config principal id', async () => {
+      const deps = createDeps();
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({ body: { name: ' __base__ ' } });
+
+      await handlers.createRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({
+        error: 'name is reserved for the base config',
+        code: 'ROLE_NAME_RESERVED',
+      });
       expect(deps.createRoleByName).not.toHaveBeenCalled();
     });
 
@@ -2297,7 +2315,14 @@ describe('admin role audit entries', () => {
       expect.objectContaining({
         action: 'role.updated',
         target: { type: 'role', id: 'writer', name: 'writer' },
-        metadata: { previousName: 'editor', descriptionChanged: false },
+        metadata: {
+          previousName: 'editor',
+          descriptionChanged: false,
+          configMoved: false,
+          grantsMoved: 0,
+          grantCapabilities: null,
+          aclEntriesMoved: 0,
+        },
       }),
     );
   });

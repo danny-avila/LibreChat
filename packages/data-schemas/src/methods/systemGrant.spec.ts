@@ -790,6 +790,159 @@ describe('systemGrant methods', () => {
     });
   });
 
+  describe('moveGrantsToPrincipal', () => {
+    const grant = (principalId: string, capability: SystemCapability, tenantId?: string) =>
+      methods.grantCapability({
+        principalType: PrincipalType.ROLE,
+        principalId,
+        capability,
+        tenantId,
+      });
+
+    const held = async (principalId: string) =>
+      (
+        await SystemGrant.find({ principalType: PrincipalType.ROLE, principalId })
+          .sort({ capability: 1, tenantId: 1 })
+          .lean()
+      ).map((g) => `${g.tenantId ?? '-'}:${g.capability}`);
+
+    it('re-keys every grant to the new name, keeping identity and history', async () => {
+      const { grant: readUsers } = await grant('editor', SystemCapabilities.READ_USERS);
+      await grant('editor', SystemCapabilities.READ_CONFIGS);
+
+      const moved = await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+
+      expect(moved.map((g) => g.capability).sort()).toEqual(
+        [SystemCapabilities.READ_CONFIGS, SystemCapabilities.READ_USERS].sort(),
+      );
+      expect(await held('editor')).toEqual([]);
+      expect(await held('writer')).toEqual(
+        [`-:${SystemCapabilities.READ_CONFIGS}`, `-:${SystemCapabilities.READ_USERS}`].sort(),
+      );
+      const after = await SystemGrant.findById(readUsers?._id).lean();
+      expect(after?.principalId).toBe('writer');
+      expect(after?.grantedAt).toEqual(readUsers?.grantedAt);
+    });
+
+    it('moves only the caller tenant grants when a tenant is given, like the delete cascade', async () => {
+      await grant('editor', SystemCapabilities.READ_USERS, 'tenant-a');
+      await grant('editor', SystemCapabilities.READ_USERS, 'tenant-b');
+      await grant('editor', SystemCapabilities.READ_CONFIGS);
+
+      await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer', {
+        tenantId: 'tenant-a',
+      });
+
+      expect(await held('writer')).toEqual([`tenant-a:${SystemCapabilities.READ_USERS}`]);
+      expect(await held('editor')).toEqual(
+        [
+          `-:${SystemCapabilities.READ_CONFIGS}`,
+          `tenant-b:${SystemCapabilities.READ_USERS}`,
+        ].sort(),
+      );
+    });
+
+    it('moves only platform-level grants when no tenant is given, unlike the delete cascade', async () => {
+      await grant('editor', SystemCapabilities.READ_USERS, 'tenant-a');
+      await grant('editor', SystemCapabilities.READ_CONFIGS);
+      await grant('writer', SystemCapabilities.READ_USERS, 'tenant-a');
+
+      const moved = await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+
+      expect(moved.map((g) => g.capability)).toEqual([SystemCapabilities.READ_CONFIGS]);
+      expect(await held('editor')).toEqual([`tenant-a:${SystemCapabilities.READ_USERS}`]);
+      expect(await held('writer')).toEqual(
+        [
+          `-:${SystemCapabilities.READ_CONFIGS}`,
+          `tenant-a:${SystemCapabilities.READ_USERS}`,
+        ].sort(),
+      );
+    });
+
+    it('drops a grant the new name already holds instead of colliding on the unique index', async () => {
+      await grant('editor', SystemCapabilities.READ_USERS);
+      await grant('editor', SystemCapabilities.READ_CONFIGS);
+      await grant('writer', SystemCapabilities.READ_USERS);
+
+      await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+
+      expect(await held('editor')).toEqual([]);
+      expect(await held('writer')).toEqual(
+        [`-:${SystemCapabilities.READ_CONFIGS}`, `-:${SystemCapabilities.READ_USERS}`].sort(),
+      );
+    });
+
+    it('returns nothing and writes nothing for a principal without grants', async () => {
+      await grant('writer', SystemCapabilities.READ_USERS);
+
+      expect(await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'none', 'writer')).toEqual([]);
+      expect(await held('writer')).toEqual([`-:${SystemCapabilities.READ_USERS}`]);
+    });
+
+    it('restores the source exactly, leaving grants the target held before untouched', async () => {
+      const { grant: readUsers } = await grant('editor', SystemCapabilities.READ_USERS);
+      const { grant: readConfigs } = await grant('editor', SystemCapabilities.READ_CONFIGS);
+      await grant('writer', SystemCapabilities.READ_USERS);
+
+      const moved = await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+      await methods.restoreMovedGrants(PrincipalType.ROLE, 'editor', 'writer', moved);
+
+      expect(await held('editor')).toEqual(
+        [`-:${SystemCapabilities.READ_CONFIGS}`, `-:${SystemCapabilities.READ_USERS}`].sort(),
+      );
+      expect(await held('writer')).toEqual([`-:${SystemCapabilities.READ_USERS}`]);
+      const restored = await SystemGrant.find({ principalId: 'editor' }).lean();
+      expect(restored.map((g) => g._id.toString()).sort()).toEqual(
+        [readUsers?._id.toString(), readConfigs?._id.toString()].sort(),
+      );
+    });
+
+    it('undoes a move that fails part-way before rethrowing', async () => {
+      await grant('editor', SystemCapabilities.READ_USERS);
+      await grant('editor', SystemCapabilities.READ_CONFIGS);
+      await grant('writer', SystemCapabilities.READ_USERS);
+      const failure = new Error('write interrupted');
+      const updateMany = jest.spyOn(SystemGrant, 'updateMany').mockRejectedValueOnce(failure);
+
+      await expect(
+        methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer'),
+      ).rejects.toBe(failure);
+      updateMany.mockRestore();
+
+      expect(await held('editor')).toEqual(
+        [`-:${SystemCapabilities.READ_CONFIGS}`, `-:${SystemCapabilities.READ_USERS}`].sort(),
+      );
+      expect(await held('writer')).toEqual([`-:${SystemCapabilities.READ_USERS}`]);
+    });
+
+    it('logs the grant ids, never the error text, when the undo of a failed move fails too', async () => {
+      const { grant: readUsers } = await grant('editor', SystemCapabilities.READ_USERS);
+      const failure = new Error('write interrupted');
+      const updateMany = jest
+        .spyOn(SystemGrant, 'updateMany')
+        .mockRejectedValueOnce(failure)
+        .mockRejectedValueOnce(new Error('undo failed near {"principalId":"editor"}'));
+      (logger.error as jest.Mock).mockClear();
+
+      await expect(
+        methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer'),
+      ).rejects.toBe(failure);
+      updateMany.mockRestore();
+
+      expect(logger.error).toHaveBeenCalledWith(
+        '[moveGrantsToPrincipal] undo after a failed move failed',
+        {
+          principalType: PrincipalType.ROLE,
+          fromPrincipalId: 'editor',
+          toPrincipalId: 'writer',
+          grantIds: readUsers?._id.toString(),
+          errName: 'Error',
+          errCode: null,
+        },
+      );
+    });
+  });
+
   describe('deleteGrantsForPrincipal', () => {
     it('deletes all grants for a principal', async () => {
       const groupId = new Types.ObjectId();

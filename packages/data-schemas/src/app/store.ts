@@ -10,6 +10,11 @@ import {
   replaceConfigOverrides,
   isConfigOverrideStateEmpty,
 } from './mutations';
+import {
+  isBaseConfigPrincipal,
+  sortByConfigPrecedence,
+  getDefaultConfigPriority,
+} from './precedence';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { parseFieldPath } from './paths';
 
@@ -28,9 +33,6 @@ import { parseFieldPath } from './paths';
 
 /** Precondition meaning "the principal must not have a document yet" (create-only). */
 export const ABSENT_CONFIG_REVISION = 'absent';
-
-/** Priority a principal's document gets when a write creates it without one. */
-export const DEFAULT_CONFIG_PRIORITY = 10;
 
 /** How many times a write without a client precondition re-reads and retries on a conflict. */
 export const CONFIG_WRITE_ATTEMPTS = 3;
@@ -133,6 +135,44 @@ export function isConfigRevisionConflict(error: unknown): error is ConfigRevisio
   );
 }
 
+/**
+ * Why a document move was refused before anything changed: the target principal already has
+ * a document, or either side is the tenant-wide Base principal, which never moves.
+ */
+export type ConfigMoveRefusal = 'CONFIG_PRINCIPAL_EXISTS' | 'CONFIG_PRINCIPAL_RESERVED';
+
+const CONFIG_MOVE_REFUSALS: ReadonlySet<unknown> = new Set<ConfigMoveRefusal>([
+  'CONFIG_PRINCIPAL_EXISTS',
+  'CONFIG_PRINCIPAL_RESERVED',
+]);
+
+/** `movePrincipal` refused the move and changed nothing; `code` says why. */
+export class ConfigMoveRefusedError extends Error {
+  readonly code: ConfigMoveRefusal;
+
+  constructor(code: ConfigMoveRefusal) {
+    super(
+      code === 'CONFIG_PRINCIPAL_EXISTS'
+        ? 'The target principal already has a config document'
+        : 'The base config document cannot be moved or replaced',
+    );
+    this.name = 'ConfigMoveRefusedError';
+    this.code = code;
+  }
+}
+
+/** Whether `error` is a refused move, optionally for one specific reason. */
+export function isConfigMoveRefused(
+  error: unknown,
+  code?: ConfigMoveRefusal,
+): error is ConfigMoveRefusedError {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const actual = (error as { code?: unknown }).code;
+  return CONFIG_MOVE_REFUSALS.has(actual) && (code === undefined || actual === code);
+}
+
 export function getConfigRevision(record: {
   _id: { toString(): string };
   configVersion?: number | null;
@@ -161,7 +201,11 @@ export function isConfigRevision(value: unknown): value is ConfigRevision {
   );
 }
 
-/** Store order: ascending priority, then the engine identity, so equal priorities never shuffle. */
+/**
+ * Store order: ascending priority, then the engine identity, so equal priorities never shuffle.
+ * It is what an engine can sort by natively; the operations re-sort into merge order
+ * (`compareConfigPrecedence`), which also puts Base first and ranks principal types.
+ */
 export function compareConfigRecords(
   left: Pick<ConfigRecord, '_id' | 'priority'>,
   right: Pick<ConfigRecord, '_id' | 'priority'>,
@@ -271,17 +315,32 @@ function isEmptyRecord(record: ConfigRecord): boolean {
   return isConfigOverrideStateEmpty(toConfigOverrideState(record));
 }
 
+/**
+ * The next draft from `state`. An omitted priority keeps the stored one, and a document a
+ * write creates gets its principal type's default (`getDefaultConfigPriority`).
+ */
 function toDraft(
+  principal: ConfigPrincipal,
   current: ConfigRecord | null,
   state: ConfigOverrideState,
   defaults: Pick<ConfigDraft, 'principalModel'> & { priority?: number },
 ): ConfigDraft {
   return {
     principalModel: defaults.principalModel,
-    priority: defaults.priority ?? current?.priority ?? DEFAULT_CONFIG_PRIORITY,
+    priority: defaults.priority ?? current?.priority ?? getDefaultConfigPriority(principal),
     overrides: state.overrides,
     tombstones: state.tombstones,
     isActive: current?.isActive ?? true,
+  };
+}
+
+/** Everything a stored document carries over to another principal or into a rewrite. */
+function toRecordDraft(record: ConfigRecord): ConfigDraft {
+  return {
+    principalModel: record.principalModel,
+    priority: record.priority,
+    ...toConfigOverrideState(record),
+    isActive: record.isActive,
   };
 }
 
@@ -312,13 +371,17 @@ function toTombstones(record: ConfigRecord): ConfigTombstones {
     : { principalType, principalId, tenantId, tombstones };
 }
 
-type ActiveToggle = { config: ConfigRecord; changed: boolean };
+/** A write that may find nothing to change: the document after it, and whether it wrote. */
+export type ConfigWriteOutcome = { config: ConfigRecord; changed: boolean };
 
 export interface ConfigOperations {
   findConfig(
     principal: ConfigPrincipal,
     options?: { includeInactive?: boolean },
   ): Promise<ConfigRecord | null>;
+  /** Every document (optionally only active or inactive ones), in merge precedence order. */
+  listConfigs(filter?: { isActive?: boolean }): Promise<ConfigRecord[]>;
+  /** Base and the given principals' active documents, in merge precedence order. */
   getApplicableConfigs(
     principals?: ReadonlyArray<{ principalType: string; principalId?: { toString(): string } }>,
   ): Promise<ConfigRecord[]>;
@@ -327,7 +390,7 @@ export interface ConfigOperations {
     principal: ConfigPrincipal,
     principalModel: PrincipalModel,
     overrides: Partial<TCustomConfig>,
-    priority: number,
+    priority?: number,
     options?: ConfigLifecycleOptions & { preservePriority?: boolean },
   ): Promise<ConfigRecord | null>;
   setFields(
@@ -357,7 +420,13 @@ export interface ConfigOperations {
     principal: ConfigPrincipal,
     isActive: boolean,
     options?: ConfigLifecycleOptions,
-  ): Promise<ActiveToggle | null>;
+  ): Promise<ConfigWriteOutcome | null>;
+  setPriority(
+    principal: ConfigPrincipal,
+    priority: number,
+    options?: ConfigWriteOptions,
+  ): Promise<ConfigWriteOutcome | null>;
+  movePrincipal(from: ConfigPrincipal, to: ConfigPrincipal): Promise<ConfigRecord | null>;
 }
 
 /**
@@ -393,8 +462,12 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
     return record;
   }
 
+  async function listConfigs(filter?: { isActive?: boolean }): Promise<ConfigRecord[]> {
+    return sortByConfigPrecedence(await store.list(filter));
+  }
+
   /** Base first in the query, then every principal that has an id; inactive documents excluded. */
-  function getApplicableConfigs(
+  async function getApplicableConfigs(
     principals?: ReadonlyArray<{ principalType: string; principalId?: { toString(): string } }>,
   ): Promise<ConfigRecord[]> {
     const query: ConfigPrincipal[] = [
@@ -408,7 +481,7 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
         });
       }
     }
-    return store.listActive(query);
+    return sortByConfigPrecedence(await store.listActive(query));
   }
 
   /**
@@ -425,12 +498,16 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
     return found;
   }
 
-  /** Replaces the overrides whole and activates the document; tombstones stay. */
+  /**
+   * Replaces the overrides whole and activates the document; tombstones stay. An omitted
+   * `priority` (or `preservePriority`) keeps the stored one, so a replace never reorders
+   * profiles it was not asked to.
+   */
   async function replaceOverrides(
     principal: ConfigPrincipal,
     principalModel: PrincipalModel,
     overrides: Partial<TCustomConfig>,
-    priority: number,
+    priority?: number,
     options?: ConfigLifecycleOptions & { preservePriority?: boolean },
   ): Promise<ConfigRecord | null> {
     const outcome = await mutate<null>(
@@ -443,7 +520,7 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
         const keptPriority = options?.preservePriority ? (current?.priority ?? priority) : priority;
         return {
           draft: {
-            ...toDraft(current, state, { principalModel, priority: keptPriority }),
+            ...toDraft(principal, current, state, { principalModel, priority: keptPriority }),
             isActive: true,
           },
         };
@@ -468,10 +545,12 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
     const outcome = await mutate(
       principal,
       (current) => ({
-        draft: toDraft(current, setConfigFields(toConfigOverrideState(current), writes), {
-          principalModel,
-          priority,
-        }),
+        draft: toDraft(
+          principal,
+          current,
+          setConfigFields(toConfigOverrideState(current), writes),
+          { principalModel, priority },
+        ),
       }),
       options,
     );
@@ -490,10 +569,12 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
     const outcome = await mutate(
       principal,
       (current) => ({
-        draft: toDraft(current, tombstoneConfigPaths(toConfigOverrideState(current), paths), {
-          principalModel,
-          priority,
-        }),
+        draft: toDraft(
+          principal,
+          current,
+          tombstoneConfigPaths(toConfigOverrideState(current), paths),
+          { principalModel, priority },
+        ),
       }),
       options,
     );
@@ -514,7 +595,7 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
           return { draft: null, result: null };
         }
         const state = unsetConfigPaths(toConfigOverrideState(current), paths);
-        return { draft: toDraft(current, state, current) };
+        return { draft: toDraft(principal, current, state, current) };
       },
       options,
     );
@@ -561,8 +642,8 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
     principal: ConfigPrincipal,
     isActive: boolean,
     options?: ConfigLifecycleOptions,
-  ): Promise<ActiveToggle | null> {
-    const outcome = await mutate<ActiveToggle | null>(
+  ): Promise<ConfigWriteOutcome | null> {
+    const outcome = await mutate<ConfigWriteOutcome | null>(
       principal,
       (current) => {
         if (!current || (options?.expectEmpty && !isEmptyRecord(current))) {
@@ -571,17 +652,97 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
         if (current.isActive === isActive) {
           return { draft: null, result: { config: current, changed: false } };
         }
-        return {
-          draft: { ...toDraft(current, toConfigOverrideState(current), current), isActive },
-        };
+        return { draft: { ...toRecordDraft(current), isActive } };
       },
       options,
     );
     return outcome.written ? { config: outcome.record, changed: true } : outcome.result;
   }
 
+  /**
+   * Sets the document's priority and nothing else: overrides, tombstones and `isActive` stay.
+   * `null` when there is no document; an unchanged priority is not written.
+   */
+  async function setPriority(
+    principal: ConfigPrincipal,
+    priority: number,
+    options?: ConfigWriteOptions,
+  ): Promise<ConfigWriteOutcome | null> {
+    const outcome = await mutate<ConfigWriteOutcome | null>(
+      principal,
+      (current) => {
+        if (!current) {
+          return { draft: null, result: null };
+        }
+        if (current.priority === priority) {
+          return { draft: null, result: { config: current, changed: false } };
+        }
+        return { draft: { ...toRecordDraft(current), priority } };
+      },
+      options,
+    );
+    return outcome.written ? { config: outcome.record, changed: true } : outcome.result;
+  }
+
+  /** The create-only copy a move starts with; a document already at `to` refuses the move. */
+  async function copyTo(to: ConfigPrincipal, source: ConfigRecord): Promise<ConfigRecord> {
+    try {
+      return await store.write(to, toRecordDraft(source), ABSENT_CONFIG_REVISION);
+    } catch (error) {
+      throw isConfigRevisionConflict(error)
+        ? new ConfigMoveRefusedError('CONFIG_PRINCIPAL_EXISTS')
+        : error;
+    }
+  }
+
+  /**
+   * Moves `from`'s document, as stored, to `to` (a role rename), and returns it as `to` now
+   * holds it, or `null` when `from` has none. It is a create-only write at `to` followed by a
+   * removal of `from` at the revision just copied. The moved document has a new identity, so
+   * revisions of the old one no longer match.
+   *
+   * A refusal changes nothing and throws {@link ConfigMoveRefusedError}:
+   * `CONFIG_PRINCIPAL_EXISTS` when `to` already has a document, and `CONFIG_PRINCIPAL_RESERVED`
+   * when either side is Base, which is tenant-wide and never one principal's document. When
+   * `from` changes between the copy and the removal, the copy is withdrawn and the move
+   * retried. Once the retries run out, or when the copy was edited meanwhile and so is kept,
+   * the revision conflict is rethrown.
+   */
+  async function movePrincipal(
+    from: ConfigPrincipal,
+    to: ConfigPrincipal,
+  ): Promise<ConfigRecord | null> {
+    if (isBaseConfigPrincipal(from) || isBaseConfigPrincipal(to)) {
+      throw new ConfigMoveRefusedError('CONFIG_PRINCIPAL_RESERVED');
+    }
+    for (let attempt = 1; ; attempt++) {
+      const current = await store.read(from);
+      if (!current) {
+        return null;
+      }
+      const moved = await copyTo(to, current);
+      let failure: unknown;
+      try {
+        await store.remove(from, getConfigRevision(current));
+        return moved;
+      } catch (error) {
+        failure = error;
+      }
+      /** A removal can fail after it committed; the copy is then the only one, so it stays. */
+      if ((await store.read(from).catch(() => current)) == null) {
+        return moved;
+      }
+      await store.remove(to, getConfigRevision(moved));
+      if (!isConfigRevisionConflict(failure) || attempt >= CONFIG_WRITE_ATTEMPTS) {
+        throw failure;
+      }
+      await pauseBeforeRetry(attempt);
+    }
+  }
+
   return {
     findConfig,
+    listConfigs,
     getApplicableConfigs,
     listTombstones,
     replaceOverrides,
@@ -590,5 +751,7 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
     unsetFields,
     deleteConfig,
     setActive,
+    setPriority,
+    movePrincipal,
   };
 }

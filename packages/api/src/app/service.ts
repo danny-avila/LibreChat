@@ -554,7 +554,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    *
    * The base config (from YAML + AppService) is cached indefinitely. Per-principal merged
    * configs are cached with a short TTL (`overrideCacheTtl`, default 60s). On cache miss,
-   * `getApplicableConfigs` queries the DB for matching overrides and merges them by priority.
+   * `getApplicableConfigs` queries the DB for matching overrides, which merge in precedence
+   * order (`compareConfigPrecedence`): Base first, then ascending priority, then role < group <
+   * user, then document identity, the last layer winning.
    *
    * When `baseOnly` is true, returns the YAML-derived config without any DB queries.
    * `role` and `userId` are ignored; tenantId still scopes YAML custom endpoints.

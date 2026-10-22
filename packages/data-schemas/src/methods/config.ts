@@ -4,6 +4,7 @@ import type { Model } from 'mongoose';
 import type {
   ConfigDraft,
   ConfigStore,
+  ConfigWriteOutcome,
   ConfigRecord,
   ConfigRevision,
   ConfigPrincipal,
@@ -12,6 +13,7 @@ import type {
   ConfigWriteOptions,
   ConfigLifecycleOptions,
 } from '~/app/store';
+import type { TenantPartitionFilter } from '~/models/plugins/tenantIsolation';
 import type { StoredKeyForm } from './encoding';
 import type { IConfig } from '~/types';
 import {
@@ -27,6 +29,7 @@ import {
   getStoredKeyForms,
   CONFIG_KEY_ENCODING_VERSION,
 } from './encoding';
+import { tenantPartitionFilter } from '~/models/plugins/tenantIsolation';
 import { isFieldNameRejection } from '~/utils/fields';
 import logger from '~/config/winston';
 
@@ -122,8 +125,17 @@ interface StoredKeys {
  * engine accepts them and encoded where it refuses them (see `./encoding`), and every read
  * decodes them. Queries run through the `Config` model, so the tenant-isolation plugin scopes
  * every read and write.
+ *
+ * With `partitioned`, a principal's document is looked up in the caller's tenant partition
+ * (`tenantPartitionFilter`) only: outside a tenant, where the plugin adds no filter, that is
+ * the platform-level document and never one a tenant holds under the same id. The writes and
+ * removals that follow such a lookup are pinned to the document's `_id`, and a create lands in
+ * the caller's partition as it always does.
  */
-export function createConfigStore(mongoose: typeof import('mongoose')): ConfigStore {
+export function createConfigStore(
+  mongoose: typeof import('mongoose'),
+  options?: { partitioned?: boolean },
+): ConfigStore {
   const model = () => mongoose.models.Config as Model<IConfig>;
   /** Set once the engine refuses a raw key name, so later writes encode without asking again. */
   let refusesRawKeys = false;
@@ -154,8 +166,16 @@ export function createConfigStore(mongoose: typeof import('mongoose')): ConfigSt
     }
   }
 
+  function lookupFilter(
+    principal: ConfigPrincipal,
+  ): ConfigPrincipal | (ConfigPrincipal & TenantPartitionFilter) {
+    return options?.partitioned
+      ? { ...principalFilter(principal), ...tenantPartitionFilter('configStore') }
+      : principalFilter(principal);
+  }
+
   async function read(principal: ConfigPrincipal): Promise<ConfigRecord | null> {
-    const document = await model().findOne(principalFilter(principal)).lean<StoredConfig>();
+    const document = await model().findOne(lookupFilter(principal)).lean<StoredConfig>();
     return document ? toRecord(document) : null;
   }
 
@@ -181,7 +201,7 @@ export function createConfigStore(mongoose: typeof import('mongoose')): ConfigSt
 
   /**
    * Inserts the principal's document only when it has none. An existing document matches the
-   * principal filter, `$setOnInsert` leaves it untouched, and the `_id` it returns is not the one
+   * lookup filter, `$setOnInsert` leaves it untouched, and the `_id` it returns is not the one
    * offered, so the conflict is seen without relying on the unique principal index (which some
    * engines, such as DocumentDB elastic clusters, do not enforce); the index still turns two
    * racing inserts into a duplicate-key conflict. Timestamps are set here because Mongoose would
@@ -196,7 +216,7 @@ export function createConfigStore(mongoose: typeof import('mongoose')): ConfigSt
     try {
       const document = await model()
         .findOneAndUpdate(
-          principalFilter(principal),
+          lookupFilter(principal),
           {
             $setOnInsert: { ...fields, _id, configVersion: 1, createdAt: now, updatedAt: now },
           },
@@ -264,9 +284,7 @@ export function createConfigStore(mongoose: typeof import('mongoose')): ConfigSt
     expected?: ConfigRevision,
   ): Promise<ConfigRecord | null> {
     if (expected === undefined) {
-      const deleted = await model()
-        .findOneAndDelete(principalFilter(principal))
-        .lean<StoredConfig>();
+      const deleted = await model().findOneAndDelete(lookupFilter(principal)).lean<StoredConfig>();
       return deleted ? toRecord(deleted) : null;
     }
     if (expected === ABSENT_CONFIG_REVISION) {
@@ -334,21 +352,32 @@ function toPrincipal(
 export function createConfigMethods(mongoose: typeof import('mongoose')) {
   const store = createConfigStore(mongoose);
   const operations = createConfigOperations(store);
+  /** For lookups and moves that must stay in the caller's tenant partition (a role rename). */
+  const partitioned = createConfigOperations(createConfigStore(mongoose, { partitioned: true }));
 
   return {
+    /** Every document, in merge precedence order (`compareConfigPrecedence`). */
     listAllConfigs: (
       filter?: { isActive?: boolean },
       _session?: NoSession,
-    ): Promise<ConfigRecord[]> => store.list(filter),
+    ): Promise<ConfigRecord[]> => operations.listConfigs(filter),
 
+    /**
+     * With `partitioned`, only the caller's tenant partition is read: outside a tenant, the
+     * platform-level document, never a tenant's document for the same id.
+     */
     findConfigByPrincipal: (
       principalType: PrincipalType,
       principalId: ConfigPrincipalId,
-      options?: { includeInactive?: boolean },
+      options?: { includeInactive?: boolean; partitioned?: boolean },
       _session?: NoSession,
     ): Promise<ConfigRecord | null> =>
-      operations.findConfig(toPrincipal(principalType, principalId), options),
+      (options?.partitioned ? partitioned : operations).findConfig(
+        toPrincipal(principalType, principalId),
+        options,
+      ),
 
+    /** Base and the principals' active documents, in merge precedence order. */
     getApplicableConfigs: (
       principals?: Array<{ principalType: string; principalId?: ConfigPrincipalId }>,
       _session?: NoSession,
@@ -361,13 +390,16 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     listConfigTombstones: (fieldPath: string, _session?: NoSession): Promise<ConfigTombstones[]> =>
       operations.listTombstones(fieldPath),
 
-    /** Replaces the overrides whole and activates the document; tombstones stay. */
+    /**
+     * Replaces the overrides whole and activates the document; tombstones stay. An omitted
+     * `priority` keeps the stored one, or gives a new document its principal type's default.
+     */
     upsertConfig: (
       principalType: PrincipalType,
       principalId: ConfigPrincipalId,
       principalModel: PrincipalModel,
       overrides: Partial<TCustomConfig>,
-      priority: number,
+      priority?: number,
       _session?: NoSession,
       options?: ConfigLifecycleOptions & { preservePriority?: boolean },
     ): Promise<ConfigRecord | null> =>
@@ -466,6 +498,38 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
       options?: ConfigLifecycleOptions,
     ): Promise<{ config: ConfigRecord; changed: boolean } | null> =>
       operations.setActive(toPrincipal(principalType, principalId), isActive, options),
+
+    /**
+     * Sets only the priority; overrides, tombstones and `isActive` stay. Resolves to the
+     * document and whether this write changed it, or `null` when the principal has none.
+     */
+    setConfigPriority: (
+      principalType: PrincipalType,
+      principalId: ConfigPrincipalId,
+      priority: number,
+      options?: ConfigWriteOptions,
+    ): Promise<ConfigWriteOutcome | null> =>
+      operations.setPriority(toPrincipal(principalType, principalId), priority, options),
+
+    /**
+     * Moves a principal's document to another id of the same type (a role rename) and
+     * returns it as moved, or `null` when there is none to move. Throws a
+     * `ConfigMoveRefusedError`, changing nothing, when the target already has one
+     * (`CONFIG_PRINCIPAL_EXISTS`) or either side is Base (`CONFIG_PRINCIPAL_RESERVED`).
+     *
+     * Both sides are in the caller's tenant partition: outside a tenant only a platform-level
+     * document moves, and only a platform-level one at the target refuses the move, so a
+     * tenant's role of the same name keeps its profile.
+     */
+    renameConfigPrincipal: (
+      principalType: PrincipalType,
+      fromPrincipalId: ConfigPrincipalId,
+      toPrincipalId: ConfigPrincipalId,
+    ): Promise<ConfigRecord | null> =>
+      partitioned.movePrincipal(
+        toPrincipal(principalType, fromPrincipalId),
+        toPrincipal(principalType, toPrincipalId),
+      ),
 
     /**
      * Writes a principal's whole document when it is still at `expected` (`absent`: only when

@@ -10,6 +10,10 @@ of a record map. All three are tombstones, written and removed with the same two
 | POST   | `/api/admin/config/:principalType/:principalId/fields/tombstone` | `{ "fieldPath": "mcpServers.…" }` |
 | DELETE | `/api/admin/config/:principalType/:principalId/fields`           | `?fieldPath=mcpServers.…`         |
 
+Profiles merge in a fixed order, the last winning: `__base__` first whatever its priority, then
+ascending priority, then role, group and user on equal priority. A "higher" profile below is one
+that merges later.
+
 `librechat.yaml` stays authoritative for which servers exist. A profile cannot delete or rename a
 `librechat.yaml` server; it can only hide it from the principals the profile applies to.
 
@@ -37,8 +41,10 @@ Two broader tombstones hide more than one server or reach more principals:
 - `fieldPath: "mcpServers"` removes the whole section, so it hides every server a profile can hide
   (all but the ones listed below) for the profile's principals.
 - A tombstone in the `__base__` profile applies to every principal, administrators included.
+  `__base__` merges first, so every other profile is higher than it: a profile that writes fields
+  of a server `__base__` hides brings it back for that profile's principals, as described below.
 
-Deleting the tombstone shows the server again. A higher-priority profile that writes some fields of
+Deleting the tombstone shows the server again. A higher profile that writes some fields of
 a server a lower profile hides also brings it back for its own principals, but not with those
 fields. The merge keeps only what the higher profile wrote, which is not a usable server
 definition, so those principals get the server as `librechat.yaml` defines it, and the incomplete
@@ -55,7 +61,7 @@ Some servers are never hidden:
 - A user's own servers.
 
 The decision comes from the principal's merged configuration (user, role and group memberships, in
-priority order). When that configuration cannot be read, every server a profile could hide is
+merge order). When that configuration cannot be read, every server a profile could hide is
 withheld instead of falling back to `librechat.yaml`.
 
 ### When a change takes effect
@@ -105,7 +111,7 @@ These tombstones behave as follows:
 - `DELETE …/fields?fieldPath=<same path>` removes that tombstone and restores the inherited key.
 - `DELETE …/fields?fieldPath=mcpServers.<name>.headers` resets the whole record: it clears the key
   tombstones under it as well as the keys the profile wrote.
-- A higher-priority profile can supply the key again.
+- A higher profile can supply the key again.
 - Fields of a process-backed server, including `env`, cannot be removed.
 - A record key that contains `.` cannot be addressed with a dotted `fieldPath`.
 

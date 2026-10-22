@@ -6,6 +6,7 @@ import {
 import type { TCustomConfig, TWebSearchConfigInput } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
 import {
+  resolveRawConfig,
   foldConfigMergeKey,
   isConfigRecordPath,
   getConfigMergeRules,
@@ -2318,6 +2319,211 @@ describe('getConfigFieldIssues', () => {
         stored,
       ),
     ).toEqual([]);
+  });
+});
+
+describe('merge precedence', () => {
+  function layer(
+    principalType: 'role' | 'group' | 'user',
+    principalId: string,
+    priority: number,
+    overrides: Record<string, unknown>,
+    _id: string,
+    tombstones?: string[],
+  ): IConfig {
+    return {
+      ...fakeConfig(overrides, priority, tombstones, principalId),
+      principalType,
+      _id,
+    } as unknown as IConfig;
+  }
+
+  const welcome = (configs: IConfig[]): unknown =>
+    (mergeConfigOverrides(baseConfig, configs).interfaceConfig as { customWelcome?: unknown })
+      ?.customWelcome;
+
+  it('lets a profile outrank Base even when Base has the higher priority', () => {
+    const base = layer(
+      'role',
+      BASE_CONFIG_PRINCIPAL_ID,
+      50,
+      { interface: { customWelcome: 'base' } },
+      '0a',
+    );
+    const role = layer('role', 'editor', 5, { interface: { customWelcome: 'role' } }, '0b');
+
+    expect(welcome([base, role])).toBe('role');
+    expect(welcome([role, base])).toBe('role');
+  });
+
+  it('merges tied group profiles the same way whatever order the store returned them in', () => {
+    const groups = ['0c', '0a', '0e', '0b', '0d'].map((id) =>
+      layer('group', `g-${id}`, 20, { interface: { customWelcome: id } }, id),
+    );
+    const results = new Set<unknown>();
+    for (let round = 0; round < 20; round++) {
+      const order = [...groups].sort(() => Math.random() - 0.5);
+      results.add(welcome(order));
+    }
+
+    expect([...results]).toEqual(['0e']);
+  });
+
+  it('lets a user profile beat a group profile, and a group beat a role, at equal priority', () => {
+    const role = layer('role', 'editor', 20, { interface: { customWelcome: 'role' } }, '0c');
+    const group = layer('group', 'g1', 20, { interface: { customWelcome: 'group' } }, '0b');
+    const user = layer('user', 'u1', 20, { interface: { customWelcome: 'user' } }, '0a');
+
+    expect(welcome([user, group, role])).toBe('user');
+    expect(welcome([group, role])).toBe('group');
+  });
+
+  it('lets a profile that writes fields of a librechat.yaml MCP server undo a Base hide of it, whatever Base priority', () => {
+    const github = { type: 'streamable-http', url: 'https://github.example.com/mcp' };
+    const appConfig = {
+      ...baseConfig,
+      mcpConfig: { github },
+      config: { mcpServers: { github } },
+    } as unknown as AppConfig;
+    const base = layer('role', BASE_CONFIG_PRINCIPAL_ID, 50, {}, '0a', ['mcpServers.github']);
+    const role = layer('role', 'editor', 5, { mcpServers: { github: { title: 'GitHub' } } }, '0b');
+
+    expect(mergeConfigOverrides(appConfig, [base]).mcpConfig).toEqual({});
+    expect(mergeConfigOverrides(appConfig, [base, role]).mcpConfig).toEqual({
+      github: { title: 'GitHub' },
+    });
+  });
+});
+
+describe('resolveRawConfig', () => {
+  const yaml = {
+    memory: { agent: { id: 'agent_1' } },
+    mcpServers: {
+      operator: { type: 'stdio', command: 'node', args: ['trusted-server.js'] },
+    },
+  } as unknown as Partial<TCustomConfig>;
+
+  /** Base's half of the memory switch: drop the YAML agent id, pick a provider and model. */
+  const memorySwitch = fakeConfig(
+    { memory: { agent: { provider: 'openAI', model: 'gpt-4o' } } },
+    0,
+    ['memory.agent.id'],
+    BASE_CONFIG_PRINCIPAL_ID,
+  );
+
+  it('returns the YAML config untouched when there are no layers', () => {
+    expect(resolveRawConfig(yaml, [])).toBe(yaml);
+  });
+
+  it('resolves Base tombstones and overrides over the YAML config', () => {
+    expect(resolveRawConfig(yaml, [memorySwitch]).memory).toEqual({
+      agent: { provider: 'openAI', model: 'gpt-4o' },
+    });
+  });
+
+  it('is the floor a profile write validates on: valid there, invalid on the YAML alone', () => {
+    const write = { 'memory.agent.model': 'gpt-4.1' };
+
+    expect(getConfigFieldIssues(write, yaml).map((issue) => issue.code)).toContain(
+      'union_dropped_key',
+    );
+    expect(getConfigFieldIssues(write, resolveRawConfig(yaml, [memorySwitch]))).toEqual([]);
+  });
+
+  it('agrees with the merge: what validates on the floor is kept, what fails there is dropped', () => {
+    const appConfig = {
+      ...baseConfig,
+      memory: yaml.memory,
+      config: yaml,
+    } as unknown as AppConfig;
+    const valid = fakeConfig({ memory: { agent: { model: 'gpt-4.1' } } }, 10, undefined, 'editor');
+    const floor = resolveRawConfig(yaml, [memorySwitch]);
+
+    expect(getConfigOverrideIssues(valid.overrides, floor)).toEqual([]);
+    expect(
+      (mergeConfigOverrides(appConfig, [memorySwitch, valid]) as unknown as { memory: unknown })
+        .memory,
+    ).toEqual({ agent: { provider: 'openAI', model: 'gpt-4.1' } });
+  });
+
+  it('reports a write that only fails on top of Base, which the merge would drop', () => {
+    /** The reverse switch: YAML picks a provider and model, Base switches to an agent id. */
+    const providerYaml = {
+      memory: { agent: { provider: 'openAI', model: 'gpt-4o' } },
+    } as unknown as Partial<TCustomConfig>;
+    const agentIdSwitch = fakeConfig(
+      { memory: { agent: { id: 'agent_9' } } },
+      0,
+      ['memory.agent.provider', 'memory.agent.model'],
+      BASE_CONFIG_PRINCIPAL_ID,
+    );
+    const appConfig = {
+      ...baseConfig,
+      memory: providerYaml.memory,
+      config: providerYaml,
+    } as unknown as AppConfig;
+    const write = { 'memory.agent.model': 'gpt-4.1' };
+    const floor = resolveRawConfig(providerYaml, [agentIdSwitch]);
+
+    expect(getConfigFieldIssues(write, providerYaml)).toEqual([]);
+    expect(getConfigFieldIssues(write, floor)).toEqual([
+      {
+        path: 'memory.agent.model',
+        segments: ['memory', 'agent', 'model'],
+        code: 'union_dropped_key',
+      },
+    ]);
+    const profile = fakeConfig({ memory: { agent: { model: 'gpt-4.1' } } }, 10, undefined, 'x');
+    expect(
+      (mergeConfigOverrides(appConfig, [agentIdSwitch, profile]) as unknown as { memory: unknown })
+        .memory,
+    ).toEqual({ agent: { id: 'agent_9' } });
+    expect(resolveRawConfig(providerYaml, [agentIdSwitch, profile]).memory).toEqual(floor.memory);
+  });
+
+  it('strips a Base override that is invalid on the YAML config, as the merge does', () => {
+    const invalidBase = fakeConfig(
+      { memory: { agent: { id: 5 } }, interface: { customWelcome: 'hi' } },
+      0,
+      undefined,
+      BASE_CONFIG_PRINCIPAL_ID,
+    );
+
+    const raw = resolveRawConfig(yaml, [invalidBase]);
+    expect(raw.memory).toEqual(yaml.memory);
+    expect(raw.interface).toEqual({ customWelcome: 'hi' });
+  });
+
+  it('never lets an override reach a process-backed MCP server', () => {
+    const base = fakeConfig(
+      {
+        mcpServers: {
+          operator: { command: '/bin/sh' },
+          remote: { type: 'streamable-http', url: 'https://mcp.example.com' },
+        },
+      },
+      0,
+      undefined,
+      BASE_CONFIG_PRINCIPAL_ID,
+    );
+
+    const raw = resolveRawConfig(yaml, [base]);
+    expect(raw.mcpServers).toEqual({
+      operator: { type: 'stdio', command: 'node', args: ['trusted-server.js'] },
+      remote: { type: 'streamable-http', url: 'https://mcp.example.com' },
+    });
+  });
+
+  it('orders layers by merge precedence, so Base lands first', () => {
+    const role = fakeConfig({ interface: { customWelcome: 'role' } }, 1, undefined, 'editor');
+    const base = fakeConfig(
+      { interface: { customWelcome: 'base' } },
+      99,
+      undefined,
+      BASE_CONFIG_PRINCIPAL_ID,
+    );
+
+    expect(resolveRawConfig({}, [role, base]).interface).toEqual({ customWelcome: 'role' });
   });
 });
 

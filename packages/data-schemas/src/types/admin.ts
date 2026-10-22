@@ -142,8 +142,10 @@ export type AdminConfigChangesRequest = AdminConfigWritePrecondition & {
   ops: AdminConfigChangeOp[];
   /**
    * Broad `manage:configs` only; anyone else's is ignored and the stored priority kept. A new
-   * priority is written even when no change alters the document, and on a principal without
-   * one it creates a document that holds only the priority, as PUT does.
+   * priority is written even when no change alters the document, and on an existing principal
+   * without one it creates a document that holds only the priority, as PUT does. A batch for a
+   * principal with no document that does not exist answers 404 `PRINCIPAL_NOT_FOUND`, a dry
+   * run included.
    */
   priority?: number;
   /** Validate and report without writing. */
@@ -276,6 +278,29 @@ export type AdminConfigChangeErrorResponse = {
  *   principal's config cannot be read, every hideable server is withheld. Process-backed
  *   (`stdio`) and Agent Plugins servers cannot be hidden, and deleting the tombstone shows the
  *   server again.
+ * - `deterministicPrecedence`: config documents merge in one fixed order, the last winning:
+ *   Base (`role` / `__base__`) first whatever its priority, then ascending `priority`, then
+ *   role < group < user on equal priority, then document `_id`; `GET /` lists them in that
+ *   order. A write (PUT, PATCH `/fields`, POST `/fields/tombstone` or `/changes`) that creates
+ *   a document without `priority` gives it its principal type's default (role 10, group 20,
+ *   user 100; Base 0), and a write that omits `priority` keeps the stored one, so a PUT no
+ *   longer resets it. A profile write validates on `librechat.yaml` with the active Base
+ *   document resolved over it, as the merge applies it.
+ * - `priorityRoute`: PATCH `/:principalType/:principalId/priority` `{ priority,
+ *   expectedRevision? }` sets only the priority (overrides, tombstones and `isActive` stay),
+ *   for broad `manage:configs` only. No document answers 404 `CONFIG_NOT_FOUND`, an invalid
+ *   priority 400 `INVALID_PRIORITY`; an unchanged priority is neither written nor audited.
+ * - `principalCheck`: a write that would create a principal's first document (PUT, PATCH
+ *   `/fields`, POST `/fields/tombstone` or `/changes`, including a dry run or a batch that only
+ *   sets a priority) answers 404 `PRINCIPAL_NOT_FOUND` unless the role (by exact name), group
+ *   or user (by lowercase ObjectId) exists in the caller's tenant (outside a tenant, at
+ *   platform level). A PUT with `expectedRevision: 'absent'` creates the profile even with no
+ *   overrides: 201, or 409 `CONFIG_VERSION_CONFLICT` when one exists.
+ * - `roleRenameMovesProfile`: renaming a role (PATCH `/api/admin/roles/:name`) moves its
+ *   config profile, system grants and ACL entries to the new name in the caller's tenant, or
+ *   undoes every step and answers 500 `ROLE_RENAME_FAILED`. A profile already held by the new
+ *   name answers 409 `ROLE_CONFIG_CONFLICT`, and the Base principal id is a reserved role name
+ *   (400 `ROLE_NAME_RESERVED`).
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'
@@ -286,7 +311,11 @@ export type AdminConfigFeatureFlag =
   | 'prunesEmptyParents'
   | 'awaitedInvalidation'
   | 'changesBatch'
-  | 'yamlMcpHide';
+  | 'yamlMcpHide'
+  | 'deterministicPrecedence'
+  | 'priorityRoute'
+  | 'principalCheck'
+  | 'roleRenameMovesProfile';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
 
