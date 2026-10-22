@@ -165,6 +165,7 @@ export interface RunFileSession {
     artifactId: string,
     recipients?: string[],
     signal?: AbortSignal,
+    toolCallId?: string,
   ) => Promise<TFile>;
   prepareTools: (
     agentId: string,
@@ -244,6 +245,7 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
       if (deps.canPublishProjectFiles?.(agentId)) projectPublishers.add(agentId);
     }
     if (!sharing && projectPublishers.size === 0) return false;
+    const createdAt = sharing ? deps.createdAt : Date.now();
     scope = { userId: deps.userId, tenantId: deps.tenantId, conversationId, runId };
     members.set(runId, [...agentIds]);
     manifest = createRunFileManifest({
@@ -252,7 +254,7 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
       root: { id: runId, agentIds, allowedAgentIds: sharing ? allowedAgentIds(agentIds) : [] },
       inputFiles: deps.getInputs(),
       inputFileIds: deps.inputFileIds,
-      createdAt: deps.createdAt,
+      createdAt,
       audit: deps.audit,
       store: {
         list: deps.listPublications,
@@ -262,7 +264,7 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
     });
     runSignal = signal;
     signal?.addEventListener('abort', endRun, { once: true });
-    expiryTimer = setTimeout(endRun, Math.max(0, deps.createdAt + deps.policy.ttlMs - Date.now()));
+    expiryTimer = setTimeout(endRun, Math.max(0, createdAt + deps.policy.ttlMs - Date.now()));
     expiryTimer.unref?.();
     if (signal?.aborted) endRun();
     return true;
@@ -513,6 +515,7 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
     artifactId: string,
     recipients: string[] = [],
     signal?: AbortSignal,
+    toolCallId?: string,
   ): Promise<TFile> {
     const actor = actorFor(agentId, context);
     const key = JSON.stringify(actor);
@@ -540,7 +543,7 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
     await deps.emit({
       ...file,
       messageId: scope!.runId,
-      toolCallId: rootDispatch?.parentToolCallId,
+      toolCallId: rootDispatch?.parentToolCallId ?? toolCallId,
       agentId: rootDispatch?.parentAgentId ?? agentId,
     });
     return file;

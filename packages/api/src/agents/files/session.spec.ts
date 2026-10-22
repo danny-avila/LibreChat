@@ -15,6 +15,7 @@ function setup(
   options: {
     signal?: AbortSignal;
     ttlMs?: number;
+    createdAt?: number;
     inputs?: TFile[];
     project?: boolean;
     validateMessages?: RunFileSessionDeps['validateMessages'];
@@ -52,7 +53,7 @@ function setup(
   const emit = jest.fn(async () => undefined);
   const session = createRunFileSession({
     userId: 'user',
-    createdAt: Date.now(),
+    createdAt: options.createdAt ?? Date.now(),
     policy: {
       enabled: options.project !== true,
       allowSiblingSharing: false,
@@ -192,17 +193,38 @@ it('keeps project working files private and publishes selected versions without 
       'Storage unavailable',
     );
     h.setWorkingBytes('later edits');
-    const file = await h.session.publish('parent', undefined, artifacts[1].artifact_id);
+    const file = await h.session.publish(
+      'parent',
+      undefined,
+      artifacts[1].artifact_id,
+      [],
+      undefined,
+      'publish-call',
+    );
     expect(await h.session.publish('parent', undefined, artifacts[1].artifact_id)).toEqual(file);
     expect(h.publishedBytes.map((bytes) => bytes.toString())).toEqual(['finished report']);
     expect(h.saved.map((file) => file.filename)).toEqual(['results.csv']);
-    expect(h.emit).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'parent' }));
+    expect(h.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: 'parent', toolCallId: 'publish-call' }),
+    );
     expect((await h.session.list('parent')).artifacts).toEqual([artifacts[0]]);
   } finally {
     await h.session.close();
   }
   expect(h.snapshots.close).toHaveBeenCalledTimes(1);
   await expect(h.session.list('parent')).rejects.toThrow('expired');
+});
+
+it('starts a resumed project session lifetime at activation', async () => {
+  const { session } = setup(false, { project: true, createdAt: Date.now() - 7_200_000 });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await expect(
+      session.prepareTools('parent', undefined, new AbortController().signal),
+    ).resolves.toBeUndefined();
+  } finally {
+    await session.close();
+  }
 });
 
 it('returns publications from every graph member without granting sibling access', async () => {

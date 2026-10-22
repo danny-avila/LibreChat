@@ -185,6 +185,7 @@ describe('run file SDK bridge', () => {
       'code-call:output',
       ['reviewer'],
       signal,
+      undefined,
     );
     expect(JSON.parse(result)).toEqual({ file_id: 'durable-file', filename: 'results.csv' });
   });
@@ -224,6 +225,24 @@ describe('run file SDK bridge', () => {
         'publish_artifact',
       ]);
       expect(input.instructions).toContain('Do not publish temporary scripts');
+      const signal = new AbortController().signal;
+      await input.graphTools![1].invoke(
+        {
+          type: 'tool_call',
+          id: 'publish-call',
+          name: 'publish_artifact',
+          args: { artifact_id: 'output' },
+        },
+        { signal },
+      );
+      expect(session.publish).toHaveBeenCalledWith(
+        input.agentId,
+        undefined,
+        'output',
+        undefined,
+        signal,
+        'publish-call',
+      );
     }
     expect(
       config.graphConfig.agents[0].subagentConfigs?.[0].agentInputs?.graphTools,

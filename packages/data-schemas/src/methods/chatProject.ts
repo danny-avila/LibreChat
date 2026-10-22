@@ -61,6 +61,7 @@ export type GeneratedProjectFileInput = {
   projectId: string;
   conversationId: string;
   fileId: string;
+  projectFileIds?: readonly string[];
   contextRevision: number;
   maxFiles?: number;
 };
@@ -694,6 +695,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     projectId,
     conversationId,
     fileId,
+    projectFileIds = [],
     contextRevision,
     maxFiles: configuredMaxFiles,
   }: GeneratedProjectFileInput): Promise<GeneratedProjectFileResult> {
@@ -706,12 +708,12 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     const File = mongoose.models.File as Model<IMongoFile>;
     const owner = { user: userId, tenantId: tenantId || null };
     const projectFilter = { _id: new mongoose.Types.ObjectId(projectId), ...owner };
-    const [conversation, file] = await Promise.all([
+    const [conversation, files] = await Promise.all([
       Conversation.exists({ ...owner, conversationId, chatProjectId: projectId }),
-      File.findOne({
+      File.find({
         ...owner,
         conversationId,
-        file_id: fileId,
+        file_id: { $in: [fileId, ...projectFileIds] },
         context: { $in: [FileContext.execute_code, FileContext.run_artifact] },
         $and: [
           projectFileFilter(true),
@@ -719,25 +721,46 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
         ],
       })
         .select('-text -textFormat')
-        .lean<IMongoFile>(),
+        .lean<IMongoFile[]>(),
     ]);
     if (!conversation) {
       return { ok: false, error: { code: 'project_changed' } };
     }
+    const file = files.find((entry) => entry.file_id === fileId);
     if (!file) {
       return { ok: false, error: { code: 'project_file_unavailable' } };
     }
-    const project = await ChatProject.findOneAndUpdate(
+    const replaced =
+      file.context === FileContext.run_artifact
+        ? files
+            .filter((entry) => entry.file_id !== fileId && entry.filename === file.filename)
+            .map((entry) => entry.file_id)
+        : [];
+    const retained = {
+      $filter: {
+        input: '$file_ids',
+        as: 'id',
+        cond: { $not: { $in: ['$$id', { $literal: replaced }] } },
+      },
+    };
+    const previous = await ChatProject.findOneAndUpdate(
       {
         ...projectFilter,
         contextRevision,
         file_ids: { $ne: fileId },
-        [`file_ids.${maxFiles - 1}`]: { $exists: false },
+        $expr: { $lt: [{ $size: retained }, maxFiles] },
       },
-      { $addToSet: { file_ids: fileId }, $inc: { contextRevision: 1 } },
-      { new: true, runValidators: true },
+      [
+        {
+          $set: {
+            file_ids: { $concatArrays: [retained, { $literal: [fileId] }] },
+            contextRevision: { $add: ['$contextRevision', 1] },
+          },
+        },
+      ],
+      { new: false, runValidators: true },
     ).lean<IChatProject>();
-    if (!project) {
+    if (!previous) {
       const current = await ChatProject.findOne(projectFilter).lean<IChatProject>();
       if (!current || current.contextRevision !== contextRevision) {
         return { ok: false, error: { code: 'project_changed' } };
@@ -747,15 +770,30 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
       }
       return { ok: false, error: { code: 'project_file_limit' } };
     }
+    const previousIds = previous.file_ids ?? [];
+    const project = {
+      file_ids: [...previousIds.filter((id) => !replaced.includes(id)), fileId],
+      contextRevision: contextRevision + 1,
+    };
     const [stillAttached, stillAvailable] = await Promise.all([
       Conversation.exists({ ...owner, conversationId, chatProjectId: projectId }),
       File.exists({ _id: file._id, ...owner }),
     ]);
     if (!stillAttached || !stillAvailable) {
-      await ChatProject.updateOne(
-        { ...projectFilter, file_ids: fileId },
-        { $pull: { file_ids: fileId }, $inc: { contextRevision: 1 } },
-      );
+      await ChatProject.updateOne({ ...projectFilter, file_ids: fileId }, [
+        {
+          $set: {
+            file_ids: {
+              $cond: [
+                { $eq: ['$contextRevision', project.contextRevision] },
+                { $literal: previousIds },
+                { $setDifference: ['$file_ids', { $literal: [fileId] }] },
+              ],
+            },
+            contextRevision: { $add: ['$contextRevision', 1] },
+          },
+        },
+      ]);
       return {
         ok: false,
         error: { code: stillAvailable ? 'project_changed' : 'project_file_unavailable' },

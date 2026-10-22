@@ -39,6 +39,7 @@ export function createProjectOutputSaver({ addGeneratedProjectFile, logger }: Ou
           projectId,
           conversationId: file.conversationId,
           fileId: file.file_id,
+          projectFileIds: context.file_ids,
           contextRevision: context.contextRevision,
           maxFiles: req.config?.projects?.maxFiles,
         });
@@ -50,8 +51,9 @@ export function createProjectOutputSaver({ addGeneratedProjectFile, logger }: Ou
         // Keep a guidance-only snapshot complete at its own level for approval resumes.
         if (resources.length === new Set(context.file_ids).size) {
           const resource = toCanonicalProjectResource(canonicalFile, true);
-          const existingIndex = resources.findIndex((entry) => entry.file_id === resource.file_id);
-          const updated = [...resources];
+          const retainedIds = new Set(project.file_ids);
+          const updated = resources.filter((entry) => retainedIds.has(entry.file_id));
+          const existingIndex = updated.findIndex((entry) => entry.file_id === resource.file_id);
           updated[existingIndex < 0 ? updated.length : existingIndex] = resource;
           resources = updated;
         }

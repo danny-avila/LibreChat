@@ -159,6 +159,7 @@ test('project CSV and generated output are shared across chats, without indexing
   await expect(
     page.getByText(`${outputName} was added to the project.`, { exact: true }),
   ).toBeVisible();
+  await expect(page.getByText(outputName, { exact: true })).toBeVisible();
   const projectFiles = await fetchJson<TChatProjectFile[]>(
     page,
     `/api/projects/${projectId}/files`,

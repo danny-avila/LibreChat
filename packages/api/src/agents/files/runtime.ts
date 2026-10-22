@@ -65,6 +65,7 @@ export function createRunFileTools(
         artifact_id,
         recipient_agent_ids,
         config.signal ?? runSignal,
+        config.toolCall?.id,
       );
       return JSON.stringify({ file_id: file.file_id, filename: file.filename });
     },

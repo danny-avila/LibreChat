@@ -515,6 +515,22 @@ it('does no project mutation with the capability disabled or outside a project',
   expect((await methods.getChatProject(req.user.id, projectId))?.file_ids).toEqual([]);
 });
 
+it('keeps the restored project snapshot compatible after replacing a published revision', async () => {
+  const { req, outputs, methods, save } = await setupOutputs();
+  outputs[1].context = FileContext.run_artifact;
+  outputs[1].filename = outputs[0].filename;
+  await mongoose.models.File.updateOne({ file_id: outputs[1].file_id }, { $set: outputs[1] });
+  await save(req, outputs[0]);
+  await save(req, outputs[1]);
+  const restored = await resolveChatProjectContext(
+    { userId: req.user.id, conversationId: 'analysis-chat', codeExecution: true },
+    methods,
+  );
+  expect(req.chatProjectContext?.file_ids).toEqual(['second']);
+  expect(req.chatProjectContext?.resources.map((file) => file.file_id)).toEqual(['second']);
+  expect(getChatProjectContextKey(req.chatProjectContext)).toBe(getChatProjectContextKey(restored));
+});
+
 it('keeps a guidance-only snapshot compatible after saving an output to a nonempty project', async () => {
   const { req, outputs, methods, save, logger } = await setupOutputs();
   await save(req, outputs[0]);

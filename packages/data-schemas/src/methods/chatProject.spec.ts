@@ -141,6 +141,32 @@ describe('ChatProject methods', () => {
       expect(await File.exists({ file_id: 'output' })).not.toBeNull();
     });
 
+    it('replaces a published revision at capacity while preserving uploads and other chats', async () => {
+      const input = await setupOutput();
+      const previous = await File.findOne({ file_id: 'output' }).lean<IMongoFile>();
+      if (!previous) throw new Error('The original output is unavailable');
+      const { _id, ...data } = previous;
+      await File.create([
+        { ...data, file_id: 'revision', context: FileContext.run_artifact },
+        { ...data, file_id: 'other-chat', conversationId: 'another-chat' },
+        { ...data, file_id: 'upload', context: FileContext.message_attachment, embedded: true },
+      ]);
+      const projectFileIds = ['output', 'other-chat', 'upload'];
+      await ChatProject.updateOne({ _id: input.projectId }, { $set: { file_ids: projectFileIds } });
+      expect(
+        await methods.addGeneratedProjectFile({
+          ...input,
+          fileId: 'revision',
+          projectFileIds,
+          maxFiles: 3,
+        }),
+      ).toMatchObject({
+        ok: true,
+        value: { project: { file_ids: ['other-chat', 'upload', 'revision'], contextRevision: 1 } },
+      });
+      expect(await File.exists({ file_id: 'output' })).not.toBeNull();
+    });
+
     it('keeps the output in the chat when the configured project limit is reached', async () => {
       const input = await setupOutput();
       await ChatProject.updateOne({ _id: input.projectId }, { $set: { file_ids: ['existing'] } });
