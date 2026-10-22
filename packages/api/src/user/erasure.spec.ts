@@ -218,11 +218,13 @@ describe('eraseUserData', () => {
       return { deletedFileIds: files.map((file) => file.file_id), failedFileIds: [] };
     });
     const deleteKeys = jest.spyOn(deps, 'deleteUserKey');
+    const getFiles = jest.spyOn(deps, 'getFiles');
     await expect(eraseUserData({ userId: user }, deps)).rejects.toThrow(
       'Stored file deletion incomplete',
     );
     expect(await count('File', { user: userId, file_id: 'newly-provisioned' })).toBe(1);
     expect(deleteKeys).not.toHaveBeenCalled();
+    expect(getFiles).toHaveBeenNthCalledWith(2, { user }, undefined, { _id: 1 }, 1);
   });
 
   it('keeps the transaction ledger when the operator retains it', async () => {

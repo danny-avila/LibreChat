@@ -237,7 +237,7 @@ export async function eraseUserData(
     throw new Error('Stored file deletion incomplete');
   }
   await deps.deleteFiles([...deleted], undefined, { files: files ?? [], userId });
-  if ((await deps.getFiles({ user: userId }, undefined, 1))?.length) {
+  if ((await deps.getFiles({ user: userId }, undefined, { _id: 1 }, 1))?.length) {
     throw new Error('Stored file deletion incomplete');
   }
   await deps.deleteAllUserSessions({ userId });

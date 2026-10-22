@@ -2664,13 +2664,14 @@ describe('processDeleteRequest', () => {
     const deleteFile = jest.fn().mockRejectedValue(missingError);
     getStrategyFunctions.mockReturnValue({ deleteFile });
     db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    const req = {
+      body: {},
+      config: { fileConfig: { retainedFileCleanup: true } },
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
 
     const result = await processDeleteRequest({
-      req: {
-        body: {},
-        config: { fileConfig: { retainedFileCleanup: true } },
-        user: { id: 'user-123', tenantId: 'tenant-a' },
-      },
+      req,
       files: [
         {
           file_id: 'expired-file',
@@ -2716,14 +2717,15 @@ describe('processDeleteRequest', () => {
     const metadataError = new Error('mongo unavailable');
     getStrategyFunctions.mockReturnValue({ deleteFile });
     db.deleteFiles.mockRejectedValue(metadataError);
+    const req = {
+      body: {},
+      config: { fileConfig: { retainedFileCleanup: true } },
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
 
     await expect(
       processDeleteRequest({
-        req: {
-          body: {},
-          config: { fileConfig: { retainedFileCleanup: true } },
-          user: { id: 'user-123', tenantId: 'tenant-a' },
-        },
+        req,
         files: [
           {
             file_id: 'expired-file',
