@@ -2,6 +2,7 @@ const express = require('express');
 const { createAdminRolesHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
+const { invalidateConfigCaches } = require('~/server/services/Config');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
 
@@ -32,6 +33,11 @@ const handlers = createAdminRolesHandlers({
   restoreConfig: db.restoreConfig,
   findConfigByPrincipal: db.findConfigByPrincipal,
   findGrantsForPrincipal: db.findGrantsForPrincipal,
+  renameConfigPrincipal: db.renameConfigPrincipal,
+  moveGrantsToPrincipal: db.moveGrantsToPrincipal,
+  restoreMovedGrants: db.restoreMovedGrants,
+  moveAclEntriesToPrincipal: db.moveAclEntriesToPrincipal,
+  invalidateConfigCaches,
   recordAuditEntry: db.recordAuditEntry,
   auditFailClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
   invalidatePromptGroupAccessContext: db.invalidatePromptGroupAccessContext,

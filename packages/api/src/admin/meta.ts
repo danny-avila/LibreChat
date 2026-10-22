@@ -30,6 +30,10 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   awaitedInvalidation: true,
   changesBatch: true,
   yamlMcpHide: true,
+  deterministicPrecedence: true,
+  priorityRoute: true,
+  principalCheck: true,
+  roleRenameMovesProfile: true,
 };
 
 /**

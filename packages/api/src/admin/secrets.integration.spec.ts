@@ -272,7 +272,6 @@ beforeAll(async () => {
       listAllConfigs: methods.listAllConfigs,
       findConfigByPrincipal,
       writeConfigDocument: methods.writeConfigDocument,
-      tombstoneConfigField: methods.tombstoneConfigField,
       unsetConfigField: methods.unsetConfigField,
       deleteConfig: methods.deleteConfig,
       toggleConfigActiveTracked: methods.toggleConfigActiveTracked,
@@ -1404,9 +1403,6 @@ describe('config secret registry — real handlers against a real Config collect
         writeConfigDocument: async () => {
           throw new Error('not written in this test');
         },
-        tombstoneConfigField: async () => {
-          throw new Error('not written in this test');
-        },
         unsetConfigField: async () => null,
         deleteConfig: async () => null,
         toggleConfigActiveTracked: async () => null,
@@ -1481,9 +1477,6 @@ describe('config secret registry — real handlers against a real Config collect
         listAllConfigs: async () => [],
         findConfigByPrincipal: async () => null,
         writeConfigDocument: async () => {
-          throw new Error('not written in this test');
-        },
-        tombstoneConfigField: async () => {
           throw new Error('not written in this test');
         },
         unsetConfigField: async () => null,

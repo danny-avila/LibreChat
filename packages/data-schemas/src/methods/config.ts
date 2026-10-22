@@ -5,6 +5,8 @@ import type { Model } from 'mongoose';
 import type {
   ConfigDraft,
   ConfigStore,
+  ConfigMoveOptions,
+  ConfigWriteOutcome,
   ConfigRecord,
   ConfigRevision,
   ConfigPrincipal,
@@ -23,6 +25,7 @@ import {
   createConfigOperations,
   getConfigRevision,
   parseConfigRevision,
+  isConfigRevisionConflict,
 } from '~/app/store';
 import {
   toStoredKeys,
@@ -240,6 +243,12 @@ export function createConfigStore(mongoose: typeof import('mongoose')): ConfigSt
    * engines, such as DocumentDB elastic clusters, do not enforce); the index still turns two
    * racing inserts into a duplicate-key conflict. Timestamps are set here because Mongoose would
    * otherwise `$set` `updatedAt` on the document it found.
+   *
+   * The `_id` is chosen here, so an insert whose acknowledgement is lost (the connection drops
+   * after the server applied it, where the driver cannot retry the write) is settled by looking
+   * that `_id` up: found at version 1, the insert committed and its document is returned, as
+   * the contract requires. Otherwise, or when the lookup fails too, the write's own error is
+   * rethrown.
    */
   async function create(
     principal: ConfigPrincipal,
@@ -268,6 +277,16 @@ export function createConfigStore(mongoose: typeof import('mongoose')): ConfigSt
     } catch (error) {
       if (isDuplicateKeyError(error)) {
         throw new ConfigRevisionConflictError();
+      }
+      if (isConfigRevisionConflict(error) || isFieldNameRejection(error)) {
+        throw error;
+      }
+      const created = await model()
+        .findOne({ ...principalFilter(principal, 'configStore.write'), _id, configVersion: 1 })
+        .lean<StoredConfig>()
+        .catch(() => null);
+      if (created) {
+        return toRecord(created);
       }
       throw error;
     }
@@ -393,10 +412,11 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
   const operations = createConfigOperations(store);
 
   return {
+    /** The documents the store lists, in merge precedence order (`compareConfigPrecedence`). */
     listAllConfigs: (
       filter?: { isActive?: boolean },
       _session?: NoSession,
-    ): Promise<ConfigRecord[]> => store.list(filter),
+    ): Promise<ConfigRecord[]> => operations.listConfigs(filter),
 
     findConfigByPrincipal: (
       principalType: PrincipalType,
@@ -406,6 +426,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     ): Promise<ConfigRecord | null> =>
       operations.findConfig(toPrincipal(principalType, principalId), options),
 
+    /** Base and the principals' active documents, in merge precedence order. */
     getApplicableConfigs: (
       principals?: Array<{ principalType: string; principalId?: ConfigPrincipalId }>,
       _session?: NoSession,
@@ -418,13 +439,16 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     listConfigTombstones: (fieldPath: string, _session?: NoSession): Promise<ConfigTombstones[]> =>
       operations.listTombstones(fieldPath),
 
-    /** Replaces the overrides whole and activates the document; tombstones stay. */
+    /**
+     * Replaces the overrides whole and activates the document; tombstones stay. An omitted
+     * `priority` keeps the stored one, or gives a new document its principal type's default.
+     */
     upsertConfig: (
       principalType: PrincipalType,
       principalId: ConfigPrincipalId,
       principalModel: PrincipalModel,
       overrides: Partial<TCustomConfig>,
-      priority: number,
+      priority?: number,
       _session?: NoSession,
       options?: ConfigLifecycleOptions & { preservePriority?: boolean },
     ): Promise<ConfigRecord | null> =>
@@ -523,6 +547,43 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
       options?: ConfigLifecycleOptions,
     ): Promise<{ config: ConfigRecord; changed: boolean } | null> =>
       operations.setActive(toPrincipal(principalType, principalId), isActive, options),
+
+    /**
+     * Sets only the priority; overrides, tombstones and `isActive` stay. Resolves to the
+     * document and whether this write changed it, or `null` when the principal has none.
+     * A role's document is the one in the caller's tenant partition, as for every write.
+     */
+    setConfigPriority: (
+      principalType: PrincipalType,
+      principalId: ConfigPrincipalId,
+      priority: number,
+      options?: ConfigWriteOptions,
+    ): Promise<ConfigWriteOutcome | null> =>
+      operations.setPriority(toPrincipal(principalType, principalId), priority, options),
+
+    /**
+     * Moves a principal's document to another id of the same type (a role rename) and
+     * returns it as moved, or `null` when there is none to move. Throws a
+     * `ConfigMoveRefusedError`, changing nothing, when the target already has one
+     * (`CONFIG_PRINCIPAL_EXISTS`) or either side is Base (`CONFIG_PRINCIPAL_RESERVED`).
+     *
+     * A role's documents on both sides are the ones in the caller's tenant partition: outside a
+     * tenant only a platform-level document moves, and only a platform-level one at the target
+     * refuses the move, so a tenant's role of the same name keeps its profile. With `identity`
+     * (how a rename undoes its move), only that document moves, and `null` means the source
+     * holds another or none.
+     */
+    renameConfigPrincipal: (
+      principalType: PrincipalType,
+      fromPrincipalId: ConfigPrincipalId,
+      toPrincipalId: ConfigPrincipalId,
+      options?: ConfigMoveOptions,
+    ): Promise<ConfigRecord | null> =>
+      operations.movePrincipal(
+        toPrincipal(principalType, fromPrincipalId),
+        toPrincipal(principalType, toPrincipalId),
+        options,
+      ),
 
     /**
      * Writes a principal's whole document when it is still at `expected` (`absent`: only when

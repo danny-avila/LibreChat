@@ -12,9 +12,9 @@ import {
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AdminConfigMergeRules, AppConfig, Config, TWebSearchKeys } from '~/types';
 import type { ConfigFieldWrite } from './mutations';
+import { isBaseConfigPrincipal, sortByConfigPrecedence } from './precedence';
 import { setConfigFields, toConfigOverrideState } from './mutations';
 import { webSearchPairedFields, unbindWebSearchKeys } from './web';
-import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { parseFieldPath, isDotFreePath } from './paths';
 import logger from '~/config/winston';
 
@@ -24,6 +24,8 @@ type AnyObject = { [key: string]: unknown };
 export type ConfigOverrideLayer = Pick<Config, 'principalType' | 'priority' | 'overrides'> & {
   principalId: { toString(): string };
   tombstones?: readonly unknown[];
+  /** The document's identity: the last tie-break of merge precedence. */
+  _id?: { toString(): string } | null;
 };
 
 const MAX_MERGE_DEPTH = 10;
@@ -1150,7 +1152,7 @@ function omitPath(target: unknown, segments: string[]): unknown {
  * Drops the override nodes that make the merged config fail `configSchema`, so an invalid
  * stored value (written before write-time validation, by an older server, or one that only
  * fails once layered over other overrides) leaves the value beneath it in place. A layer
- * is not judged on what it leaves out, since a higher-priority layer may supply it.
+ * is not judged on what it leaves out, since a layer that merges after it may supply it.
  */
 function stripInvalidOverrides(
   config: ConfigOverrideLayer,
@@ -1352,30 +1354,25 @@ function withAcceptedSections(config: ConfigOverrideLayer): ConfigOverrideLayer 
 }
 
 /**
- * Merge DB config overrides into a base AppConfig.
- *
- * Configs are sorted by priority ascending (lowest first, highest wins).
- * Each config's `overrides` is deep-merged into the base config in order.
- * A stored web search key is dropped when a layer other than its own decides
- * the URL it is sent to.
+ * Folds override layers, in merge precedence order (`compareConfigPrecedence`), into
+ * `merged`, the served config, and `raw`, the YAML-shaped config each layer is validated on
+ * before it lands (`stripInvalidOverrides`). `merged` starts as any object whose `mcpConfig`
+ * is the MCP servers config of `raw`, because the process-MCP filter reads it.
+ * `webSearchWriters` names the layer behind each paired web search field, by its position in
+ * that order.
  */
-export function mergeConfigOverrides(
-  baseConfig: AppConfig,
+function foldConfigLayers<T extends AnyObject>(
+  initial: T,
+  initialRaw: Partial<TCustomConfig>,
   configs: readonly ConfigOverrideLayer[],
-): AppConfig {
-  if (!configs || configs.length === 0) {
-    return baseConfig;
-  }
-
-  const sorted = [...configs].sort((a, b) => a.priority - b.priority);
-
-  let merged = { ...baseConfig };
-  /** The YAML-shaped config the next override lands on, for validating it in place. */
-  let raw: Partial<TCustomConfig> = baseConfig.config ?? {};
+): { merged: T; raw: Partial<TCustomConfig>; webSearchWriters: WebSearchWriters } {
+  const sorted = sortByConfigPrecedence(configs);
+  let merged = initial;
+  let raw = initialRaw;
   const webSearchWriters: WebSearchWriters = new Map();
   for (let order = 0; order < sorted.length; order++) {
     const config = withAcceptedSections(sorted[order]);
-    const isBasePrincipal = config.principalId?.toString() === BASE_CONFIG_PRINCIPAL_ID;
+    const isBasePrincipal = isBaseConfigPrincipal(config);
     if (Array.isArray(config.tombstones)) {
       const removal: WebSearchWriter = { config, order, removed: true };
       for (const path of config.tombstones) {
@@ -1404,10 +1401,7 @@ export function mergeConfigOverrides(
         applied[key] = value;
         const mappedKey = OVERRIDE_KEY_MAP[key as keyof typeof OVERRIDE_KEY_MAP] ?? key;
         if (mappedKey === 'mcpConfig') {
-          remapped[mappedKey] = filterMCPServerOverrides(
-            value,
-            (merged as unknown as AnyObject)[mappedKey],
-          );
+          remapped[mappedKey] = filterMCPServerOverrides(value, merged[mappedKey]);
           /** A server the filter removed must not complete a later layer's partial of it. */
           applied[key] = remapped[mappedKey];
         } else if (
@@ -1459,9 +1453,45 @@ export function mergeConfigOverrides(
       });
     }
   }
+  return { merged, raw, webSearchWriters };
+}
 
-  merged = bindWebSearchKeys(merged, webSearchWriters);
+/**
+ * Merge DB config overrides into a base AppConfig.
+ *
+ * Configs merge in precedence order (`compareConfigPrecedence`): Base first, then ascending
+ * priority, then role < group < user, then document identity; the last layer wins. Each
+ * config's `overrides` is deep-merged into the base config in that order. A stored web search
+ * key is dropped when a layer other than its own decides the URL it is sent to.
+ */
+export function mergeConfigOverrides(
+  baseConfig: AppConfig,
+  configs: readonly ConfigOverrideLayer[],
+): AppConfig {
+  if (!configs || configs.length === 0) {
+    return baseConfig;
+  }
+  const folded = foldConfigLayers({ ...baseConfig }, baseConfig.config ?? {}, configs);
+  const merged = bindWebSearchKeys(folded.merged, folded.webSearchWriters);
   return preserveBaseOnlyPaths(baseConfig, preserveRuntimeStops(baseConfig, merged));
+}
+
+/**
+ * The YAML-shaped config `configs` resolve to on top of `baseYaml`: exactly the value
+ * {@link mergeConfigOverrides} validates the next layer on, with the same precedence order,
+ * tombstones, base-only and dedicated-section filtering, invalid-override stripping and
+ * process-MCP filtering. It is a validation floor, not the served config (no AppService
+ * derivation runs on it).
+ */
+export function resolveRawConfig(
+  baseYaml: Partial<TCustomConfig>,
+  configs: readonly ConfigOverrideLayer[],
+): Partial<TCustomConfig> {
+  if (configs.length === 0) {
+    return baseYaml;
+  }
+  /** AppService serves `mcpServers` as `mcpConfig` unchanged (or `null`), and the fold reads it there. */
+  return foldConfigLayers({ mcpConfig: baseYaml.mcpServers ?? null }, baseYaml, configs).raw;
 }
 
 function getPath(target: unknown, segments: string[]): unknown {
@@ -1510,10 +1540,10 @@ export function isRuntimeDisabled(value: unknown): boolean {
  * override that only flips the client's view produces a panel whose every action fails.
  *
  * Applied here rather than inside the merge deliberately. The merge folds overrides in
- * priority order into an ACCUMULATED value, so a guard there compares against whatever
- * the previous override left — which let a LOW-priority `false` block a HIGH-priority
- * `true` and broke highest-priority-wins. Overrides still order normally among
- * themselves; only the base stop is non-negotiable.
+ * precedence order into an ACCUMULATED value, so a guard there compares against whatever
+ * the previous override left — which let an EARLIER `false` block a LATER `true` and broke
+ * last-layer-wins. Overrides still order normally among themselves; only the base stop is
+ * non-negotiable.
  */
 function preserveRuntimeStops<T extends AppConfig>(baseConfig: AppConfig, merged: T): T {
   const baseInterface = (baseConfig as unknown as AnyObject).interfaceConfig as

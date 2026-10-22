@@ -1025,6 +1025,48 @@ describe('createAppConfigService', () => {
       expect(merged.endpoints).toEqual(['openAI']);
     });
 
+    it('merges in precedence order, so cached and uncached reads agree on tied priorities', async () => {
+      const layer = (
+        principalType: string,
+        principalId: string,
+        priority: number,
+        _id: string,
+        customWelcome: string,
+      ) => ({
+        _id,
+        principalType,
+        principalId,
+        priority,
+        overrides: { interface: { customWelcome } },
+        isActive: true,
+      });
+      const layers = [
+        layer('role', '__base__', 90, '0a', 'base'),
+        layer('group', 'g1', 20, '0c', 'g1'),
+        layer('group', 'g2', 20, '0b', 'g2'),
+        layer('role', 'USER', 20, '0d', 'role'),
+      ];
+      let call = 0;
+      /** The store returns the same documents in a different order on every read. */
+      const getApplicableConfigs = jest.fn(async () => {
+        call += 1;
+        return call % 2 === 0 ? [...layers].reverse() : [...layers];
+      });
+      const deps = createDeps({ getApplicableConfigs });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const cached = await getAppConfig({ role: 'USER', userId: 'uid1' });
+      const uncached = await getAppConfig({ role: 'USER', userId: 'uid1', refresh: true });
+
+      expect(getApplicableConfigs).toHaveBeenCalledTimes(2);
+      expect(cached.interfaceConfig?.customWelcome).toBe('g1');
+      expect(uncached).toEqual(cached);
+
+      layers.push(layer('user', 'uid1', 20, '00', 'user'));
+      const userWins = await getAppConfig({ role: 'USER', userId: 'uid1', refresh: true });
+      expect(userWins.interfaceConfig?.customWelcome).toBe('user');
+    });
+
     it('caches merged result with TTL', async () => {
       const deps = createDeps({
         getApplicableConfigs: jest
