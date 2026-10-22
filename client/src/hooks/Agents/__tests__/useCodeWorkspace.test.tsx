@@ -153,6 +153,50 @@ describe('useCodeWorkspace', () => {
     expect(result.current.resolveSubmission(selection)?.codeWorkspaces).toEqual(selection);
   });
 
+  it("does not let a terminal graph member's offline descendant block Send", () => {
+    mockAgentsConfig().agentsConfig.capabilities.push('subagent_graphs');
+    mockAgentPermissions().agent.subagents = {
+      enabled: false,
+      graphsEnabled: true,
+      graphs: [{ agent_ids: ['member'] }],
+    };
+    mockAgentsConfig().agentsConfig.statefulCodeSessions.environments.push({
+      id: 'offline-vm',
+      name: 'Offline',
+      type: 'attached',
+    });
+    mockAgentsMap.mockReturnValue({
+      member: {
+        id: 'member',
+        tools: [],
+        subagents: { enabled: true, agent_ids: ['offline'] },
+        edges: [{ from: 'member', to: 'offline', edgeType: 'handoff' }],
+      },
+      offline: {
+        id: 'offline',
+        tools: [Tools.execute_code],
+        stateful_code_sessions: true,
+        code_environment_id: 'offline-vm',
+      },
+    });
+    mockStatus.mockImplementation((ids: string[]) =>
+      ids.map((id) => ({
+        data: {
+          environmentId: id,
+          status: id === 'offline-vm' ? 'offline' : 'ready',
+          workspaces: [{ id: 'project-a' }],
+        },
+      })),
+    );
+    const selection = [{ environmentId: 'personal-vm', workspaceId: 'project-a' }];
+    const { result } = renderHook(() => useCodeWorkspace(conversation(selection)));
+    expect(result.current.canSubmit).toBe(true);
+    expect(result.current.environments.map(({ environment }) => environment.id)).toEqual([
+      'personal-vm',
+    ]);
+    expect(result.current.resolveSubmission(selection)?.codeWorkspaces).toEqual(selection);
+  });
+
   it('ignores missing disabled graph members without blocking ordinary chat', () => {
     mockAgentPermissions().agent.subagents = {
       enabled: false,

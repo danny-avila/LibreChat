@@ -35,8 +35,8 @@ import {
 import { AgentPickerPortalContext, AddAgentSelect, useSelectableAgents } from './AgentList';
 import { useAgentPanelContext, useAgentsMapContext } from '~/Providers';
 import OrchestrationPattern from './OrchestrationPattern';
+import { CountPill, ToggleSetting } from './ui';
 import { useLocalize } from '~/hooks';
-import { CountPill } from './ui';
 
 interface Draft {
   index: number | null;
@@ -223,6 +223,21 @@ export default function Graphs({ currentAgentId }: { currentAgentId: string }) {
             onCheckedChange={(active) => write(graphs, active)}
           />
         </div>
+      )}
+      {agentsConfig?.fileSharing?.enabled === true && (
+        <ToggleSetting
+          id="subagent-graphs-share-files-toggle"
+          label={localize('com_ui_agent_subagents_share_files')}
+          checked={subagents?.shareFiles === true}
+          onCheckedChange={(shareFiles) =>
+            setValue('subagents', { ...getValues('subagents'), shareFiles }, { shouldDirty: true })
+          }
+          info={
+            <p className="text-text-secondary text-sm">
+              {localize('com_ui_agent_subagents_share_files_info')}
+            </p>
+          }
+        />
       )}
       {draft === null && (
         <>

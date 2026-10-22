@@ -1,5 +1,6 @@
 import {
   Constants,
+  resolveSubagents,
   HITL_MESSAGE_FILTER_FIELDS,
   MAX_SUBAGENT_GRAPH_NODES,
   STORED_MESSAGE_FILTER_FIELDS,
@@ -59,7 +60,7 @@ interface ResumeAgentSnapshotInput {
   primaryAgent: Agent;
   additionalRoots?: readonly Agent[];
   primaryModelParameters?: Readonly<Record<string, unknown>>;
-  subagentsEnabled: boolean;
+  capabilities: readonly string[];
   getAgent: (filter: { id: string }) => Promise<Agent | null>;
   canAccessAgent?: (agent: Agent) => Promise<boolean>;
 }
@@ -112,32 +113,31 @@ export function getDynamicToolContexts(agents: readonly DynamicToolContextAgent[
 
 function getReferencedAgentIds(
   agent: Agent,
-  subagentsEnabled: boolean,
+  capabilities: readonly string[],
   includeLegacyChain: boolean,
-): string[] {
-  const ids = new Set<string>();
-  const add = (id: unknown) => {
-    if (typeof id === 'string' && id && id !== agent.id) {
-      ids.add(id);
-    }
+): Array<{ id: string; terminal: boolean; required: boolean }> {
+  const references = new Map<string, { id: string; terminal: boolean; required: boolean }>();
+  const add = (id: string, terminal = false, required = false) => {
+    if (!id || id === agent.id) return;
+    const existing = references.get(id);
+    references.set(id, {
+      id,
+      terminal: terminal && existing?.terminal !== false,
+      required: required || existing?.required === true,
+    });
   };
-
   for (const edge of agent.edges ?? []) {
-    for (const id of getEdgeParticipants(edge)) {
-      add(id);
-    }
+    for (const id of getEdgeParticipants(edge)) add(id);
   }
   if (includeLegacyChain) {
-    for (const id of agent.agent_ids ?? []) {
-      add(id);
-    }
+    for (const id of agent.agent_ids ?? []) add(id);
   }
-  if (subagentsEnabled && agent.subagents?.enabled === true) {
-    for (const id of agent.subagents.agent_ids ?? []) {
-      add(id);
-    }
+  const subagents = resolveSubagents(agent.subagents, capabilities);
+  for (const id of subagents?.agent_ids ?? []) add(id);
+  for (const graph of subagents?.graphs ?? []) {
+    for (const id of graph.agent_ids) add(id, true, true);
   }
-  return [...ids];
+  return [...references.values()];
 }
 
 /**
@@ -149,7 +149,7 @@ export async function getResumeAgentSnapshot({
   primaryAgent,
   additionalRoots = [],
   primaryModelParameters,
-  subagentsEnabled,
+  capabilities,
   getAgent,
   canAccessAgent,
 }: ResumeAgentSnapshotInput): Promise<ResumeSnapshotAgent[]> {
@@ -173,39 +173,43 @@ export async function getResumeAgentSnapshot({
     roots.push(snapshot);
   }
 
-  for (let rootIndex = 0; rootIndex < roots.length; rootIndex++) {
-    const pending: Array<{ agent: ResumeSnapshotAgent; includeLegacyChain: boolean }> = [
-      { agent: roots[rootIndex], includeLegacyChain: rootIndex === 0 },
-    ];
-    for (let index = 0; index < pending.length; index++) {
-      const { agent, includeLegacyChain } = pending[index];
-      const children: ResumeSnapshotAgent[] = [];
-      for (const id of getReferencedAgentIds(agent, subagentsEnabled, includeLegacyChain)) {
-        let child = byId.get(id);
-        if (!child) {
-          let loaded: Agent | null;
-          try {
-            loaded = await getAgent({ id });
-          } catch {
-            throw new ContentTraversalLimitError();
-          }
-          if (!loaded) {
-            continue;
-          }
-          if (canAccessAgent && !(await canAccessAgent(loaded))) {
-            continue;
-          }
-          if (byId.size >= MAX_SUBAGENT_GRAPH_NODES) {
-            throw new ContentTraversalLimitError();
-          }
+  const pending = roots.map((agent, index) => ({ agent, includeLegacyChain: index === 0 }));
+  const expanded = new Set<string>();
+  const unavailable = new Set<string>();
+  for (let index = 0; index < pending.length; index++) {
+    const { agent, includeLegacyChain } = pending[index];
+    if (expanded.has(agent.id)) continue;
+    expanded.add(agent.id);
+    const children: ResumeSnapshotAgent[] = [];
+    for (const { id, terminal, required } of getReferencedAgentIds(
+      agent,
+      capabilities,
+      includeLegacyChain,
+    )) {
+      let child = byId.get(id);
+      if (!child && !unavailable.has(id)) {
+        let loaded: Agent | null;
+        try {
+          loaded = await getAgent({ id });
+        } catch {
+          throw new ContentTraversalLimitError();
+        }
+        if (loaded && (!canAccessAgent || (await canAccessAgent(loaded)))) {
+          if (byId.size >= MAX_SUBAGENT_GRAPH_NODES) throw new ContentTraversalLimitError();
           child = { ...loaded, subagentAgentConfigs: [] };
           byId.set(id, child);
-          pending.push({ agent: child, includeLegacyChain: false });
+        } else {
+          unavailable.add(id);
         }
-        children.push(child);
       }
-      agent.subagentAgentConfigs = children;
+      if (!child) {
+        if (required) throw new ContentTraversalLimitError();
+        continue;
+      }
+      if (!terminal && !expanded.has(id)) pending.push({ agent: child, includeLegacyChain: false });
+      children.push(child);
     }
+    agent.subagentAgentConfigs = children;
   }
 
   return collectReachableAgents(roots);

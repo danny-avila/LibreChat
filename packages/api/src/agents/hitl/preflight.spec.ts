@@ -1,4 +1,5 @@
 import { FileSources, type Agents } from 'librechat-data-provider';
+import type { Agent, AgentSubagentsConfig } from 'librechat-data-provider';
 import type { ResumeContentProtectionDependencies } from './protection';
 import type { PreflightResumeContentInput } from './preflight';
 import { getResumeProvenance, preflightResumeContent } from './preflight';
@@ -331,4 +332,124 @@ describe('preflightResumeContent', () => {
       body: { source: 'message', field: 'content_part' },
     });
   });
+});
+
+describe('graph-member preflight', () => {
+  const agent = (id: string, subagents?: AgentSubagentsConfig): Agent =>
+    ({
+      id,
+      name: id,
+      description: null,
+      created_at: 0,
+      avatar: null,
+      provider: 'openAI',
+      model: 'test',
+      model_parameters: {
+        temperature: null,
+        maxContextTokens: null,
+        max_context_tokens: null,
+        max_output_tokens: null,
+        top_p: null,
+        frequency_penalty: null,
+        presence_penalty: null,
+      },
+      tools: [],
+      subagents,
+    }) as Agent;
+  const graph = (id: string) => ({
+    type: 'team',
+    name: 'Team',
+    description: 'Work',
+    agent_ids: [id],
+    edges: [],
+    entry_agent_id: id,
+    result_agent_id: id,
+  });
+  const policy = {
+    endpoints: { agents: { capabilities: ['subagents', 'subagent_graphs'] } },
+    filters: {
+      agentInstructions: { pii: { fields: ['instructions'], starterPatterns: ['sk_prefix'] } },
+    },
+  } as PreflightResumeContentInput['appConfig'];
+
+  it('inspects current active members through the real preflight API', async () => {
+    const dependencies = createDependencies();
+    const member = { ...agent('member'), instructions: 'Use sk-edited-graph-member-secret' };
+    dependencies.getAgent = jest.fn().mockResolvedValue(member);
+    const primary = agent('primary', {
+      enabled: false,
+      graphsEnabled: true,
+      graphs: [graph('member')],
+    });
+    await expect(
+      preflightResumeContent(
+        createInput({
+          appConfig: policy,
+          endpointOption: { agent: Promise.resolve(primary) },
+        }),
+        dependencies,
+      ),
+    ).rejects.toMatchObject({ code: 'content_filter_block' });
+    expect(dependencies.getAgent).toHaveBeenCalledTimes(1);
+    expect(dependencies.canAccessAgent).toHaveBeenCalledWith(member, user);
+  });
+
+  it.each([false, true])(
+    'fails closed on unavailable active members, revoked=%s',
+    async (revoked) => {
+      const dependencies = createDependencies();
+      dependencies.getAgent = jest.fn().mockResolvedValue(revoked ? agent('member') : null);
+      dependencies.canAccessAgent = jest.fn().mockResolvedValue(!revoked);
+      await expect(
+        preflightResumeContent(
+          createInput({
+            appConfig: policy,
+            endpointOption: {
+              agent: Promise.resolve(
+                agent('primary', {
+                  enabled: false,
+                  graphsEnabled: true,
+                  graphs: [graph('member')],
+                }),
+              ),
+            },
+          }),
+          dependencies,
+        ),
+      ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+    },
+  );
+
+  it.each([false, true])(
+    'upgrades shared terminal members without repeated loads, ordinary=%s',
+    async (ordinary) => {
+      const dependencies = createDependencies();
+      const member = agent('member', { enabled: true, agent_ids: ['leaf'] });
+      const leaf = { ...agent('leaf'), instructions: 'Use sk-nested-member-secret' };
+      const bridge = agent('bridge', { enabled: true, agent_ids: ['member'] });
+      const saved = new Map([member, leaf, bridge].map((value) => [value.id, value]));
+      dependencies.getAgent = jest.fn(async ({ id }) => saved.get(id));
+      const primary = agent('primary', {
+        enabled: true,
+        agent_ids: ordinary ? ['bridge'] : [],
+        graphsEnabled: true,
+        graphs: [graph('member')],
+      });
+      const result = preflightResumeContent(
+        createInput({
+          appConfig: policy,
+          endpointOption: { agent: Promise.resolve(primary) },
+        }),
+        dependencies,
+      );
+      if (ordinary) {
+        await expect(result).rejects.toMatchObject({ code: 'content_filter_block' });
+        expect(dependencies.getAgent).toHaveBeenCalledTimes(3);
+      } else {
+        await expect(result).resolves.toBeDefined();
+        expect(dependencies.getAgent).toHaveBeenCalledTimes(1);
+      }
+      expect(dependencies.getAgent).toHaveBeenCalledWith({ id: 'member' });
+    },
+  );
 });

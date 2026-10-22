@@ -306,6 +306,49 @@ describe('resolveSubagentCodeWorkspaceInheritance', () => {
     );
   });
 
+  it.each([false, true])(
+    'keeps graph members terminal unless upgraded by an ordinary path, upgrade=%s',
+    async (upgrade) => {
+      const graph = {
+        type: 'team',
+        name: 'Team',
+        description: 'Work',
+        agent_ids: [REVIEWER],
+        edges: [],
+        entry_agent_id: REVIEWER,
+        result_agent_id: REVIEWER,
+      };
+      const lia = await seed(LIA, {
+        subagents: { enabled: false, graphsEnabled: true, graphs: [graph] },
+      });
+      await seed('middle', { subagents: { enabled: true, agent_ids: [REVIEWER] } });
+      const ordinary = await seed('ordinary', {
+        subagents: { enabled: true, agent_ids: ['middle'] },
+      });
+      await seed(REVIEWER, { subagents: { enabled: true, agent_ids: ['leaf'] } });
+      await seed('leaf');
+      for (const roots of [
+        [root(lia), root(ordinary)],
+        [root(ordinary), root(lia)],
+      ]) {
+        loadSubagent.mockClear();
+        const inheritance = await resolveSubagentCodeWorkspaceInheritance({
+          selections: [{ environmentId: LIA_RAG, workspaceId: 'agents' }],
+          roots: upgrade ? roots : [root(lia)],
+          loadSubagent,
+          environments,
+          allowEnvironmentSelection: true,
+          codeExecutionAvailable: true,
+          capabilities: [AgentCapabilities.subagents, AgentCapabilities.subagent_graphs],
+        });
+        expect(inheritance.get(REVIEWER)).toBe(LIA_RAG);
+        expect(inheritance.has('leaf')).toBe(upgrade);
+        expect(loadSubagent.mock.calls.filter(([id]) => id === REVIEWER)).toHaveLength(1);
+        expect(loadSubagent).toHaveBeenCalledTimes(upgrade ? 3 : 1);
+      }
+    },
+  );
+
   it('projects loaded descendants before a disabled graph can create conflicting parent routes', async () => {
     const middleId = 'agent_fixed_planner';
     const childMachine = 'code-child-machine';

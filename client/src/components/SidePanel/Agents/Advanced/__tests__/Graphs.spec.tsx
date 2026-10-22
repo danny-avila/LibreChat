@@ -471,3 +471,54 @@ test('explicit public endpoint approval enablement warns without attached metada
   render(<Harness defaults={{ edges: [] }} />);
   expect(screen.getByRole('note')).toHaveTextContent('com_ui_agent_graphs_approvals');
 });
+
+test('graph-only sharing changes neither activation choice nor unrelated settings', () => {
+  const previous = mockAgentsConfig;
+  mockAgentsConfig = {
+    capabilities: [AgentCapabilities.subagent_graphs],
+    fileSharing: {
+      enabled: true,
+      maxFiles: 100,
+      allowSiblingSharing: false,
+      maxPrivateBytes: 268435456,
+      ttlMs: 3600000,
+    },
+  };
+  try {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('switch', { name: 'com_ui_agent_subagents_share_files' }));
+    expect(mockGetValues('subagents')).toEqual({ ...initialSubagents, shareFiles: true });
+    fireEvent.click(screen.getByRole('switch', { name: 'com_ui_agent_subagents_share_files' }));
+    expect(mockGetValues('subagents')).toEqual({ ...initialSubagents, shareFiles: false });
+    expect(mockGetValues('edges')).toEqual([
+      { from: 'parent', to: 'handoff', edgeType: 'handoff' },
+    ]);
+  } finally {
+    mockAgentsConfig = previous;
+  }
+});
+
+test('graph sharing is hidden when endpoint file sharing is disabled', () => {
+  render(<Harness />);
+  expect(screen.queryByRole('switch', { name: 'com_ui_agent_subagents_share_files' })).toBeNull();
+});
+
+test('terminal graph descendants cannot enable the attached-approval warning', () => {
+  useAttachedWarnings();
+  mockAgentsMap.member = reachableAgent('member', {
+    subagents: { enabled: true, agent_ids: ['attached'] },
+    edges: [{ from: 'member', to: 'attached', edgeType: 'handoff' }],
+  });
+  render(
+    <Harness
+      subagents={{
+        ...initialSubagents,
+        graphs: [
+          { ...team, agent_ids: ['member'], entry_agent_id: 'member', result_agent_id: 'member' },
+        ],
+      }}
+      defaults={{ edges: [], agent_ids: [] }}
+    />,
+  );
+  expect(screen.queryByRole('note')).toBeNull();
+});

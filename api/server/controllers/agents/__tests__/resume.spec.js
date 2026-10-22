@@ -1719,6 +1719,108 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockInitializeClient).not.toHaveBeenCalled();
     });
 
+    it.each([
+      {
+        name: 'graph-only edited member',
+        capabilities: [AgentCapabilities.subagent_graphs],
+        enabled: false,
+        graphsEnabled: true,
+        failure: 'content_filter_block',
+      },
+      {
+        name: 'legacy edited member',
+        capabilities: [AgentCapabilities.subagents],
+        enabled: true,
+        failure: 'content_filter_block',
+      },
+      {
+        name: 'missing active member',
+        capabilities: [AgentCapabilities.subagent_graphs],
+        enabled: false,
+        graphsEnabled: true,
+        missing: true,
+        failure: 'content_filter_uninspectable',
+      },
+      {
+        name: 'revoked VIEW on active member',
+        capabilities: [AgentCapabilities.subagent_graphs],
+        enabled: false,
+        graphsEnabled: true,
+        denied: true,
+        failure: 'content_filter_uninspectable',
+      },
+      {
+        name: 'disabled graph capability',
+        capabilities: [AgentCapabilities.subagents],
+        enabled: false,
+        graphsEnabled: true,
+      },
+      {
+        name: 'explicitly disabled graph',
+        capabilities: [AgentCapabilities.subagent_graphs],
+        enabled: false,
+        graphsEnabled: false,
+      },
+    ])(
+      'checks $name before claiming the pause',
+      async ({ capabilities, enabled, graphsEnabled, missing, denied, failure }) => {
+        requestConfigOverrides = {
+          endpoints: { agents: { checkpointer: { type: 'mongo' }, capabilities } },
+          filters: {
+            agentInstructions: {
+              pii: { fields: ['instructions'], starterPatterns: ['sk_prefix'] },
+            },
+          },
+        };
+        endpointAgent.subagents = {
+          enabled,
+          ...(graphsEnabled == null ? {} : { graphsEnabled }),
+          graphs: [
+            {
+              type: 'team',
+              name: 'Team',
+              description: 'Work',
+              agent_ids: ['member'],
+              edges: [],
+              entry_agent_id: 'member',
+              result_agent_id: 'member',
+            },
+          ],
+        };
+        mockGetAgent.mockResolvedValue(
+          missing
+            ? null
+            : {
+                _id: 'mongo-member',
+                id: 'member',
+                provider: 'openAI',
+                model: 'test',
+                instructions: 'Use sk-current-graph-member-secret',
+                tools: [],
+              },
+        );
+        mockCheckPermission.mockResolvedValue(!denied);
+        mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+        const res = await post(approveBody());
+        if (failure) {
+          expect(res.status).toBe(400);
+          expect(res.body.error).toBe(failure);
+          expect(mockGetAgent).toHaveBeenCalledTimes(1);
+          expect(mockGetAgent).toHaveBeenCalledWith({ id: 'member' });
+          expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+          expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+          expect(mockInitializeClient).not.toHaveBeenCalled();
+          expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+        } else {
+          expect(res.status).toBe(200);
+          await settled;
+          await flush();
+          expect(mockGetAgent).not.toHaveBeenCalled();
+          expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledTimes(1);
+        }
+      },
+    );
+
     it('blocks current action metadata before consuming approval', async () => {
       requestConfigOverrides = {
         filters: {

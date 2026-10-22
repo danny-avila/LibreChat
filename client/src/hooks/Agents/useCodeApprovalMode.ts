@@ -243,37 +243,73 @@ export function collectReachableAgents(
   expectedRootIds: Array<string | undefined | null>,
   capabilities?: readonly string[],
 ): { agents: Agent[]; complete: boolean } {
-  const pending = roots.filter((agent): agent is Agent => agent != null);
-  const visited = new Set<string>();
+  const { agents, complete } = collectAgentTraversal(
+    roots,
+    agentsMap,
+    expectedRootIds,
+    capabilities,
+  );
+  return { agents, complete };
+}
+
+/** Graph members execute without nested orchestration. A separate ordinary path upgrades them. */
+function collectAgentTraversal(
+  roots: Array<Agent | undefined>,
+  agentsMap: TAgentsMap | undefined,
+  expectedRootIds: Array<string | undefined | null>,
+  capabilities?: readonly string[],
+): { agents: Agent[]; complete: boolean; spawns: Map<string, string[]>; rootIds: Set<string> } {
+  const rootMap = new Map(
+    roots.filter((agent): agent is Agent => agent != null).map((agent) => [agent.id, agent]),
+  );
+  const pending: Array<{ agent: Agent; expand: boolean }> = [];
+  const requested = new Map<string, boolean>();
+  const expanded = new Set<string>();
+  const spawns = new Map<string, string[]>();
+  const seen = new Set<string>();
+  const rootIds = new Set(rootMap.keys());
   const agents: Agent[] = [];
   let complete = expectedRootIds.every(
-    (id) => isEphemeralAgentId(id) || roots.some((agent) => agent?.id === id),
+    (id) => isEphemeralAgentId(id) || (id != null && rootMap.has(id)),
   );
-  while (pending.length > 0) {
-    const agent = pending.pop();
-    if (agent == null || visited.has(agent.id)) continue;
-    visited.add(agent.id);
-    agents.push(agent);
-    const edgeIds = agent.edges?.flatMap((edge) => [
-      ...(Array.isArray(edge.from) ? edge.from : [edge.from]),
-      ...(Array.isArray(edge.to) ? edge.to : [edge.to]),
-    ]);
-    const subagents = resolveSubagents(agent.subagents, capabilities);
-    const graphIds = subagents?.graphs?.flatMap((graph) => graph.agent_ids);
-    const ids = [
-      ...(agent.agent_ids ?? []),
-      ...(subagents?.agent_ids ?? []),
-      ...(edgeIds ?? []),
-      ...(graphIds ?? []),
-    ];
-    for (const id of ids) {
-      if (visited.has(id)) continue;
-      const candidate = roots.find((root) => root?.id === id) ?? agentsMap?.[id];
-      if (candidate != null) pending.push(candidate);
-      else complete = false;
+  const add = (id: string, expand: boolean) => {
+    if (requested.has(id) && (!expand || requested.get(id))) return;
+    requested.set(id, expand);
+    const agent = rootMap.get(id) ?? agentsMap?.[id];
+    if (agent != null) pending.push({ agent, expand });
+    else complete = false;
+  };
+  for (const id of rootIds) add(id, true);
+  for (let index = 0; index < pending.length; index++) {
+    const { agent, expand } = pending[index];
+    if (!seen.has(agent.id)) {
+      seen.add(agent.id);
+      agents.push(agent);
     }
+    if (!expand || expanded.has(agent.id)) continue;
+    expanded.add(agent.id);
+    for (const id of getLinkedAgentIds(agent)) {
+      if (id === agent.id) continue;
+      rootIds.add(id);
+      add(id, true);
+    }
+    const subagents = resolveSubagents(agent.subagents, capabilities);
+    const ids = new Set<string>();
+    for (const id of subagents?.agent_ids ?? []) {
+      if (!id || id === agent.id) continue;
+      ids.add(id);
+      add(id, true);
+    }
+    for (const graph of subagents?.graphs ?? []) {
+      for (const id of graph.agent_ids) {
+        if (!id || id === agent.id) continue;
+        ids.add(id);
+        add(id, false);
+      }
+    }
+    spawns.set(agent.id, [...ids]);
   }
-  return { agents, complete };
+  return { agents, complete, spawns, rootIds };
 }
 
 function getLinkedAgentIds(agent: Agent): string[] {
@@ -288,9 +324,8 @@ function toCodeWorkspaceRoutingAgent(
   agent: Agent,
   environments: TPublicCodeEnvironment[] | undefined,
   allowEnvironmentSelection: boolean | undefined,
-  capabilities?: readonly string[],
+  subagentIds?: readonly string[],
 ): CodeWorkspaceRoutingAgent {
-  const subagents = resolveSubagents(agent.subagents, capabilities);
   return {
     id: agent.id,
     routesCode:
@@ -300,13 +335,7 @@ function toCodeWorkspaceRoutingAgent(
     environmentIds: agent.code_environment_ids,
     allowSelection:
       getCodeEnvironmentChoiceIds(agent, environments, allowEnvironmentSelection) != null,
-    subagentIds:
-      subagents?.enabled === true
-        ? [
-            ...(subagents.agent_ids ?? []),
-            ...(subagents.graphs ?? []).flatMap((graph) => graph.agent_ids ?? []),
-          ].filter((id) => id.length > 0 && id !== agent.id)
-        : undefined,
+    subagentIds,
   };
 }
 
@@ -327,44 +356,26 @@ export function resolveReachableCodeWorkspaceInheritance(
   capabilities?: readonly string[],
 ): Map<string, string> {
   if (!draft && !selections?.length) return new Map();
-  const lookup = (id: string): Agent | undefined =>
-    roots.find((root) => root?.id === id) ?? agentsMap?.[id];
-  const agents = new Map<string, CodeWorkspaceRoutingAgent>();
-  const rootIds: string[] = [];
-  const pendingRoots = roots.filter((agent): agent is Agent => agent != null);
-  while (pendingRoots.length > 0) {
-    const agent = pendingRoots.shift() as Agent;
-    if (agents.has(agent.id)) continue;
-    agents.set(
+  const traversal = collectAgentTraversal(roots, agentsMap, [], capabilities);
+  const lookup = new Map(traversal.agents.map((agent) => [agent.id, agent]));
+  const agents = new Map(
+    traversal.agents.map((agent) => [
       agent.id,
-      toCodeWorkspaceRoutingAgent(agent, environments, allowEnvironmentSelection, capabilities),
-    );
-    rootIds.push(agent.id);
-    for (const id of getLinkedAgentIds(agent)) {
-      const linked = agents.has(id) ? undefined : lookup(id);
-      if (linked != null) pendingRoots.push(linked);
-    }
-  }
-  const pending = rootIds.flatMap((id) => agents.get(id)?.subagentIds ?? []);
-  while (pending.length > 0) {
-    const id = pending.shift() as string;
-    const agent = agents.has(id) ? undefined : lookup(id);
-    if (agent == null) continue;
-    const node = toCodeWorkspaceRoutingAgent(
-      agent,
-      environments,
-      allowEnvironmentSelection,
-      capabilities,
-    );
-    agents.set(id, node);
-    pending.push(...(node.subagentIds ?? []));
-  }
+      toCodeWorkspaceRoutingAgent(
+        agent,
+        environments,
+        allowEnvironmentSelection,
+        traversal.spawns.get(agent.id),
+      ),
+    ]),
+  );
+  const rootIds = [...traversal.rootIds].filter((id) => agents.has(id));
   /** A sendable draft selects a workspace on every machine a root runs on, so a subagent can follow
    *  its parent there before the reader picks one; requiring its own default would ask for a
    *  workspace the submitted decision never uses. */
   const prospective = draft
     ? rootIds.reduce<CodeWorkspaceSelection[]>((planned, id) => {
-        const root = lookup(id);
+        const root = lookup.get(id);
         const environment =
           root != null && agents.get(id)?.routesCode === true
             ? findExecutionEnvironment(root, environments, allowEnvironmentSelection, selections)
