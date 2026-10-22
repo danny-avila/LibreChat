@@ -22,6 +22,7 @@ interface MockRes {
 let mongoServer: MongoMemoryServer;
 let methods: Methods;
 let decryptV3: DataSchemas['decryptV3'];
+let maxPathDepth: DataSchemas['MAX_CONFIG_PATH_DEPTH'];
 let createAdminConfigHandlers: typeof import('./config').createAdminConfigHandlers;
 
 function mockReq(overrides: Record<string, unknown> = {}): ServerRequest {
@@ -104,7 +105,7 @@ beforeAll(async () => {
     MongoMemoryServer.create(),
   ]);
   mongoServer = server;
-  ({ decryptV3 } = dataSchemas);
+  ({ decryptV3, MAX_CONFIG_PATH_DEPTH: maxPathDepth } = dataSchemas);
   ({ createAdminConfigHandlers } = handlersModule);
   jest.spyOn(dataSchemas.logger, 'error').mockReturnValue(dataSchemas.logger);
   jest.spyOn(dataSchemas.logger, 'warn').mockReturnValue(dataSchemas.logger);
@@ -580,6 +581,42 @@ describe('segment addressing on the field routes', () => {
     expect(res.statusCode).toBe(400);
     expect(res.body).toEqual(expect.objectContaining({ code: 'CONFIG_PATH_INVALID', reason }));
     expect(await raw().countDocuments({ principalId: params.principalId })).toBe(0);
+  });
+
+  it('caps a dotted fieldPath at the depth segments are capped at, on every field route', async () => {
+    const handlers = createHandlers();
+    const params = nextParams();
+    const atLimit = ['interface', ...Array<string>(maxPathDepth - 1).fill('a')].join('.');
+    const deep = ['interface', ...Array<string>(20_000).fill('a')].join('.');
+
+    const refused = await Promise.all([
+      call(handlers.patchConfigField, {
+        params,
+        body: { entries: [{ fieldPath: `${atLimit}.a`, value: 1 }] },
+      }),
+      call(handlers.patchConfigField, {
+        params,
+        body: { entries: [{ fieldPath: deep, value: 1 }] },
+      }),
+      call(handlers.tombstoneConfigField, { params, body: { fieldPath: deep } }),
+      call(handlers.deleteConfigField, { params, query: { fieldPath: deep } }),
+    ]);
+
+    for (const res of refused) {
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Field path is too deep',
+        code: 'CONFIG_PATH_INVALID',
+        reason: 'too_deep',
+      });
+    }
+    expect(await raw().countDocuments({ principalId: params.principalId })).toBe(0);
+
+    const accepted = await call(handlers.patchConfigField, {
+      params,
+      body: { entries: [{ fieldPath: atLimit, value: 1 }] },
+    });
+    expect(accepted.statusCode).toBe(200);
   });
 
   it('refuses an entry naming both a fieldPath and segments, and duplicate segments', async () => {
