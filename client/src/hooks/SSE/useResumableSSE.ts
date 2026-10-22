@@ -79,7 +79,7 @@ export default function useResumableSSE(
     balanceEnabled && balanceQuery.refetch();
   }, [balanceEnabled, balanceQuery]);
 
-  const cache = useResumableCache(getMessages);
+  const cache = useResumableCache(getMessages, runIndex);
   const steerState = useSteerState();
   const steers = useResumableSteers(steerState);
   const { events, usage } = useResumableEvents({ run, runIndex, isAddedRequest, chatHelpers });

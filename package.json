@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.8",
+  "version": "v0.8.9-rc1",
   "description": "",
   "packageManager": "npm@11.13.0",
   "scarfSettings": {
@@ -259,7 +259,7 @@
       "ajv": "6.14.0"
     },
     "underscore": "1.13.8",
-    "hono": "^4.13.7",
+    "hono": "^4.13.13",
     "@hono/node-server": "^2.1.1",
     "monaco-editor": {
       "dompurify": "3.4.16"
