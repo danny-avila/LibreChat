@@ -299,6 +299,30 @@ describe('a user profile removes inherited librechat.yaml values', () => {
     expect(outsider).toEqual(expect.objectContaining({ headers: DOCS_HEADERS }));
   });
 
+  it('keeps the header removed when the server rejects inspection without it', async () => {
+    const { MCPServerInspector } = await import('~/mcp/registry/MCPServerInspector');
+    jest
+      .spyOn(MCPServerInspector, 'inspect')
+      .mockImplementation(async (_name: string, config: t.MCPOptions) => {
+        if (!('headers' in config) || !config.headers?.Authorization) {
+          throw new Error('401 Unauthorized');
+        }
+        return { ...(config as t.ParsedServerConfig), requiresOAuth: false };
+      });
+    await tombstone(PrincipalType.USER, memberId, 'mcpServers.docs.headers.Authorization');
+
+    expect((await catalogFor(memberId)).docs).toEqual(
+      expect.objectContaining({
+        headers: { 'X-Team': 'core' },
+        inspectionFailed: true,
+        source: 'config',
+      }),
+    );
+    expect((await catalogFor(outsiderId)).docs).toEqual(
+      expect.objectContaining({ headers: DOCS_HEADERS, source: 'yaml' }),
+    );
+  });
+
   it('removes a whole field librechat.yaml set', async () => {
     await tombstone(PrincipalType.USER, memberId, 'mcpServers.docs.timeout');
 

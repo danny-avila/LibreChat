@@ -627,6 +627,62 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
       const effective = await registry.getServerConfig('yaml_remote', 'user-1', configServers);
       expect(effective).toEqual(expect.objectContaining({ headers: {} }));
     });
+
+    describe('when inspecting the reduced server fails', () => {
+      const failInspection = () =>
+        inspectSpy.mockRejectedValueOnce(new Error('401 Unauthorized without the header'));
+
+      it.each([
+        ['a removed header key', { ...remoteYaml, headers: { 'X-Team': 'core' } }],
+        ['a removed headers field', without('headers')],
+      ])('keeps %s removed instead of falling back to librechat.yaml', async (_case, resolved) => {
+        await loadYamlServer();
+        failInspection();
+
+        const configServers = await registry.ensureConfigServers({
+          yaml_remote: resolved as t.MCPOptions,
+        });
+
+        expect(configServers.yaml_remote).toEqual(
+          expect.objectContaining({ inspectionFailed: true, source: 'config' }),
+        );
+        const effective = await registry.getServerConfig('yaml_remote', 'user-1', configServers);
+        const listed = (await registry.getAllServerConfigs('user-1', configServers)).yaml_remote;
+        for (const entry of [effective, listed]) {
+          expect(entry).toEqual(
+            expect.objectContaining({ inspectionFailed: true, source: 'config' }),
+          );
+          expect(entry).not.toHaveProperty(['headers', 'Authorization']);
+        }
+        /** A failed config-tier entry waits for its own retry; it never reinspects librechat.yaml. */
+        await expect(
+          registry.recoverServerConfig('yaml_remote', effective!, 'user-1'),
+        ).resolves.toBeUndefined();
+      });
+
+      it('still falls back to librechat.yaml for a change that removes nothing', async () => {
+        await loadYamlServer();
+        failInspection();
+
+        const configServers = await registry.ensureConfigServers({
+          yaml_remote: { ...remoteYaml, timeout: 60000 } as t.MCPOptions,
+        });
+
+        expect(configServers.yaml_remote?.inspectionFailed).toBe(true);
+        const effective = await registry.getServerConfig('yaml_remote', 'user-1', configServers);
+        const listed = (await registry.getAllServerConfigs('user-1', configServers)).yaml_remote;
+        for (const entry of [effective, listed]) {
+          expect(entry).toEqual(
+            expect.objectContaining({
+              source: 'yaml',
+              timeout: 30000,
+              headers: expect.objectContaining({ Authorization: 'Bearer {{PAT}}' }),
+            }),
+          );
+          expect(entry).not.toHaveProperty('inspectionFailed');
+        }
+      });
+    });
   });
 
   describe('source tagging', () => {

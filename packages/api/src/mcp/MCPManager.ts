@@ -928,18 +928,25 @@ export class MCPManager extends UserConnectionManager {
   /**
    * Get instructions for MCP servers
    * @param serverNames Optional array of server names. If not provided or empty, returns all servers.
+   * @param user The acting user: a librechat.yaml server hidden from them contributes nothing,
+   *   whichever caller named it (a model spec can pin one).
    * @returns Object mapping server names to their instructions
    */
   private async getInstructions(
     serverNames?: string[],
     configServers?: Record<string, t.ParsedServerConfig>,
+    user?: t.MCPLookupUser,
   ): Promise<Record<string, string>> {
     const instructions: Record<string, string> = {};
-    const configs = await MCPServersRegistry.getInstance().getAllServerConfigs(
-      undefined,
-      configServers,
-    );
+    const registry = MCPServersRegistry.getInstance();
+    const [configs, hidden] = await Promise.all([
+      registry.getAllServerConfigs(undefined, configServers),
+      registry.getUserHiddenServerNames(user),
+    ]);
     for (const [serverName, config] of Object.entries(configs)) {
+      if (hidden.has(serverName) && !isUserSourced(config)) {
+        continue;
+      }
       const resolved = resolveServerInstructions(config);
       if (resolved != null) {
         instructions[serverName] = resolved;
@@ -952,13 +959,15 @@ export class MCPManager extends UserConnectionManager {
   /**
    * Format MCP server instructions for injection into context
    * @param serverNames Optional array of server names to include. If not provided, includes all servers.
+   * @param user The acting user, whose hidden librechat.yaml servers are left out.
    * @returns Formatted instructions string ready for context injection
    */
   public async formatInstructionsForContext(
     serverNames?: string[],
     configServers?: Record<string, t.ParsedServerConfig>,
+    user?: t.MCPLookupUser,
   ): Promise<string> {
-    const instructionsToInclude = await this.getInstructions(serverNames, configServers);
+    const instructionsToInclude = await this.getInstructions(serverNames, configServers, user);
 
     if (Object.keys(instructionsToInclude).length === 0) {
       return '';

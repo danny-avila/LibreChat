@@ -1,5 +1,5 @@
-import { logger, scopedCacheKey } from '@librechat/data-schemas';
 import { isProcessMCPServerConfig } from 'librechat-data-provider';
+import { logger, runAsSystem, scopedCacheKey } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { isPluginSourced } from '~/utils/env';
@@ -179,6 +179,7 @@ export class HiddenServers {
 export interface StoredMCPProfile {
   principalType: string;
   principalId: string | { toString(): string };
+  tenantId?: string;
   tombstones?: string[];
 }
 
@@ -186,6 +187,12 @@ export interface StoredMCPProfile {
 export interface StoredMCPTombstone {
   principal: string;
   fieldPath: string;
+}
+
+/** Names a profile's principal, and its tenant when it has one: the report spans every tenant. */
+function describeProfile({ principalType, principalId, tenantId }: StoredMCPProfile): string {
+  const principal = `${principalType}:${String(principalId)}`;
+  return tenantId ? `tenant:${tenantId} ${principal}` : principal;
 }
 
 /**
@@ -209,10 +216,7 @@ export function findStoredMCPTombstones(
         key === undefined &&
         (name === undefined || (hideable.has(name) && field !== ''));
       if (applies) {
-        found.push({
-          principal: `${profile.principalType}:${String(profile.principalId)}`,
-          fieldPath,
-        });
+        found.push({ principal: describeProfile(profile), fieldPath });
       }
     }
   }
@@ -223,6 +227,8 @@ export function findStoredMCPTombstones(
  * Logs, once at startup, the stored tombstones that now hide librechat.yaml MCP servers or remove
  * their fields. Profiles could store them before the registry honoured them, so an upgrade can
  * withdraw servers from whole roles or groups; this names them so an operator can review them.
+ * `listProfiles` runs in the system tenant scope, because the report covers every tenant and
+ * startup has no tenant of its own, which strict tenant isolation would reject.
  * Never rejects: a failed read is logged and startup continues.
  */
 export async function reportStoredMCPTombstones(
@@ -235,7 +241,7 @@ export async function reportStoredMCPTombstones(
   }
   let found: StoredMCPTombstone[];
   try {
-    found = findStoredMCPTombstones(await listProfiles(), hideable);
+    found = findStoredMCPTombstones(await runAsSystem(listProfiles), hideable);
   } catch (error) {
     logger.warn(
       '[MCP] Could not read config profiles to report MCP tombstones',

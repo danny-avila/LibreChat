@@ -24,7 +24,8 @@ hidden server is an access boundary, not only a catalog filter. For those princi
   routes answer as they do for an unknown server;
 - checkout refuses it, including a configuration resolved before the hide took effect, so a
   persisted agent, a scheduled run or an MCP App that references the server cannot connect to it;
-- tools from it are dropped when an agent loads;
+- tools from it are dropped when an agent loads, and its `serverInstructions` are left out of the
+  model's context, even when a model spec pins the server;
 - saving an agent drops tools from it that the save adds. Tools the agent already had stay stored,
   because a collaborator who edits the agent may not see every server it uses, but they cannot
   load or run for these principals.
@@ -81,7 +82,8 @@ name of a hidden `librechat.yaml` server.
 Profiles could store these tombstones before they had any effect on `librechat.yaml` servers. They
 take effect after the upgrade: `mcpServers` and `mcpServers.<name>` tombstones hide servers, and
 `mcpServers.<name>.<field>` tombstones remove the field. At startup, each process logs a warning
-that lists the stored tombstones of these kinds, by principal, so you can review them.
+that lists the stored tombstones of these kinds, by principal (and by tenant, for profiles that
+belong to one), so you can review them.
 
 ## Removing inherited values
 
@@ -104,6 +106,12 @@ These tombstones behave as follows:
 - A higher-priority profile can supply the key again.
 - Fields of a process-backed server, including `env`, cannot be removed.
 - A record key that contains `.` cannot be addressed with a dotted `fieldPath`.
+
+The server without the removed value is inspected as its own configuration. If that inspection
+fails, for example because the server rejects requests without the removed `Authorization` header,
+those principals get it as a failed configuration, inspected again every 5 minutes. They never fall
+back to the `librechat.yaml` definition, which still has the value. A change that removes nothing
+(such as a new `timeout`) still falls back to `librechat.yaml` while its inspection fails.
 
 Removing a `customUserVars` key that a header still references as `{{VAR}}` leaves that placeholder
 unresolved for those principals; remove or change the header too.

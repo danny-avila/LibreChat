@@ -103,6 +103,7 @@ const mockRegistryInstance = {
   getServerConfig: jest.fn(),
   isAppServerConfig: jest.fn(),
   isHiddenFromPrincipal: jest.fn(),
+  getUserHiddenServerNames: jest.fn(async (): Promise<ReadonlySet<string>> => new Set()),
   getAllServerConfigs: jest.fn(),
   getOAuthServers: jest.fn(),
   shouldEnableSSRFProtection: mockShouldEnableSSRFProtection,

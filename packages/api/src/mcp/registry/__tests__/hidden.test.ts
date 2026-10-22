@@ -1,6 +1,6 @@
 import './helpers/setupCredsEnv';
-import { logger } from '@librechat/data-schemas';
 import { resolveMCPAppsPolicy } from 'librechat-data-provider';
+import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { MCPAllowlistResolver } from '~/mcp/registry/MCPServersRegistry';
 import type * as t from '~/mcp/types';
 import {
@@ -10,6 +10,7 @@ import {
 } from '~/mcp/registry/hidden';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
+import { MCPManager } from '~/mcp/MCPManager';
 
 jest.mock('~/mcp/registry/MCPServerInspector');
 jest.mock('~/mcp/registry/db/ServerConfigsDB', () => ({
@@ -181,6 +182,37 @@ describe('MCPServersRegistry — librechat.yaml servers hidden per principal', (
 
       expect((await registry.getAllServerConfigs('u-hidden')).remote).toEqual(userEntry);
       await expect(registry.getServerConfig('remote', 'u-hidden')).resolves.toEqual(userEntry);
+    });
+
+    it("leaves a hidden server's instructions out of the model context, whoever names it", async () => {
+      for (const [name, config] of Object.entries({ remote, docs })) {
+        await registry['cacheConfigsRepo'].update(name, {
+          ...config,
+          source: 'yaml',
+          serverInstructions: `Follow the ${name} rules`,
+        });
+      }
+      /** A model spec can pin `remote` after the picker's own selection was filtered. */
+      const pinned = ['remote', 'docs'];
+      const manager = new MCPManager();
+
+      const hidden = await manager.formatInstructionsForContext(pinned, undefined, {
+        id: 'u-hidden',
+        role: 'USER',
+        idOnTheSource: null,
+      });
+      const visible = await manager.formatInstructionsForContext(pinned, undefined, {
+        id: 'u-visible',
+      });
+
+      expect(hidden).not.toContain('remote');
+      expect(hidden).toContain('Follow the docs rules');
+      expect(visible).toContain('Follow the remote rules');
+      expect(resolver).toHaveBeenCalledWith({
+        userId: 'u-hidden',
+        role: 'USER',
+        idOnTheSource: null,
+      });
     });
 
     it('excludes a hidden OAuth server from reconnection unless cleanup asks for it', async () => {
@@ -537,6 +569,28 @@ describe('stored MCP tombstones reported at startup', () => {
 
     expect(listProfiles).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("reads every tenant's profiles in the system scope and names each profile's tenant", async () => {
+    const warn = jest.spyOn(logger, 'warn').mockReturnValue(logger);
+    let readScope: string | undefined;
+
+    /** Startup has no tenant; under strict tenant isolation only the system scope may read. */
+    await reportStoredMCPTombstones(async () => {
+      readScope = getTenantId();
+      return ['acme', 'globex'].map((tenantId) => ({
+        principalType: 'role',
+        principalId: 'USER',
+        tenantId,
+        tombstones: ['mcpServers.remote'],
+      }));
+    }, YAML);
+
+    expect(getTenantId()).toBeUndefined();
+    expect(readScope).toBe(SYSTEM_TENANT_ID);
+    expect(warn.mock.calls[0][0]).toContain(
+      'tenant:acme role:USER mcpServers.remote; tenant:globex role:USER mcpServers.remote.',
+    );
   });
 
   it('logs a safe warning instead of failing startup when the profiles cannot be read', async () => {

@@ -32,6 +32,8 @@ import { HiddenServers } from './hidden';
 import { cacheConfig } from '~/cache';
 import { withTimeout } from '~/utils';
 
+const NO_HIDDEN_SERVERS: ReadonlySet<string> = new Set();
+
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
 const CONFIG_STUB_RETRY_MS = 5 * 60 * 1000;
 
@@ -188,6 +190,35 @@ function matchesAdminConfigurableFields(
   const candidateRecord = candidate as unknown as Record<string, unknown>;
   return ADMIN_CONFIGURABLE_FIELDS.every((field) =>
     deepEqual(yamlRecord[field], candidateRecord[field]),
+  );
+}
+
+function isPlainObject(value: unknown): value is object {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** A value librechat.yaml set that the candidate lacks: the whole field, or one of its keys. */
+function dropsValue(yamlValue: unknown, value: unknown): boolean {
+  if (yamlValue === undefined) return false;
+  if (value === undefined) return true;
+  if (!isPlainObject(yamlValue) || !isPlainObject(value)) return false;
+  return Object.keys(yamlValue).some((key) => !Object.prototype.hasOwnProperty.call(value, key));
+}
+
+/**
+ * Whether a config-tier candidate takes away something its librechat.yaml options set: an
+ * admin-configurable field, or one key of a record such as `headers` (a tombstone, or an
+ * inherited secret the merge dropped). A candidate without a transport (`url` or `command`) is
+ * not a server definition, only fields written over a hidden server, and takes nothing away.
+ */
+function dropsYamlValues(yamlOptions: t.MCPOptions, candidate: t.ParsedServerConfig): boolean {
+  const yamlRecord = yamlOptions as unknown as Record<string, unknown>;
+  const candidateRecord = candidate as unknown as Record<string, unknown>;
+  if (candidateRecord.url == null && candidateRecord.command == null) {
+    return false;
+  }
+  return ADMIN_CONFIGURABLE_FIELDS.some((field) =>
+    dropsValue(yamlRecord[field], candidateRecord[field]),
   );
 }
 
@@ -449,6 +480,18 @@ export class MCPServersRegistry {
   }
 
   /**
+   * The librechat.yaml servers hidden from the acting user, for a caller that reads the
+   * user-less catalog on that user's behalf (such as server instructions bound for the model).
+   * A caller with no user hides nothing.
+   */
+  public async getUserHiddenServerNames(user?: t.MCPLookupUser): Promise<ReadonlySet<string>> {
+    const hidden = await this.getLookupHiddenServerNames(user?.id, user?.role, {
+      idOnTheSource: user?.idOnTheSource,
+    });
+    return hidden ?? NO_HIDDEN_SERVERS;
+  }
+
+  /**
    * The hidden set a lookup must apply, or undefined when hiding cannot change its result:
    * an opt-out, an app-level lookup with no user, no hideable server, or a single-server
    * lookup for a name no principal can hide.
@@ -581,7 +624,8 @@ export class MCPServersRegistry {
    * the same name:
    *   1. user-tier base entry wins absolutely over a config-tier candidate
    *   2. process-backed base entries win absolutely over a config-tier candidate
-   *   3. healthy YAML/DB base wins over a failed (inspectionFailed) candidate
+   *   3. healthy YAML/DB base wins over a failed (inspectionFailed) candidate,
+   *      unless the candidate takes away a librechat.yaml value; then it stands
    *   4. healthy candidate overlays its fields onto the base, preserving the
    *      base entry's source tag so downstream recovery routes correctly
    *   5. with no base, the candidate is returned as-is (config-only server)
@@ -613,8 +657,7 @@ export class MCPServersRegistry {
     if (!candidate) return base;
     if (base?.source === 'user') return base;
     if (isProcessMCPServerConfig(base)) return base;
-    if (candidate.inspectionFailed) return base ?? candidate;
-    return base ? { ...candidate, source: overlaySource(base, candidate) } : candidate;
+    return base ? this.overlayCandidate(serverName, base, candidate) : candidate;
   }
 
   /** The YAML entry for a name, else the principal's DB entry, through the per-server read cache. */
@@ -651,7 +694,9 @@ export class MCPServersRegistry {
    * Precedence (lowest to highest): YAML cache > Config-tier overrides (success only) > User DB.
    * Three guards keep the merge safe:
    *   1. Config-tier entries carrying `inspectionFailed: true` never overlay an existing
-   *      base entry; the healthy base is preserved for the duration of the retry window.
+   *      base entry; the healthy base is preserved for the duration of the retry window. A
+   *      failed entry that takes away a librechat.yaml value replaces the base instead, so a
+   *      principal never falls back to what a profile removed (see `overlayCandidate`).
    *   2. User-DB entries (`source: 'user'`) are never replaced by Config-tier overlays.
    *   3. Process-backed base entries are never replaced by Config-tier overlays.
    * On a successful overlay the base entry's `source` field is preserved so downstream
@@ -696,13 +741,29 @@ export class MCPServersRegistry {
         logger.debug(`[MCP][config][${name}] Admin override shadowed by process-backed entry`);
         continue;
       }
-      if (override.inspectionFailed && result[name]) continue;
       const baseEntry = result[name];
-      result[name] = baseEntry
-        ? { ...override, source: overlaySource(baseEntry, override) }
-        : override;
+      result[name] = baseEntry ? this.overlayCandidate(name, baseEntry, override) : override;
     }
     return result;
+  }
+
+  /**
+   * The entry a config-tier candidate leaves for a name that has a base entry. A healthy
+   * candidate overlays the base and takes its source tag. A failed one leaves the healthy base in
+   * place for the retry window, unless it takes away a value librechat.yaml set: the base still
+   * carries what a profile removed, such as a credential header, so the failed candidate stands
+   * as a config-only server's would, and recovery waits for the config tier's retry.
+   */
+  private overlayCandidate(
+    serverName: string,
+    base: t.ParsedServerConfig,
+    candidate: t.ParsedServerConfig,
+  ): t.ParsedServerConfig {
+    if (!candidate.inspectionFailed) {
+      return { ...candidate, source: overlaySource(base, candidate) };
+    }
+    const yamlOptions = base.source === 'yaml' ? this.yamlServerOptions.get(serverName) : undefined;
+    return yamlOptions && dropsYamlValues(yamlOptions, candidate) ? candidate : base;
   }
 
   /**
