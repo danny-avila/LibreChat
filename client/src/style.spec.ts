@@ -126,3 +126,13 @@ describe('code typography', () => {
     expect(hosted).toContain(firstFamily(utility()?.value ?? ''));
   });
 });
+
+describe('select arrow', () => {
+  const stylesheet = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
+  const rule = /^ {2}select \{[\s\S]*?^ {2}\}/m.exec(stylesheet)?.[0] ?? '';
+
+  it('is drawn in the text color, so it follows light, dark and themed modes', () => {
+    expect(rule).toContain('currentColor');
+    expect(rule).not.toMatch(/url\(|#[0-9a-f]{3,8}\b|%23/i);
+  });
+});
