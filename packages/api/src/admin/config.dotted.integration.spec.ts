@@ -368,6 +368,22 @@ describe('admin config writes on an engine that cannot store dotted keys', () =>
           },
         }),
     ],
+    [
+      'a version-checked PATCH',
+      (role: string) =>
+        patchFields(role, [
+          { fieldPath: 'webSearch.searxngInstanceUrl', value: 'https://searx.example.com' },
+          { fieldPath: 'endpoints.bedrock.inferenceProfiles', value: { [PROFILE]: ARN } },
+        ]),
+    ],
+    [
+      'a version-checked PUT',
+      (role: string) =>
+        putOverrides(role, {
+          webSearch: { safeSearch: 2 },
+          endpoints: { bedrock: { inferenceProfiles: { [PROFILE]: ARN } } },
+        }),
+    ],
   ])('answers %s with 422 CONFIG_KEY_NOT_STORABLE, not an uncoded 500', async (_label, write) => {
     const role = nextRole();
     const response = await write(role).expect(422);
