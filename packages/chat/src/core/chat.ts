@@ -2228,10 +2228,12 @@ export class Chat {
          * The server answered that this pause can no longer be resumed: another client answered
          * it or a newer generation replaced it. It ends here, and a probe finds what runs now.
          */
+        /** A newer pause restored meanwhile owns the chat, and the probe would end it. */
+        const owned = !this.action || this.action.actionId === action.actionId;
         if (this.action?.actionId === action.actionId) {
           this.clearAction();
         }
-        if (!this.active && !this.disposed) {
+        if (owned && !this.active && !this.disposed) {
           this.reattach(
             {
               streamId: action.streamId,

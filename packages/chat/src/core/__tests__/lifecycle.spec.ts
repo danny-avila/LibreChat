@@ -2654,3 +2654,31 @@ describe('Chat unframed stops while a lost start is owed', () => {
     expect(h.chat.error).toBe(failure);
   });
 });
+
+describe('Chat resume conflicts after a newer pause', () => {
+  it('(1) a conflict for an answered pause leaves a newer pause restored meanwhile', async () => {
+    const h = createHarness();
+    await states.restored(h);
+    let refuse: (() => void) | undefined;
+    h.transport.resume.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          refuse = () =>
+            reject(
+              Object.assign(new Error('Conflict'), {
+                response: { status: 409, data: { code: 'RUN_REPLACED' }, headers: {} },
+              }),
+            );
+        }),
+    );
+    const answered = h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' });
+    await flush();
+    h.chat.restorePendingAction({ ...askAction, actionId: 'action-newer', createdAt: 9 }, 600);
+    refuse?.();
+    await answered.catch(() => undefined);
+    await flush();
+
+    expect(h.chat.pendingAction?.actionId).toBe('action-newer');
+    expect(h.transport.reconnectToStream).not.toHaveBeenCalled();
+  });
+});
