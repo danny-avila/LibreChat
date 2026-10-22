@@ -47,8 +47,7 @@ beforeAll(async () => {
   const handlers = createAdminConfigHandlers({
     listAllConfigs: methods.listAllConfigs,
     findConfigByPrincipal: methods.findConfigByPrincipal,
-    upsertConfig: methods.upsertConfig,
-    patchConfigFields: methods.patchConfigFields,
+    writeConfigDocument: methods.writeConfigDocument,
     tombstoneConfigField: methods.tombstoneConfigField,
     unsetConfigField: methods.unsetConfigField,
     deleteConfig: methods.deleteConfig,
@@ -138,8 +137,10 @@ describe('admin config writes keep dotted record keys (real sanitizer, handlers 
       { fieldPath: 'endpoints.bedrock.inferenceProfiles', value: profiles },
     ]).expect(200);
 
-    const raw = await readRaw(role);
-    expect(getIn(raw?.overrides, ['endpoints', 'bedrock', 'inferenceProfiles'])).toEqual(profiles);
+    /** Stored raw where the engine accepts dotted names, as servers before the key encoding read them. */
+    expect(
+      getIn((await readRaw(role))?.overrides, ['endpoints', 'bedrock', 'inferenceProfiles']),
+    ).toEqual(profiles);
     const read = await getOverrides(role);
     expect(getIn(read, ['endpoints', 'bedrock', 'inferenceProfiles'])).toEqual(profiles);
     expect(getIn(merge(read), ['endpoints', 'bedrock', 'inferenceProfiles'])).toEqual(profiles);
@@ -204,6 +205,8 @@ describe('admin config writes keep dotted record keys (real sanitizer, handlers 
     expect(stored.headers).toEqual({ 'x-portkey.config': 'cfg' });
     expect(stored.apiKey).toMatch(/^v3:/);
     expect(decryptV3(stored.apiKey as string)).toBe(API_KEY);
+    const [read] = getIn(await getOverrides(role), ['endpoints', 'custom']) as Doc[];
+    expect(read.headers).toEqual({ 'x-portkey.config': 'cfg' });
   });
 
   it('removes a dotted record whole through its own field path', async () => {
@@ -306,14 +309,18 @@ function findDottedKey(value: unknown): string | undefined {
 
 /**
  * Turns the in-memory MongoDB into an engine that refuses dotted field names inside stored
- * documents, the way MongoDB before 3.6 did, instead of storing them. `$set` paths stay dotted;
- * only keys inside the values are judged.
+ * documents, the way MongoDB before 3.6 did, instead of storing them. `$set` and `$setOnInsert`
+ * paths stay dotted; only keys inside the values are judged.
  */
 function refuseDottedFieldNames(): () => void {
   const collection = mongoose.models.Config.collection;
   const findOneAndUpdate = collection.findOneAndUpdate.bind(collection);
-  collection.findOneAndUpdate = (async (filter: Doc, update: { $set?: Doc }, options: Doc) => {
-    const key = Object.values(update.$set ?? {})
+  collection.findOneAndUpdate = (async (
+    filter: Doc,
+    update: { $set?: Doc; $setOnInsert?: Doc },
+    options: Doc,
+  ) => {
+    const key = [...Object.values(update.$set ?? {}), ...Object.values(update.$setOnInsert ?? {})]
       .map(findDottedKey)
       .find((found) => found != null);
     if (key) {
@@ -354,6 +361,9 @@ describe('admin config writes on an engine that cannot store dotted keys', () =>
         patchFields(role, [
           { fieldPath: 'endpoints.bedrock.inferenceProfiles', value: { [PROFILE]: ARN } },
         ]),
+      200,
+      ['endpoints', 'bedrock', 'inferenceProfiles'],
+      { [PROFILE]: ARN },
     ],
     [
       'PUT',
@@ -367,36 +377,43 @@ describe('admin config writes on an engine that cannot store dotted keys', () =>
             },
           },
         }),
+      201,
+      ['endpoints', 'azureOpenAI', 'groups', '0', 'models'],
+      { 'gpt-4.1': true },
     ],
     [
-      'a version-checked PATCH',
+      'a PATCH that also moves a web search URL',
       (role: string) =>
         patchFields(role, [
           { fieldPath: 'webSearch.searxngInstanceUrl', value: 'https://searx.example.com' },
           { fieldPath: 'endpoints.bedrock.inferenceProfiles', value: { [PROFILE]: ARN } },
         ]),
+      200,
+      ['endpoints', 'bedrock', 'inferenceProfiles'],
+      { [PROFILE]: ARN },
     ],
     [
-      'a version-checked PUT',
+      'a PUT that also writes the web search section',
       (role: string) =>
         putOverrides(role, {
           webSearch: { safeSearch: 2 },
           endpoints: { bedrock: { inferenceProfiles: { [PROFILE]: ARN } } },
         }),
+      201,
+      ['endpoints', 'bedrock', 'inferenceProfiles'],
+      { [PROFILE]: ARN },
     ],
-  ])('answers %s with 422 CONFIG_KEY_NOT_STORABLE, not an uncoded 500', async (_label, write) => {
-    const role = nextRole();
-    const response = await write(role).expect(422);
+  ])(
+    'stores a %s whose record keys hold dots, encoded so the engine sees none',
+    async (_label, write, status, path, expected) => {
+      const role = nextRole();
+      await write(role).expect(status);
 
-    expect(response.body).toEqual({
-      error: 'The database cannot store a key name in this config',
-      code: 'CONFIG_KEY_NOT_STORABLE',
-    });
-    const logged = JSON.stringify(warn.mock.calls);
-    expect(logged).toContain('rejected a key name');
-    expect(logged).not.toMatch(/us\.anthropic|gpt-4\.1/);
-    expect(await readRaw(role)).toBeNull();
-  });
+      expect(findDottedKey((await readRaw(role))?.overrides)).toBeUndefined();
+      expect(getIn(await getOverrides(role), path)).toEqual(expected);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('rejected a key name');
+    },
+  );
 
   it('still stores writes without dotted keys', async () => {
     const role = nextRole();

@@ -23,8 +23,7 @@ const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const handlers = createAdminConfigHandlers({
   listAllConfigs: db.listAllConfigs,
   findConfigByPrincipal: db.findConfigByPrincipal,
-  upsertConfig: db.upsertConfig,
-  patchConfigFields: db.patchConfigFields,
+  writeConfigDocument: db.writeConfigDocument,
   tombstoneConfigField: db.tombstoneConfigField,
   unsetConfigField: db.unsetConfigField,
   deleteConfig: db.deleteConfig,
