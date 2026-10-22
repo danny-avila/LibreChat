@@ -185,12 +185,12 @@ export interface AdminRolesDeps {
     principalId: string,
     options?: { tenantId?: string },
   ) => Promise<ISystemGrant[]>;
-  /** With `partitioned`, reads only the caller's tenant partition (platform-level without a
-   * tenant), the partition `renameConfigPrincipal` moves in. */
+  /** A role's profile in the caller's tenant partition (platform-level without a tenant), the
+   * partition `renameConfigPrincipal` moves in. */
   findConfigByPrincipal?: (
     principalType: PrincipalType,
     principalId: string,
-    options?: { includeInactive?: boolean; partitioned?: boolean },
+    options?: { includeInactive?: boolean },
   ) => Promise<ConfigRecord | null>;
   /** Re-creates a deleted config document in full, only if none exists. Resolves
    * to whether it inserted. */
@@ -702,10 +702,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         const [duplicate, targetProfile] = await Promise.all([
           getRoleByName(trimmedName),
           renameConfigPrincipal && findConfigByPrincipal
-            ? findConfigByPrincipal(PrincipalType.ROLE, trimmedName, {
-                includeInactive: true,
-                partitioned: true,
-              })
+            ? findConfigByPrincipal(PrincipalType.ROLE, trimmedName, { includeInactive: true })
             : null,
         ]);
         if (duplicate) {

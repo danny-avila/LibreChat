@@ -534,19 +534,12 @@ interface ConfigLifecycleOptions extends ConfigWriteOptions {
   expectEmpty?: boolean;
 }
 
-/** The documents a read addresses: with `partitioned`, only the caller's tenant partition. */
-interface ConfigReadScope {
-  partitioned?: boolean;
-}
-
 export interface AdminConfigDeps {
   listAllConfigs: (filter?: { isActive?: boolean }, session?: NoSession) => Promise<ConfigRecord[]>;
-  /** With `partitioned`, reads only the caller's tenant partition (platform-level without a
-   * tenant), never another tenant's document for the same principal. */
   findConfigByPrincipal: (
     principalType: PrincipalType,
     principalId: string,
-    options?: { includeInactive?: boolean; partitioned?: boolean },
+    options?: { includeInactive?: boolean },
     session?: NoSession,
   ) => Promise<ConfigRecord | null>;
   /**
@@ -1529,17 +1522,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     overrideCacheTtlMs,
   });
 
-  /** With `partitioned`, only the caller's tenant partition is read, as the priority route writes. */
   function readStoredConfig(
     principalType: PrincipalType,
     principalId: string,
-    scope?: ConfigReadScope,
   ): Promise<ConfigRecord | null> {
-    return findConfigByPrincipal(
-      principalType,
-      principalId,
-      scope?.partitioned ? { includeInactive: true, partitioned: true } : { includeInactive: true },
-    );
+    return findConfigByPrincipal(principalType, principalId, { includeInactive: true });
   }
 
   /**
@@ -1581,11 +1568,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     knownRevision: ConfigRevision | null | undefined,
     principalType: PrincipalType,
     principalId: string,
-    scope?: ConfigReadScope,
   ): Promise<Response> {
     let currentRevision = knownRevision;
     if (currentRevision === undefined) {
-      const stored = await readStoredConfig(principalType, principalId, scope);
+      const stored = await readStoredConfig(principalType, principalId);
       currentRevision = stored ? getConfigRevision(stored) : null;
     }
     return res.status(409).json({
@@ -1597,18 +1583,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
   /**
    * Maps the expected failures of a write to their responses; anything else is rethrown. A
-   * conflict that does not carry the current revision rereads it in `scope`, the partition the
-   * write addressed.
+   * conflict that does not carry the current revision rereads it from the document the write
+   * addressed (for a role, in the caller's tenant partition).
    */
   async function writeFailureResponse(
     res: Response,
     error: unknown,
     principalType: PrincipalType,
     principalId: string,
-    scope?: ConfigReadScope,
   ): Promise<Response> {
     if (isConfigRevisionConflict(error)) {
-      return conflictResponse(res, error.currentRevision, principalType, principalId, scope);
+      return conflictResponse(res, error.currentRevision, principalType, principalId);
     }
     if (isConfigPathError(error)) {
       return invalidPathResponse(res, error);
@@ -1679,11 +1664,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     return appConfig?.config ?? {};
   }
 
-  /** The active Base document, from the caller's tenant partition (platform-level without one). */
+  /**
+   * The active Base document, from the caller's tenant partition (platform-level without one),
+   * as the config store addresses every role document.
+   */
   function readActiveBase(): Promise<ConfigRecord | null> {
-    return findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, {
-      partitioned: true,
-    });
+    return findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID);
   }
 
   /**
@@ -3170,9 +3156,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           expectedRevision: expected.value,
         });
       } catch (error) {
-        return await writeFailureResponse(res, error, principalType, principalId, {
-          partitioned: true,
-        });
+        return await writeFailureResponse(res, error, principalType, principalId);
       }
       if (!updated) {
         return res.status(404).json({ error: 'Config not found', code: 'CONFIG_NOT_FOUND' });

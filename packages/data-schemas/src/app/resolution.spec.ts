@@ -160,6 +160,38 @@ describe('mergeConfigOverrides', () => {
     expect(mergeConfigOverrides(base, configs).mcpAppSandbox).toEqual(base.mcpAppSandbox);
   });
 
+  it('keeps Turnstile on librechat.yaml whatever Base or a role stores or tombstones', () => {
+    const base = { turnstileConfig: { siteKey: 'yaml-site-key' } } as unknown as AppConfig;
+    const configs = [
+      fakeConfig(
+        { turnstile: { siteKey: 'base-site-key' } },
+        0,
+        ['turnstile.options'],
+        BASE_CONFIG_PRINCIPAL_ID,
+      ),
+      fakeConfig({ turnstile: { siteKey: 'role-site-key' } }, 10, ['turnstile.siteKey']),
+    ];
+
+    expect(mergeConfigOverrides(base, configs).turnstileConfig).toEqual({
+      siteKey: 'yaml-site-key',
+    });
+  });
+
+  it('keeps Turnstile on librechat.yaml when a document names it by its AppConfig key', () => {
+    const base = { turnstileConfig: { siteKey: 'yaml-site-key' } } as unknown as AppConfig;
+    const aliased = (overrides: Record<string, unknown>, tombstones?: string[]) =>
+      fakeConfig(overrides, 0, tombstones, BASE_CONFIG_PRINCIPAL_ID);
+
+    expect(
+      mergeConfigOverrides(base, [aliased({ turnstileConfig: { siteKey: 'stored-key' } })])
+        .turnstileConfig,
+    ).toEqual({ siteKey: 'yaml-site-key' });
+    expect(
+      mergeConfigOverrides(base, [aliased({}, ['turnstileConfig', 'turnstileConfig.siteKey'])])
+        .turnstileConfig,
+    ).toEqual({ siteKey: 'yaml-site-key' });
+  });
+
   it('keeps the pull request host from the base config whatever an override does', () => {
     const pullRequests = { host: 'ghe.example.com', allowedRepositories: ['acme/*'] };
     const base = { endpoints: { agents: { pullRequests } } } as unknown as AppConfig;
@@ -620,11 +652,10 @@ describe('mergeConfigOverrides', () => {
     expect(iface.parameters).toBe(true);
   });
 
-  it('remaps all renamed YAML keys (exhaustiveness check)', () => {
+  it('remaps all renamed YAML keys that overrides may set (exhaustiveness check)', () => {
     const base = {
       mcpConfig: null,
       interfaceConfig: { modelSelect: true },
-      turnstileConfig: {},
     } as unknown as AppConfig;
 
     const configs = [
@@ -632,7 +663,6 @@ describe('mergeConfigOverrides', () => {
         {
           mcpServers: { srv: { url: 'http://mcp' } },
           interface: { modelSelect: false },
-          turnstile: { siteKey: 'key-123' },
         },
         10,
       ),
@@ -641,11 +671,9 @@ describe('mergeConfigOverrides', () => {
 
     expect(result.mcpConfig).toEqual({ srv: { url: 'http://mcp' } });
     expect((result.interfaceConfig as Record<string, unknown>).modelSelect).toBe(false);
-    expect((result.turnstileConfig as Record<string, unknown>).siteKey).toBe('key-123');
 
     expect(result.mcpServers).toBeUndefined();
     expect(result.interface).toBeUndefined();
-    expect(result.turnstile).toBeUndefined();
   });
 
   it('strips interface permission fields from overrides', () => {
@@ -2108,6 +2136,103 @@ describe('getConfigOverrideIssues: items addressed by id', () => {
       }),
     );
   });
+});
+
+describe('policy links in overrides', () => {
+  const scriptUrl = 'javascript:alert(document.domain)';
+  /** Script URLs behind Unicode white space, which a client's `trim()` strips before rendering. */
+  const trimmedScriptUrls = ['\u00a0', '\ufeff', '\u2028', '\u3000'].map(
+    (space) => `${space}${scriptUrl}`,
+  );
+
+  it('rejects a whole-document write whose policy link would run script', () => {
+    const issues = getConfigOverrideIssues({
+      interface: {
+        customWelcome: 'Hi',
+        privacyPolicy: { externalUrl: scriptUrl, openNewTab: true },
+        termsOfService: { externalUrl: 'data:text/html,<script>alert(1)</script>' },
+      },
+    });
+
+    expect(issues.map(({ path, code }) => ({ path, code }))).toEqual([
+      { path: 'interface.privacyPolicy.externalUrl', code: 'custom' },
+      { path: 'interface.termsOfService.externalUrl', code: 'custom' },
+    ]);
+  });
+
+  it.each(trimmedScriptUrls)('rejects %j in a document write and a field write', (url) => {
+    expect(
+      getConfigOverrideIssues({ interface: { privacyPolicy: { externalUrl: url } } }).map(
+        ({ path, code }) => ({ path, code }),
+      ),
+    ).toEqual([{ path: 'interface.privacyPolicy.externalUrl', code: 'custom' }]);
+    expect(
+      getConfigFieldIssues({ 'interface.termsOfService.externalUrl': url }).map(({ path }) => path),
+    ).toEqual(['interface.termsOfService.externalUrl']);
+  });
+
+  it('accepts http(s), mailto:, relative and blank policy links', () => {
+    expect(
+      getConfigOverrideIssues({
+        interface: {
+          privacyPolicy: { externalUrl: 'mailto:privacy@example.com' },
+          termsOfService: { externalUrl: 'https://example.com/terms' },
+        },
+      }),
+    ).toEqual([]);
+    expect(
+      getConfigOverrideIssues({
+        interface: {
+          privacyPolicy: { externalUrl: 'https://example.com/privacy' },
+          termsOfService: { externalUrl: '/terms', modalAcceptance: true },
+        },
+      }),
+    ).toEqual([]);
+    expect(getConfigOverrideIssues({ interface: { privacyPolicy: { externalUrl: '' } } })).toEqual(
+      [],
+    );
+  });
+
+  it('rejects a field write of a script URL, as a value or inside its object', () => {
+    expect(
+      getConfigFieldIssues({ 'interface.privacyPolicy.externalUrl': scriptUrl }).map(
+        ({ path }) => path,
+      ),
+    ).toEqual(['interface.privacyPolicy.externalUrl']);
+    expect(
+      getConfigFieldIssues({ 'interface.termsOfService': { externalUrl: scriptUrl } }).map(
+        ({ path }) => path,
+      ),
+    ).toEqual(['interface.termsOfService.externalUrl']);
+  });
+
+  it.each([scriptUrl, ...trimmedScriptUrls])(
+    'drops %j stored before validation, keeping the rest of the document',
+    (storedUrl) => {
+      const base = {
+        interfaceConfig: { privacyPolicy: { externalUrl: 'https://yaml.example/privacy' } },
+      } as unknown as AppConfig;
+
+      const merged = mergeConfigOverrides(base, [
+        fakeConfig(
+          {
+            interface: {
+              customWelcome: 'Hi',
+              privacyPolicy: { externalUrl: storedUrl, openNewTab: true },
+            },
+          },
+          0,
+          undefined,
+          BASE_CONFIG_PRINCIPAL_ID,
+        ),
+      ]);
+
+      expect(merged.interfaceConfig).toEqual({
+        customWelcome: 'Hi',
+        privacyPolicy: { externalUrl: 'https://yaml.example/privacy', openNewTab: true },
+      });
+    },
+  );
 });
 
 describe('applyConfigTombstones', () => {

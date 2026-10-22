@@ -1600,16 +1600,15 @@ describe('createAdminConfigHandlers', () => {
       expect(priorityArg).toBe(999);
       /**
        * The target is read once, to validate the write on top of its stored fields (not for its
-       * priority); Base is read beside it, in the caller's partition, as the floor the write
-       * lands on, and once more after the write, to see that the floor did not move.
+       * priority); Base is read beside it (the store keeps role documents to the caller's
+       * partition) as the floor the write lands on, and once more after the write, to see that
+       * the floor did not move.
        */
       expect(deps.findConfigByPrincipal).toHaveBeenCalledTimes(3);
       expect(deps.findConfigByPrincipal).toHaveBeenCalledWith('role', 'admin', {
         includeInactive: true,
       });
-      expect(deps.findConfigByPrincipal).toHaveBeenCalledWith('role', '__base__', {
-        partitioned: true,
-      });
+      expect(deps.findConfigByPrincipal).toHaveBeenCalledWith('role', '__base__');
     });
 
     it('preserves priority 0 when broad caller supplies it', async () => {
@@ -2852,6 +2851,156 @@ describe('createAdminConfigHandlers', () => {
         expect.objectContaining({ path: 'interface.schedules.maxPerUser' }),
       ]);
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
+    });
+
+    it('rejects a Base policy link that would run script and stores nothing', async () => {
+      const { handlers, deps } = createHandlers();
+      const params = { principalType: 'role', principalId: '__base__' };
+      const documentRes = mockRes();
+      const fieldRes = mockRes();
+
+      await handlers.upsertConfigOverrides(
+        mockReq({
+          params,
+          body: {
+            overrides: {
+              interface: {
+                privacyPolicy: { externalUrl: 'javascript:alert(document.domain)' },
+                termsOfService: { externalUrl: 'https://example.com/terms' },
+              },
+            },
+          },
+        }),
+        documentRes,
+      );
+      await handlers.patchConfigField(
+        mockReq({
+          params,
+          body: {
+            entries: [
+              {
+                fieldPath: 'interface.termsOfService.externalUrl',
+                value: '\u00a0JavaScript:alert(document.domain)',
+              },
+            ],
+          },
+        }),
+        fieldRes,
+      );
+
+      expect(documentRes.statusCode).toBe(400);
+      expect(documentRes.body?.issues).toEqual([
+        {
+          path: 'interface.privacyPolicy.externalUrl',
+          segments: ['interface', 'privacyPolicy', 'externalUrl'],
+          code: 'custom',
+        },
+      ]);
+      expect(fieldRes.statusCode).toBe(400);
+      expect(fieldRes.body?.issues).toEqual([
+        {
+          path: 'interface.termsOfService.externalUrl',
+          segments: ['interface', 'termsOfService', 'externalUrl'],
+          code: 'custom',
+        },
+      ]);
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
+    });
+
+    it('keeps accepting http(s), relative and blank policy links', async () => {
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(
+        mockReq({
+          params: { principalType: 'role', principalId: '__base__' },
+          body: {
+            overrides: {
+              interface: {
+                privacyPolicy: { externalUrl: 'https://example.com/privacy', openNewTab: true },
+                termsOfService: { externalUrl: '/terms', modalAcceptance: true },
+              },
+            },
+          },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(201);
+      expect(writtenDraft(deps).overrides.interface).toEqual({
+        privacyPolicy: { externalUrl: 'https://example.com/privacy', openNewTab: true },
+        termsOfService: { externalUrl: '/terms', modalAcceptance: true },
+      });
+    });
+
+    it('skips a Turnstile write to Base, which stays on librechat.yaml', async () => {
+      const { handlers, deps } = createHandlers();
+      const params = { principalType: 'role', principalId: '__base__' };
+      const documentRes = mockRes();
+      const fieldRes = mockRes();
+
+      await handlers.upsertConfigOverrides(
+        mockReq({
+          params,
+          body: {
+            overrides: { turnstile: { siteKey: 'stored-key' }, interface: { modelSelect: false } },
+          },
+        }),
+        documentRes,
+      );
+      await handlers.patchConfigField(
+        mockReq({ params, body: { entries: [{ fieldPath: 'turnstile.siteKey', value: 'k' }] } }),
+        fieldRes,
+      );
+      const removals = [mockRes(), mockRes()];
+      await handlers.tombstoneConfigField(
+        mockReq({ params, body: { fieldPath: 'turnstile' } }),
+        removals[0],
+      );
+      await handlers.deleteConfigField(
+        mockReq({ params, query: { fieldPath: 'turnstile.siteKey' } }),
+        removals[1],
+      );
+
+      expect(documentRes.statusCode).toBe(201);
+      expect(writtenDraft(deps).overrides).toEqual({ interface: { modelSelect: false } });
+      expect(fieldRes.statusCode).toBe(200);
+      expect(removals.map((res) => res.statusCode)).toEqual([200, 200]);
+      expect(deps.writeConfigDocument).toHaveBeenCalledTimes(1);
+      expect(deps.unsetConfigField).not.toHaveBeenCalled();
+    });
+
+    it('refuses a Turnstile tombstone under its AppConfig name and removes a stored one', async () => {
+      const { handlers, deps } = createHandlers({
+        unsetConfigField: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {}, tombstones: [] }),
+      });
+      const params = { principalType: 'role', principalId: '__base__' };
+      const tombstoneRes = mockRes();
+      const deleteRes = mockRes();
+
+      await handlers.tombstoneConfigField(
+        mockReq({ params, body: { fieldPath: 'turnstileConfig' } }),
+        tombstoneRes,
+      );
+      await handlers.deleteConfigField(
+        mockReq({ params, query: { fieldPath: 'turnstileConfig.siteKey' } }),
+        deleteRes,
+      );
+
+      expect(tombstoneRes.statusCode).toBe(400);
+      expect(tombstoneRes.body).toEqual({
+        error: 'Unknown config section',
+        code: 'UNKNOWN_SECTION',
+      });
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
+      expect(deleteRes.statusCode).toBe(200);
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        '__base__',
+        ['turnstileConfig.siteKey'],
+        undefined,
+        { expectedRevision: undefined },
+      );
     });
 
     it('rejects a patch that addresses a custom endpoint by index', async () => {
