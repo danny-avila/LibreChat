@@ -3,7 +3,12 @@ import { loadOCRConfig } from '@librechat/data-schemas';
 import { EModelEndpoint, isSensitiveEnvVar } from 'librechat-data-provider';
 import type { ConfigOverrideIssue } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
-import { decryptConfigSecret, isEncryptedSecretPayload } from '~/admin/secrets';
+import {
+  isOpaqueSecretInput,
+  decryptConfigSecret,
+  isOpaqueStoredSecret,
+  isEncryptedSecretPayload,
+} from '~/admin/secrets';
 
 /** A `${NAME}` reference, in the grammar `extractEnvVariable` expands inside any string. */
 const ENV_REFERENCE = /\$\{([^}]+)\}/g;
@@ -235,9 +240,11 @@ function hasDisallowedReference(
 }
 
 /**
- * An issue for every string at or under `value` that references a name the policy does not
- * allow, outside literal text ({@link isLiteralTextPath}); `segments` locate `value` in the
- * overrides. The issue carries the location only, never the value or the name.
+ * An issue for every string at or under `value`, as a write sends it, that references a name the
+ * policy does not allow, outside literal text ({@link isLiteralTextPath}) and opaque credentials
+ * (`isOpaqueSecretInput`: OCR, speech, web search and Langfuse keys, stored encrypted and read as
+ * is). `segments` locate `value` in the overrides. The issue carries the location only, never the
+ * value or the name.
  */
 export function getEnvReferenceIssues(
   value: unknown,
@@ -245,7 +252,9 @@ export function getEnvReferenceIssues(
   segments: readonly string[] = [],
 ): ConfigOverrideIssue[] {
   if (typeof value === 'string') {
-    return !isLiteralTextPath(segments) && hasDisallowedReference(value, policy, segments)
+    return !isLiteralTextPath(segments) &&
+      !isOpaqueSecretInput(segments, value) &&
+      hasDisallowedReference(value, policy, segments)
       ? [{ path: segments.join('.'), segments: [...segments], code: ENV_REFERENCE_NOT_ALLOWED }]
       : [];
   }
@@ -261,13 +270,31 @@ export function getEnvReferenceIssues(
 }
 
 /**
+ * Whether a stored string at `segments` (override keys) references a name the policy does not
+ * allow, judged as the runtime pass judges it ({@link neutralizeEnvReferences}): never in literal
+ * text or an opaque credential (`isOpaqueStoredSecret`), and in other ciphertext by its plaintext,
+ * which the custom endpoint, Azure and MCP clients expand once decrypted. Ciphertext that does not
+ * decrypt references nothing: the decrypting reader treats it as missing.
+ */
+export function hasDisallowedStoredReference(
+  text: string,
+  policy: EnvReferencePolicy,
+  segments: readonly string[],
+): boolean {
+  if (isLiteralTextPath(segments) || isOpaqueStoredSecret(segments, text)) {
+    return false;
+  }
+  const plaintext = isEncryptedSecretPayload(text) ? decryptConfigSecret(text) : text;
+  return plaintext != null && hasDisallowedReference(plaintext, policy, segments);
+}
+
+/**
  * A string with each disallowed reference resolved to nothing, as an unset variable leaves no
  * value behind; allowed references stay for the runtime to expand. Removing a reference can join
  * the text around it into a new one (`$${NOPE}{NAME}` leaves `${NAME}`), so the pass repeats
- * until no disallowed reference is left. Ciphertext is judged by its
- * plaintext, which a runtime reader may expand once decrypted: a stored secret that references a
- * disallowed name becomes `''`. Ciphertext that does not decrypt is left for the decrypting
- * reader, which already treats it as missing.
+ * until no disallowed reference is left. Ciphertext is judged whole
+ * ({@link hasDisallowedStoredReference}): a stored secret its client would expand into a
+ * disallowed name becomes `''`, and an opaque credential's stays as it is read, as is.
  */
 function neutralizeText(
   text: string,
@@ -275,8 +302,7 @@ function neutralizeText(
   segments: readonly string[],
 ): string {
   if (isEncryptedSecretPayload(text)) {
-    const plaintext = decryptConfigSecret(text);
-    return plaintext != null && hasDisallowedReference(plaintext, policy, segments) ? '' : text;
+    return hasDisallowedStoredReference(text, policy, segments) ? '' : text;
   }
   let current = text;
   while (current.includes('${')) {

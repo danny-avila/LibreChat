@@ -116,9 +116,10 @@ import {
   redactResolvedConfigSecrets,
 } from './secrets';
 import {
-  createEnvReferencePolicy,
-  getEnvReferenceIssues,
   parseEnvAllowlist,
+  getEnvReferenceIssues,
+  createEnvReferencePolicy,
+  hasDisallowedStoredReference,
 } from '~/app/allowlist';
 import { MCP_SERVER_SECTIONS, findSecretReentry, getAzureGroupReentryIssues } from './reentry';
 import { REBINDING_SECTIONS, toIgnoredSecretOverride } from '~/app/rebinding';
@@ -1737,17 +1738,12 @@ function followRename(sent: SentValue, change: PreparedChange): SentValue {
 }
 
 /**
- * Env reference issues for a value a change of the batch sent, named where the batch leaves it:
- * a set's value at its path, and an upserted entry at its index in the collection the batch
- * leaves (by its key when a later change removed it with the collection).
+ * Where the batch leaves a value a change sent: a set's path, and an upserted entry at its index
+ * in the collection the batch leaves. `null` when a later change removed that entry.
  */
-function getSentEnvIssues(
-  sent: SentValue,
-  overrides: unknown,
-  policy: EnvReferencePolicy,
-): ConfigOverrideIssue[] {
+function getSentLocation(sent: SentValue, overrides: unknown): string[] | null {
   if (!sent.entry) {
-    return getEnvReferenceIssues(sent.value, policy, sent.segments);
+    return sent.segments;
   }
   const collection = sent.segments.slice(0, -1);
   const key = sent.segments[sent.segments.length - 1];
@@ -1757,10 +1753,42 @@ function getSentEnvIssues(
     keyField && Array.isArray(entries)
       ? entries.findIndex((item) => isPlainRecord(item) && item[keyField] === key)
       : -1;
-  return getEnvReferenceIssues(sent.value, policy, [
-    ...collection,
-    index >= 0 ? String(index) : key,
-  ]);
+  return index >= 0 ? [...collection, String(index)] : null;
+}
+
+/**
+ * Env reference issues for the values a batch's changes sent, judged on the document the batch
+ * leaves as its other issues are: each is named where the batch leaves the value, and counts only
+ * when the end state still holds a disallowed reference there (as stored, ciphertext by its
+ * plaintext) at a location the batch changed (`written`). A reference a later change removed or
+ * replaced, or one that leaves the stored value as it was, does not.
+ */
+function getBatchEnvIssues(
+  sent: readonly SentValue[],
+  state: ConfigOverrideState,
+  written: ReadonlyArray<readonly string[]>,
+  policy: EnvReferencePolicy,
+): ConfigOverrideIssue[] {
+  const reported = new Set<string>();
+  return sent
+    .flatMap((item) => {
+      const location = getSentLocation(item, state.overrides);
+      return location ? getEnvReferenceIssues(item.value, policy, location) : [];
+    })
+    .filter(({ segments }) => {
+      const kept = getAtPath(state.overrides, segments);
+      const key = segments.join('\u0000');
+      if (
+        reported.has(key) ||
+        typeof kept !== 'string' ||
+        !hasDisallowedStoredReference(kept, policy, segments) ||
+        !written.some((path) => isSegmentPrefix(path, segments))
+      ) {
+        return false;
+      }
+      reported.add(key);
+      return true;
+    });
 }
 
 /**
@@ -3414,10 +3442,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           state = next;
         }
 
-        /** Named where the batch leaves each value, as every other issue of the batch is. */
-        const envIssues = sent.flatMap((item) =>
-          getSentEnvIssues(item, state.overrides, envPolicy),
-        );
+        const storedState = toConfigOverrideState(stored);
+        const written = getConfigBatchWrittenPaths(appliedSteps, state, storedState);
+        const envIssues = getBatchEnvIssues(sent, state, written, envPolicy);
         if (envIssues.length > 0) {
           return { draft: null, result: { stop: { kind: 'issues', issues: envIssues } } };
         }
@@ -3434,7 +3461,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           return { draft: null, result: { stop: { kind: 'issues', issues: indexed } } };
         }
         /** Changes that cancel out (a set, then an unset of its parent) leave nothing to write. */
-        const storedState = toConfigOverrideState(stored);
         const documentChanged =
           report.applied.length > 0 &&
           !(
@@ -3456,7 +3482,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           return { draft: null, result: { report } };
         }
         if (documentChanged) {
-          const written = getConfigBatchWrittenPaths(appliedSteps, state, storedState);
           const issues = getConfigChangeIssues(state, floor, stored, written);
           if (issues.length > 0) {
             return { draft: null, result: { stop: { kind: 'issues', issues } } };

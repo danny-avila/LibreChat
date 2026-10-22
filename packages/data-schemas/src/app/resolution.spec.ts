@@ -2677,6 +2677,72 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('endpoints.azureOpenAI.groups'));
     warn.mockRestore();
   });
+
+  describe('with Azure assistants on', () => {
+    /** As AppService resolves librechat.yaml's `assistants: true` over a group that serves them. */
+    const assistantsBase = {
+      ...base,
+      endpoints: {
+        azureOpenAI: {
+          ...base.endpoints?.azureOpenAI,
+          assistants: true,
+          assistantModels: ['gpt-4o'],
+          assistantGroups: ['east'],
+        },
+      },
+    } as unknown as AppConfig;
+    const plain = {
+      group: 'plain',
+      apiKey: 'v3:stored-plain-key',
+      instanceName: 'plain',
+      version: '2024-10-21',
+      deploymentName: 'gpt-5-mini',
+      models: { 'gpt-5-mini': true },
+    };
+
+    it('turns them off for groups none of whose models supports them, with a warning', () => {
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+      const merged = mergeConfigOverrides(assistantsBase, [
+        fakeConfig({ endpoints: { azureOpenAI: { groups: [plain] } } }, 10),
+      ]);
+
+      const azure = merged.endpoints?.azureOpenAI;
+      expect(azure?.modelNames).toEqual(['gpt-5-mini']);
+      expect(azure?.assistantModels).toEqual([]);
+      expect(azure?.assistants).toBe(false);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Turning off endpoints.azureOpenAI.assistants for role/'),
+      );
+      expect(assistantsBase.endpoints?.azureOpenAI?.assistants).toBe(true);
+      warn.mockRestore();
+    });
+
+    it("keeps them on when the groups serve them, or a later layer's groups serve them again", () => {
+      const own = mergeConfigOverrides(assistantsBase, [
+        fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 10),
+      ]);
+      const later = mergeConfigOverrides(assistantsBase, [
+        fakeConfig({ endpoints: { azureOpenAI: { groups: [plain] } } }, 10),
+        fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 20),
+      ]);
+
+      for (const merged of [own, later]) {
+        expect(merged.endpoints?.azureOpenAI?.assistants).toBe(true);
+        expect(merged.endpoints?.azureOpenAI?.assistantModels).toEqual(['gpt-5', 'o3-mini']);
+      }
+    });
+
+    it('turns off a layer that turns them on over models none of which supports them', () => {
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+      const merged = mergeConfigOverrides(base, [
+        fakeConfig({ endpoints: { azureOpenAI: { assistants: true } } }, 10),
+      ]);
+
+      expect(merged.endpoints?.azureOpenAI?.assistants).toBe(false);
+      expect(merged.endpoints?.azureOpenAI?.modelNames).toEqual(['gpt-4o']);
+      warn.mockRestore();
+    });
+  });
 });
 
 describe('merge precedence', () => {

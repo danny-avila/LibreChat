@@ -19,9 +19,14 @@ import type {
 } from '@librechat/data-schemas';
 import type { TWebSearchConfigInput } from 'librechat-data-provider';
 import type { AddressInfo } from 'node:net';
-import { encryptConfigSecretFields, getConfigSecretRules } from './secrets';
+import {
+  resolveConfigSecret,
+  isOpaqueSecretInput,
+  getConfigSecretRules,
+  encryptConfigSecretFields,
+} from './secrets';
+import { createEnvReferencePolicy, neutralizeEnvReferences } from '~/app/allowlist';
 import { resolveTenantCredentials } from '~/langfuse/utils';
-import { createEnvReferencePolicy } from '~/app/allowlist';
 import { resolveConfigOverrides } from '~/app/overrides';
 import { uploadMistralOCR } from '~/files/mistral/crud';
 import { getCustomEndpointConfig } from '~/app/config';
@@ -401,5 +406,51 @@ describe('config secret registry runtime readers', () => {
 
     expect(stored).toMatch(/^v3:/);
     await expect(probe(stored as string)).resolves.toBe(secret);
+  });
+
+  describe('opaque keys, which the env allowlist leaves alone', () => {
+    const VARIABLE = 'LC8_RUNTIME_OPAQUE_VARIABLE';
+    /** A credential that contains a reference to a variable the environment sets. */
+    const credential = (path: string) => `${path}-pa\${${VARIABLE}}ss`;
+    const isOpaque = (path: string) => isOpaqueSecretInput(path.split('.'), 'credential');
+
+    beforeEach(() => {
+      process.env[VARIABLE] = 'expanded';
+    });
+    afterEach(() => {
+      delete process.env[VARIABLE];
+    });
+
+    it.each(
+      Object.entries(RUNTIME_READERS).flatMap(([path, { probe }]) =>
+        probe && isOpaque(path) ? [[path, probe]] : [],
+      ),
+    )('%s reaches its reader as entered through the runtime env pass', async (path, probe) => {
+      const segments = path.split('.');
+      const layer = segments.reduceRight<unknown>(
+        (value, key) => ({ [key]: value }),
+        storeSecret(path, credential(path)),
+      );
+      const neutralized = neutralizeEnvReferences(layer, createEnvReferencePolicy({}));
+      const stored = segments.reduce<unknown>(
+        (value, key) => (value as Record<string, unknown>)[key],
+        neutralized,
+      );
+
+      await expect(probe(stored as string)).resolves.toBe(credential(path));
+    });
+
+    it.each(
+      Object.entries(RUNTIME_READERS).flatMap(([path, { module, probe }]) =>
+        !probe && isOpaque(path) ? [[path, module]] : [],
+      ),
+    )('%s reaches %s through resolveConfigSecret, which reads ciphertext as is', (path, module) => {
+      const source = readFileSync(join(REPO_ROOT, module), 'utf8');
+
+      expect(source).not.toMatch(/extractEnvVariable\([^)]*apiKey/);
+      expect(resolveConfigSecret(storeSecret(path, credential(path)) as string)).toBe(
+        credential(path),
+      );
+    });
   });
 });

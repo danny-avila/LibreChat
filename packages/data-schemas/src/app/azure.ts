@@ -38,6 +38,18 @@ export const AZURE_RESOLVED_GROUP_FIELDS: readonly AzureResolvedGroupField[] = [
 ];
 
 /**
+ * Whether an Azure config turns `assistants` on without a model that supports them, which
+ * `azureConfigSetup` refuses: the Azure Assistants client would have no model to default to.
+ */
+export function lacksAzureAssistantModels(config: {
+  assistants?: unknown;
+  assistantModels?: unknown;
+}): boolean {
+  const { assistants, assistantModels } = config;
+  return Boolean(assistants) && !(Array.isArray(assistantModels) && assistantModels.length > 0);
+}
+
+/**
  * Resolves Azure `groups` into the maps the Azure clients read (`groupMap`, `modelGroupMap`), the
  * models they serve and the assistants among them. The groups are validated here, so any value
  * is accepted: a malformed list, or a structural problem (a duplicate group or model, a group
@@ -86,7 +98,12 @@ export function azureConfigSetup(config: Partial<TCustomConfig>): TAzureConfig {
     mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
   }
 
-  if (azureConfiguration.assistants && resolved.assistantModels.length === 0) {
+  if (
+    lacksAzureAssistantModels({
+      assistants: azureConfiguration.assistants,
+      assistantModels: resolved.assistantModels,
+    })
+  ) {
     throw new Error(
       'No Azure models are configured to support assistants. Please remove the `assistants` field or configure at least one model to support assistants.',
     );

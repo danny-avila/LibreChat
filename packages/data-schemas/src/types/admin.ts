@@ -357,7 +357,9 @@ export type AdminConfigChangeErrorResponse = {
  *   as AppService resolves librechat.yaml's, into the `groupMap`, `modelGroupMap`, model list
  *   and assistant models the clients read. A profile's `groups` replace the groups below whole,
  *   as its array does; groups that do not resolve (a duplicate group or model, a model without a
- *   deployment or version) stay unread, with a warning. An override that writes
+ *   deployment or version) stay unread, with a warning. When none of the models the merge leaves
+ *   supports assistants, `assistants` is off for that profile, with a warning, rather than on
+ *   without a model (librechat.yaml refuses that combination at startup). An override that writes
  *   `endpoints.azureOpenAI.groupMap.<group>.apiKey` directly (a record secret,
  *   `rules.recordSecretFields`) gets the same treatment: encrypted with `apiKeyPreview`, kept
  *   when a write of its group omits it, left out of every read (GET `/base` included, where a
@@ -378,14 +380,20 @@ export type AdminConfigChangeErrorResponse = {
  *   built-in endpoint credential (`OPENAI_API_KEY`, ...) or is listed in
  *   `CONFIG_OVERRIDE_ENV_ALLOWLIST`: 400
  *   `CONFIG_OVERRIDE_INVALID` with issue `env_reference_not_allowed`, on PUT, PATCH and change
- *   batches (an issue is named where the batch leaves the value: an upserted entry by its index
- *   in the collection the batch leaves, a value under a renamed key by its new name). Text no
- *   reader expands (`interface`, `modelSpecs`, prompt fields) is exempt, and so are the
- *   `${INSTANCE_NAME}` and `${DEPLOYMENT_NAME}` templates the Azure client fills in a group's
- *   `baseURL` (`groups` or `groupMap`), which are not env references. At runtime an unlisted
- *   reference in a stored override resolves to nothing. The allowlist decides which names a
- *   value may reference, not where the value is sent: an allowed name may appear in any value,
- *   a URL, a header or a key beside a host of the writer's choosing.
+ *   batches. A batch is judged on the document it leaves: a reference counts when that document
+ *   still holds it where the batch changed something, named there (an upserted entry by its
+ *   index in the collection the batch leaves, a value under a renamed key by its new name), so
+ *   one a later change of the batch removes or replaces is not refused. Text no reader expands
+ *   (`interface`, `modelSpecs`, prompt fields) is exempt, and so are the `${INSTANCE_NAME}` and
+ *   `${DEPLOYMENT_NAME}` templates the Azure client fills in a group's `baseURL` (`groups` or
+ *   `groupMap`), which are not env references, and opaque credentials: the OCR, speech, web
+ *   search and Langfuse keys, which are stored encrypted and sent as entered, so a `${...}`
+ *   inside one is part of the key (a whole `${VAR}` reference there is still checked). Custom
+ *   endpoint, Azure group and MCP credentials are expanded by their clients once decrypted and
+ *   stay checked. At runtime an unlisted reference in a stored override resolves to nothing. The
+ *   allowlist decides which names a value may reference, not where the value is sent: an allowed
+ *   name may appear in any value, a URL, a header or a key beside a host of the writer's
+ *   choosing.
  * - `secretRebinding`: the merge drops a credential a layer would send somewhere it was not
  *   entered for: an inherited one whose destination the layer changes without entering it again,
  *   or the layer's own one whose destination a layer below changed (MCP servers, custom

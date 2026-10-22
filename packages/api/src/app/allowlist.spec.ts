@@ -426,3 +426,80 @@ describe('Azure base URL templates', () => {
     expect(policy.allows('INSTANCE_NAME')).toBe(false);
   });
 });
+
+describe('opaque credentials', () => {
+  const policy = () => createEnvReferencePolicy({ config: yaml });
+  /** A provider token that happens to contain `${...}`. */
+  const credential = 'pa${UNLISTED}ss';
+  /** Keys every runtime reader uses as is once decrypted: OCR, speech, web search, Langfuse. */
+  const opaque = {
+    ocr: { apiKey: credential },
+    speech: {
+      tts: { openai: { apiKey: credential }, elevenlabs: { apiKey: credential } },
+      stt: { azureOpenAI: { apiKey: credential } },
+    },
+    webSearch: { serperApiKey: credential, jinaApiKey: credential },
+    langfuse: { secretKey: credential },
+  };
+  /** Keys their clients expand once decrypted (custom endpoints, Azure, MCP), or nothing reads yet. */
+  const expanded = {
+    endpoints: {
+      custom: [{ name: 'Gateway', apiKey: credential }],
+      azureOpenAI: {
+        groups: [{ group: 'east', apiKey: credential }],
+        groupMap: { east: { apiKey: credential } },
+      },
+      assistants: { apiKey: credential },
+    },
+    mcpServers: { tools: { apiKey: { key: credential }, oauth: { client_secret: credential } } },
+  };
+
+  it('accepts `${...}` inside a key read as is, but not a whole reference a field passes through', () => {
+    expect(getEnvReferenceIssues(opaque, policy())).toEqual([]);
+    expect(
+      getEnvReferenceIssues(
+        { ocr: { apiKey: '${UNLISTED}' }, webSearch: { serperApiKey: ' ${UNLISTED} ' } },
+        policy(),
+      ).map(({ path }) => path),
+    ).toEqual(['ocr.apiKey', 'webSearch.serperApiKey']);
+  });
+
+  it('still checks keys their clients expand once decrypted', () => {
+    expect(getEnvReferenceIssues(expanded, policy()).map(({ path }) => path)).toEqual([
+      'endpoints.custom.0.apiKey',
+      'endpoints.azureOpenAI.groups.0.apiKey',
+      'endpoints.azureOpenAI.groupMap.east.apiKey',
+      'endpoints.assistants.apiKey',
+      'mcpServers.tools.apiKey.key',
+      'mcpServers.tools.oauth.client_secret',
+    ]);
+  });
+
+  it('matches the location by its segments, so a dotted key does not spell one', () => {
+    expect(getEnvReferenceIssues({ 'ocr.apiKey': credential }, policy())).toHaveLength(1);
+  });
+
+  it("keeps an opaque key's ciphertext at runtime, and still blanks an expanded key's", () => {
+    const stored = encryptV3(credential);
+    const layer = {
+      ocr: { apiKey: stored },
+      webSearch: { jinaApiKey: stored },
+      langfuse: { secretKey: stored },
+      endpoints: { custom: [{ name: 'Gateway', apiKey: stored }] },
+      mcpServers: { tools: { apiKey: { key: stored } } },
+    };
+
+    expect(neutralizeEnvReferences(layer, policy())).toEqual({
+      ...layer,
+      endpoints: { custom: [{ name: 'Gateway', apiKey: '' }] },
+      mcpServers: { tools: { apiKey: { key: '' } } },
+    });
+  });
+
+  /** `resolveConfigSecret` expands a stored plaintext key (legacy, or written before encryption). */
+  it('still neutralizes a plaintext key stored at an opaque location', () => {
+    expect(
+      neutralizeEnvReferences({ speech: { tts: { openai: { apiKey: credential } } } }, policy()),
+    ).toEqual({ speech: { tts: { openai: { apiKey: 'pass' } } } });
+  });
+});

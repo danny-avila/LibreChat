@@ -2109,6 +2109,62 @@ describe('env reference allowlist on admin writes', () => {
     });
   });
 
+  it('accepts `${...}` inside a key read as is, and refuses it inside one a client expands', async () => {
+    const principalId = nextPrincipalId();
+    const credential = 'pa${LC8_UNLISTED_NAME}ss';
+
+    const opaque = await patch(principalId, [
+      { fieldPath: 'ocr.apiKey', value: credential },
+      { fieldPath: 'speech.tts.openai', value: { apiKey: credential, voices: ['alloy'] } },
+    ]);
+    expect(opaque.statusCode).toBe(200);
+    const batch = await send(handlers.applyConfigChanges, {
+      params: { principalType: 'role', principalId },
+      body: { ops: [{ op: 'set', fieldPath: 'webSearch.serperApiKey', value: credential }] },
+    });
+    expect(batch.statusCode).toBe(200);
+    const stored = await readRawOverrides(principalId);
+    for (const path of ['ocr.apiKey', 'speech.tts.openai.apiKey', 'webSearch.serperApiKey']) {
+      expect(decryptV3(getAtPath(stored, path) as string)).toBe(credential);
+    }
+
+    const reference = await patch(principalId, [
+      { fieldPath: 'ocr.apiKey', value: '${LC8_UNLISTED_NAME}' },
+    ]);
+    expect(reference.statusCode).toBe(400);
+    expect(reference.body).toMatchObject({
+      issues: [{ path: 'ocr.apiKey', code: 'env_reference_not_allowed' }],
+    });
+
+    const expanded = await patch(principalId, [
+      {
+        fieldPath: 'endpoints.custom',
+        value: [
+          {
+            name: 'Gateway',
+            apiKey: credential,
+            baseURL: 'https://gateway.example/v1',
+            models: { default: ['m'] },
+          },
+        ],
+      },
+      {
+        fieldPath: 'mcpServers.tools',
+        value: mcpServer({
+          apiKey: { source: 'admin', authorization_type: 'bearer', key: credential },
+        }),
+      },
+    ]);
+    expect(expanded.statusCode).toBe(400);
+    expect(expanded.body).toMatchObject({
+      issues: [
+        { path: 'endpoints.custom.0.apiKey', code: 'env_reference_not_allowed' },
+        { path: 'mcpServers.tools.apiKey.key', code: 'env_reference_not_allowed' },
+      ],
+    });
+    expect(getAtPath(await readRawOverrides(principalId), 'endpoints')).toBeUndefined();
+  });
+
   it('accepts the Azure base URL templates in a group, on PATCH and change batches', async () => {
     const principalId = nextPrincipalId();
     const baseURL =

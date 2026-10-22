@@ -13,8 +13,12 @@ import {
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AdminConfigMergeRules, AppConfig, Config, TWebSearchKeys } from '~/types';
 import type { ConfigFieldWrite } from './mutations';
+import {
+  AZURE_RESOLVED_GROUP_FIELDS,
+  lacksAzureAssistantModels,
+  resolveAzureGroups,
+} from './azure';
 import { isBaseConfigPrincipal, sortByConfigPrecedence } from './precedence';
-import { AZURE_RESOLVED_GROUP_FIELDS, resolveAzureGroups } from './azure';
 import { setConfigFields, toConfigOverrideState } from './mutations';
 import { webSearchPairedFields, unbindWebSearchKeys } from './web';
 import { parseFieldPath, isDotFreePath } from './paths';
@@ -1475,6 +1479,31 @@ function resolveLayerAzureGroups(
 }
 
 /**
+ * `merged` with Azure assistants turned off when none of the models it serves supports them
+ * (`lacksAzureAssistantModels`), a combination `azureConfigSetup` refuses in librechat.yaml. A
+ * layer's `groups` replace the groups below whole, so groups without an assistant model under an
+ * inherited `assistants: true` would leave the Azure Assistants client no model to default to.
+ * Judged on the merged result, so a later layer whose groups serve assistants keeps them on.
+ */
+function withServedAzureAssistants<T extends AppConfig>(
+  merged: T,
+  configs: readonly ConfigOverrideLayer[],
+): T {
+  const endpoints = merged.endpoints;
+  const azure = endpoints?.[EModelEndpoint.azureOpenAI];
+  if (!endpoints || !azure || !lacksAzureAssistantModels(azure)) {
+    return merged;
+  }
+  logger.warn(
+    `[mergeConfigOverrides] Turning off ${AZURE_CONFIG_PATH}.assistants for ${configs.map(describePrincipal).join(', ')}: none of the Azure models they serve supports assistants`,
+  );
+  return {
+    ...merged,
+    endpoints: { ...endpoints, [EModelEndpoint.azureOpenAI]: { ...azure, assistants: false } },
+  };
+}
+
+/**
  * Folds override layers, in merge precedence order (`compareConfigPrecedence`), into
  * `merged`, the served config, and `raw`, the YAML-shaped config each layer is validated on
  * before it lands (`stripInvalidOverrides`). `merged` starts as any object whose `mcpConfig`
@@ -1607,7 +1636,8 @@ function foldConfigLayers<T extends AnyObject>(
  * Configs merge in precedence order (`compareConfigPrecedence`): Base first, then ascending
  * priority, then role < group < user, then document identity; the last layer wins. Each
  * config's `overrides` is deep-merged into the base config in that order. A stored web search
- * key is dropped when a layer other than its own decides the URL it is sent to.
+ * key is dropped when a layer other than its own decides the URL it is sent to, and Azure
+ * assistants none of the merged models supports are turned off (`withServedAzureAssistants`).
  */
 export function mergeConfigOverrides(
   baseConfig: AppConfig,
@@ -1642,7 +1672,7 @@ export function mergeConfigOverrides(
       }),
   );
   const merged = bindWebSearchKeys(
-    folded.merged,
+    withServedAzureAssistants(folded.merged, configs),
     folded.webSearchWriters,
     options.onWebSearchKeyUnbound,
   );

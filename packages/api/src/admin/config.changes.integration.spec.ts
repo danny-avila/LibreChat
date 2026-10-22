@@ -131,6 +131,17 @@ async function storedDocument(principalId: string) {
   return raw().findOne({ principalId });
 }
 
+/** The value at `segments`, `undefined` when anything on the way is missing. */
+function valueAt(root: unknown, segments: readonly string[]): unknown {
+  return segments.reduce<unknown>(
+    (value, key) =>
+      value != null && typeof value === 'object'
+        ? (value as Record<string, unknown>)[key]
+        : undefined,
+    root,
+  );
+}
+
 /** Stores a role document as is, past every API guard, as an older server or another writer might. */
 async function seedDocument(
   principalId: string,
@@ -750,6 +761,8 @@ describe('POST …/changes: a stored MCP credential and where it is sent', () =>
 });
 
 describe('POST …/changes: env references and the credentials a write leaves elsewhere', () => {
+  const UNLISTED_URL = 'https://h.example/${LC8_UNLISTED_NAME}';
+
   it('names an upserted entry by its position once the batch has moved it', async () => {
     const params = nextParams();
     await seedDocument(
@@ -799,48 +812,141 @@ describe('POST …/changes: env references and the credentials a write leaves el
     ]);
   });
 
-  it('names an upserted entry where the batch leaves it, whatever a later change did', async () => {
-    const unlisted = 'https://h.example/${LC8_UNLISTED_NAME}';
+  it('names an upserted entry where the batch leaves it, after a later removal', async () => {
+    const params = nextParams();
+    await seedDocument(
+      params.principalId,
+      { endpoints: { custom: [endpoint('first'), endpoint('second')] } },
+      [],
+    );
+
+    const { status, body } = await send(
+      {
+        dryRun: true,
+        ops: [
+          { op: 'upsertEntry', entry: endpoint('bad', { baseURL: UNLISTED_URL }) },
+          { op: 'removeEntry', key: 'first' },
+        ].map((op) => ({ ...op, fieldPath: 'endpoints.custom' })),
+      },
+      params,
+    );
+
+    expect(status).toBe(400);
+    expect(body).toMatchObject({
+      code: 'CONFIG_OVERRIDE_INVALID',
+      issues: [
+        {
+          path: 'endpoints.custom.1.baseURL',
+          segments: ['endpoints', 'custom', '1', 'baseURL'],
+          code: 'env_reference_not_allowed',
+        },
+      ],
+    });
+    expect(body.issues).toHaveLength(1);
+  });
+
+  it('judges references on the document the batch leaves, not on values a later change removed', async () => {
     const cases = [
       {
+        stored: { endpoints: { custom: [endpoint('first')] } },
         ops: [
-          { op: 'upsertEntry', entry: endpoint('bad', { baseURL: unlisted }) },
-          { op: 'removeEntry', key: 'first' },
+          {
+            op: 'upsertEntry',
+            fieldPath: 'endpoints.custom',
+            entry: endpoint('bad', { baseURL: UNLISTED_URL }),
+          },
+          { op: 'set', fieldPath: 'endpoints.custom', value: [endpoint('c')] },
         ],
-        path: ['endpoints', 'custom', '1', 'baseURL'],
+        path: ['endpoints', 'custom'],
+        left: [endpoint('c')],
       },
       {
+        stored: { ocr: { mistralModel: 'mistral-ocr-latest' } },
         ops: [
-          { op: 'upsertEntry', entry: endpoint('bad', { baseURL: unlisted }) },
-          { op: 'set', value: [endpoint('c')] },
+          { op: 'set', fieldPath: 'ocr.baseURL', value: UNLISTED_URL },
+          { op: 'unset', fieldPath: 'ocr' },
         ],
-        path: ['endpoints', 'custom', 'bad', 'baseURL'],
+        path: ['ocr'],
+        left: undefined,
+      },
+      {
+        stored: { ocr: { mistralModel: 'mistral-ocr-latest' } },
+        ops: [
+          { op: 'set', fieldPath: 'ocr.baseURL', value: UNLISTED_URL },
+          {
+            op: 'set',
+            fieldPath: 'ocr',
+            value: { baseURL: 'https://ocr.example.com/v1', mistralModel: 'mistral-ocr-latest' },
+          },
+        ],
+        path: ['ocr', 'baseURL'],
+        left: 'https://ocr.example.com/v1',
       },
     ];
 
-    for (const { ops, path } of cases) {
-      const params = nextParams();
-      await seedDocument(
-        params.principalId,
-        { endpoints: { custom: [endpoint('first'), endpoint('second')] } },
-        [],
-      );
+    for (const { stored, ops, path, left } of cases) {
+      for (const dryRun of [true, false]) {
+        const params = nextParams();
+        await seedDocument(params.principalId, stored, []);
 
-      const { status, body } = await send(
-        {
-          dryRun: true,
-          ops: ops.map((op) => ({ ...op, fieldPath: 'endpoints.custom' })),
-        },
-        params,
-      );
+        const { status, body } = await send({ dryRun, ops }, params);
 
-      expect(status).toBe(400);
-      expect(body).toMatchObject({
-        code: 'CONFIG_OVERRIDE_INVALID',
-        issues: [{ path: path.join('.'), segments: path, code: 'env_reference_not_allowed' }],
-      });
-      expect(body.issues).toHaveLength(1);
+        expect({ status, issues: body.issues }).toEqual({ status: 200, issues: undefined });
+        const document = (await storedDocument(params.principalId))?.overrides;
+        expect(valueAt(document, path)).toEqual(dryRun ? valueAt(stored, path) : left);
+      }
     }
+  });
+
+  it('still refuses a reference the batch leaves, held encrypted or written with spaces', async () => {
+    const params = nextParams();
+
+    const { status, body } = await send(
+      {
+        ops: [
+          {
+            op: 'upsertEntry',
+            fieldPath: 'endpoints.custom',
+            entry: endpoint('gateway', { apiKey: 'pa${LC8_UNLISTED_NAME}ss' }),
+          },
+          { op: 'set', fieldPath: 'ocr.apiKey', value: ' ${LC8_UNLISTED_NAME} ' },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(400);
+    expect(body.issues).toEqual([
+      {
+        path: 'endpoints.custom.0.apiKey',
+        segments: ['endpoints', 'custom', '0', 'apiKey'],
+        code: 'env_reference_not_allowed',
+      },
+      { path: 'ocr.apiKey', segments: ['ocr', 'apiKey'], code: 'env_reference_not_allowed' },
+    ]);
+    expect(await storedDocument(params.principalId)).toBeNull();
+  });
+
+  it('leaves a stored reference a batch puts back where it was to merge time', async () => {
+    const params = nextParams();
+    const ocr = { baseURL: UNLISTED_URL, mistralModel: 'mistral-ocr-latest' };
+    await seedDocument(params.principalId, { ocr }, []);
+
+    const { status } = await send(
+      {
+        ops: [
+          { op: 'set', fieldPath: 'ocr.baseURL', value: 'https://ocr.example.com/v1' },
+          { op: 'set', fieldPath: 'ocr', value: { ...ocr } },
+          { op: 'set', fieldPath: 'interface.customWelcome', value: 'Welcome' },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(200);
+    const { overrides } = (await storedDocument(params.principalId))!;
+    expect(overrides.ocr).toEqual(ocr);
+    expect(overrides.interface).toEqual({ customWelcome: 'Welcome' });
   });
 
   it('names a value under a key a later rename moved by the new key', async () => {

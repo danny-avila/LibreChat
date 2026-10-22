@@ -19,6 +19,13 @@ interface ConfigSecretFieldInput {
   path: string;
   /** When true, `${ENV_VAR}` placeholder values are stored and returned as plain references instead of being encrypted */
   allowEnvPlaceholder?: boolean;
+  /**
+   * When true, every runtime reader uses the decrypted value as is (`resolveConfigSecret`,
+   * `resolveStoredConfigSecret`, `decryptConfigSecret`) and never expands a `${...}` in it, so a
+   * value stored encrypted is an opaque credential, not an env reference
+   * ({@link isOpaqueSecretInput}, {@link isOpaqueStoredSecret}).
+   */
+  opaque?: boolean;
 }
 
 interface ConfigSecretField extends ConfigSecretFieldInput {
@@ -37,21 +44,22 @@ interface ConfigSecretField extends ConfigSecretFieldInput {
  */
 const CONFIG_SECRET_FIELDS: readonly ConfigSecretField[] = (
   [
-    { path: 'langfuse.secretKey' },
-    { path: 'ocr.apiKey', allowEnvPlaceholder: true },
-    { path: 'speech.tts.openai.apiKey', allowEnvPlaceholder: true },
-    { path: 'speech.tts.azureOpenAI.apiKey', allowEnvPlaceholder: true },
-    { path: 'speech.tts.elevenlabs.apiKey', allowEnvPlaceholder: true },
-    { path: 'speech.tts.localai.apiKey', allowEnvPlaceholder: true },
-    { path: 'speech.stt.openai.apiKey', allowEnvPlaceholder: true },
-    { path: 'speech.stt.azureOpenAI.apiKey', allowEnvPlaceholder: true },
-    { path: 'webSearch.serperApiKey', allowEnvPlaceholder: true },
-    { path: 'webSearch.searxngApiKey', allowEnvPlaceholder: true },
-    { path: 'webSearch.firecrawlApiKey', allowEnvPlaceholder: true },
-    { path: 'webSearch.tavilyApiKey', allowEnvPlaceholder: true },
-    { path: 'webSearch.keenableApiKey', allowEnvPlaceholder: true },
-    { path: 'webSearch.jinaApiKey', allowEnvPlaceholder: true },
-    { path: 'webSearch.cohereApiKey', allowEnvPlaceholder: true },
+    { path: 'langfuse.secretKey', opaque: true },
+    { path: 'ocr.apiKey', allowEnvPlaceholder: true, opaque: true },
+    { path: 'speech.tts.openai.apiKey', allowEnvPlaceholder: true, opaque: true },
+    { path: 'speech.tts.azureOpenAI.apiKey', allowEnvPlaceholder: true, opaque: true },
+    { path: 'speech.tts.elevenlabs.apiKey', allowEnvPlaceholder: true, opaque: true },
+    { path: 'speech.tts.localai.apiKey', allowEnvPlaceholder: true, opaque: true },
+    { path: 'speech.stt.openai.apiKey', allowEnvPlaceholder: true, opaque: true },
+    { path: 'speech.stt.azureOpenAI.apiKey', allowEnvPlaceholder: true, opaque: true },
+    { path: 'webSearch.serperApiKey', allowEnvPlaceholder: true, opaque: true },
+    { path: 'webSearch.searxngApiKey', allowEnvPlaceholder: true, opaque: true },
+    { path: 'webSearch.firecrawlApiKey', allowEnvPlaceholder: true, opaque: true },
+    { path: 'webSearch.tavilyApiKey', allowEnvPlaceholder: true, opaque: true },
+    { path: 'webSearch.keenableApiKey', allowEnvPlaceholder: true, opaque: true },
+    { path: 'webSearch.jinaApiKey', allowEnvPlaceholder: true, opaque: true },
+    { path: 'webSearch.cohereApiKey', allowEnvPlaceholder: true, opaque: true },
+    /** No runtime reader yet (`secrets.runtime.spec.ts`), so not known to be read as is. */
     { path: 'endpoints.assistants.apiKey', allowEnvPlaceholder: true },
     { path: 'endpoints.azureAssistants.apiKey', allowEnvPlaceholder: true },
   ] satisfies ConfigSecretFieldInput[]
@@ -222,6 +230,19 @@ const RESOLVED_SECRET_FIELDS: readonly ResolvedSecretField[] = [
 
 const SECRET_FIELDS_BY_PATH = new Map<string, ConfigSecretField>(
   CONFIG_SECRET_FIELDS.map((field) => [field.path, field]),
+);
+
+/** Joins segments so that a key containing a dot never spells another path. */
+function segmentsKey(segments: readonly string[]): string {
+  return segments.join('\u0000');
+}
+
+/** {@link ConfigSecretField.opaque} fields by their segments. */
+const OPAQUE_SECRET_FIELDS = new Map<string, ConfigSecretField>(
+  CONFIG_SECRET_FIELDS.filter((field) => field.opaque).map((field) => [
+    segmentsKey(field.path.split('.')),
+    field,
+  ]),
 );
 
 const PREVIEW_PATHS = new Set<string>([
@@ -562,6 +583,27 @@ export function resolveStoredConfigSecret(value: string): string | undefined {
     return decryptConfigSecret(value);
   }
   return value;
+}
+
+/**
+ * Whether a value a write sends to `segments` (override keys) is an opaque credential: a secret
+ * every runtime reader uses as is once decrypted ({@link ConfigSecretField.opaque}), which the
+ * write encrypts because the field does not pass it through as a `${VAR}` reference. A `${...}` in
+ * it is part of the credential, not an env reference.
+ */
+export function isOpaqueSecretInput(segments: readonly string[], value: string): boolean {
+  const field = OPAQUE_SECRET_FIELDS.get(segmentsKey(segments));
+  return field != null && !(field.allowEnvPlaceholder && isEnvPlaceholder(value));
+}
+
+/**
+ * Whether a value stored at `segments` (override keys) is an opaque credential: ciphertext of a
+ * secret every runtime reader uses as is once decrypted ({@link ConfigSecretField.opaque}).
+ * Plaintext there is not: it is a reference, a legacy value or librechat.yaml's, which
+ * `resolveConfigSecret` expands.
+ */
+export function isOpaqueStoredSecret(segments: readonly string[], value: string): boolean {
+  return OPAQUE_SECRET_FIELDS.has(segmentsKey(segments)) && isEncryptedSecretPayload(value);
 }
 
 export function getConfigSecretMutationPaths(fieldPath: string): string[] {
