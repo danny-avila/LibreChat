@@ -2753,6 +2753,53 @@ describe('secrets a layer below moved (`ignored` in write responses)', () => {
     expect(pinned.body!.ignored).toBeUndefined();
   });
 
+  it('drops the key Base stores for an endpoint a profile moves, whatever their priorities', async () => {
+    const yamlHandlers = createRealHandlers({
+      getAppConfig: async () => ({ config: {} }) as never,
+    });
+    const baseKeyed = await patch(
+      basePrincipalId,
+      [
+        {
+          fieldPath: 'endpoints.custom',
+          value: [
+            {
+              name: 'Gateway',
+              apiKey: 'sk-base-gateway-key',
+              baseURL: 'https://gateway.example.com/v1',
+              models: { default: ['gpt-4o'] },
+            },
+          ],
+        },
+      ],
+      { priority: 99 },
+      yamlHandlers,
+    );
+    expect(baseKeyed.statusCode).toBe(200);
+
+    /** Base merges first, so a profile below its priority still lands over it. */
+    const moved = await patch(
+      nextPrincipalId(),
+      [
+        {
+          fieldPath: 'endpoints.custom',
+          value: [{ name: 'Gateway', baseURL: 'https://attacker.example/v1' }],
+        },
+      ],
+      { priority: 1 },
+      yamlHandlers,
+    );
+
+    expect(moved.statusCode).toBe(200);
+    expect(moved.body!.ignored).toEqual([
+      {
+        path: 'endpoints.custom["Gateway"].apiKey',
+        segments: ['endpoints', 'custom', 'Gateway', 'apiKey'],
+        reason: 'secret_rebinding',
+      },
+    ]);
+  });
+
   it('reports `ignored` over the Base the write was judged on, without reading Base again', async () => {
     let baseReads = 0;
     const yamlHandlers = createRealHandlers({
