@@ -6,7 +6,9 @@ import {
   setAtPath,
   unsetAtPath,
   isPlainRecord,
+  parseFieldPath,
   ConfigPathError,
+  isSegmentPrefix,
   pruneEmptyAncestors,
   getClearedTombstones,
 } from './paths';
@@ -374,9 +376,10 @@ export function applyConfigChanges(
 
 /**
  * The paths a change writes, for attributing validation issues to it: the path itself, or for
- * an entry change, the entry (by its index in the resulting own array) or the collection. A
- * removed entry is gone, so `removeEntry` writes nothing an issue could sit on: the entries it
- * leaves are unchanged, and their existing issues must not block the removal.
+ * an entry change, the entry by its index in `result`'s own array. A removed entry is gone, so
+ * `removeEntry` writes nothing an issue could sit on: the entries it leaves are unchanged, and
+ * their existing issues must not block the removal. Likewise an entry `result` no longer holds
+ * (a later change of the batch renamed it back) leaves nothing written behind.
  */
 export function getConfigChangeWrittenPaths(
   change: ConfigChange,
@@ -403,5 +406,85 @@ export function getConfigChangeWrittenPaths(
     Array.isArray(items) && keyField && key
       ? items.findIndex((item) => hasKey(item, keyField, key))
       : -1;
-  return index === -1 ? [segments] : [[...segments, String(index)]];
+  return index === -1 ? [] : [[...segments, String(index)]];
+}
+
+/**
+ * The value `stored` holds at the location `segments` names in `result`: an entry of a
+ * merged-by-key array is the stored entry with the same key, wherever it sits.
+ */
+function getStoredCounterpart(
+  segments: ConfigPathSegments,
+  result: unknown,
+  stored: unknown,
+): unknown {
+  let current = result;
+  let counterpart = stored;
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index];
+    const next = getAtPath(current, [segment]);
+    const keyField = Array.isArray(current)
+      ? getConfigArrayMergeKey(segments.slice(0, index))
+      : undefined;
+    const key = keyField ? getConfigEntryKey(next, keyField) : undefined;
+    if (keyField && key !== undefined) {
+      counterpart = Array.isArray(counterpart)
+        ? counterpart.find((item) => hasKey(item, keyField, key))
+        : undefined;
+    } else {
+      counterpart = getAtPath(counterpart, [segment]);
+    }
+    current = next;
+  }
+  return counterpart;
+}
+
+/** The tombstones at, above or below `segments`: the ones that decide what it inherits. */
+function getRelatedTombstones(
+  tombstones: readonly string[],
+  segments: ConfigPathSegments,
+): Set<string> {
+  return new Set(
+    tombstones.filter((path) => {
+      const tombstone = parseFieldPath(path);
+      return isSegmentPrefix(tombstone, segments) || isSegmentPrefix(segments, tombstone);
+    }),
+  );
+}
+
+/** Whether `result` holds the location `segments` names there other than `stored` does. */
+function isChangedLocation(
+  segments: ConfigPathSegments,
+  result: ConfigOverrideState,
+  stored: ConfigOverrideState,
+): boolean {
+  const value = getAtPath(result.overrides, segments);
+  if (
+    !isSameConfigValue(value, getStoredCounterpart(segments, result.overrides, stored.overrides))
+  ) {
+    return true;
+  }
+  const before = getRelatedTombstones(stored.tombstones, segments);
+  const after = getRelatedTombstones(result.tombstones, segments);
+  return before.size !== after.size || [...after].some((path) => !before.has(path));
+}
+
+/**
+ * The paths a batch writes, judged on its end state, for attributing validation issues to it.
+ * Each change's paths ({@link getConfigChangeWrittenPaths}) are located in `result`, the state
+ * after the whole batch, so an entry a later change moves is still named by where it ends up.
+ * Only the paths `result` holds differently from `stored` are kept: a change a later one undoes
+ * (set a field, then restore its parent) writes nothing in the end, so issues the stored
+ * document already had there are left to merge time instead of blocking the rest of the batch.
+ */
+export function getConfigBatchWrittenPaths(
+  changes: readonly ConfigChange[],
+  result: ConfigOverrideState,
+  stored: ConfigOverrideState,
+): string[][] {
+  return changes.flatMap((change) =>
+    getConfigChangeWrittenPaths(change, result).filter((segments) =>
+      isChangedLocation(segments, result, stored),
+    ),
+  );
 }

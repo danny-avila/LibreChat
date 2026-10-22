@@ -32,7 +32,7 @@ import {
   getConfigChangeIssues,
   getConfigArrayMergeKey,
   getIndexedMergeKeyIssues,
-  getConfigChangeWrittenPaths,
+  getConfigBatchWrittenPaths,
   isSameConfigValue,
   isConfigRevision,
   isConfigPathError,
@@ -1243,46 +1243,75 @@ function isYamlEntry(base: unknown, change: PreparedChange, name: string): boole
   return isPlainRecord(node) && Object.prototype.hasOwnProperty.call(node, name);
 }
 
-/** Names of the MCP servers `librechat.yaml` runs as local processes. */
-function getProcessServerNames(base: Partial<TCustomConfig>): Set<string> {
-  const servers = (base as { mcpServers?: unknown }).mcpServers;
-  if (!isPlainRecord(servers)) {
-    return new Set();
-  }
-  return new Set(
-    Object.entries(servers)
-      .filter(([, serverConfig]) => isProcessMCPServerConfig(serverConfig))
-      .map(([name]) => name),
-  );
+/**
+ * What `librechat.yaml` keeps whatever an override does: the MCP servers it runs as local
+ * processes, and the base-only fields it sets.
+ */
+interface YamlHeld {
+  processServers: ReadonlySet<string>;
+  baseOnlyPaths: ReadonlyArray<readonly string[]>;
 }
 
+function getYamlHeld(base: Partial<TCustomConfig>): YamlHeld {
+  const servers = (base as { mcpServers?: unknown }).mcpServers;
+  const processServers = isPlainRecord(servers)
+    ? Object.entries(servers)
+        .filter(([, serverConfig]) => isProcessMCPServerConfig(serverConfig))
+        .map(([name]) => name)
+    : [];
+  return {
+    processServers: new Set(processServers),
+    baseOnlyPaths: BASE_ONLY_PATHS.filter((path) => getAtPath(base, path) !== undefined),
+  };
+}
+
+type IgnoredPart = { segments: string[]; reason: AdminConfigIgnoreReason };
+
 /**
- * The parts of an applied change the runtime merge drops: a write, rename or tombstone under an
- * MCP server librechat.yaml runs as a process, whose overrides the merge never applies, and each
- * such server a tombstone of the whole section leaves in place. An `unset` there is not one: it
- * asks for the YAML value, which is what runs. A rename of a server itself never names a YAML
- * one, which the handler refuses.
+ * The parts of an applied change under an MCP server librechat.yaml runs as a process, whose
+ * overrides the merge never applies: a write, rename or tombstone there, and each such server a
+ * tombstone of the whole section leaves in place. An `unset` there is not one: it asks for the
+ * YAML value, which is what runs. A rename of a server itself never names a YAML one, which the
+ * handler refuses.
  */
-function getIgnoredSegments(
+function getProcessServerParts(
   change: PreparedChange,
   processServers: ReadonlySet<string>,
-): string[][] {
+): IgnoredPart[] {
   const [section, name] = change.target.segments;
   if (section !== 'mcpServers' || processServers.size === 0 || !IGNORABLE_OPS.has(change.op)) {
     return [];
   }
+  const reason = 'process_mcp_server';
   if (name !== undefined) {
-    return processServers.has(name) ? [[...change.target.segments]] : [];
+    return processServers.has(name) ? [{ segments: [...change.target.segments], reason }] : [];
   }
   if (change.op === 'tombstone') {
-    return [...processServers].map((server) => ['mcpServers', server]);
+    return [...processServers].map((server) => ({ segments: ['mcpServers', server], reason }));
   }
   if (!isPlainRecord(change.value)) {
     return [];
   }
   return Object.keys(change.value)
     .filter((server) => processServers.has(server))
-    .map((server) => ['mcpServers', server]);
+    .map((server) => ({ segments: ['mcpServers', server], reason }));
+}
+
+/**
+ * The parts of an applied change the runtime merge drops: those under a YAML stdio MCP server,
+ * and the base-only fields librechat.yaml sets below a tombstone (a tombstone of one itself is
+ * skipped), which the merge puts back so the tombstone hides only the rest.
+ */
+function getIgnoredParts(change: PreparedChange, held: YamlHeld): IgnoredPart[] {
+  const parts = getProcessServerParts(change, held.processServers);
+  if (change.op !== 'tombstone') {
+    return parts;
+  }
+  const { segments } = change.target;
+  const baseOnly = held.baseOnlyPaths
+    .filter((path) => path.length > segments.length && isSegmentPrefix(segments, path))
+    .map((path): IgnoredPart => ({ segments: [...path], reason: 'base_only_path' }));
+  return [...parts, ...baseOnly];
 }
 
 /** How an applied change is named in audit metadata: its path, plus the entry it addressed. */
@@ -2333,7 +2362,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           });
         }
       }
-      const processServers = getProcessServerNames(baseYaml);
+      const yamlHeld = getYamlHeld(baseYaml);
 
       interface ChangesReport {
         applied: AdminConfigChangeRef[];
@@ -2355,7 +2384,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           ignored: [],
           appliedChanges: [],
         };
-        const written: string[][] = [];
+        const appliedSteps: ConfigChange[] = [];
         let state: ConfigOverrideState = toConfigOverrideState(stored);
         for (const change of changes) {
           const steps = expandChange(change, state.overrides);
@@ -2381,13 +2410,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             report.unchanged.push(ref);
             continue;
           }
-          for (const step of steps) {
-            written.push(...getConfigChangeWrittenPaths(step, next));
-          }
+          appliedSteps.push(...steps);
           report.applied.push(ref);
           report.appliedChanges.push(change);
-          for (const segments of getIgnoredSegments(change, processServers)) {
-            report.ignored.push({ ...ref, segments, reason: 'process_mcp_server' });
+          for (const part of getIgnoredParts(change, yamlHeld)) {
+            report.ignored.push({ ...ref, ...part });
           }
           state = next;
         }
@@ -2425,6 +2452,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           return { draft: null, result: { report } };
         }
         if (documentChanged) {
+          const written = getConfigBatchWrittenPaths(appliedSteps, state, storedState);
           const issues = getConfigChangeIssues(state, baseYaml, stored, written);
           if (issues.length > 0) {
             return { draft: null, result: { stop: { kind: 'issues', issues } } };

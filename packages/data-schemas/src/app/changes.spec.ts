@@ -5,6 +5,7 @@ import {
   isConfigEntryError,
   applyConfigChanges,
   isSameConfigValue,
+  getConfigBatchWrittenPaths,
   getConfigChangeWrittenPaths,
 } from './changes';
 import { setConfigFields, unsetConfigPaths, tombstoneConfigPaths } from './mutations';
@@ -462,6 +463,69 @@ describe('getConfigChangeWrittenPaths', () => {
       ['mcpServers', 'x'],
       ['mcpServers', 'y'],
     ]);
+  });
+});
+
+describe('getConfigBatchWrittenPaths', () => {
+  const written = (stored: ConfigOverrideState, changes: ConfigChange[]): string[][] =>
+    getConfigBatchWrittenPaths(changes, applyConfigChanges(stored, changes).state, stored);
+
+  it('leaves out what a later change of the batch puts back as stored', () => {
+    const balance = { enabled: true, startBalance: 'legacy' };
+    const stored = state({ balance });
+
+    expect(
+      written(stored, [
+        { op: 'set', segments: at('balance.startBalance'), value: 1000 },
+        { op: 'set', segments: at('balance'), value: balance },
+        { op: 'set', segments: at('interface.customWelcome'), value: 'hi' },
+      ]),
+    ).toEqual([['interface', 'customWelcome']]);
+    expect(
+      written(stored, [
+        { op: 'set', segments: at('balance.startBalance'), value: 1000 },
+        { op: 'set', segments: at('balance'), value: { ...balance, enabled: false } },
+      ]),
+    ).toEqual([['balance']]);
+  });
+
+  it('keeps a path whose inherited value a tombstone change hides or shows again', () => {
+    const stored = state({ memory: { agent: { id: 'a' } } }, ['interface']);
+
+    expect(
+      written(stored, [
+        { op: 'unset', segments: at('memory.agent.id') },
+        { op: 'set', segments: at('memory.agent.id'), value: 'a' },
+      ]),
+    ).toEqual([]);
+    expect(
+      written(stored, [
+        { op: 'set', segments: at('memory.agent.id'), value: 'a' },
+        { op: 'tombstone', segments: at('memory.agent') },
+      ]),
+    ).toEqual([
+      ['memory', 'agent', 'id'],
+      ['memory', 'agent'],
+    ]);
+    expect(written(stored, [{ op: 'unset', segments: at('interface') }])).toEqual([['interface']]);
+  });
+
+  it('names an entry where the batch leaves it and compares it with the stored entry of its key', () => {
+    const stored = state({ endpoints: { custom: [endpoint('a'), endpoint('b'), endpoint('c')] } });
+
+    expect(
+      written(stored, [
+        { op: 'upsertEntry', segments: CUSTOM, entry: { ...endpoint('b'), models: ['n'] } },
+        { op: 'removeEntry', segments: CUSTOM, key: 'a' },
+      ]),
+    ).toEqual([['endpoints', 'custom', '0']]);
+    expect(
+      written(stored, [
+        { op: 'rename', segments: CUSTOM, from: 'c', to: 'z' },
+        { op: 'rename', segments: CUSTOM, from: 'z', to: 'c' },
+        { op: 'removeEntry', segments: CUSTOM, key: 'a' },
+      ]),
+    ).toEqual([]);
   });
 });
 
