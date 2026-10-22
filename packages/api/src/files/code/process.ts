@@ -570,7 +570,7 @@ export async function processCodeOutput(
       }
       return { file: Object.assign(file, { messageId, toolCallId, agentId }) };
     };
-    if (publication) return writeOutput(() => undefined);
+    if (publication) return await writeOutput(() => undefined);
     return await withFileProvisioning({
       file: { file_id, user: req.user.id, tenantId: req.user.tenantId },
       userId: req.user.id,

@@ -278,7 +278,7 @@ it('does not wait for or release a pending acquisition during deletion recovery'
   });
   const upload = jest.fn(async () => result());
   const work = provision(storage, upload);
-  const rejected = expect(work).rejects.toMatchObject({ cause: failure });
+  const rejected = work.catch((error: unknown) => error);
   await entered.wait;
   await storage.recovery.recover(scope, storage);
   await expect(
@@ -287,7 +287,7 @@ it('does not wait for or release a pending acquisition during deletion recovery'
   expect(storage.releaseFileProvision).not.toHaveBeenCalled();
   expect(upload).not.toHaveBeenCalled();
   done.release();
-  await rejected;
+  expect(await rejected).toMatchObject({ cause: failure });
   await storage.recovery.recover(scope, storage);
   expect(storage.releaseFileProvision).toHaveBeenCalledWith(
     storage.acquireFileProvision.mock.calls[0][0],
@@ -1015,17 +1015,17 @@ describe('deletion token recovery', () => {
 
   it('registers the claim before a synchronous adapter reenters deletion', async () => {
     const { storage } = setup();
-    let reentrant: Promise<void> | undefined;
+    let reentrant: Promise<unknown> | undefined;
     storage.acquireFileDeletion.mockImplementationOnce(() => {
-      reentrant = expect(
-        withFileDeletion({ file, userId: 'caller', storage, operation: jest.fn() }),
-      ).rejects.toThrow('conflicts');
+      reentrant = withFileDeletion({ file, userId: 'caller', storage, operation: jest.fn() }).catch(
+        (error: unknown) => error,
+      );
       throw new Error('synchronous acquisition failure');
     });
     await expect(
       withFileDeletion({ file, userId: 'caller', storage, operation: jest.fn() }),
     ).rejects.toThrow('synchronous acquisition failure');
-    await reentrant;
+    expect(await reentrant).toMatchObject({ message: expect.stringContaining('conflicts') });
     expect(storage.acquireFileDeletion).toHaveBeenCalledTimes(1);
     expect(storage.releaseFileDeletion).not.toHaveBeenCalled();
   });
