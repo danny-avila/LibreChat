@@ -541,6 +541,52 @@ describe('request-scoped MCP lifecycle integration', () => {
     expect(server.toolCallCount()).toBe(1);
     expect(new Set(server.observedRunIds())).toEqual(new Set(['recovery-run']));
   });
+
+  it('lets a pooled call outlive the turn that cleaned its context, keeping request-scoped servers closed', async () => {
+    const turn = createContext();
+    const pooled: ParsedServerConfig = {
+      type: 'streamable-http',
+      url: server.url,
+      source: 'yaml',
+      requiresOAuth: false,
+      initTimeout: 500,
+      headers: { 'X-Run-Id': 'static' },
+    };
+    const callPooled = () =>
+      callEcho({
+        manager,
+        config: pooled,
+        requestScopedConnections: turn,
+        runId: 'run-1',
+        value: 'select 1',
+        serverName: 'pooled',
+      });
+    try {
+      await callPooled();
+      expect(server.toolCallCount()).toBe(1);
+      expect(turn.connections.size).toBe(0);
+
+      await cleanupMCPRequestContext(turn);
+      expect(turn.cleanupStarted).toBe(true);
+
+      // A detached child keeps the parent's context after the parent turn ends.
+      await expect(callPooled()).resolves.toBeDefined();
+      expect(server.toolCallCount()).toBe(2);
+      await expect(
+        callEcho({
+          manager,
+          config: createServerConfig(server.url),
+          requestScopedConnections: turn,
+          runId: 'run-1',
+          value: 'late',
+        }),
+      ).rejects.toThrow('Request-scoped connection context is closed');
+      expect(server.toolCallCount()).toBe(2);
+    } finally {
+      await manager.disconnectUserConnection(user.id, 'pooled').catch(() => undefined);
+      MCPConnection.clearCooldown('pooled');
+    }
+  });
 });
 
 describe('operator requestHeaders integration', () => {
