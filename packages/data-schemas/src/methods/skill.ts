@@ -1177,6 +1177,13 @@ export function createSkillMethods(
       ...validateSkillFrontmatter(frontmatter),
       ...validateAlwaysApply(data.alwaysApply),
     ];
+    if (typeof data.author === 'string' && !isValidObjectIdString(data.author)) {
+      issues.push({
+        field: 'author',
+        code: 'INVALID_FORMAT',
+        message: 'Author must be a 24-character hex string',
+      });
+    }
     /* Body-level `always-apply:` only needs to be well-formed when a
        higher-precedence source won't override it (see
        `resolveAlwaysApplyFromInput` for the cascade). A caller sending

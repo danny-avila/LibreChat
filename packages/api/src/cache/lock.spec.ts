@@ -274,19 +274,34 @@ describe('createDistributedLock (in-process)', () => {
     let currentTime = 0;
     const lock = createDistributedLock({ now: () => currentTime });
 
-    const tokens: Array<string | null> = [];
     for (let i = 0; i < 200; i += 1) {
-      tokens.push(await lock.acquire(`key-${i}`, 10));
+      await lock.acquire(`key-${i}`, 10);
     }
+    const renewedToken = await lock.acquire('renewed', 10);
+    currentTime = 5;
+    expect(await lock.extend('renewed', renewedToken as string, 100)).toBe(true);
     currentTime = 20;
-    await lock.acquire('key-200', 10);
+    const replacementToken = await lock.acquire('key-0', 100);
 
-    const reacquiredFirst = await lock.acquire('key-0', 10);
-    const reacquiredSecond = await lock.acquire('key-1', 10);
+    // The live-entry sweeps at sizes 64 and 128 moved the next threshold to 256.
+    for (let i = 200; i < 255; i += 1) {
+      await lock.acquire(`key-${i}`, 100);
+    }
 
-    expect(reacquiredFirst).toMatch(UUID_PATTERN);
-    expect(reacquiredSecond).toMatch(UUID_PATTERN);
-    expect(await lock.extend('key-0', tokens[0] as string, 10)).toBe(false);
-    expect(await lock.extend('key-1', tokens[1] as string, 10)).toBe(false);
+    // Cleanup is otherwise invisible through the public API: acquire can replace
+    // an expired entry even if the sweep never removes it.
+    const deleted = jest.spyOn(Map.prototype, 'delete');
+    try {
+      await lock.acquire('key-255', 100);
+      expect(deleted.mock.calls).toEqual(Array.from({ length: 199 }, (_, i) => [`key-${i + 1}`]));
+    } finally {
+      deleted.mockRestore();
+    }
+
+    expect(await lock.acquire('renewed', 100)).toBeNull();
+    expect(await lock.release('renewed', renewedToken as string)).toBe(true);
+    expect(await lock.acquire('key-0', 100)).toBeNull();
+    expect(await lock.release('key-0', replacementToken as string)).toBe(true);
+    expect(await lock.acquire('key-200', 100)).toBeNull();
   });
 });
