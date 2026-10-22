@@ -641,9 +641,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   }
 
   /**
-   * Resolves which sections a write's response may show: the ones the caller can read plus the
-   * ones the write manages (`manage:configs:<section>` does not imply reading it, and the caller
-   * needs to see what it wrote). It covers every schema section in one batched lookup, so it
+   * Resolves which sections a write's response may show: the ones the caller can read. Those
+   * already include each section it manages, because the grant layer resolves
+   * `read:configs:<section>` from the same section's `manage:configs:<section>`, so a GET shows a
+   * section manager that whole section. The written sections are added anyway, so the reply
+   * always carries what was stored. It covers every schema section in one batched lookup, so it
    * runs alongside the write's other pre-reads, and a failed lookup fails the request before
    * anything is stored instead of turning a committed write into a 500. Broad managers can read
    * every section and skip it.

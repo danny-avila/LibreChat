@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { PrincipalModel, PrincipalType } from 'librechat-data-provider';
+import type { SystemCapability } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 
@@ -32,6 +33,7 @@ const MARKER = '/tmp/attacker-controlled';
 let mongoServer: MongoMemoryServer;
 let methods: ConfigMethods;
 let createAdminConfigHandlers: typeof import('./config').createAdminConfigHandlers;
+let generateCapabilityCheck: typeof import('~/middleware/capabilities').generateCapabilityCheck;
 let mergeConfigOverrides: DataSchemas['mergeConfigOverrides'];
 
 function mockReq(overrides: Record<string, unknown> = {}): ServerRequest {
@@ -100,6 +102,7 @@ beforeAll(async () => {
   jest.spyOn(dataSchemas.logger, 'info').mockReturnValue(dataSchemas.logger);
   ({ mergeConfigOverrides } = dataSchemas);
   ({ createAdminConfigHandlers } = await import('./config'));
+  ({ generateCapabilityCheck } = await import('~/middleware/capabilities'));
 
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
@@ -108,7 +111,10 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  await mongoose.models.Config.deleteMany({});
+  await Promise.all([
+    mongoose.models.Config.deleteMany({}),
+    mongoose.models.SystemGrant.deleteMany({}),
+  ]);
 });
 
 afterAll(async () => {
@@ -271,6 +277,64 @@ describe('admin config writes against a real Config collection', () => {
       });
       expect(remover.body?.config?.tombstones).toEqual([]);
       expect(JSON.stringify(remover.body)).not.toContain('v3:');
+    });
+
+    it('show a section manager holding real grants no more than a read shows it', async () => {
+      await seed();
+      const admin = handlersFor(async () => true);
+      const otherField = mockRes();
+      await admin.patchConfigField(
+        mockReq({
+          params,
+          body: { entries: [{ fieldPath: 'endpoints.agents.recursionLimit', value: 30 }] },
+        }),
+        otherField,
+      );
+      const otherTombstone = mockRes();
+      await admin.tombstoneConfigField(
+        mockReq({ params, body: { fieldPath: 'endpoints.bedrock' } }),
+        otherTombstone,
+      );
+      expect([otherField.statusCode, otherTombstone.statusCode]).toEqual([200, 200]);
+
+      const userId = new mongoose.Types.ObjectId().toString();
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        capability: 'manage:configs:endpoints' as SystemCapability,
+      });
+      const grants = generateCapabilityCheck({
+        getUserPrincipals: methods.getUserPrincipals,
+        hasCapabilityForPrincipals: methods.hasCapabilityForPrincipals,
+        hasAnyConfigReadAccess: methods.hasAnyConfigReadAccess,
+        getHeldCapabilities: methods.getHeldCapabilities,
+      });
+      const manager = handlersFor(grants.hasConfigCapability, {
+        hasCapability: grants.hasCapability,
+        hasAnyConfigReadAccess: grants.hasAnyConfigReadAccess,
+        getReadableConfigSections: grants.getReadableConfigSections,
+      });
+      const user = { id: userId, role: 'USER', _id: { toString: () => userId } };
+
+      const written = mockRes();
+      await manager.patchConfigField(
+        mockReq({
+          user,
+          params,
+          body: { entries: [{ fieldPath: 'endpoints.agents.disableBuilder', value: true }] },
+        }),
+        written,
+      );
+      const read = mockRes();
+      await manager.getConfig(mockReq({ user, params }), read);
+
+      expect([written.statusCode, read.statusCode]).toEqual([200, 200]);
+      expect(read.body?.config?.overrides).toEqual({
+        endpoints: { agents: { disableBuilder: true, recursionLimit: 30 } },
+      });
+      expect(read.body?.config?.tombstones).toEqual(['endpoints.bedrock']);
+      expect(written.body?.config?.overrides).toEqual(read.body?.config?.overrides);
+      expect(written.body?.config?.tombstones).toEqual(read.body?.config?.tombstones);
     });
 
     it('store nothing when the read lookup fails, so a retry is never a second write', async () => {
