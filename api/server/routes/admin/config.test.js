@@ -20,8 +20,7 @@ const mockRequireCapability = jest.fn(() => (_req, res, next) => {
 const mockDb = {
   listAllConfigs: jest.fn(),
   findConfigByPrincipal: jest.fn(),
-  upsertConfig: jest.fn(),
-  patchConfigFields: jest.fn(),
+  writeConfigDocument: jest.fn(),
   tombstoneConfigField: jest.fn(),
   unsetConfigField: jest.fn(),
   deleteConfig: jest.fn(),
@@ -78,17 +77,12 @@ describe('admin config routes', () => {
   beforeEach(() => {
     hasAdminAccess = true;
     mockDb.findConfigByPrincipal.mockResolvedValue(null);
-    mockDb.patchConfigFields.mockImplementation(async (principalType, principalId, _m, fields) => ({
+    mockDb.writeConfigDocument.mockImplementation(async (principalType, principalId, draft) => ({
+      _id: 'c1',
       principalType,
       principalId,
-      priority: 10,
-      isActive: true,
       configVersion: 1,
-      overrides: {
-        endpoints: {
-          bedrock: { inferenceProfiles: fields['endpoints.bedrock.inferenceProfiles'] },
-        },
-      },
+      ...draft,
     }));
   });
 
@@ -103,7 +97,7 @@ describe('admin config routes', () => {
       .expect(401);
 
     expect(response.body).toEqual({ message: 'Unauthorized' });
-    expect(mockDb.patchConfigFields).not.toHaveBeenCalled();
+    expect(mockDb.writeConfigDocument).not.toHaveBeenCalled();
   });
 
   it('answers 403 before the key guard without admin access', async () => {
@@ -115,7 +109,7 @@ describe('admin config routes', () => {
       .send(unsafeBody)
       .expect(403);
 
-    expect(mockDb.patchConfigFields).not.toHaveBeenCalled();
+    expect(mockDb.writeConfigDocument).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -130,7 +124,7 @@ describe('admin config routes', () => {
 
     expect(response.body.code).toBe('CONFIG_UNSAFE_KEY');
     expect(JSON.stringify(response.body)).not.toMatch(/\$where|__proto__/);
-    expect(mockDb.upsertConfig).not.toHaveBeenCalled();
+    expect(mockDb.writeConfigDocument).not.toHaveBeenCalled();
   });
 
   it('delivers dotted record keys to the write method intact', async () => {
@@ -142,14 +136,13 @@ describe('admin config routes', () => {
       })
       .expect(200);
 
-    expect(mockDb.patchConfigFields).toHaveBeenCalledWith(
+    expect(mockDb.writeConfigDocument).toHaveBeenCalledWith(
       'role',
       'USER',
-      expect.anything(),
-      { 'endpoints.bedrock.inferenceProfiles': { [PROFILE]: ARN } },
-      expect.any(Number),
-      undefined,
-      undefined,
+      expect.objectContaining({
+        overrides: { endpoints: { bedrock: { inferenceProfiles: { [PROFILE]: ARN } } } },
+      }),
+      'absent',
     );
     expect(response.body.config.overrides.endpoints.bedrock.inferenceProfiles).toEqual({
       [PROFILE]: ARN,
