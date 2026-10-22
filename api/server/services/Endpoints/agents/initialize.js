@@ -1991,6 +1991,11 @@ const initializeClientWithProvider = async ({
     filterFiles: filterFilesByAgentAccess,
     listPublications: db.listRunArtifacts,
     provisioning: {
+      fileStorage: {
+        acquireFileProvision: db.acquireFileProvision,
+        releaseFileProvision: db.releaseFileProvision,
+        commitFileProvision: db.commitFileProvision,
+      },
       provisionToCodeEnv,
       provisionToVectorDB,
       updateFile: db.updateFile,

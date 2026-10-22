@@ -163,6 +163,10 @@ describe('primeResources', () => {
           source === FileSources.vectordb ? async () => ({ deleted: true }) : code,
         clearFileEmbeddings,
         isFileStorageClean: jest.fn().mockResolvedValue(true),
+        fileStorage: {
+          acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
+          releaseFileDeletion: jest.fn().mockResolvedValue(true),
+        },
         logger: { warn: jest.fn() },
       });
       await expect(
@@ -245,6 +249,10 @@ describe('primeResources', () => {
           getDeleteFile: () => async () => ({ deleted: true }),
           clearFileEmbeddings: jest.fn().mockResolvedValue(true),
           isFileStorageClean: jest.fn().mockResolvedValue(true),
+          fileStorage: {
+            acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
+            releaseFileDeletion: jest.fn().mockResolvedValue(true),
+          },
           logger: { warn: jest.fn() },
         });
         await expect(

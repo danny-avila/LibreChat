@@ -7,10 +7,12 @@ import {
   getChatProjectFileAvailability,
   listChatProjectFileViews,
   resolveChatProjectFiles,
+  resolveChatProjectPolicyFiles,
   toCanonicalProjectResource,
   toRuntimeFile,
 } from './resources';
 import { getChatProjectContextKey, resolveChatProjectContext } from './context';
+import { filterFilesByEndpointRuntimeConfig } from '../files/filter';
 
 let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let File: mongoose.Model<IMongoFile>;
@@ -75,6 +77,68 @@ const getProjectFiles = async ({
 };
 
 describe('ChatProject resource hydration', () => {
+  it.each([
+    { searchDestination: true, routingMimeType: 'image/heic' },
+    { routingMimeType: 'image/heic' },
+    { searchDestination: false },
+    undefined,
+  ])('keeps only routing metadata in canonical and runtime files: %p', async (metadata) => {
+    const owner = new mongoose.Types.ObjectId().toString();
+    await File.create(
+      file('converted-project-file', owner, {
+        type: 'image/jpeg',
+        metadata: { ...metadata, destinationChosen: true, embeddedEntities: ['private-agent'] },
+      }),
+    );
+    const params = {
+      project: { file_ids: ['converted-project-file'] },
+      userId: owner,
+      getProjectFiles,
+    };
+    const [record] = await getProjectFiles({ fileIds: params.project.file_ids, userId: owner });
+    const resource = toCanonicalProjectResource(record);
+    if (resource.availability !== 'ready') {
+      throw new Error('Expected a ready converted Project file');
+    }
+    const [runtime] = await resolveChatProjectFiles(params);
+    const [policy] = await resolveChatProjectPolicyFiles(params);
+    const runtimeSource = {
+      ...record,
+      metadata: { ...metadata, destinationChosen: true, embeddedEntities: ['private-agent'] },
+    };
+    const direct = toRuntimeFile(runtimeSource);
+    for (const result of [resource.file, runtime, policy, direct]) {
+      expect(result.type).toBe('image/jpeg');
+      expect(result.metadata).toEqual(metadata);
+      if (metadata === undefined) {
+        expect(result).not.toHaveProperty('metadata');
+      }
+    }
+    expect(runtime).not.toHaveProperty('text');
+    expect(policy.text).toBe('must never be loaded');
+    for (const allowed of ['image/heic', 'image/jpeg']) {
+      expect(
+        filterFilesByEndpointRuntimeConfig(
+          { fileConfig: { endpoints: { openAI: { supportedMimeTypes: [allowed] } } } },
+          { files: [runtime], endpoint: 'openAI' },
+        ),
+      ).toHaveLength((metadata?.routingMimeType ?? 'image/jpeg') === allowed ? 1 : 0);
+    }
+    const withoutRouting = toCanonicalProjectResource({
+      ...record,
+      metadata: {
+        ...(metadata?.searchDestination !== undefined
+          ? { searchDestination: metadata.searchDestination }
+          : {}),
+      },
+    });
+    if (metadata?.routingMimeType !== undefined) {
+      expect(resource.version).not.toBe(withoutRouting.version);
+    } else {
+      expect(resource.version).toBe(withoutRouting.version);
+    }
+  });
+
   it.each([true, false, undefined])(
     'preserves vector presence without guessing (%s)',
     (embedded) => {

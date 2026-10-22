@@ -245,6 +245,8 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
   deleteFiles: jest.fn(),
   isFileStorageClean: jest.fn().mockResolvedValue(true),
+  acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
+  releaseFileDeletion: jest.fn().mockResolvedValue(true),
   clearFileEmbeddings: jest.fn().mockResolvedValue(true),
   findFileById: jest.fn(),
   getConvo: jest.fn(),

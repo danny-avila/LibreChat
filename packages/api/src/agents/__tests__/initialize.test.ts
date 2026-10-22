@@ -842,6 +842,46 @@ describe('initializeAgent: ChatProject context', () => {
       expect(getProjectFiles).not.toHaveBeenCalled();
     });
 
+    it.each([
+      { routingMimeType: 'text/csv', allowed: 'text/csv', admitted: true },
+      { routingMimeType: 'text/csv', allowed: 'text/plain', admitted: false },
+      { routingMimeType: undefined, allowed: 'text/plain', admitted: true },
+      { routingMimeType: undefined, allowed: 'text/csv', admitted: false },
+    ])(
+      'screens retained repairs routed as $routingMimeType against $allowed',
+      async ({ routingMimeType, allowed, admitted }) => {
+        const { result, getFiles, getProjectFiles } = await initializeRepairs({
+          projectFiles: [
+            repairFile({
+              type: 'text/plain',
+              metadata: {
+                searchDestination: true,
+                ...(routingMimeType !== undefined ? { routingMimeType } : {}),
+              },
+            }),
+          ],
+          fileConfig: {
+            endpoints: { [EModelEndpoint.openAI]: { supportedMimeTypes: [allowed] } },
+          },
+        });
+        const queued = result.provisionState?.vectorDBFiles ?? [];
+        const attached = result.tool_resources?.[EToolResources.file_search]?.files ?? [];
+        expect(queued).toHaveLength(admitted ? 1 : 0);
+        expect(attached).toHaveLength(admitted ? 1 : 0);
+        if (admitted) {
+          expect(queued[0]).toMatchObject({
+            type: 'text/plain',
+            metadata: {
+              searchDestination: true,
+              ...(routingMimeType !== undefined ? { routingMimeType } : {}),
+            },
+          });
+        }
+        expect(getFiles).not.toHaveBeenCalled();
+        expect(getProjectFiles).not.toHaveBeenCalled();
+      },
+    );
+
     it.each([undefined, false, true])(
       'queues an admitted repair without rereading it when retainedFileCleanup is %p',
       async (retainedFileCleanup) => {

@@ -6,6 +6,7 @@ export * from './context';
 export * from './deletion';
 export * from './finalize';
 export * from './storage';
+export * from './operations';
 export * from './orphan';
 export * from './extract';
 export * from './documents/crud';

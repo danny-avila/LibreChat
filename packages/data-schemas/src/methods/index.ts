@@ -1,6 +1,7 @@
 import type { ToolApprovalGrantStorage } from 'librechat-data-provider';
 import type { ScheduleMCPConsentStorage } from './scheduleConsent';
 import type { ClearFileCodeEnvRefsParams } from '~/types/file';
+import type { FileStorageMethods } from './fileStorage';
 import { createToolApprovalGrantMethods } from './toolApprovalGrant';
 import { createScheduleMCPConsentStorage } from './scheduleConsent';
 export { createScheduleMCPConsentStorage } from './scheduleConsent';
@@ -36,7 +37,9 @@ import { createTokenMethods, type TokenMethods } from './token';
 import { createTokenListMethods, type TokenListMethods } from './tokenList';
 import { createRoleMethods, RoleConflictError } from './role';
 import { createKeyMethods, type KeyMethods } from './key';
+import { createFileStorageMethods } from './fileStorage';
 import { createFileMethods } from './file';
+export { createFileStorageMethods } from './fileStorage';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
 /* Tool Favorites */
@@ -273,6 +276,7 @@ export type AllMethods = ToolApprovalGrantStorage &
   RoleMethods &
   KeyMethods &
   FileMethods &
+  FileStorageMethods &
   MemoryMethods &
   ToolFavoriteMethods &
   AgentCategoryMethods &
@@ -514,6 +518,7 @@ export function createMethods(
     ...roleMethods,
     ...createKeyMethods(mongoose),
     ...createFileMethods(mongoose),
+    ...createFileStorageMethods(mongoose),
     ...createMemoryMethods(mongoose),
     ...createToolFavoriteMethods(mongoose),
     ...createAgentCategoryMethods(mongoose),
@@ -584,6 +589,7 @@ export type {
   KeyMethods,
   MemoryMethods,
   FileMethods,
+  FileStorageMethods,
   FileOwnerScope,
   AvailableProjectFileRecord,
   ClearFileCodeEnvRefsParams,

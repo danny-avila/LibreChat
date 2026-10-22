@@ -7,6 +7,7 @@ import {
   configSchema,
 } from 'librechat-data-provider';
 import type { Agent, CodeEnvRef, TFile } from 'librechat-data-provider';
+import type { FileProvisionCommit } from '@librechat/data-schemas';
 import type { SubagentExecutionContext } from '@librechat/agents';
 import type { ProvisionCallbackDeps } from '~/files/provision/callback';
 import type { RunFileSessionDeps } from './session';
@@ -176,8 +177,18 @@ function harness(
     embedded: true,
     fileUpdate: { file_id: candidate.file_id, embedded: true },
   }));
-  const updateCodeEnvRef = jest.fn(async () => undefined);
-  const addEmbeddedEntity = jest.fn(async () => undefined);
+  const updateCodeEnvRef = jest.fn(
+    async (_update: Parameters<ProvisionCallbackDeps['updateCodeEnvRef']>[0]): Promise<unknown> =>
+      undefined,
+  );
+  const addEmbeddedEntity = jest.fn(
+    async (_update: Parameters<ProvisionCallbackDeps['addEmbeddedEntity']>[0]): Promise<unknown> =>
+      undefined,
+  );
+  const updateFile = jest.fn(
+    async (_update: Parameters<ProvisionCallbackDeps['updateFile']>[0]): Promise<unknown> =>
+      undefined,
+  );
   const emit = jest.fn(async () => undefined);
   const encodeMessages = jest.fn(async () => []);
   const spy = jest.spyOn(sessionModule, 'createRunFileSession');
@@ -200,10 +211,24 @@ function harness(
     validateMessages: jest.fn(),
     encodeMessages,
     provisioning: {
+      fileStorage: {
+        acquireFileProvision: jest.fn(async () => true),
+        releaseFileProvision: jest.fn(async () => true),
+        commitFileProvision: jest.fn(
+          async ({ claim, code, entityId, embedded }: FileProvisionCommit) => {
+            const result = code
+              ? await updateCodeEnvRef({ file_id: claim.file_id, ...code })
+              : entityId != null
+                ? await addEmbeddedEntity({ file_id: claim.file_id, entityId })
+                : await updateFile({ file_id: claim.file_id, embedded });
+            return result !== null && result !== false;
+          },
+        ),
+      },
       provisionToCodeEnv,
       provisionToVectorDB,
       updateCodeEnvRef,
-      updateFile: jest.fn(async () => undefined),
+      updateFile,
       addEmbeddedEntity,
       hasEntityEmbeddings: options.hasEntityEmbeddings,
       adoptLegacySearchEmbeddings: options.adoptLegacySearchEmbeddings,

@@ -1,8 +1,9 @@
 import { FileContext } from 'librechat-data-provider';
 import type { AgentInputs, SubagentTaskConfig, SubagentResolveContext } from '@librechat/agents';
+import type { FileProvisionCommit } from '@librechat/data-schemas';
 import type { TFile } from 'librechat-data-provider';
+import type { ProvisionCallbackDeps, ProvisionToolContext } from '~/files/provision/callback';
 import type { HostSubagentTaskConfig } from '~/agents/subagentDelivery';
-import type { ProvisionToolContext } from '~/files/provision/callback';
 import type { ServerRequest } from '~/types';
 import { createProvisionFilesCallback } from '~/files/provision/callback';
 import { SUBAGENT_COMPLETION_DELIVERY } from '~/agents/subagentDelivery';
@@ -441,14 +442,42 @@ describe('createRun code-tool eager/session wiring', () => {
           };
         },
       );
+      const updateFile = jest.fn(
+        async (_update: Parameters<ProvisionCallbackDeps['updateFile']>[0]): Promise<unknown> =>
+          undefined,
+      );
+      const updateCodeEnvRef = jest.fn(
+        async (
+          _update: Parameters<ProvisionCallbackDeps['updateCodeEnvRef']>[0],
+        ): Promise<unknown> => undefined,
+      );
+      const addEmbeddedEntity = jest.fn(
+        async (
+          _update: Parameters<ProvisionCallbackDeps['addEmbeddedEntity']>[0],
+        ): Promise<unknown> => undefined,
+      );
       const provision = createProvisionFilesCallback({
         req: { user: { id: 'user-1' } } as ServerRequest,
         agentToolContexts: contexts,
+        fileStorage: {
+          acquireFileProvision: jest.fn(async () => true),
+          releaseFileProvision: jest.fn(async () => true),
+          commitFileProvision: jest.fn(
+            async ({ claim, code, entityId, embedded }: FileProvisionCommit) => {
+              const result = code
+                ? await updateCodeEnvRef({ file_id: claim.file_id, ...code })
+                : entityId != null
+                  ? await addEmbeddedEntity({ file_id: claim.file_id, entityId })
+                  : await updateFile({ file_id: claim.file_id, embedded });
+              return result !== null && result !== false;
+            },
+          ),
+        },
         provisionToCodeEnv,
         provisionToVectorDB: jest.fn(),
-        updateFile: jest.fn(),
-        updateCodeEnvRef: jest.fn(),
-        addEmbeddedEntity: jest.fn(),
+        updateFile,
+        updateCodeEnvRef,
+        addEmbeddedEntity,
       });
       for (const child of children) {
         contexts.set(child.id, child);

@@ -7,6 +7,27 @@ import type {
   TFile,
 } from 'librechat-data-provider';
 
+export type FileStorageScope = {
+  file_id: string;
+  userId: string;
+  tenantId?: string | null;
+};
+
+export type FileStorageClaim = FileStorageScope & {
+  token: string;
+};
+
+export type FileProvisionCommit = {
+  claim: FileStorageClaim;
+  code?: { routeKey: string; ref: CodeEnvRef; legacyRef?: CodeEnvRef };
+  entityId?: string;
+  embedded?: boolean;
+};
+
+export type FileStorageDeleteClaim = FileStorageClaim & {
+  updatedAt?: Date | string;
+};
+
 /** Content snapshot whose primary and secondary storage cleanup must agree. */
 export type FileStorageCleanupParams = {
   file_id: string;
@@ -170,6 +191,11 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   filepath: string;
   storageKey?: string;
   storageRegion?: string;
+  storageOperations?: {
+    provisioning?: string[];
+    deleting?: string;
+    deletionPending?: boolean;
+  };
   object: 'file';
   embedded?: boolean;
   type: string;

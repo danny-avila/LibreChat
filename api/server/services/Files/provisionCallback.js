@@ -15,6 +15,11 @@ function createProvisionFilesCallback({
     agentToolContexts,
     resolvePrimaryAgentId,
     resolveExecutionContext,
+    fileStorage: {
+      acquireFileProvision: db.acquireFileProvision,
+      releaseFileProvision: db.releaseFileProvision,
+      commitFileProvision: db.commitFileProvision,
+    },
     provisionToCodeEnv,
     provisionToVectorDB,
     updateFile: db.updateFile,

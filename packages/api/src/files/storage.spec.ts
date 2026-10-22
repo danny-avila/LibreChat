@@ -30,12 +30,17 @@ function setup(source: string = FileSources.local) {
   const logger = { warn: jest.fn() };
   const clearFileEmbeddings = jest.fn().mockResolvedValue(true);
   const isFileStorageClean = jest.fn().mockResolvedValue(true);
+  const fileStorage = {
+    acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
+    releaseFileDeletion: jest.fn().mockResolvedValue(true),
+  };
   const remove = createDeleteFileWithSecondaryStorage<typeof req, typeof file, typeof client>({
     source,
     deleteFile: primary,
     getDeleteFile,
     clearFileEmbeddings,
     isFileStorageClean,
+    fileStorage,
     logger,
   });
   return {
@@ -45,6 +50,7 @@ function setup(source: string = FileSources.local) {
     getDeleteFile,
     clearFileEmbeddings,
     isFileStorageClean,
+    fileStorage,
     logger,
     remove,
   };
@@ -64,6 +70,7 @@ describe('createDeleteFileWithSecondaryStorage', () => {
     code.mockReturnValue(pendingCode);
 
     const deletion = remove(req, file, client);
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(vectors).toHaveBeenCalledWith(req, file);
     expect(code).toHaveBeenCalledWith(req, file);
     expect(primary).not.toHaveBeenCalled();
@@ -87,6 +94,10 @@ describe('createDeleteFileWithSecondaryStorage', () => {
         getDeleteFile,
         clearFileEmbeddings,
         isFileStorageClean,
+        fileStorage: {
+          acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
+          releaseFileDeletion: jest.fn().mockResolvedValue(true),
+        },
         logger,
       });
       isFileStorageClean.mockImplementation(
@@ -302,6 +313,10 @@ describe('createDeleteFileWithSecondaryStorage', () => {
       getDeleteFile: () => code,
       clearFileEmbeddings: jest.fn().mockResolvedValue(true),
       isFileStorageClean: jest.fn().mockResolvedValue(true),
+      fileStorage: {
+        acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
+        releaseFileDeletion: jest.fn().mockResolvedValue(true),
+      },
       logger: { warn: jest.fn() },
     });
     await deleteMapped(req, mapped);
@@ -411,6 +426,10 @@ describe('createDeleteFileWithSecondaryStorage', () => {
       getDeleteFile,
       clearFileEmbeddings: jest.fn().mockResolvedValue(true),
       isFileStorageClean: jest.fn().mockResolvedValue(true),
+      fileStorage: {
+        acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
+        releaseFileDeletion: jest.fn().mockResolvedValue(true),
+      },
       logger: { warn: jest.fn() },
     });
     await remove(req, {
@@ -430,6 +449,10 @@ describe('createDeleteFileWithSecondaryStorage', () => {
       getDeleteFile,
       clearFileEmbeddings: jest.fn().mockResolvedValue(true),
       isFileStorageClean: jest.fn().mockResolvedValue(true),
+      fileStorage: {
+        acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
+        releaseFileDeletion: jest.fn().mockResolvedValue(true),
+      },
       logger: { warn: jest.fn() },
     });
     await remove(req, {});

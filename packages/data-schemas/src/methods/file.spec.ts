@@ -1579,6 +1579,42 @@ describe('File Methods', () => {
   });
 
   describe('getProjectFiles', () => {
+    it.each([
+      { searchDestination: true, routingMimeType: 'image/heic' },
+      { routingMimeType: 'image/heic' },
+      { searchDestination: false },
+      undefined,
+    ])('preserves only routing metadata across project reads: %p', async (metadata) => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      await File.create({
+        file_id: 'converted-project-file',
+        user: userId,
+        tenantId: 'tenant-a',
+        embedded: true,
+        context: FileContext.message_attachment,
+        filename: 'converted.jpeg',
+        filepath: '/uploads/converted.jpeg',
+        type: 'image/jpeg',
+        bytes: 1,
+        text: 'private extracted content',
+        metadata: { ...metadata, destinationChosen: true, embeddedEntities: ['private-agent'] },
+      });
+      const options = { fileIds: ['converted-project-file'], userId, tenantId: 'tenant-a' };
+      const [projectFile] = await fileMethods.getProjectFiles(options);
+      const [withContent] = await fileMethods.getProjectFiles({ ...options, includeContent: true });
+      const available = await fileMethods.getAvailableProjectFiles(options);
+      for (const record of [projectFile, withContent, available.files[0]]) {
+        expect(record.type).toBe('image/jpeg');
+        expect(record.metadata).toEqual(metadata);
+        if (metadata === undefined) {
+          expect(record).not.toHaveProperty('metadata');
+        }
+      }
+      expect(projectFile).not.toHaveProperty('text');
+      expect(available.files[0]).not.toHaveProperty('text');
+      expect(withContent.text).toBe('private extracted content');
+    });
+
     it('hydrates and lists retained search intent without widening owner, tenant or context scope', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const base = {

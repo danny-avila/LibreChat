@@ -51,7 +51,7 @@ export type AvailableProjectFileRecord = {
   bytes: number;
   usage: number;
   embedded?: boolean;
-  metadata?: { searchDestination?: boolean };
+  metadata?: { searchDestination?: boolean; routingMimeType?: string };
   context?: string;
   user: string;
   tenantId?: string;
@@ -87,8 +87,18 @@ function normalizeAvailableProjectFileRecord(
     bytes: file.bytes,
     usage: file.usage,
     ...(file.embedded !== undefined ? { embedded: file.embedded } : {}),
-    ...(file.metadata?.searchDestination !== undefined
-      ? { metadata: { searchDestination: file.metadata.searchDestination } }
+    ...(file.metadata?.searchDestination !== undefined ||
+    file.metadata?.routingMimeType !== undefined
+      ? {
+          metadata: {
+            ...(file.metadata.searchDestination !== undefined
+              ? { searchDestination: file.metadata.searchDestination }
+              : {}),
+            ...(file.metadata.routingMimeType !== undefined
+              ? { routingMimeType: file.metadata.routingMimeType }
+              : {}),
+          },
+        }
       : {}),
     ...(file.context !== undefined ? { context: file.context } : {}),
     user: file.user.toString(),
@@ -119,7 +129,7 @@ export type ProjectFileRecord = {
   bytes: number;
   usage: number;
   embedded?: boolean;
-  metadata?: { searchDestination?: boolean };
+  metadata?: { searchDestination?: boolean; routingMimeType?: string };
   source?: string;
   storageKey?: string;
   storageRegion?: string;
@@ -171,8 +181,18 @@ function normalizeProjectFileRecord(file: ProjectFileRecordSource): ProjectFileR
     bytes: file.bytes,
     usage: file.usage,
     ...(file.embedded !== undefined ? { embedded: file.embedded } : {}),
-    ...(file.metadata?.searchDestination !== undefined
-      ? { metadata: { searchDestination: file.metadata.searchDestination } }
+    ...(file.metadata?.searchDestination !== undefined ||
+    file.metadata?.routingMimeType !== undefined
+      ? {
+          metadata: {
+            ...(file.metadata.searchDestination !== undefined
+              ? { searchDestination: file.metadata.searchDestination }
+              : {}),
+            ...(file.metadata.routingMimeType !== undefined
+              ? { routingMimeType: file.metadata.routingMimeType }
+              : {}),
+          },
+        }
       : {}),
     ...(file.source !== undefined ? { source: file.source } : {}),
     ...(file.storageKey !== undefined ? { storageKey: file.storageKey } : {}),
@@ -253,6 +273,8 @@ function fileStorageCleanupFilter(data: FileStorageCleanupParams): FilterQuery<I
     updatedAt: data.updatedAt ?? { $exists: false },
     'metadata.codeEnvRef': null,
     'metadata.codeEnvRefs': { $in: [null, {}] },
+    'storageOperations.provisioning.0': { $exists: false },
+    'storageOperations.deleting': { $exists: false },
     ...(data.source === FileSources.vectordb
       ? {
           embedded: data.embedded ?? { $ne: true },
@@ -645,6 +667,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         usage: 1,
         embedded: 1,
         'metadata.searchDestination': 1,
+        'metadata.routingMimeType': 1,
         source: 1,
         storageKey: 1,
         storageRegion: 1,
@@ -712,6 +735,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         usage: 1,
         embedded: 1,
         'metadata.searchDestination': 1,
+        'metadata.routingMimeType': 1,
         context: 1,
         user: 1,
         tenantId: 1,
@@ -1371,7 +1395,9 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   /** Checks the final content/presence snapshot before removing primary storage. */
   async function isFileStorageClean(data: FileStorageCleanupParams): Promise<boolean> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    if ((await File.exists(fileStorageCleanupFilter(data))) != null) return true;
+    const filter = fileStorageCleanupFilter(data);
+    delete filter['storageOperations.deleting'];
+    if ((await File.exists(filter)) != null) return true;
     if (
       !data.allowMissingFileRecord ||
       (data.source !== FileSources.openai && data.source !== FileSources.azure)

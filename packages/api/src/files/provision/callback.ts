@@ -5,7 +5,9 @@ import type { CodeEnvFile, SubagentExecutionContext } from '@librechat/agents';
 import type { TFile } from 'librechat-data-provider';
 import type { CodeEnvRefUpdate, ProvisionService } from './service';
 import type { ProvisionToolContext } from '../code/queued';
+import type { FileProvisionStorage } from '../operations';
 import type { ServerRequest } from '~/types';
+import { withFileProvisioning, FileProvisionPersistenceError } from '../operations';
 import { createCodeApiRateLimitBudget, isCodeApiRateLimitError } from '~/utils';
 import { planCodeFileUploads } from '../code/queued';
 import { isCodeFileToolName } from '~/agents/tools';
@@ -25,7 +27,10 @@ async function persistWithRetry(
 ): Promise<boolean> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      await write();
+      const result = await write();
+      if (result === null || result === false) {
+        throw new Error('File provisioning persistence returned no record');
+      }
       return true;
     } catch (error) {
       if (attempt === 1) {
@@ -40,6 +45,7 @@ export type { ProvisionToolContext } from '../code/queued';
 
 export interface ProvisionCallbackDeps {
   req: ServerRequest;
+  fileStorage: FileProvisionStorage;
   agentToolContexts: Map<string, ProvisionToolContext>;
   resolvePrimaryAgentId?: () => string | undefined;
   /** A child routed per call keeps its own context, keyed by its execution. */
@@ -93,14 +99,12 @@ function resolveProvisionContext({
  */
 export function createProvisionFilesCallback({
   req,
+  fileStorage,
   agentToolContexts,
   resolvePrimaryAgentId,
   resolveExecutionContext,
   provisionToCodeEnv,
   provisionToVectorDB,
-  updateFile,
-  updateCodeEnvRef,
-  addEmbeddedEntity,
 }: ProvisionCallbackDeps): (
   toolNames: string[],
   agentId?: string,
@@ -273,39 +277,41 @@ export function createProvisionFilesCallback({
         uploads.map(async ({ file, destination: sandboxFilename }) => {
           const provisioned = await shareProvisioning(
             shareKey(`code:${codeRouteKey}`, file, sandboxFilename),
-            async () => {
-              const {
-                referenceSet: refs,
-                refUpdate,
-                sandboxFilename: storedSandboxFilename,
-              } = await provisionToCodeEnv({
-                req,
+            () =>
+              withFileProvisioning({
                 file,
-                entity_id: entityIdForFile(file),
-                route: ctx.codeExecutionContext,
-                sandboxFilename,
-                signal,
-                rateLimitBudget: codeApiRateLimitBudget,
-              });
-              signal?.throwIfAborted();
-              /* primeCodeFiles re-reads the database and skips files without a stored
-               * reference, so a tool loaded after an unpersisted upload would run against
-               * an attachment it cannot see. Fail instead of answering from missing input. */
-              const persisted = await persistWithRetry(
-                () => updateCodeEnvRef(refUpdate),
-                (error) =>
-                  logger.error(
-                    `[provisionFiles] Failed to persist code environment reference for file ${refUpdate.file_id}`,
-                    error,
-                  ),
-              );
-              if (!persisted) {
-                throw new Error(
-                  `Failed to persist the code environment reference for file ${refUpdate.file_id}`,
-                );
-              }
-              return { refs, sandboxFilename: storedSandboxFilename };
-            },
+                userId: req.user.id,
+                storage: fileStorage,
+                operation: async (claim) => {
+                  const {
+                    referenceSet: refs,
+                    refUpdate,
+                    sandboxFilename: storedSandboxFilename,
+                  } = await provisionToCodeEnv({
+                    req,
+                    file,
+                    entity_id: entityIdForFile(file),
+                    route: ctx.codeExecutionContext,
+                    sandboxFilename,
+                    signal,
+                    rateLimitBudget: codeApiRateLimitBudget,
+                  });
+                  /* primeCodeFiles re-reads the database and skips files without a stored
+                   * reference, so a tool loaded after an unpersisted upload would run against
+                   * an attachment it cannot see. Fail instead of answering from missing input. */
+                  const persisted = await persistWithRetry(
+                    () => fileStorage.commitFileProvision({ claim, code: refUpdate }),
+                    () =>
+                      logger.error(
+                        `[provisionFiles] Failed to persist code environment reference for file ${refUpdate.file_id}`,
+                      ),
+                  );
+                  if (!persisted) {
+                    throw new FileProvisionPersistenceError();
+                  }
+                  return { refs, sandboxFilename: storedSandboxFilename };
+                },
+              }),
           );
           const { refs: referenceSet, sandboxFilename: returnedSandboxFilename } = provisioned;
           file.metadata = { ...file.metadata, ...referenceSet };
@@ -354,37 +360,46 @@ export function createProvisionFilesCallback({
       const queuedVectorFiles = provisionState.vectorDBFiles;
       const results = await Promise.allSettled(
         queuedVectorFiles.map(async (file) => {
-          const result = await shareProvisioning(shareKey('search', file), async () => {
-            const provisioned = await provisionToVectorDB({
-              req,
+          const result = await shareProvisioning(shareKey('search', file), () =>
+            withFileProvisioning({
               file,
-              entity_id: entityIdForFile(file),
-              signal,
-            });
-            signal?.throwIfAborted();
-            /* The vectors are already stored, so a failed flag write costs a re-embed next
-             * turn rather than this turn's results. Logged, not fatal. */
-            if (provisioned.embedded && provisioned.fileUpdate) {
-              const update = provisioned.fileUpdate;
-              /* Vectors live under the entity that provisioned them, so the namespace is
-               * recorded alongside the flag. Agents sharing a record, as a duplicate does
-               * with its source, each need their own embedding, and an unscoped upload
-               * lands in the user's namespace rather than in none. */
-              const namespace = namespaceForFile(file);
-              await persistWithRetry(
-                () =>
-                  namespace != null
-                    ? addEmbeddedEntity({ file_id: update.file_id, entityId: namespace })
-                    : updateFile(update),
-                (error) =>
-                  logger.error(
-                    `[provisionFiles] Failed to persist embedding state for file ${update.file_id}`,
-                    error,
-                  ),
-              );
-            }
-            return provisioned;
-          });
+              userId: req.user.id,
+              storage: fileStorage,
+              operation: async (claim) => {
+                const provisioned = await provisionToVectorDB({
+                  req,
+                  file,
+                  entity_id: entityIdForFile(file),
+                  signal,
+                });
+                /* Keep the claim until the vector namespace is durably recorded. */
+                if (provisioned.embedded && provisioned.fileUpdate) {
+                  const update = provisioned.fileUpdate;
+                  /* Vectors live under the entity that provisioned them, so the namespace is
+                   * recorded alongside the flag. Agents sharing a record, as a duplicate does
+                   * with its source, each need their own embedding, and an unscoped upload
+                   * lands in the user's namespace rather than in none. */
+                  const namespace = namespaceForFile(file);
+                  const persisted = await persistWithRetry(
+                    () =>
+                      fileStorage.commitFileProvision({
+                        claim,
+                        entityId: namespace ?? undefined,
+                        embedded: true,
+                      }),
+                    () =>
+                      logger.error(
+                        `[provisionFiles] Failed to persist embedding state for file ${update.file_id}`,
+                      ),
+                  );
+                  if (!persisted) {
+                    throw new FileProvisionPersistenceError();
+                  }
+                }
+                return provisioned;
+              },
+            }),
+          );
           if (result.embedded) {
             file.embedded = true;
             const namespace = namespaceForFile(file);

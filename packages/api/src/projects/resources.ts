@@ -92,6 +92,9 @@ function canonicalResourceVersion(
         availability,
         embedded: file.embedded ?? null,
         searchDestination: file.metadata?.searchDestination ?? null,
+        ...(file.metadata?.routingMimeType !== undefined
+          ? { routingMimeType: file.metadata.routingMimeType }
+          : {}),
         context: file.context ?? null,
         expiredAt: file.expiredAt?.toISOString() ?? null,
         createdAt: file.createdAt?.toISOString() ?? null,
@@ -157,7 +160,7 @@ type RuntimeFileSource = {
   user: string | { toString(): string };
   tenantId?: string;
   embedded?: boolean;
-  metadata?: { searchDestination?: boolean };
+  metadata?: { searchDestination?: boolean; routingMimeType?: string };
   source?: string;
   storageKey?: string;
   storageRegion?: string;
@@ -183,7 +186,19 @@ export function toRuntimeFile(file: RuntimeFileSource): TFile {
     bytes: file.bytes,
     usage: file.usage,
     embedded: file.embedded === true,
-    ...(file.metadata != null ? { metadata: file.metadata } : {}),
+    ...(file.metadata?.searchDestination !== undefined ||
+    file.metadata?.routingMimeType !== undefined
+      ? {
+          metadata: {
+            ...(file.metadata.searchDestination !== undefined
+              ? { searchDestination: file.metadata.searchDestination }
+              : {}),
+            ...(file.metadata.routingMimeType !== undefined
+              ? { routingMimeType: file.metadata.routingMimeType }
+              : {}),
+          },
+        }
+      : {}),
     ...(source != null ? { source } : {}),
     ...(file.storageKey != null ? { storageKey: file.storageKey } : {}),
     ...(file.storageRegion != null ? { storageRegion: file.storageRegion } : {}),

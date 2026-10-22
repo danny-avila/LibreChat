@@ -110,6 +110,10 @@ it('invalidates a confirmed code pointer even when a later vector deletion fails
           },
     clearFileEmbeddings,
     isFileStorageClean: jest.fn().mockResolvedValue(true),
+    fileStorage: {
+      acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
+      releaseFileDeletion: jest.fn().mockResolvedValue(true),
+    },
     logger: { warn: jest.fn() },
   });
   await expect(

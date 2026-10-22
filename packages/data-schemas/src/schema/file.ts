@@ -62,6 +62,11 @@ const file: Schema<IMongoFile> = new Schema(
     storageRegion: {
       type: String,
     },
+    storageOperations: {
+      provisioning: { type: [String], default: undefined },
+      deleting: { type: String, default: undefined },
+      deletionPending: { type: Boolean, default: undefined },
+    },
     object: {
       type: String,
       required: true,

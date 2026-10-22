@@ -1,7 +1,9 @@
 import { FileSources, getCodeEnvRefs } from 'librechat-data-provider';
 import type { ClearFileEmbeddingsParams, FileStorageCleanupParams } from '@librechat/data-schemas';
 import type { CodeEnvReferenceSet } from 'librechat-data-provider';
+import type { FileDeleteStorage } from './operations';
 import { getSafeErrorMetadata } from '../utils/errors';
+import { withFileDeletion } from './operations';
 
 const MISSING_STORAGE_CODES = new Set<string | number>([
   404,
@@ -83,6 +85,7 @@ export function createDeleteFileWithSecondaryStorage<
   getDeleteFile,
   clearFileEmbeddings,
   isFileStorageClean,
+  fileStorage,
   logger,
 }: {
   source: string;
@@ -90,6 +93,7 @@ export function createDeleteFileWithSecondaryStorage<
   getDeleteFile: (source: string) => DeleteStorageFile<TRequest, TFile>;
   clearFileEmbeddings: (data: ClearFileEmbeddingsParams) => Promise<boolean>;
   isFileStorageClean: (data: FileStorageCleanupParams) => Promise<boolean>;
+  fileStorage: FileDeleteStorage;
   logger: { warn: (message: string, error: unknown) => void };
 }): DeleteStorageFile<TRequest, TFile, TClient> {
   return async (req, file, client) => {
@@ -108,115 +112,128 @@ export function createDeleteFileWithSecondaryStorage<
     ) {
       throw new Error('Retained file cleanup requires upgraded readers');
     }
-    const secondaries: Array<DeleteStorageFile<TRequest, TFile>> = [];
-    let vectorIndex = -1;
-    if (file.embedded === true && source !== FileSources.vectordb) {
-      vectorIndex = secondaries.length;
-      secondaries.push(getDeleteFile(FileSources.vectordb));
-    }
-    if (hasCodeEnvRef && source !== FileSources.execute_code) {
-      secondaries.push(getDeleteFile(FileSources.execute_code));
-    }
-
-    const remove = async (operation: () => Promise<unknown>): Promise<unknown> => {
-      try {
-        return await operation();
-      } catch (error) {
-        if (!isMissingStorageError(error)) {
-          throw error;
-        }
-        logger.warn('File storage was already missing during delete', getSafeErrorMetadata(error));
-        return { deleted: true };
+    const deleteStorage = async (primaryDeleted: () => void): Promise<void> => {
+      const secondaries: Array<DeleteStorageFile<TRequest, TFile>> = [];
+      let vectorIndex = -1;
+      if (file.embedded === true && source !== FileSources.vectordb) {
+        vectorIndex = secondaries.length;
+        secondaries.push(getDeleteFile(FileSources.vectordb));
       }
-    };
+      if (hasCodeEnvRef && source !== FileSources.execute_code) {
+        secondaries.push(getDeleteFile(FileSources.execute_code));
+      }
 
-    const reconcileVectors = async (): Promise<void> => {
-      try {
+      const remove = async (operation: () => Promise<unknown>): Promise<unknown> => {
+        try {
+          return await operation();
+        } catch (error) {
+          if (!isMissingStorageError(error)) {
+            throw error;
+          }
+          logger.warn(
+            'File storage was already missing during delete',
+            getSafeErrorMetadata(error),
+          );
+          return { deleted: true };
+        }
+      };
+
+      const reconcileVectors = async (): Promise<void> => {
+        try {
+          if (
+            !file.file_id ||
+            !(await clearFileEmbeddings({
+              file_id: file.file_id,
+              userId: file.user?.toString() ?? req.user.id,
+              tenantId: file.tenantId,
+              updatedAt: file.updatedAt,
+              embeddedEntities: readEmbeddedEntities(file.metadata?.embeddedEntities),
+            }))
+          ) {
+            throw new Error('Embedding snapshot changed');
+          }
+        } catch (error) {
+          throw new Error('File embedding reconciliation failed', { cause: error });
+        }
+        file.embedded = false;
+        file.metadata = { ...file.metadata, searchDestination: true };
+        delete file.metadata.embeddedEntities;
+      };
+      const results = await Promise.allSettled(
+        secondaries.map((deleteSecondary) => remove(() => deleteSecondary(req, file))),
+      );
+      const vectors = results[vectorIndex];
+      if (vectorIndex >= 0 && vectors?.status === 'fulfilled') {
         if (
-          !file.file_id ||
-          !(await clearFileEmbeddings({
-            file_id: file.file_id,
-            userId: file.user?.toString() ?? req.user.id,
-            tenantId: file.tenantId,
-            updatedAt: file.updatedAt,
-            embeddedEntities: readEmbeddedEntities(file.metadata?.embeddedEntities),
-          }))
+          vectors.value == null ||
+          typeof vectors.value !== 'object' ||
+          !('deleted' in vectors.value) ||
+          vectors.value.deleted !== true
         ) {
-          throw new Error('Embedding snapshot changed');
+          throw new Error('Vector deletion was not confirmed');
         }
-      } catch (error) {
-        throw new Error('File embedding reconciliation failed', { cause: error });
+        await reconcileVectors();
       }
-      file.embedded = false;
-      file.metadata = { ...file.metadata, searchDestination: true };
-      delete file.metadata.embeddedEntities;
-    };
-    const results = await Promise.allSettled(
-      secondaries.map((deleteSecondary) => remove(() => deleteSecondary(req, file))),
-    );
-    const vectors = results[vectorIndex];
-    if (vectorIndex >= 0 && vectors?.status === 'fulfilled') {
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          throw result.reason;
+        }
+      }
+      const code = results[vectorIndex >= 0 ? 1 : 0];
       if (
-        vectors.value == null ||
-        typeof vectors.value !== 'object' ||
-        !('deleted' in vectors.value) ||
-        vectors.value.deleted !== true
+        hasCodeEnvRef &&
+        source !== FileSources.execute_code &&
+        code?.status === 'fulfilled' &&
+        (code.value == null ||
+          typeof code.value !== 'object' ||
+          !('deleted' in code.value) ||
+          code.value.deleted !== true)
       ) {
-        throw new Error('Vector deletion was not confirmed');
+        throw new Error('Code storage deletion was not confirmed');
       }
-      await reconcileVectors();
-    }
-    for (const result of results) {
-      if (result.status === 'rejected') {
-        throw result.reason;
-      }
-    }
-    const code = results[vectorIndex >= 0 ? 1 : 0];
-    if (
-      hasCodeEnvRef &&
-      source !== FileSources.execute_code &&
-      code?.status === 'fulfilled' &&
-      (code.value == null ||
-        typeof code.value !== 'object' ||
-        !('deleted' in code.value) ||
-        code.value.deleted !== true)
-    ) {
-      throw new Error('Code storage deletion was not confirmed');
-    }
-    const confirmCleanup = async (): Promise<void> => {
-      if (!file.file_id) return;
-      try {
-        if (
-          !(await isFileStorageClean({
-            file_id: file.file_id,
-            userId: file.user?.toString() ?? req.user.id,
-            tenantId: providerOnly ? req.user.tenantId : file.tenantId,
-            updatedAt: file.updatedAt,
-            ...(providerOnly ? { allowMissingFileRecord: true } : {}),
-            source,
-            embedded: file.embedded,
-            embeddedEntities: readEmbeddedEntities(file.metadata?.embeddedEntities),
-          }))
-        ) {
-          throw new Error('File storage snapshot changed');
+      const confirmCleanup = async (): Promise<void> => {
+        if (!file.file_id) return;
+        try {
+          if (
+            !(await isFileStorageClean({
+              file_id: file.file_id,
+              userId: file.user?.toString() ?? req.user.id,
+              tenantId: providerOnly ? req.user.tenantId : file.tenantId,
+              updatedAt: file.updatedAt,
+              ...(providerOnly ? { allowMissingFileRecord: true } : {}),
+              source,
+              embedded: file.embedded,
+              embeddedEntities: readEmbeddedEntities(file.metadata?.embeddedEntities),
+            }))
+          ) {
+            throw new Error('File storage snapshot changed');
+          }
+        } catch (error) {
+          throw new Error('File storage cleanup was not confirmed', { cause: error });
         }
-      } catch (error) {
-        throw new Error('File storage cleanup was not confirmed', { cause: error });
+      };
+      if (source !== FileSources.execute_code) await confirmCleanup();
+      const primary = await remove(() => deleteFile(req, file, client));
+      if (
+        ((source === FileSources.vectordb && file.embedded === true) ||
+          (source === FileSources.execute_code && hasCodeEnvRef)) &&
+        (primary == null ||
+          typeof primary !== 'object' ||
+          !('deleted' in primary) ||
+          primary.deleted !== true)
+      ) {
+        throw new Error('Primary secondary-store deletion was not confirmed');
       }
+      primaryDeleted();
+      if (source === FileSources.vectordb && file.embedded === true) await reconcileVectors();
+      if (source === FileSources.execute_code) await confirmCleanup();
     };
-    if (source !== FileSources.execute_code) await confirmCleanup();
-    const primary = await remove(() => deleteFile(req, file, client));
-    if (
-      ((source === FileSources.vectordb && file.embedded === true) ||
-        (source === FileSources.execute_code && hasCodeEnvRef)) &&
-      (primary == null ||
-        typeof primary !== 'object' ||
-        !('deleted' in primary) ||
-        primary.deleted !== true)
-    ) {
-      throw new Error('Primary secondary-store deletion was not confirmed');
-    }
-    if (source === FileSources.vectordb && file.embedded === true) await reconcileVectors();
-    if (source === FileSources.execute_code) await confirmCleanup();
+    if (!file.file_id || providerOnly) return deleteStorage(() => undefined);
+    return withFileDeletion({
+      file: { ...file, file_id: file.file_id },
+      userId: req.user.id,
+      storage: fileStorage,
+      operation: deleteStorage,
+    });
   };
 }

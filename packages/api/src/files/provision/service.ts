@@ -327,8 +327,8 @@ export function createProvisionService({
           signal,
         }),
     });
-    signal?.throwIfAborted();
 
+    /* A successful upload must reach pointer persistence even if cancellation just arrived. */
     /* Merge rather than overwrite: the eager upload path persists the same shape via
      * mergeCodeEnvRef, so both the legacy pointer and the route-keyed map stay in sync
      * and pointers for other Code API routes survive re-provisioning. */
@@ -424,7 +424,6 @@ export function createProvisionService({
         entity_id,
         signal,
       });
-      signal?.throwIfAborted();
 
       const embedded = embeddingResult?.embedded ?? false;
 

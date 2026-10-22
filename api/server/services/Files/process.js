@@ -273,6 +273,10 @@ const processDeleteRequest = async ({ req, files }) => {
         getDeleteFile: (src) => getDeleteMethod({ source: src, deletionMethods }),
         clearFileEmbeddings: db.clearFileEmbeddings,
         isFileStorageClean: db.isFileStorageClean,
+        fileStorage: {
+          acquireFileDeletion: db.acquireFileDeletion,
+          releaseFileDeletion: db.releaseFileDeletion,
+        },
         logger,
       }),
       promises,

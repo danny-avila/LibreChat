@@ -64,6 +64,8 @@ const mockParseSandboxImageChunk = jest.fn((response) => response);
 const passthroughWithTimeout = async (promise) => promise;
 jest.mock('@librechat/api', () => {
   return {
+    withFileProvisioning: jest.requireActual('@librechat/api').withFileProvisioning,
+    confirmFileProvision: jest.requireActual('@librechat/api').confirmFileProvision,
     processCodeOutput: jest.requireActual('@librechat/api').processCodeOutput,
     createSandboxTextReader: jest.requireActual('@librechat/api').createSandboxTextReader,
     prepareCodeOutputBufferForInspection:
@@ -212,10 +214,16 @@ jest.mock('@librechat/agents', () => ({
 const mockClaimCodeFile = jest.fn();
 const mockCommitCodeFile = jest.fn();
 const mockUpdateFile = jest.fn();
+const mockAcquireFileProvision = jest.fn(async () => true);
+const mockReleaseFileProvision = jest.fn(async () => true);
+const mockCommitFileProvision = jest.fn();
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({}),
   getFiles: jest.fn(),
   updateFile: mockUpdateFile,
+  acquireFileProvision: (...args) => mockAcquireFileProvision(...args),
+  releaseFileProvision: (...args) => mockReleaseFileProvision(...args),
+  commitFileProvision: (...args) => mockCommitFileProvision(...args),
   claimCodeFile: (...args) => mockClaimCodeFile(...args),
   commitCodeFile: mockCommitCodeFile,
 }));
@@ -298,6 +306,16 @@ describe('Code Process', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAcquireFileProvision.mockReset().mockResolvedValue(true);
+    mockReleaseFileProvision.mockReset().mockResolvedValue(true);
+    mockCommitFileProvision.mockReset().mockImplementation(async ({ claim, code }) => {
+      const result = await mockUpdateFile({
+        file_id: claim.file_id,
+        'metadata.codeEnvRef': code.legacyRef ?? code.ref,
+        [`metadata.codeEnvRefs.${code.routeKey}`]: code.ref,
+      });
+      return result !== null && result !== false;
+    });
     fileSizeLimitConfig.value = 20 * 1024 * 1024;
     // Default mock: atomic claim returns a new file record (no existing file)
     mockClaimCodeFile.mockResolvedValue({
@@ -3082,6 +3100,141 @@ describe('Code Process', () => {
       mockAxios.mockResolvedValue({ data: null });
       return { handleFileUpload, getDownloadStream };
     }
+
+    function claimedFile() {
+      return {
+        file_id: 'claimed-file',
+        user: 'user-123',
+        tenantId: 'tenant-1',
+        filename: 'report.csv',
+        filepath: '/uploads/report.csv',
+        source: 'local',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'OLD_SESSION',
+            file_id: 'OLD_ID',
+          },
+        },
+      };
+    }
+
+    function primeClaimedFile(file) {
+      return primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: { execute_code: { file_ids: [file.file_id] } },
+        agentId: 'agent-id',
+      });
+    }
+
+    it('does not open a stream or upload when the durable claim is denied', async () => {
+      const dbFile = claimedFile();
+      const { handleFileUpload, getDownloadStream } = setupReuploadMocks({
+        storage_session_id: 'NEW_SESSION',
+        file_id: 'NEW_ID',
+      });
+      getFiles.mockResolvedValue([dbFile]);
+      mockAcquireFileProvision.mockResolvedValueOnce(false);
+
+      await expect(primeClaimedFile(dbFile)).rejects.toThrow();
+
+      expect(mockAcquireFileProvision).toHaveBeenCalledTimes(1);
+      expect(getDownloadStream).not.toHaveBeenCalled();
+      expect(handleFileUpload).not.toHaveBeenCalled();
+      expect(updateFile).not.toHaveBeenCalled();
+      expect(mockReleaseFileProvision).not.toHaveBeenCalled();
+    });
+
+    it('holds the durable claim through stream upload and pointer persistence', async () => {
+      const dbFile = claimedFile();
+      const { handleFileUpload } = setupReuploadMocks({});
+      getFiles.mockResolvedValue([dbFile]);
+      let finishUpload;
+      let finishWrite;
+      const uploadGate = new Promise((resolve) => {
+        finishUpload = resolve;
+      });
+      const writeGate = new Promise((resolve) => {
+        finishWrite = resolve;
+      });
+      handleFileUpload.mockImplementation(async () => {
+        expect(mockAcquireFileProvision).toHaveBeenCalledTimes(1);
+        await uploadGate;
+        return { storage_session_id: 'NEW_SESSION', file_id: 'NEW_ID' };
+      });
+      updateFile.mockImplementation(async () => {
+        await writeGate;
+        return {};
+      });
+      const pending = primeClaimedFile(dbFile);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(handleFileUpload).toHaveBeenCalledTimes(1);
+      expect(updateFile).not.toHaveBeenCalled();
+      expect(mockReleaseFileProvision).not.toHaveBeenCalled();
+      finishUpload();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(updateFile).toHaveBeenCalledTimes(1);
+      expect(mockReleaseFileProvision).not.toHaveBeenCalled();
+      finishWrite();
+      const result = await pending;
+      expect(result.files).toEqual([expect.objectContaining({ id: 'NEW_ID' })]);
+      expect(mockReleaseFileProvision).toHaveBeenCalledTimes(1);
+      expect(mockAcquireFileProvision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file_id: dbFile.file_id,
+          userId: dbFile.user,
+          tenantId: dbFile.tenantId,
+          token: expect.any(String),
+        }),
+      );
+      expect(mockReleaseFileProvision.mock.calls[0]).toEqual(
+        mockAcquireFileProvision.mock.calls[0],
+      );
+      expect(mockCommitFileProvision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          claim: mockAcquireFileProvision.mock.calls[0][0],
+          code: expect.objectContaining({
+            routeKey: 'default',
+            ref: expect.objectContaining({ file_id: 'NEW_ID' }),
+          }),
+        }),
+      );
+    });
+
+    it('does not seed a remote pointer when its conditional commit is rejected', async () => {
+      const dbFile = claimedFile();
+      setupReuploadMocks({ storage_session_id: 'NEW_SESSION', file_id: 'NEW_ID' });
+      getFiles.mockResolvedValue([dbFile]);
+      mockCommitFileProvision.mockResolvedValueOnce(false);
+      await expect(primeClaimedFile(dbFile)).rejects.toThrow();
+      expect(mockCommitFileProvision).toHaveBeenCalledTimes(1);
+      expect(mockReleaseFileProvision).not.toHaveBeenCalled();
+    });
+
+    it.each(['upload', 'persist'])(
+      'handles the durable claim after a %s failure',
+      async (failure) => {
+        const dbFile = claimedFile();
+        const { handleFileUpload } = setupReuploadMocks({
+          storage_session_id: 'NEW_SESSION',
+          file_id: 'NEW_ID',
+        });
+        getFiles.mockResolvedValue([dbFile]);
+        if (failure === 'upload')
+          handleFileUpload.mockRejectedValueOnce(new Error('upload unavailable'));
+        else updateFile.mockRejectedValueOnce(new Error('database unavailable'));
+        await expect(primeClaimedFile(dbFile)).rejects.toThrow();
+        if (failure === 'upload') {
+          expect(mockReleaseFileProvision).toHaveBeenCalledTimes(1);
+          expect(mockReleaseFileProvision.mock.calls[0]).toEqual(
+            mockAcquireFileProvision.mock.calls[0],
+          );
+        } else {
+          expect(mockReleaseFileProvision).not.toHaveBeenCalled();
+        }
+      },
+    );
 
     it('recovers a throttled stale-file reupload with a fresh stream', async () => {
       const controller = new AbortController();
