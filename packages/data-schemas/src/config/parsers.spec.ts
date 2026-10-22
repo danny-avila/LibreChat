@@ -1173,14 +1173,14 @@ describe('jsonTruncateFormat structured events', () => {
     const message = 'x'.repeat(300);
     const splat = [{ requestId: 'request-123' }];
     const ownKeys = jest.fn(Reflect.ownKeys);
-    const info = new Proxy(
+    const info = new Proxy<winston.Logform.TransformableInfo>(
       {
         level: 'error',
         message,
         [LEVEL]: 'error',
         [MESSAGE_SYMBOL]: message,
         [SPLAT_SYMBOL]: splat,
-      } satisfies winston.Logform.TransformableInfo,
+      },
       { ownKeys },
     );
 
