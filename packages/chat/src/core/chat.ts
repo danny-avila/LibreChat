@@ -387,6 +387,37 @@ const defaultApplyEvent = (event: ChatEvent, context: ChatEventContext) => {
 };
 
 /**
+ * Undoes an optimistic write on the list as it stands now: rows it added go, rows it changed or
+ * removed come back as they were, and a row someone else wrote since then keeps that write.
+ */
+const undoOptimisticWrite = (
+  before: TMessage[],
+  written: TMessage[],
+  current: TMessage[],
+): TMessage[] => {
+  const prior = new Map(before.map((message) => [message.messageId, message]));
+  const wrote = new Map(written.map((message) => [message.messageId, message]));
+  const next: TMessage[] = [];
+  const kept = new Set<string>();
+  for (const message of current) {
+    const was = prior.get(message.messageId);
+    const ours = wrote.get(message.messageId) === message;
+    if (was == null && ours) {
+      continue;
+    }
+    next.push(ours && was != null ? was : message);
+    kept.add(message.messageId);
+  }
+  before.forEach((message, index) => {
+    if (kept.has(message.messageId) || wrote.has(message.messageId)) {
+      return;
+    }
+    next.splice(Math.min(index, next.length), 0, message);
+  });
+  return next;
+};
+
+/**
  * Closes the stream of a start that answered after the chat let it go. Only a disposal lets a
  * start go, and a disposed chat leaves the server's generation running, as it does an attached one.
  */
@@ -537,18 +568,16 @@ export class Chat {
         active.controller.signal,
       );
       active.generation.responseId = prepared.responseMessageId;
-      /** The rows the optimistic write added, which a start the server replaced never admitted. */
-      let added: Set<string> = new Set();
+      /** The list before and after the optimistic write, which a replaced start rolls back. */
+      let optimisticWrite: { before: TMessage[]; written: TMessage[] } | undefined;
       if (prepared.messages) {
         const optimistic = prepared.messages;
         await this.executor.run(() => {
           if (!active.controller.signal.aborted) {
-            const held = new Set(this.messages.map((message) => message.messageId));
-            const next = typeof optimistic === 'function' ? optimistic(this.messages) : optimistic;
-            added = new Set(
-              next.filter((message) => !held.has(message.messageId)).map((m) => m.messageId),
-            );
-            this.write(next);
+            const before = this.messages;
+            const written = typeof optimistic === 'function' ? optimistic(before) : optimistic;
+            optimisticWrite = { before, written };
+            this.write(written);
           }
         });
       }
@@ -593,10 +622,11 @@ export class Chat {
         /** A start the server attached to a generation already running is an attachment too. */
         active.attached = result.stream.resumed === true;
       } else if (result.status === 'replaced') {
-        if (added.size > 0) {
-          /** The server ran a newer generation instead, so this turn's optimistic rows go. */
+        const rollback = optimisticWrite;
+        if (rollback) {
+          /** The server ran a newer generation instead, so this turn's optimistic write is undone. */
           await this.executor.run(() => {
-            this.write(this.messages.filter((message) => !added.has(message.messageId)));
+            this.write(undoOptimisticWrite(rollback.before, rollback.written, this.messages));
           });
         }
         /** The replacement's response is not this turn's placeholder; its first frame names it. */

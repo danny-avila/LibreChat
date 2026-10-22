@@ -984,6 +984,78 @@ describe('Chat attachments and reported conversations', () => {
     expect(attachedWith).toEqual(['earlier-1']);
   });
 
+  it.each([
+    [
+      'restores a row it overwrote',
+      (current: TMessage[]) =>
+        current.map((m) => (m.messageId === 'earlier-2' ? { ...m, text: '' } : m)),
+      undefined,
+      ['earlier-1:Earlier', 'earlier-2:Answer'],
+    ],
+    [
+      'restores a row it removed in place',
+      (current: TMessage[]) => current.filter((m) => m.messageId !== 'earlier-1'),
+      undefined,
+      ['earlier-1:Earlier', 'earlier-2:Answer'],
+    ],
+    [
+      'keeps a later write to a row it overwrote',
+      (current: TMessage[]) =>
+        current.map((m) => (m.messageId === 'earlier-2' ? { ...m, text: '' } : m)),
+      (current: TMessage[]) =>
+        current.map((m) => (m.messageId === 'earlier-2' ? { ...m, text: 'External' } : m)),
+      ['earlier-1:Earlier', 'earlier-2:External'],
+    ],
+  ])(
+    'undoes the optimistic write of a replaced start: %s',
+    async (_label, optimistic, external, expected) => {
+      const earlier: TMessage[] = [
+        { ...placeholder, messageId: 'earlier-1', text: 'Earlier' },
+        { ...placeholder, messageId: 'earlier-2', text: 'Answer' },
+      ];
+      const stream = createStream({ streamId: 'stream-2', generationCreatedAt: 200 });
+      const state = createState(earlier);
+      let attachedWith: string[] = [];
+      let answer: (() => void) | undefined;
+      const { chat } = setup(
+        {
+          state,
+          prepareRequest: jest.fn(() => ({ payload, messages: optimistic })),
+        },
+        {
+          sendMessages: jest.fn(
+            () =>
+              new Promise((resolve) => {
+                answer = () =>
+                  resolve({
+                    status: 'replaced' as const,
+                    generationProtocolVersion: 2,
+                    conversationId: 'convo-1',
+                    streamId: 'stream-2',
+                    generationCreatedAt: 200,
+                  });
+              }),
+          ),
+          reconnectToStream: jest.fn(async () => {
+            attachedWith = chat.messages.map((m) => `${m.messageId}:${m.text}`);
+            return stream;
+          }),
+        },
+      );
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      if (external) {
+        state.replaceMessages(external(state.messages));
+      }
+      answer?.();
+      await flush();
+      stream.push(finalEvent({ requestMessage: null, responseMessage: null }));
+      await sent;
+
+      expect(attachedWith).toEqual(expected);
+    },
+  );
+
   it('reports an error the generation itself sent on an attachment as terminal', async () => {
     const stream = createStream({ streamId: 'stream-2', generationCreatedAt: 200 });
     const { chat, onFinish } = replacing(stream);
