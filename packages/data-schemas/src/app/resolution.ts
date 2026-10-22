@@ -9,13 +9,21 @@ import {
   configSchema,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
-import type { AdminConfigMergeRules, AppConfig, IConfig, TWebSearchKeys } from '~/types';
+import type { AdminConfigMergeRules, AppConfig, Config, TWebSearchKeys } from '~/types';
+import type { ConfigFieldWrite } from './mutations';
+import { setConfigFields, toConfigOverrideState } from './mutations';
 import { webSearchPairedFields, unbindWebSearchKeys } from './web';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
-import { getTombstonePathsToClear } from '~/methods/config';
+import { parseFieldPath } from './paths';
 import logger from '~/config/winston';
 
 type AnyObject = { [key: string]: unknown };
+
+/** The parts of a principal's config document the merge reads, whichever store returned it. */
+export type ConfigOverrideLayer = Pick<Config, 'principalType' | 'priority' | 'overrides'> & {
+  principalId: { toString(): string };
+  tombstones?: readonly unknown[];
+};
 
 const MAX_MERGE_DEPTH = 10;
 const MAX_STRIP_PASSES = 16;
@@ -673,7 +681,7 @@ export function getConfigOverrideIssues(
   return issues;
 }
 
-/** Sets a dot-path the way a Mongo `$set` on `overrides.<path>` does, without mutating. */
+/** Sets a path without mutating, replacing whatever is in the way. */
 function setPath(target: unknown, segments: string[], value: unknown): unknown {
   if (segments.length === 0) {
     return value;
@@ -709,26 +717,28 @@ export function applyConfigTombstones(
 }
 
 /**
- * Checks dot-path field writes on top of the principal's stored config, building the
- * result the way `patchConfigFields` stores it: a Mongo `$set` on each `overrides.<path>`,
- * clearing the tombstones those paths clear. The principal's remaining tombstones are
- * applied to the base. An issue is reported when it touches a written path, or when the
- * write introduced it elsewhere (a related field the write made invalid); issues the stored
- * config already had are left to merge time so they do not block an unrelated write.
+ * Checks field writes on top of the principal's stored config, building the result with the
+ * same transform the write stores (`setConfigFields`): each path set in order, and the
+ * tombstones those paths clear removed. `fields` is either a map of dotted field paths or a
+ * list of segment writes (which can address keys that contain dots). A path the stored
+ * document cannot take (below a scalar, or a named key of an array) throws a
+ * `ConfigPathError`. The principal's remaining tombstones are applied to the base. An issue is
+ * reported when it touches a written path, or when the write introduced it elsewhere (a
+ * related field the write made invalid); issues the stored config already had are left to
+ * merge time so they do not block an unrelated write.
  */
 export function getConfigFieldIssues(
-  fields: Record<string, unknown>,
+  fields: Record<string, unknown> | readonly ConfigFieldWrite[],
   base: Partial<TCustomConfig> = {},
   stored?: { overrides?: unknown; tombstones?: unknown[] } | null,
 ): ConfigOverrideIssue[] {
-  const written = Object.keys(fields).map((fieldPath) => fieldPath.split('.'));
-  const cleared = new Set(Object.keys(fields).flatMap(getTombstonePathsToClear));
-  const effectiveBase = applyConfigTombstones(base, stored?.tombstones, cleared);
-  const storedOverrides = isPlainObject(stored?.overrides) ? stored.overrides : {};
-  const candidate = Object.entries(fields).reduce<unknown>(
-    (current, [fieldPath, value]) => setPath(current, fieldPath.split('.'), value),
-    storedOverrides,
-  );
+  const writes: readonly ConfigFieldWrite[] = Array.isArray(fields)
+    ? fields
+    : Object.entries(fields).map(([fieldPath, value]) => ({
+        segments: parseFieldPath(fieldPath),
+        value,
+      }));
+  const written = writes.map(({ segments }) => [...segments]);
   /**
    * An item of a merged-by-key array is identified by its key, not its position: an indexed
    * write can rename the stored item, which the runtime merge then treats as a new one.
@@ -745,10 +755,14 @@ export function getConfigFieldIssues(
   if (indexed.length > 0) {
     return indexed;
   }
+  const storedState = toConfigOverrideState(stored);
+  const candidate = setConfigFields(storedState, writes);
+  const effectiveBase = applyConfigTombstones(base, candidate.tombstones);
+  const storedOverrides = storedState.overrides;
   const existing = new Set(
     getConfigOverrideIssues(storedOverrides, effectiveBase).map((issue) => issue.path),
   );
-  return getConfigOverrideIssues(candidate, effectiveBase).filter(
+  return getConfigOverrideIssues(candidate.overrides, effectiveBase).filter(
     (issue) =>
       !existing.has(issue.path) ||
       written.some((segments) => isRelatedPath(issue.segments, segments)),
@@ -791,7 +805,10 @@ function omitPath(target: unknown, segments: string[]): unknown {
  * fails once layered over other overrides) leaves the value beneath it in place. A layer
  * is not judged on what it leaves out, since a higher-priority layer may supply it.
  */
-function stripInvalidOverrides(config: IConfig, base: Partial<TCustomConfig>): AnyObject {
+function stripInvalidOverrides(
+  config: ConfigOverrideLayer,
+  base: Partial<TCustomConfig>,
+): AnyObject {
   const principal = `${config.principalType}/${config.principalId}`;
   let stripped: unknown = config.overrides;
   /**
@@ -869,7 +886,7 @@ function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
 
 /** The override document that last set or removed a paired web search field, and its merge position. */
 interface WebSearchWriter {
-  config: IConfig;
+  config: ConfigOverrideLayer;
   order: number;
   removed: boolean;
 }
@@ -952,7 +969,10 @@ function bindWebSearchKeys(merged: AppConfig, writers: WebSearchWriters): AppCon
  * A stored web search key is dropped when a layer other than its own decides
  * the URL it is sent to.
  */
-export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]): AppConfig {
+export function mergeConfigOverrides(
+  baseConfig: AppConfig,
+  configs: readonly ConfigOverrideLayer[],
+): AppConfig {
   if (!configs || configs.length === 0) {
     return baseConfig;
   }

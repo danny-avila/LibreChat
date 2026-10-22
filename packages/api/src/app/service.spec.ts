@@ -1344,6 +1344,166 @@ describe('createAppConfigService', () => {
       await getAppConfig();
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
     });
+
+    /** A reload that read librechat.yaml before a clear must not be what the clear leaves cached. */
+    describe('while a reload is in flight', () => {
+      const tick = () => new Promise((resolve) => setImmediate(resolve));
+      const stale = { x: 'stale', availableTools: { staleTool: {} } } as unknown as TestConfig;
+      const fresh = { x: 'fresh', availableTools: { freshTool: {} } } as unknown as TestConfig;
+
+      async function startStaleReload() {
+        const deps = createDeps();
+        const service = createAppConfigService(deps);
+        await service.getAppConfig({ baseOnly: true });
+        await service.clearAppConfigCache();
+        let settleStale: (outcome: AppConfig | Error) => void = () => undefined;
+        deps.loadBaseConfig
+          .mockImplementationOnce(
+            () =>
+              new Promise<AppConfig>((resolve, reject) => {
+                settleStale = (outcome) =>
+                  outcome instanceof Error ? reject(outcome) : resolve(outcome);
+              }),
+          )
+          .mockResolvedValue(fresh);
+        const staleRead = service.getAppConfig({ baseOnly: true });
+        await tick();
+        await service.clearAppConfigCache();
+        return { deps, service, staleRead, settleStale };
+      }
+
+      it('starts a new reload once the stale one settles, and caches only the new one', async () => {
+        const { deps, service, staleRead, settleStale } = await startStaleReload();
+
+        const freshRead = service.getAppConfig({ baseOnly: true });
+        await tick();
+        expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
+        settleStale(stale);
+
+        expect(((await staleRead) as TestConfig).x).toBe('stale');
+        expect(((await freshRead) as TestConfig).x).toBe('fresh');
+        expect(deps.loadBaseConfig).toHaveBeenCalledTimes(3);
+        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).x).toBe('fresh');
+        expect(deps.loadBaseConfig).toHaveBeenCalledTimes(3);
+        expect(deps.setCachedTools).not.toHaveBeenCalledWith(stale.availableTools);
+        expect(deps.setCachedTools).toHaveBeenLastCalledWith(fresh.availableTools);
+      });
+
+      it('leaves the base uncached when the stale reload settles first', async () => {
+        const { deps, service, staleRead, settleStale } = await startStaleReload();
+
+        settleStale(stale);
+        await staleRead;
+
+        expect(deps._cache._store.has('app_config:_BASE_')).toBe(false);
+        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).x).toBe('fresh');
+      });
+
+      it('does not restore the last good config over the clear when the stale reload fails', async () => {
+        const { deps, service, staleRead, settleStale } = await startStaleReload();
+
+        settleStale(new Error('remote fetch failure'));
+
+        expect(await staleRead).toEqual(deps._baseConfig);
+        expect(deps._cache._store.has('app_config:_BASE_')).toBe(false);
+        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).x).toBe('fresh');
+      });
+    });
+
+    /** An async store (Redis) can land a write after the delete of a clear that overtook it. */
+    describe('when the cache write lands after the clear', () => {
+      const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+      function holdNextSet(cache: ReturnType<typeof createMockCache>, prefix: string) {
+        let release: (() => void) | undefined;
+        cache.set.mockImplementationOnce((setKey, value) => {
+          expect(setKey.startsWith(prefix)).toBe(true);
+          return new Promise((resolve) => {
+            release = () => {
+              cache._store.set(`app_config:${setKey}`, value);
+              resolve(undefined);
+            };
+          });
+        });
+        return async () => {
+          while (!release) {
+            await tick();
+          }
+          return release;
+        };
+      }
+
+      it('removes the overtaken base so the next read reloads', async () => {
+        const deps = createDeps({
+          loadBaseConfig: jest
+            .fn()
+            .mockResolvedValueOnce({ x: 'first' })
+            .mockResolvedValueOnce({ x: 'stale' })
+            .mockResolvedValue({ x: 'fresh' }),
+        });
+        const service = createAppConfigService(deps);
+        await service.getAppConfig({ baseOnly: true });
+        await service.clearAppConfigCache();
+        const held = holdNextSet(deps._cache, '_BASE_');
+
+        const staleRead = service.getAppConfig({ baseOnly: true });
+        const release = await held();
+        await service.clearAppConfigCache();
+        release();
+
+        expect(((await staleRead) as TestConfig).x).toBe('stale');
+        expect(deps._cache._store.has('app_config:_BASE_')).toBe(false);
+        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).x).toBe('fresh');
+      });
+
+      it('removes the overtaken merge so the next read merges again', async () => {
+        const deps = createDeps({
+          getApplicableConfigs: jest
+            .fn()
+            .mockResolvedValueOnce([{ priority: 10, overrides: { x: 'stale' }, isActive: true }])
+            .mockResolvedValue([{ priority: 10, overrides: { x: 'fresh' }, isActive: true }]),
+        });
+        const service = createAppConfigService(deps);
+        await service.getAppConfig({ baseOnly: true });
+        const held = holdNextSet(deps._cache, '_OVERRIDE_:__default__:global:ADMIN:');
+
+        const staleRead = service.getAppConfig({ role: 'ADMIN' });
+        const release = await held();
+        await service.clearOverrideCache();
+        release();
+
+        expect(((await staleRead) as TestConfig).x).toBe('stale');
+        expect(((await service.getAppConfig({ role: 'ADMIN' })) as TestConfig).x).toBe('fresh');
+        expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    it('does not cache a merge built on the base it read before the clear', async () => {
+      let releasePrincipals: (principals: unknown[]) => void = () => undefined;
+      const principals = [{ principalType: 'role', principalId: 'USER' }];
+      const deps = createDeps({
+        loadBaseConfig: jest
+          .fn()
+          .mockResolvedValueOnce({ x: 'before' })
+          .mockResolvedValue({ x: 'after' }),
+        getUserPrincipals: jest
+          .fn()
+          .mockImplementationOnce(() => new Promise((resolve) => (releasePrincipals = resolve)))
+          .mockResolvedValue(principals),
+      });
+      const { getAppConfig, clearAppConfigCache } = createAppConfigService(deps);
+      await getAppConfig({ baseOnly: true });
+
+      const inFlight = getAppConfig({ role: 'USER', userId: 'uid1' });
+      await new Promise((resolve) => setImmediate(resolve));
+      await clearAppConfigCache();
+      releasePrincipals(principals);
+      expect(((await inFlight) as TestConfig).x).toBe('before');
+
+      const next = (await getAppConfig({ role: 'USER', userId: 'uid1' })) as TestConfig;
+
+      expect(next.x).toBe('after');
+    });
   });
 
   describe('clearOverrideCache', () => {
@@ -1409,6 +1569,112 @@ describe('createAppConfigService', () => {
 
       // Should not throw — logs warning and relies on TTL expiry
       await expect(clearOverrideCache()).resolves.toBeUndefined();
+    });
+
+    /** A merge that read the database before a clear must not be cached after it. */
+    it.each([
+      ['every tenant', undefined, 'tenant-a'],
+      ['the same tenant', 'tenant-a', 'tenant-a'],
+    ])('drops a merge read before a clear of %s', async (_label, cleared, tenantId) => {
+      let releaseRead: (configs: unknown[]) => void = () => undefined;
+      const stale = [{ priority: 10, overrides: { x: 'stale' }, isActive: true }];
+      const fresh = [{ priority: 10, overrides: { x: 'fresh' }, isActive: true }];
+      const deps = createDeps({
+        getApplicableConfigs: jest
+          .fn()
+          .mockImplementationOnce(() => new Promise((resolve) => (releaseRead = resolve)))
+          .mockResolvedValue(fresh),
+      });
+      const { getAppConfig, clearOverrideCache } = createAppConfigService(deps);
+
+      const inFlight = getAppConfig({ role: 'ADMIN', tenantId });
+      await new Promise((resolve) => setImmediate(resolve));
+      await clearOverrideCache(cleared);
+      releaseRead(stale);
+      expect(((await inFlight) as TestConfig).x).toBe('stale');
+
+      const next = (await getAppConfig({ role: 'ADMIN', tenantId })) as TestConfig;
+
+      expect(next.x).toBe('fresh');
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
+    });
+
+    it('still caches a merge when only another tenant was cleared meanwhile', async () => {
+      let releaseRead: (configs: unknown[]) => void = () => undefined;
+      const deps = createDeps({
+        getApplicableConfigs: jest
+          .fn()
+          .mockImplementationOnce(() => new Promise((resolve) => (releaseRead = resolve)))
+          .mockResolvedValue([]),
+      });
+      const { getAppConfig, clearOverrideCache } = createAppConfigService(deps);
+
+      const inFlight = getAppConfig({ role: 'ADMIN', tenantId: 'tenant-a' });
+      await new Promise((resolve) => setImmediate(resolve));
+      await clearOverrideCache('tenant-b');
+      releaseRead([{ priority: 10, overrides: { x: 1 }, isActive: true }]);
+      await inFlight;
+      await getAppConfig({ role: 'ADMIN', tenantId: 'tenant-a' });
+
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('bypassOverrideCache', () => {
+    it('merges the stored overrides now and neither reads nor fills the cache', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest
+          .fn()
+          .mockResolvedValueOnce([{ priority: 10, overrides: { x: 'first' }, isActive: true }])
+          .mockResolvedValueOnce([{ priority: 10, overrides: { x: 'second' }, isActive: true }])
+          .mockResolvedValue([{ priority: 10, overrides: { x: 'third' }, isActive: true }]),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const cached = (await getAppConfig({ role: 'ADMIN' })) as TestConfig;
+      deps._cache.set.mockClear();
+      const bypassed = (await getAppConfig({
+        role: 'ADMIN',
+        bypassOverrideCache: true,
+      })) as TestConfig;
+      const again = (await getAppConfig({ role: 'ADMIN' })) as TestConfig;
+
+      expect(cached.x).toBe('first');
+      expect(bypassed.x).toBe('second');
+      expect(again.x).toBe('first');
+      expect(deps._cache.set).not.toHaveBeenCalled();
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('resolvedPrincipals without a user id', () => {
+    it('is never served from or written to the role-keyed cache', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest
+          .fn()
+          .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+      const resolvedPrincipals = [{ principalType: 'group', principalId: 'g1' }];
+
+      await getAppConfig({ role: 'ADMIN' });
+      deps._cache.set.mockClear();
+      await getAppConfig({ role: 'ADMIN', resolvedPrincipals } as never);
+
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
+      expect(deps.getApplicableConfigs).toHaveBeenLastCalledWith(resolvedPrincipals);
+      expect(deps._cache.set).not.toHaveBeenCalled();
+    });
+
+    it('is cached under the key of the user it was resolved for', async () => {
+      const deps = createDeps();
+      const { getAppConfig } = createAppConfigService(deps);
+      const resolvedPrincipals = [{ principalType: 'user', principalId: 'uid1' }];
+
+      await getAppConfig({ role: 'USER', userId: 'uid1', resolvedPrincipals } as never);
+      await getAppConfig({ role: 'USER', userId: 'uid1', resolvedPrincipals } as never);
+
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(1);
     });
   });
 

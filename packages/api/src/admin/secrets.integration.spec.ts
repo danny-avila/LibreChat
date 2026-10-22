@@ -271,8 +271,7 @@ beforeAll(async () => {
     createAdminConfigHandlers({
       listAllConfigs: methods.listAllConfigs,
       findConfigByPrincipal,
-      upsertConfig: methods.upsertConfig,
-      patchConfigFields: methods.patchConfigFields,
+      writeConfigDocument: methods.writeConfigDocument,
       tombstoneConfigField: methods.tombstoneConfigField,
       unsetConfigField: methods.unsetConfigField,
       deleteConfig: methods.deleteConfig,
@@ -835,6 +834,19 @@ describe('config secret registry — real handlers against a real Config collect
       expect(await readRawConfig(principalId)).toEqual(before);
     });
 
+    it('judges a patch by the URL it stores when a later entry replaces an earlier one', async () => {
+      const principalId = nextPrincipalId();
+      const before = await storeSearxng(principalId);
+
+      const res = await patch(principalId, [
+        { fieldPath: 'webSearch.searxngInstanceUrl', value: STORED_URL },
+        { fieldPath: 'webSearch', value: { searxngInstanceUrl: NEW_URL } },
+      ]);
+
+      expect(response(res)).toEqual(reentryRequired([SEARXNG_REENTRY]));
+      expect(await readRawConfig(principalId)).toEqual(before);
+    });
+
     it('rejects a section patch that changes the URL and omits the key', async () => {
       const principalId = nextPrincipalId();
       const before = await storeSearxng(principalId);
@@ -1213,14 +1225,34 @@ describe('config secret registry — real handlers against a real Config collect
         };
       }
 
+      /**
+       * The write lost the compare-and-swap, re-read the document and re-ran the check, which
+       * now sees the other admin's key beside the URL this write changes.
+       */
       const VICTIM_KEPT = {
+        statusCode: 400,
+        body: expect.objectContaining({ code: 'CONFIG_SECRET_REENTRY_REQUIRED' }),
+        url: VICTIM_URL,
+        key: VICTIM_KEY,
+      };
+
+      /** A write pinned to the revision it read answers 409 instead of re-checking. */
+      const VICTIM_KEPT_PINNED = {
         statusCode: 409,
-        body: { error: expect.any(String), code: 'CONFIG_VERSION_CONFLICT' },
+        body: expect.objectContaining({ code: 'CONFIG_VERSION_CONFLICT' }),
         url: VICTIM_URL,
         key: VICTIM_KEY,
       };
 
       const params = (principalId: string) => ({ principalType: 'role', principalId });
+
+      /** The revision the next write is pinned to: the document as stored now. */
+      async function currentRevision(principalId: string): Promise<string> {
+        const stored = await configMethods.findConfigByPrincipal(PrincipalType.ROLE, principalId, {
+          includeInactive: true,
+        });
+        return stored ? `${stored._id}:${stored.configVersion}` : 'absent';
+      }
 
       it.each([
         { name: 'on an existing document', existing: true },
@@ -1276,6 +1308,56 @@ describe('config secret registry — real handlers against a real Config collect
         expect(await outcome(principalId, res)).toEqual(VICTIM_KEPT);
       });
 
+      it.each([
+        { name: 'on an existing document', existing: true },
+        { name: 'on a document created meanwhile', existing: false },
+      ])(
+        'answers 409 to a URL-only patch pinned to the revision it read $name',
+        async ({ existing }) => {
+          const principalId = nextPrincipalId();
+          if (existing) {
+            await patch(principalId, [{ fieldPath: 'webSearch.safeSearch', value: 1 }]);
+          }
+          const expectedRevision = await currentRevision(principalId);
+          const res = mockRes();
+
+          await racedHandlers(principalId).patchConfigField(
+            mockReq({
+              params: params(principalId),
+              body: {
+                entries: [{ fieldPath: 'webSearch.searxngInstanceUrl', value: NEW_URL }],
+                expectedRevision,
+              },
+            }),
+            res,
+          );
+
+          expect(await outcome(principalId, res)).toEqual(VICTIM_KEPT_PINNED);
+        },
+      );
+
+      it.each([
+        { name: 'deleting', handler: 'deleteConfigField' as const },
+        { name: 'tombstoning', handler: 'tombstoneConfigField' as const },
+      ])('answers 409 to $name the URL pinned to the revision it read', async ({ handler }) => {
+        const principalId = nextPrincipalId();
+        await patch(principalId, [{ fieldPath: 'webSearch.safeSearch', value: 1 }]);
+        const expectedRevision = await currentRevision(principalId);
+        const res = mockRes();
+        const fieldPath = 'webSearch.searxngInstanceUrl';
+
+        await racedHandlers(principalId)[handler](
+          mockReq({
+            params: params(principalId),
+            query: { fieldPath, expectedRevision },
+            body: { fieldPath, expectedRevision },
+          }),
+          res,
+        );
+
+        expect(await outcome(principalId, res)).toEqual(VICTIM_KEPT_PINNED);
+      });
+
       it('lets a write to another section proceed', async () => {
         const principalId = nextPrincipalId();
         await patch(principalId, [{ fieldPath: 'webSearch.safeSearch', value: 1 }]);
@@ -1315,9 +1397,12 @@ describe('config secret registry — real handlers against a real Config collect
       const baseHandlers = createAdminConfigHandlers({
         listAllConfigs: async () => [],
         findConfigByPrincipal: async () => null,
-        upsertConfig: async () => null,
-        patchConfigFields: async () => null,
-        tombstoneConfigField: async () => null,
+        writeConfigDocument: async () => {
+          throw new Error('not written in this test');
+        },
+        tombstoneConfigField: async () => {
+          throw new Error('not written in this test');
+        },
         unsetConfigField: async () => null,
         deleteConfig: async () => null,
         toggleConfigActiveTracked: async () => null,
