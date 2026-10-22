@@ -41,7 +41,7 @@ let registry: Registry;
 let handlers: AdminConfigHandlers;
 let getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
 let clearOverrideCache: () => Promise<void>;
-/** The handlers invalidate after answering; helpers wait for it, as later requests would. */
+/** The last cache invalidation; handlers answer once it settles, and helpers await it too. */
 let invalidation: Promise<void> = Promise.resolve();
 /** Override queries the config service has made, across principals. */
 let applicableConfigReads = 0;
@@ -207,8 +207,7 @@ beforeAll(async () => {
   handlers = createAdminConfigHandlers({
     listAllConfigs: methods.listAllConfigs,
     findConfigByPrincipal: methods.findConfigByPrincipal,
-    upsertConfig: methods.upsertConfig,
-    patchConfigFields: methods.patchConfigFields,
+    writeConfigDocument: methods.writeConfigDocument,
     tombstoneConfigField: methods.tombstoneConfigField,
     unsetConfigField: methods.unsetConfigField,
     deleteConfig: methods.deleteConfig,

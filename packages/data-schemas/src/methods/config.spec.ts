@@ -594,9 +594,7 @@ describe('MCP record-key tombstones', () => {
     );
 
     expect(result!.tombstones).toEqual([]);
-    const github = (result!.overrides as { mcpServers: { github: Record<string, unknown> } })
-      .mcpServers.github;
-    expect(github).not.toHaveProperty('headers');
+    expect(result!.overrides).toEqual({});
   });
 });
 
