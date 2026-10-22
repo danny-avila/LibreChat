@@ -306,14 +306,18 @@ function findDottedKey(value: unknown): string | undefined {
 
 /**
  * Turns the in-memory MongoDB into an engine that refuses dotted field names inside stored
- * documents, the way MongoDB before 3.6 did, instead of storing them. `$set` paths stay dotted;
- * only keys inside the values are judged.
+ * documents, the way MongoDB before 3.6 did, instead of storing them. `$set` and `$setOnInsert`
+ * paths stay dotted; only keys inside the values are judged.
  */
 function refuseDottedFieldNames(): () => void {
   const collection = mongoose.models.Config.collection;
   const findOneAndUpdate = collection.findOneAndUpdate.bind(collection);
-  collection.findOneAndUpdate = (async (filter: Doc, update: { $set?: Doc }, options: Doc) => {
-    const key = Object.values(update.$set ?? {})
+  collection.findOneAndUpdate = (async (
+    filter: Doc,
+    update: { $set?: Doc; $setOnInsert?: Doc },
+    options: Doc,
+  ) => {
+    const key = [...Object.values(update.$set ?? {}), ...Object.values(update.$setOnInsert ?? {})]
       .map(findDottedKey)
       .find((found) => found != null);
     if (key) {
@@ -373,6 +377,28 @@ describe('admin config writes on an engine that cannot store dotted keys', () =>
       201,
       ['endpoints', 'azureOpenAI', 'groups', '0', 'models'],
       { 'gpt-4.1': true },
+    ],
+    [
+      'a PATCH that also moves a web search URL',
+      (role: string) =>
+        patchFields(role, [
+          { fieldPath: 'webSearch.searxngInstanceUrl', value: 'https://searx.example.com' },
+          { fieldPath: 'endpoints.bedrock.inferenceProfiles', value: { [PROFILE]: ARN } },
+        ]),
+      200,
+      ['endpoints', 'bedrock', 'inferenceProfiles'],
+      { [PROFILE]: ARN },
+    ],
+    [
+      'a PUT that also writes the web search section',
+      (role: string) =>
+        putOverrides(role, {
+          webSearch: { safeSearch: 2 },
+          endpoints: { bedrock: { inferenceProfiles: { [PROFILE]: ARN } } },
+        }),
+      201,
+      ['endpoints', 'bedrock', 'inferenceProfiles'],
+      { [PROFILE]: ARN },
     ],
   ])(
     'stores a %s whose record keys hold dots, encoded so the engine sees none',

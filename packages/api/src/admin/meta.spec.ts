@@ -1,10 +1,17 @@
 import { join } from 'path';
 import { readFileSync } from 'fs';
 import mongoSanitize from 'express-mongo-sanitize';
-import { mergeConfigOverrides, getConfigOverrideIssues } from '@librechat/data-schemas';
+import {
+  loadWebSearchConfig,
+  mergeConfigOverrides,
+  getConfigOverrideIssues,
+} from '@librechat/data-schemas';
 import {
   Constants,
   configSchema,
+  RerankerTypes,
+  SearchProviders,
+  ScraperProviders,
   PERMISSION_SUB_KEYS,
   BASE_ONLY_CONFIG_PATHS,
   BASE_ONLY_CONFIG_SECTIONS,
@@ -24,9 +31,16 @@ import type { Request, Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { AdminConfigDeps } from './config';
 import { createRequestSanitizer, rejectUnsafeConfigKeys } from '~/middleware/sanitize';
+import { redactConfigSecrets, encryptConfigSecretFields } from './secrets';
 import { createAdminConfigHandlers } from './config';
-import { redactConfigSecrets } from './secrets';
 import { ADMIN_CONFIG_FEATURES } from './meta';
+import { loadWebSearchAuth } from '~/web';
+
+/** Encryption reads `CREDS_KEY` when data-schemas loads, before any spec code runs. */
+jest.mock('@librechat/data-schemas', () => {
+  process.env.CREDS_KEY ??= '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  return jest.requireActual('@librechat/data-schemas');
+});
 
 type Doc = Record<string, unknown>;
 type ResponseBody = { config?: { overrides: Doc }; [key: string]: unknown };
@@ -157,6 +171,7 @@ describe('GET /api/admin/config/meta', () => {
       'dottedKeys',
       'readFilteredWriteResponses',
       'sectionAllowlist',
+      'webSearchStoredKeys',
     ]);
     expect(meta.limits).toEqual({ maxPatchEntries: 100, overrideCacheTtlMs: 60_000 });
     expect(Object.keys(meta.rules).sort()).toEqual([
@@ -340,6 +355,45 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     });
     const overrides = res.body?.config?.overrides;
     return res.statusCode === 200 && overrides != null && !('memory' in overrides);
+  },
+  async webSearchStoredKeys() {
+    const keys = {
+      'webSearch.serperApiKey': 'serper-admin-secret',
+      'webSearch.searxngApiKey': 'searxng-admin-secret',
+      'webSearch.keenableApiKey': 'keenable-admin-secret',
+    };
+    const stored = encryptConfigSecretFields(keys);
+    const encrypted = Object.keys(keys).every((path) => String(stored[path]).startsWith('v3:'));
+
+    const { authenticated, authResult } = await loadWebSearchAuth({
+      userId: 'meta-spec',
+      webSearchConfig: loadWebSearchConfig({
+        searchProvider: SearchProviders.SERPER,
+        scraperProvider: ScraperProviders.KEENABLE,
+        rerankerType: RerankerTypes.NONE,
+        keenableApiUrl: '',
+        serperApiKey: stored['webSearch.serperApiKey'] as string,
+      }),
+      loadAuthValues: jest.fn().mockResolvedValue({}),
+    });
+    const usesStoredKey = authenticated && authResult.serperApiKey === 'serper-admin-secret';
+
+    const rebinding = await patch(
+      [{ fieldPath: 'webSearch.searxngInstanceUrl', value: 'https://collector.example.com' }],
+      {
+        findConfigByPrincipal: jest.fn().mockResolvedValue(
+          storedConfig({
+            webSearch: {
+              searxngInstanceUrl: 'https://searx.example.com',
+              searxngApiKey: stored['webSearch.searxngApiKey'],
+            },
+          }),
+        ),
+      },
+    );
+    const requiresReentry =
+      rebinding.statusCode === 400 && rebinding.body?.code === 'CONFIG_SECRET_REENTRY_REQUIRED';
+    return encrypted && usesStoredKey && requiresReentry;
   },
 };
 

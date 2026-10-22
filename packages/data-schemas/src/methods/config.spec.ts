@@ -1,6 +1,7 @@
 import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
+import type { ConfigRecord } from '~/app/store';
 import type { IConfig } from '~/types';
 import { createConfigMethods } from './config';
 import configSchema from '~/schema/config';
@@ -1199,5 +1200,255 @@ describe('pruning emptied parents', () => {
     expect(
       await methods.deleteConfig(PrincipalType.ROLE, 'shells', undefined, { expectEmpty: true }),
     ).not.toBeNull();
+  });
+});
+
+/** The write preconditions web search binding writes rely on, carried by store revisions. */
+describe('web search write preconditions', () => {
+  const ROLE = 'precondition-role';
+  const revisionOf = (config: { _id: string; configVersion: number }) =>
+    `${config._id}:${config.configVersion}`;
+
+  function seed(): Promise<ConfigRecord> {
+    return methods.patchConfigFields(PrincipalType.ROLE, ROLE, PrincipalModel.ROLE, {
+      'webSearch.searxngInstanceUrl': 'https://searx.example.com',
+    });
+  }
+
+  function readStored() {
+    return raw().findOne({ principalId: ROLE });
+  }
+
+  type Write = (expectedRevision: string) => Promise<ConfigRecord | null>;
+  const writes: Array<{ name: string; write: Write }> = [
+    {
+      name: 'patchConfigFields',
+      write: (expectedRevision) =>
+        methods.patchConfigFields(
+          PrincipalType.ROLE,
+          ROLE,
+          PrincipalModel.ROLE,
+          { 'webSearch.searxngInstanceUrl': 'https://attacker.example.com' },
+          10,
+          undefined,
+          { expectedRevision },
+        ),
+    },
+    {
+      name: 'upsertConfig',
+      write: (expectedRevision) =>
+        methods.upsertConfig(
+          PrincipalType.ROLE,
+          ROLE,
+          PrincipalModel.ROLE,
+          { webSearch: { searxngInstanceUrl: 'https://attacker.example.com' } },
+          10,
+          undefined,
+          { expectedRevision },
+        ),
+    },
+    {
+      name: 'tombstoneConfigField',
+      write: (expectedRevision) =>
+        methods.tombstoneConfigField(
+          PrincipalType.ROLE,
+          ROLE,
+          PrincipalModel.ROLE,
+          'webSearch.searxngInstanceUrl',
+          10,
+          undefined,
+          { expectedRevision },
+        ),
+    },
+  ];
+
+  /** Makes the database refuse every write, after `beforeRefusal` runs. */
+  function refuseWrites(beforeRefusal: () => Promise<void> = async () => undefined) {
+    const collection = mongoose.models.Config.collection;
+    jest.spyOn(collection, 'findOneAndUpdate').mockImplementation((async () => {
+      await beforeRefusal();
+      throw new mongoose.mongo.MongoServerError({
+        ok: 0,
+        code: 57,
+        errmsg: "The dotted field 'us.a.b' in 'overrides' is not valid for storage.",
+      });
+    }) as unknown as typeof collection.findOneAndUpdate);
+  }
+
+  it.each(writes)('$name applies at the revision the caller read', async ({ write }) => {
+    const seeded = await seed();
+
+    const result = await write(revisionOf(seeded));
+
+    expect(result!.configVersion).toBe(seeded.configVersion + 1);
+    expect(result!._id).toBe(seeded._id);
+  });
+
+  it.each(writes)(
+    '$name changes nothing once another write moved the revision',
+    async ({ write }) => {
+      const seeded = await seed();
+      const moved = await methods.patchConfigFields(
+        PrincipalType.ROLE,
+        ROLE,
+        PrincipalModel.ROLE,
+        { 'webSearch.searxngApiKey': 'v3:concurrent' },
+        10,
+      );
+      const before = await readStored();
+
+      await expect(write(revisionOf(seeded))).rejects.toMatchObject({
+        code: 'CONFIG_VERSION_CONFLICT',
+        currentRevision: revisionOf(moved),
+      });
+      expect(await readStored()).toEqual(before);
+    },
+  );
+
+  it.each(writes)('$name creates the document the caller saw absent', async ({ write }) => {
+    const result = await write('absent');
+
+    expect(result!.configVersion).toBe(1);
+    expect(result!.createdAt).toBeInstanceOf(Date);
+    expect(await raw().countDocuments({ principalId: ROLE })).toBe(1);
+  });
+
+  it.each(writes)(
+    '$name changes nothing when a document appeared after the caller saw none',
+    async ({ write }) => {
+      await seed();
+      const before = await readStored();
+
+      await expect(write('absent')).rejects.toMatchObject({ code: 'CONFIG_VERSION_CONFLICT' });
+      expect(await readStored()).toEqual(before);
+    },
+  );
+
+  it.each(writes)(
+    '$name does not recreate a document deleted since the read',
+    async ({ write }) => {
+      const seeded = await seed();
+      await methods.deleteConfig(PrincipalType.ROLE, ROLE);
+
+      await expect(write(revisionOf(seeded))).rejects.toMatchObject({
+        code: 'CONFIG_VERSION_CONFLICT',
+        currentRevision: null,
+      });
+      expect(await raw().countDocuments({ principalId: ROLE })).toBe(0);
+    },
+  );
+
+  it('detects a document that appeared without relying on the unique index', async () => {
+    const seeded = await seed();
+    const before = await readStored();
+    const Config = mongoose.models.Config;
+    await Config.collection.dropIndexes();
+    try {
+      await expect(
+        methods.writeConfigDocument(
+          PrincipalType.ROLE,
+          ROLE,
+          {
+            principalModel: PrincipalModel.ROLE,
+            priority: 10,
+            overrides: { webSearch: { searxngInstanceUrl: 'https://attacker.example.com' } },
+            tombstones: [],
+            isActive: true,
+          },
+          'absent',
+        ),
+      ).rejects.toMatchObject({
+        code: 'CONFIG_VERSION_CONFLICT',
+        currentRevision: revisionOf(seeded),
+      });
+      expect(await raw().countDocuments({ principalId: ROLE })).toBe(1);
+      expect(await readStored()).toEqual(before);
+    } finally {
+      await Config.syncIndexes();
+    }
+  });
+
+  it.each(writes)(
+    '$name leaves no document when the database refuses a write the caller saw absent',
+    async ({ write }) => {
+      refuseWrites();
+
+      await expect(write('absent')).rejects.toMatchObject({ code: 57 });
+      expect(await raw().countDocuments({ principalId: ROLE })).toBe(0);
+    },
+  );
+
+  it('keeps a document another write created before the database refused this one', async () => {
+    refuseWrites(async () => {
+      await raw().insertOne({
+        principalType: PrincipalType.ROLE,
+        principalId: ROLE,
+        principalModel: PrincipalModel.ROLE,
+        priority: 10,
+        isActive: true,
+        configVersion: 1,
+        overrides: { webSearch: { safeSearch: 2 } },
+      });
+    });
+
+    await expect(writes[0].write('absent')).rejects.toMatchObject({ code: 57 });
+    expect(await readStored()).toMatchObject({
+      configVersion: 1,
+      overrides: { webSearch: { safeSearch: 2 } },
+    });
+  });
+
+  it.each(writes)(
+    '$name leaves the stored document as it was when the database refuses the write',
+    async ({ write }) => {
+      const seeded = await seed();
+      const before = await readStored();
+      refuseWrites();
+
+      await expect(write(revisionOf(seeded))).rejects.toMatchObject({ code: 57 });
+      expect(await readStored()).toEqual(before);
+    },
+  );
+
+  it('unsetConfigField removes a field only at the revision the caller read', async () => {
+    const seeded = await seed();
+    const unset = (expectedRevision: string) =>
+      methods.unsetConfigField(
+        PrincipalType.ROLE,
+        ROLE,
+        'webSearch.searxngInstanceUrl',
+        undefined,
+        { expectedRevision },
+      );
+
+    await expect(unset(`${seeded._id}:${seeded.configVersion + 1}`)).rejects.toMatchObject({
+      code: 'CONFIG_VERSION_CONFLICT',
+    });
+    expect(await readStored()).toMatchObject({
+      overrides: { webSearch: { searxngInstanceUrl: 'https://searx.example.com' } },
+    });
+
+    const result = await unset(revisionOf(seeded));
+    expect(result!.configVersion).toBe(seeded.configVersion + 1);
+    expect(result!.overrides).toEqual({});
+  });
+
+  it('keeps unconditioned upsertConfig calls that race to create the document', async () => {
+    const results = await Promise.all(
+      [1, 2].map((safeSearch) =>
+        methods.upsertConfig(
+          PrincipalType.ROLE,
+          ROLE,
+          PrincipalModel.ROLE,
+          { webSearch: { safeSearch } },
+          10,
+        ),
+      ),
+    );
+
+    expect(results.map((result) => result!.configVersion).sort()).toEqual([1, 2]);
+    expect(await raw().countDocuments({ principalId: ROLE })).toBe(1);
+    const stored = await methods.findConfigByPrincipal(PrincipalType.ROLE, ROLE);
+    expect(stored!.configVersion).toBe(2);
   });
 });

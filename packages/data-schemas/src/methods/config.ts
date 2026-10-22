@@ -139,24 +139,38 @@ export function createConfigStore(mongoose: typeof import('mongoose')): ConfigSt
     return documents.map(toRecord);
   }
 
+  /**
+   * Inserts the principal's document only when it has none. An existing document matches the
+   * principal filter, `$setOnInsert` leaves it untouched, and the `_id` it returns is not the one
+   * offered, so the conflict is seen without relying on the unique principal index (which some
+   * engines, such as DocumentDB elastic clusters, do not enforce); the index still turns two
+   * racing inserts into a duplicate-key conflict. Timestamps are set here because Mongoose would
+   * otherwise `$set` `updatedAt` on the document it found.
+   */
   async function create(
     principal: ConfigPrincipal,
     fields: Record<string, unknown>,
   ): Promise<ConfigRecord> {
+    const _id = new Types.ObjectId();
+    const now = new Date();
     try {
-      /** The fresh `_id` never matches, so this always inserts; an existing document for the
-       *  principal collides on the unique principal index instead of being overwritten. */
-      const created = await model()
+      const document = await model()
         .findOneAndUpdate(
-          { ...principalFilter(principal), _id: new Types.ObjectId() },
-          { $set: { ...fields, configVersion: 1 } },
-          { upsert: true, new: true, setDefaultsOnInsert: true },
+          principalFilter(principal),
+          {
+            $setOnInsert: { ...fields, _id, configVersion: 1, createdAt: now, updatedAt: now },
+          },
+          { upsert: true, new: true, timestamps: false, setDefaultsOnInsert: true },
         )
         .lean<StoredConfig>();
-      if (!created) {
+      if (!document) {
         throw new ConfigRevisionConflictError();
       }
-      return toRecord(created);
+      const record = toRecord(document);
+      if (record._id !== _id.toString()) {
+        throw new ConfigRevisionConflictError(getConfigRevision(record));
+      }
+      return record;
     } catch (error) {
       if (isDuplicateKeyError(error)) {
         throw new ConfigRevisionConflictError();

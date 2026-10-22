@@ -107,11 +107,19 @@ export type AdminConfigTombstoneRequest = AdminConfigWritePrecondition &
  * - `sectionAllowlist`: writes to a top-level key `configSchema` does not define are rejected,
  *   and stored ones are ignored at merge.
  * - `readFilteredWriteResponses`: write responses are filtered by the caller's read access.
+ * - `webSearchStoredKeys`: web search uses a key stored in config (encrypted by the admin API,
+ *   or a `librechat.yaml` literal) at runtime, not only a `${VAR}` reference, and stores
+ *   `webSearch.keenableApiKey` encrypted like the other web search keys. A stored key reaches a
+ *   URL stored in config only when the same layer set both; it is kept over an inherited
+ *   `${VAR}` or default URL. A later layer that changes, blanks or removes the paired URL drops
+ *   the key, and a write that changes or removes the URL beside a stored key must enter the key
+ *   again (400 `CONFIG_SECRET_REENTRY_REQUIRED`).
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'
   | 'sectionAllowlist'
-  | 'readFilteredWriteResponses';
+  | 'readFilteredWriteResponses'
+  | 'webSearchStoredKeys';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
 

@@ -18,6 +18,8 @@ let isConfigSecretDescendantPath: typeof import('./secrets').isConfigSecretDesce
 let preserveConfigSecrets: typeof import('./secrets').preserveConfigSecrets;
 let redactConfigSecrets: typeof import('./secrets').redactConfigSecrets;
 let resolveConfigSecret: typeof import('./secrets').resolveConfigSecret;
+let resolveStoredConfigSecret: typeof import('./secrets').resolveStoredConfigSecret;
+let getConfigSecretRules: typeof import('./secrets').getConfigSecretRules;
 let resolveCustomEndpointSecrets: typeof import('./secrets').resolveCustomEndpointSecrets;
 let decryptV3: typeof import('@librechat/data-schemas').decryptV3;
 
@@ -38,6 +40,8 @@ beforeAll(async () => {
     preserveConfigSecrets,
     redactConfigSecrets,
     resolveConfigSecret,
+    resolveStoredConfigSecret,
+    getConfigSecretRules,
     resolveCustomEndpointSecrets,
   } = await import('./secrets'));
   ({ decryptV3 } = await import('@librechat/data-schemas'));
@@ -211,6 +215,33 @@ describe('Langfuse config secrets', () => {
       destination: 'eu',
       publicKey: 'pk-lf-1',
       secretKeyPreview: '*************',
+    });
+  });
+
+  it('previews a stored plaintext secret only when reading stored overrides', () => {
+    const encrypted = encryptConfigSecretFields({ 'webSearch.serperApiKey': 'serper-key-00001' });
+    const stored = () => ({
+      webSearch: {
+        keenableApiKey: ' kn-legacy-plain-0002 ',
+        searxngApiKey: 'short',
+        tavilyApiKey: 'tvly-legacy-plain-0003',
+        tavilyApiKeyPreview: '...kept',
+        serperApiKey: encrypted['webSearch.serperApiKey'],
+        jinaApiKey: '${JINA_API_KEY}',
+        cohereApiKey: '',
+      },
+    });
+
+    expect(redactConfigSecrets(stored(), { previewPlaintext: true })).toEqual({
+      webSearch: {
+        keenableApiKeyPreview: '...0002',
+        searxngApiKeyPreview: '*****',
+        tavilyApiKeyPreview: '...kept',
+        jinaApiKey: '${JINA_API_KEY}',
+      },
+    });
+    expect(redactConfigSecrets(stored())).toEqual({
+      webSearch: { tavilyApiKeyPreview: '...kept', jinaApiKey: '${JINA_API_KEY}' },
     });
   });
 
@@ -603,6 +634,35 @@ describe('Config secret registry fields', () => {
     expect(resolveConfigSecret('v3:provider-literal-token')).toBe('v3:provider-literal-token');
   });
 
+  it('resolveStoredConfigSecret decrypts and passes every other value through verbatim', () => {
+    const encrypted = encryptConfigSecrets({ webSearch: { keenableApiKey: 'kn-stored' } }).webSearch
+      .keenableApiKey;
+    expect(resolveStoredConfigSecret(encrypted)).toBe('kn-stored');
+
+    process.env.SECRETS_SPEC_TEST_KEY = 'sk-from-env';
+    expect(resolveStoredConfigSecret('${SECRETS_SPEC_TEST_KEY}')).toBe('${SECRETS_SPEC_TEST_KEY}');
+    expect(resolveStoredConfigSecret('kn-${SECRETS_SPEC_TEST_KEY}')).toBe(
+      'kn-${SECRETS_SPEC_TEST_KEY}',
+    );
+    delete process.env.SECRETS_SPEC_TEST_KEY;
+
+    expect(resolveStoredConfigSecret('kn-plain-literal')).toBe('kn-plain-literal');
+    expect(resolveStoredConfigSecret('v3:provider-literal-token')).toBe(
+      'v3:provider-literal-token',
+    );
+  });
+
+  it('registers the Keenable web search key with its preview companion', () => {
+    expect(getConfigSecretRules().secretFields).toContainEqual({
+      path: 'webSearch.keenableApiKey',
+      previewPath: 'webSearch.keenableApiKeyPreview',
+      allowEnvPlaceholder: true,
+    });
+    const out = encryptConfigSecretFields({ 'webSearch.keenableApiKey': 'kn-0123456789abcdef' });
+    expect(decryptV3(out['webSearch.keenableApiKey'] as string)).toBe('kn-0123456789abcdef');
+    expect(out['webSearch.keenableApiKeyPreview']).toBe('...cdef');
+  });
+
   it('reports mutation paths (including the preview companion) and ancestor/descendant checks for registry fields', () => {
     expect(getConfigSecretMutationPaths('speech.tts.openai.apiKey')).toEqual([
       'speech.tts.openai.apiKey',
@@ -697,6 +757,7 @@ describe('Config secret registry fields', () => {
       'speech.stt.azureOpenAI.apiKeyPreview',
       'webSearch.serperApiKeyPreview',
       'webSearch.cohereApiKeyPreview',
+      'webSearch.keenableApiKeyPreview',
       'endpoints.assistants.apiKeyPreview',
       'endpoints.azureAssistants.apiKeyPreview',
       'langfuse.secretKeyPreview',

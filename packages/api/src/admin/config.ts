@@ -15,6 +15,7 @@ import {
   isDotFreePath,
   parseFieldPath,
   setConfigFields,
+  unsetConfigPaths,
   getConfigRevision,
   isConfigRevision,
   isConfigPathError,
@@ -23,6 +24,7 @@ import {
   runConfigMutation,
   getConfigFieldIssues,
   toConfigOverrideState,
+  tombstoneConfigPaths,
   applyConfigTombstones,
   replaceConfigOverrides,
   parseConfigPathSegments,
@@ -46,11 +48,13 @@ import type {
   ConfigPathInputs,
   ConfigOverrideIssue,
   ConfigPathErrorReason,
+  ConfigMutationOutcome,
 } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { AdminAuditEvent, RecordAuditEntry } from './audit';
 import type { CapabilityUser } from '~/middleware/capabilities';
+import type { SecretReentryIssue } from './binding';
 import type { ServerRequest } from '~/types/http';
 import {
   encryptConfigSecretFields,
@@ -65,6 +69,12 @@ import {
   preserveConfigSecrets,
   redactConfigSecrets,
 } from './secrets';
+import {
+  getPatchReentryIssues,
+  isWebSearchBindingPath,
+  getRemovalReentryIssues,
+  getReplaceReentryIssues,
+} from './binding';
 import { DEFAULT_OVERRIDE_CACHE_TTL } from '~/app/service';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { createAdminAuditEmitter } from './audit';
@@ -592,14 +602,20 @@ type ConfigResponse = ConfigRecord & { revision: ConfigRevision };
 function redactConfigForResponse(config: ConfigRecord): ConfigResponse {
   const safeConfig = JSON.parse(JSON.stringify(config)) as ConfigRecord;
   if (safeConfig.overrides) {
-    redactConfigSecrets(safeConfig.overrides);
+    redactConfigSecrets(safeConfig.overrides, { previewPlaintext: true });
   }
   return { ...safeConfig, revision: getConfigRevision(config) };
 }
 
-function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
+/**
+ * Redacts an `AppConfig` for an admin read. For a config merged with overrides,
+ * `yamlConfig` is the librechat.yaml config beneath them: a plaintext secret an
+ * override stored before its path was registered gets a preview, like a read
+ * of the override document itself.
+ */
+function redactAppConfigForResponse(appConfig: AppConfig, yamlConfig?: AppConfig): AppConfig {
   const safeConfig = JSON.parse(JSON.stringify(appConfig)) as AppConfig & { config?: unknown };
-  redactConfigSecrets(safeConfig);
+  redactConfigSecrets(safeConfig, { previewPlaintext: yamlConfig != null, yamlConfig });
   if (safeConfig.config != null && typeof safeConfig.config === 'object') {
     redactConfigSecrets(safeConfig.config);
   }
@@ -630,6 +646,24 @@ function unstorableKeyResponse(res: Response, operation: string): Response {
   return res.status(422).json({
     error: 'The database cannot store a key name in this config',
     code: 'CONFIG_KEY_NOT_STORABLE',
+  });
+}
+
+/**
+ * Rejects a write that would send a stored secret to a destination it was not
+ * entered for. Reports only locations and stable codes, never a value; `segments`
+ * names the location key by key, as other config issues do.
+ */
+function secretReentryResponse(res: Response, issues: SecretReentryIssue[]): Response {
+  return res.status(400).json({
+    error: 'Enter the stored API key again when changing the URL it is sent to',
+    code: 'CONFIG_SECRET_REENTRY_REQUIRED',
+    issues: issues.map(({ path, segments, code, secretPath }) => ({
+      path,
+      segments,
+      code,
+      secretPath,
+    })),
   });
 }
 
@@ -798,6 +832,56 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     throw error;
   }
 
+  /**
+   * Unsets or tombstones a web search URL (or the whole section) in a write planned from the
+   * document it replaces, so the re-entry check judges exactly the revision the write lands on.
+   * A write that lands in between is re-read and re-checked, or answers 409 under
+   * `expectedRevision`. Stops with the re-entry issues, or with `null` when an unset finds no
+   * document.
+   */
+  function removeWebSearchBinding(
+    principalType: PrincipalType,
+    principalId: string,
+    fieldPath: string,
+    removal: { tombstone: true; priority?: number } | { tombstone: false },
+    expectedRevision: ConfigRevision | undefined,
+  ): Promise<ConfigMutationOutcome<SecretReentryIssue[] | null>> {
+    const paths = getConfigSecretMutationPaths(fieldPath).map(parseFieldPath);
+    return runConfigMutation<SecretReentryIssue[] | null>(
+      {
+        read: () => readStoredConfig(principalType, principalId),
+        write: (draft, revision) =>
+          writeConfigDocument(principalType, principalId, draft, revision),
+      },
+      (stored) => {
+        if (!stored && !removal.tombstone) {
+          return { draft: null, result: null };
+        }
+        const reentry = getRemovalReentryIssues(stored, fieldPath, removal.tombstone);
+        if (reentry.length > 0) {
+          return { draft: null, result: reentry };
+        }
+        const current = toConfigOverrideState(stored);
+        const state = removal.tombstone
+          ? tombstoneConfigPaths(current, paths)
+          : unsetConfigPaths(current, paths);
+        return {
+          draft: {
+            principalModel: stored?.principalModel ?? principalModel(principalType),
+            priority:
+              (removal.tombstone ? removal.priority : undefined) ??
+              stored?.priority ??
+              DEFAULT_CONFIG_PRIORITY,
+            overrides: state.overrides,
+            tombstones: state.tombstones,
+            isActive: stored?.isActive ?? true,
+          },
+        };
+      },
+      { expectedRevision },
+    );
+  }
+
   /** The deployment's `librechat.yaml` config, which overrides are validated on top of. */
   async function getBaseYamlConfig(tenantId?: string): Promise<Partial<TCustomConfig>> {
     if (!getAppConfig) {
@@ -877,16 +961,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const baseOnly = (req.query as Record<string, unknown>).baseOnly === 'true';
-      const appConfig = await getAppConfig({
-        tenantId: user.tenantId,
-        baseOnly,
-        bypassOverrideCache: true,
-      });
+      const [appConfig, yamlConfig] = await Promise.all([
+        getAppConfig({ tenantId: user.tenantId, baseOnly, bypassOverrideCache: true }),
+        baseOnly ? undefined : getAppConfig({ tenantId: user.tenantId, baseOnly: true }),
+      ]);
       const sections = collectAppConfigSections(appConfig) as ConfigSection[];
       const readable = await getReadableConfigSections(user, sections);
       const filteredAppConfig = filterAppConfigForReadAccess(appConfig, readable);
 
-      return res.status(200).json({ config: redactAppConfigForResponse(filteredAppConfig) });
+      return res
+        .status(200)
+        .json({ config: redactAppConfigForResponse(filteredAppConfig, yamlConfig) });
     } catch (error) {
       logger.error('[adminConfig] getBaseConfig error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to get base config' });
@@ -1105,7 +1190,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const encryptedOverrides = encryptConfigSecrets(filteredOverrides);
       const baseYaml = overrideSections.length > 0 ? await getBaseYamlConfig(user.tenantId) : {};
 
-      type PutStop = { status: 403 } | { status: 400; issues: ConfigOverrideIssue[] };
+      type PutStop =
+        | { status: 403 }
+        | { status: 400; issues: ConfigOverrideIssue[] }
+        | { status: 400; reentry: SecretReentryIssue[] };
       let outcome;
       try {
         outcome = await runConfigMutation<PutStop>(
@@ -1132,6 +1220,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             );
             if (issues.length > 0) {
               return { draft: null, result: { status: 400, issues } };
+            }
+            /** A changed URL beside a stored key that stays needs that key entered again. */
+            const reentry = getReplaceReentryIssues(stored, filteredOverrides, preserved);
+            if (reentry.length > 0) {
+              return { draft: null, result: { status: 400, reentry } };
             }
             const next = { ...preserved } as Record<string, unknown>;
             if (principalId === BASE_CONFIG_PRINCIPAL_ID) {
@@ -1170,6 +1263,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         const stop = outcome.result;
         if (stop.status === 403) {
           return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        if ('reentry' in stop) {
+          return secretReentryResponse(res, stop.reentry);
         }
         return invalidOverrideResponse(res, stop.issues);
       }
@@ -1365,10 +1461,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const baseYaml = await getBaseYamlConfig(user.tenantId);
       const encryptedFields = encryptConfigSecretFields(fields);
+      const requested = validEntries.map(({ target, value }) => ({
+        segments: target.segments,
+        value,
+      }));
 
+      type PatchStop = { issues: ConfigOverrideIssue[] } | { reentry: SecretReentryIssue[] };
       let outcome;
       try {
-        outcome = await runConfigMutation<ConfigOverrideIssue[]>(
+        outcome = await runConfigMutation<PatchStop>(
           {
             read: () => readStoredConfig(principalType, principalId),
             write: (draft, revision) =>
@@ -1382,9 +1483,14 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             );
             const fieldIssues = getConfigFieldIssues(writes, baseYaml, stored);
             if (fieldIssues.length > 0) {
-              return { draft: null, result: fieldIssues };
+              return { draft: null, result: { issues: fieldIssues } };
             }
             const state = setConfigFields(toConfigOverrideState(stored), writes);
+            /** A changed URL beside a stored key that stays needs that key entered again. */
+            const reentry = getPatchReentryIssues(stored, requested, state);
+            if (reentry.length > 0) {
+              return { draft: null, result: { reentry } };
+            }
             return {
               draft: {
                 principalModel: principalModel(principalType),
@@ -1402,7 +1508,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       if (!outcome.written) {
-        return invalidOverrideResponse(res, outcome.result);
+        const stop = outcome.result;
+        return 'reentry' in stop
+          ? secretReentryResponse(res, stop.reentry)
+          : invalidOverrideResponse(res, stop.issues);
       }
 
       const { record: config, previous } = outcome;
@@ -1550,16 +1659,30 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       let config: ConfigRecord;
       try {
-        /** A secret and its preview companion are suppressed together, in one write. */
-        config = await writeConfigTombstone(
-          principalType,
-          principalId,
-          principalModel(principalType),
-          getConfigSecretMutationPaths(fieldPath),
-          requestedPriority,
-          undefined,
-          { expectedRevision: expected.value },
-        );
+        if (isWebSearchBindingPath(fieldPath)) {
+          const outcome = await removeWebSearchBinding(
+            principalType,
+            principalId,
+            fieldPath,
+            { tombstone: true, priority: requestedPriority },
+            expected.value,
+          );
+          if (!outcome.written) {
+            return secretReentryResponse(res, outcome.result ?? []);
+          }
+          config = outcome.record;
+        } else {
+          /** A secret and its preview companion are suppressed together, in one write. */
+          config = await writeConfigTombstone(
+            principalType,
+            principalId,
+            principalModel(principalType),
+            getConfigSecretMutationPaths(fieldPath),
+            requestedPriority,
+            undefined,
+            { expectedRevision: expected.value },
+          );
+        }
       } catch (error) {
         return await writeFailureResponse(res, error, principalType, principalId);
       }
@@ -1679,19 +1802,33 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       let config: ConfigRecord | null;
       try {
-        /**
-         * A secret and its preview companion are removed together, in one write. A path with a
-         * dotted key never names a secret, so it goes by its segments alone.
-         */
-        config = await unsetConfigField(
-          principalType,
-          principalId,
-          target.dotFree
-            ? getConfigSecretMutationPaths(fieldPath)
-            : [{ segments: target.segments }],
-          undefined,
-          { expectedRevision: expected.value },
-        );
+        if (target.dotFree && isWebSearchBindingPath(fieldPath)) {
+          const outcome = await removeWebSearchBinding(
+            principalType,
+            principalId,
+            fieldPath,
+            { tombstone: false },
+            expected.value,
+          );
+          if (!outcome.written && outcome.result) {
+            return secretReentryResponse(res, outcome.result);
+          }
+          config = outcome.written ? outcome.record : null;
+        } else {
+          /**
+           * A secret and its preview companion are removed together, in one write. A path with
+           * a dotted key never names a secret, so it goes by its segments alone.
+           */
+          config = await unsetConfigField(
+            principalType,
+            principalId,
+            target.dotFree
+              ? getConfigSecretMutationPaths(fieldPath)
+              : [{ segments: target.segments }],
+            undefined,
+            { expectedRevision: expected.value },
+          );
+        }
       } catch (error) {
         return await writeFailureResponse(res, error, principalType, principalId);
       }
