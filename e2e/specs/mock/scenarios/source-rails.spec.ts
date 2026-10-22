@@ -72,11 +72,14 @@ test.describe('web search source rails', () => {
         .getByRole('link')
         .first()
         .locator('xpath=ancestor::div[contains(@class, "overflow-x-auto")][1]');
-      const metrics = await rail.evaluate((node) => ({
-        overflowX: getComputedStyle(node).overflowX,
-        scrollbarWidth: getComputedStyle(node).scrollbarWidth,
-        overflowing: node.scrollWidth > node.clientWidth,
-      }));
+      const metrics = await rail.evaluate((node) => {
+        node.style.width = '200px';
+        return {
+          overflowX: getComputedStyle(node).overflowX,
+          scrollbarWidth: getComputedStyle(node).scrollbarWidth,
+          overflowing: node.scrollWidth > node.clientWidth,
+        };
+      });
       expect(metrics).toEqual({ overflowX: 'auto', scrollbarWidth: 'none', overflowing: true });
     } finally {
       await deleteConversations([conversationId]);
