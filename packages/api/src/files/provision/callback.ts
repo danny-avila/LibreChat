@@ -1,6 +1,6 @@
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
-import { EToolResources } from 'librechat-data-provider';
+import { EToolResources, mergeCodeEnvRef } from 'librechat-data-provider';
 import type { CodeEnvFile, SubagentExecutionContext } from '@librechat/agents';
 import type { TFile } from 'librechat-data-provider';
 import type { CodeEnvRefUpdate, ProvisionService } from './service';
@@ -272,31 +272,28 @@ export function createProvisionFilesCallback({
                   sandboxFilename,
                 ]),
                 operation: async (_claim, onUploadStart) => {
-                  const {
-                    referenceSet: refs,
-                    refUpdate,
-                    sandboxFilename: storedSandboxFilename,
-                  } = await provisionToCodeEnv({
-                    req,
-                    file,
-                    entity_id: entityIdForFile(file),
-                    route: ctx.codeExecutionContext,
-                    sandboxFilename,
-                    signal,
-                    rateLimitBudget: codeApiRateLimitBudget,
-                    onUploadStart,
-                  });
+                  const { refUpdate, sandboxFilename: storedSandboxFilename } =
+                    await provisionToCodeEnv({
+                      req,
+                      file,
+                      entity_id: entityIdForFile(file),
+                      route: ctx.codeExecutionContext,
+                      sandboxFilename,
+                      signal,
+                      rateLimitBudget: codeApiRateLimitBudget,
+                      onUploadStart,
+                    });
+                  const ref = { ...refUpdate.ref, sandboxFilename: storedSandboxFilename };
                   return {
-                    value: { refs, sandboxFilename: storedSandboxFilename },
-                    commit: { code: refUpdate },
+                    value: ref,
+                    commit: { code: { ...refUpdate, ref } },
                   };
                 },
               }),
           );
-          const { refs: referenceSet, sandboxFilename: returnedSandboxFilename } = provisioned;
-          file.metadata = { ...file.metadata, ...referenceSet };
+          file.metadata = { ...file.metadata, ...mergeCodeEnvRef(file.metadata, provisioned) };
           addProvisionedFile(file, EToolResources.execute_code);
-          const ref = referenceSet.codeEnvRefs?.[codeRouteKey];
+          const ref = provisioned;
           if (ref?.storage_session_id && ref.file_id) {
             const codeFile = {
               id: ref.file_id,
@@ -305,7 +302,7 @@ export function createProvisionFilesCallback({
               /* The name the sandbox stored it under: a converted image is renamed on
                * upload, and telling the model the record's name sends it to a path that
                * does not exist. */
-              name: returnedSandboxFilename,
+              name: ref.sandboxFilename ?? file.filename,
               kind: ref.kind,
             } as CodeEnvFile;
             const existingIndex = provisionedCodeFiles.findIndex(

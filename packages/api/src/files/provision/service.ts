@@ -13,6 +13,7 @@ import {
 } from 'librechat-data-provider';
 import type { CodeEnvRef, CodeEnvRefMap, TFile } from 'librechat-data-provider';
 import type { Readable } from 'node:stream';
+import type { FileStorageUploadObserver } from '../operations';
 import type { CodeExecutionContext } from '~/agents/execution';
 import type { CodeEnvIdentity } from '~/files/code/identity';
 import type { CodeApiRateLimitBudget } from '~/utils';
@@ -52,7 +53,7 @@ export interface ProvisionDeps {
     file_id: string;
     entity_id?: string;
     signal?: AbortSignal;
-    onUploadStart?: () => void;
+    onUploadStart?: FileStorageUploadObserver;
   }) => Promise<{ embedded?: boolean } | undefined>;
   loadAuthValues: (params: {
     userId: string;
@@ -99,7 +100,7 @@ export interface ProvisionService {
     sandboxFilename?: string;
     signal?: AbortSignal;
     rateLimitBudget?: CodeApiRateLimitBudget;
-    onUploadStart?: () => void;
+    onUploadStart?: FileStorageUploadObserver;
   }) => Promise<{
     referenceSet: CodeEnvReferenceSetResult;
     refUpdate: CodeEnvRefUpdate;
@@ -112,7 +113,7 @@ export interface ProvisionService {
     entity_id?: string;
     existingStream?: Readable;
     signal?: AbortSignal;
-    onUploadStart?: () => void;
+    onUploadStart?: FileStorageUploadObserver;
   }) => Promise<{ embedded: boolean; fileUpdate: ProvisionFileUpdate | null }>;
   checkSessionsAlive: (params: {
     files: TFile[];
@@ -277,7 +278,7 @@ export function createProvisionService({
     sandboxFilename?: string;
     signal?: AbortSignal;
     rateLimitBudget?: CodeApiRateLimitBudget;
-    onUploadStart?: () => void;
+    onUploadStart?: FileStorageUploadObserver;
   }) {
     signal?.throwIfAborted();
     const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
@@ -392,7 +393,7 @@ export function createProvisionService({
     entity_id?: string;
     existingStream?: Readable;
     signal?: AbortSignal;
-    onUploadStart?: () => void;
+    onUploadStart?: FileStorageUploadObserver;
   }): Promise<{ embedded: boolean; fileUpdate: { file_id: string; embedded?: boolean } | null }> {
     /* Unique per attempt: two concurrent requests provisioning the same file_id would
      * otherwise share one path, and the first to finish unlinks it while the second is

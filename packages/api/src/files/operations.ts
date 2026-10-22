@@ -6,6 +6,8 @@ import type {
   FileProvisionCommit,
 } from '@librechat/data-schemas';
 
+export type FileStorageUploadObserver = (outcome?: 'rejected') => void;
+
 export type RawProvisionStorage = Pick<
   FileStorageMethods,
   'acquireFileProvision' | 'releaseFileProvision' | 'commitFileProvision'
@@ -30,7 +32,10 @@ type ProvisionRun<T> = {
   userId: string;
   storage: RawProvisionStorage;
   destination: string;
-  upload: (claim: FileStorageClaim, onUploadStart: () => void) => Promise<FileProvisionResult<T>>;
+  upload: (
+    claim: FileStorageClaim,
+    onUploadStart: FileStorageUploadObserver,
+  ) => Promise<FileProvisionResult<T>>;
 };
 
 export interface FileProvisionRecovery {
@@ -61,21 +66,31 @@ export function isDefinitiveFileStorageFailure(error: unknown): boolean {
   // RAG wraps the HTTP failure; inspect at most two nested causes.
   for (let depth = 0; depth < 3; depth++) {
     if (typeof current !== 'object' || current === null) return false;
-    if ('code' in current) {
-      switch (current.code) {
-        case 'EACCES':
-        case 'EPERM':
-        case 'CODE_API_RATE_LIMITED':
-          return true;
-      }
-    }
+    let status: unknown;
+    let hasStatus = true;
     if (
       'response' in current &&
       typeof current.response === 'object' &&
       current.response !== null &&
       'status' in current.response
     ) {
-      switch (current.response.status) {
+      status = current.response.status;
+    } else if (
+      '$metadata' in current &&
+      typeof current.$metadata === 'object' &&
+      current.$metadata !== null &&
+      'httpStatusCode' in current.$metadata
+    ) {
+      status = current.$metadata.httpStatusCode;
+    } else if ('statusCode' in current) {
+      status = current.statusCode;
+    } else if ('status' in current) {
+      status = current.status;
+    } else {
+      hasStatus = false;
+    }
+    if (hasStatus) {
+      switch (status) {
         case 400:
         case 401:
         case 403:
@@ -87,6 +102,14 @@ export function isDefinitiveFileStorageFailure(error: unknown): boolean {
           return true;
         default:
           return false;
+      }
+    }
+    if ('code' in current) {
+      switch (current.code) {
+        case 'EACCES':
+        case 'EPERM':
+        case 'CODE_API_RATE_LIMITED':
+          return true;
       }
     }
     if (!('cause' in current)) return false;
@@ -171,10 +194,12 @@ export function createFileProvisionRecovery(): FileProvisionRecovery {
   ): Promise<unknown> {
     if (entry.attempt) return entry.attempt;
     entry.recovering = true;
-    entry.attempt = settle(key, destination, entry, storage).finally(() => {
-      entry.attempt = undefined;
-      entry.recovering = false;
-    });
+    entry.attempt = Promise.resolve()
+      .then(() => settle(key, destination, entry, storage))
+      .finally(() => {
+        entry.attempt = undefined;
+        entry.recovering = false;
+      });
     return entry.attempt;
   }
 
@@ -202,19 +227,23 @@ export function createFileProvisionRecovery(): FileProvisionRecovery {
     };
     entries.set(destination, entry);
     const execute = async (): Promise<T> => {
+      let acquired: boolean;
       try {
-        if (!(await storage.acquireFileProvision(entry.claim))) {
-          throw new Error('File provisioning conflicts with deletion or a missing record');
-        }
+        acquired = await storage.acquireFileProvision(entry.claim);
       } catch (error) {
+        // The claim may be durable even when its acknowledgement was lost.
+        entry.phase = 'release';
+        throw new FileProvisionPersistenceError(error);
+      }
+      if (!acquired) {
         remove(key, destination, entry);
-        throw error;
+        throw new Error('File provisioning conflicts with deletion or a missing record');
       }
       let result: FileProvisionResult<T>;
       let uploadStarted = false;
       try {
-        result = await upload(entry.claim, () => {
-          uploadStarted = true;
+        result = await upload(entry.claim, (outcome) => {
+          uploadStarted = outcome !== 'rejected';
         });
       } catch (error) {
         if (uploadStarted && !isDefinitiveFileStorageFailure(error)) {
@@ -237,9 +266,11 @@ export function createFileProvisionRecovery(): FileProvisionRecovery {
       await settle(key, destination, entry, storage);
       return result.value;
     };
-    entry.attempt = execute().finally(() => {
-      entry.attempt = undefined;
-    });
+    entry.attempt = Promise.resolve()
+      .then(execute)
+      .finally(() => {
+        entry.attempt = undefined;
+      });
     return entry.attempt as Promise<T>;
   }
 
@@ -268,7 +299,7 @@ export function withFileProvisioning<T>({
   storage: FileProvisionStorage;
   operation: (
     claim: FileStorageClaim,
-    onUploadStart: () => void,
+    onUploadStart: FileStorageUploadObserver,
   ) => Promise<FileProvisionResult<T>>;
 }): Promise<T> {
   return storage.recovery.run({ ...options, storage, upload: operation });

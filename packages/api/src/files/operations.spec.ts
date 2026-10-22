@@ -19,6 +19,15 @@ const result = (value = 'uploaded') => ({
 const key = (claim: FileStorageClaim) =>
   JSON.stringify([claim.tenantId ?? null, claim.userId, claim.file_id]);
 
+function storageStatusErrors(status: unknown) {
+  return [
+    { response: { status } },
+    { $metadata: { httpStatusCode: status }, code: 'AccessDenied' },
+    { statusCode: status },
+    { status },
+  ];
+}
+
 function setup() {
   const provisioners = new Map<string, string>();
   const deleting = new Map<string, string>();
@@ -172,6 +181,156 @@ it('releases the original claim after a failed upload before deletion', async ()
   );
   expect(storage.commitFileProvision).not.toHaveBeenCalled();
   await withFileDeletion({ file, userId: 'caller', storage, operation: jest.fn() });
+});
+
+it.each([true, false])(
+  'reconciles the original acquisition token before a fresh upload when applied=%s',
+  async (applied) => {
+    const { storage, provisioners } = setup();
+    const failure = new Error('private acquisition acknowledgement failure');
+    storage.acquireFileProvision.mockImplementationOnce(async (claim) => {
+      if (applied) provisioners.set(claim.token, key(claim));
+      throw failure;
+    });
+    const originalUpload = jest.fn(async () => result('stale request'));
+    await expect(provision(storage, originalUpload)).rejects.toMatchObject({
+      name: 'FileProvisionPersistenceError',
+      message: 'File provisioning persistence was not confirmed',
+      cause: failure,
+    });
+    const original = storage.acquireFileProvision.mock.calls[0][0];
+    expect(storage.releaseFileProvision).not.toHaveBeenCalled();
+    const currentUpload = jest.fn(async (claim: FileStorageClaim) => {
+      expect(storage.releaseFileProvision).toHaveBeenLastCalledWith(original);
+      expect(provisioners.has(original.token)).toBe(false);
+      expect(claim.token).not.toBe(original.token);
+      return result('current request');
+    });
+    await expect(provision({ ...storage }, currentUpload)).resolves.toBe('current request');
+    expect(originalUpload).not.toHaveBeenCalled();
+    expect(currentUpload).toHaveBeenCalledTimes(1);
+    expect(storage.acquireFileProvision).toHaveBeenCalledTimes(2);
+    expect(storage.releaseFileProvision.mock.invocationCallOrder[0]).toBeLessThan(
+      storage.acquireFileProvision.mock.invocationCallOrder[1],
+    );
+    expect(provisioners.size).toBe(0);
+    await withFileDeletion({ file, userId: 'caller', storage, operation: jest.fn() });
+  },
+);
+
+it.each([true, false])(
+  'releases a settled failed acquisition before deletion when applied=%s',
+  async (applied) => {
+    const { storage, provisioners } = setup();
+    storage.acquireFileProvision.mockImplementationOnce(async (claim) => {
+      if (applied) provisioners.set(claim.token, key(claim));
+      throw new Error('acknowledgement lost');
+    });
+    const upload = jest.fn(async () => result());
+    await expect(provision(storage, upload)).rejects.toBeInstanceOf(FileProvisionPersistenceError);
+    const original = storage.acquireFileProvision.mock.calls[0][0];
+    await withFileDeletion({ file, userId: 'caller', storage, operation: jest.fn() });
+    expect(storage.releaseFileProvision).toHaveBeenCalledWith(original);
+    expect(storage.releaseFileProvision.mock.invocationCallOrder[0]).toBeLessThan(
+      storage.acquireFileDeletion.mock.invocationCallOrder[0],
+    );
+    expect(provisioners.size).toBe(0);
+    expect(upload).not.toHaveBeenCalled();
+    expect(storage.commitFileProvision).not.toHaveBeenCalled();
+  },
+);
+
+it('keeps failed acquisition recovery fenced until the original token can be released', async () => {
+  const { storage, provisioners } = setup();
+  storage.acquireFileProvision.mockImplementationOnce(async (claim) => {
+    provisioners.set(claim.token, key(claim));
+    throw new Error('acknowledgement lost');
+  });
+  await expect(provision(storage)).rejects.toBeInstanceOf(FileProvisionPersistenceError);
+  const original = storage.acquireFileProvision.mock.calls[0][0];
+  storage.releaseFileProvision
+    .mockRejectedValueOnce(new Error('database offline'))
+    .mockResolvedValueOnce(false);
+  const upload = jest.fn(async () => result());
+  await expect(provision(storage, upload)).rejects.toBeInstanceOf(FileProvisionPersistenceError);
+  await expect(
+    withFileDeletion({ file, userId: 'caller', storage, operation: jest.fn() }),
+  ).rejects.toBeInstanceOf(FileProvisionPersistenceError);
+  expect(storage.acquireFileProvision).toHaveBeenCalledTimes(1);
+  expect(storage.acquireFileDeletion).not.toHaveBeenCalled();
+  expect(upload).not.toHaveBeenCalled();
+  expect(provisioners.has(original.token)).toBe(true);
+  await expect(provision(storage, upload)).resolves.toBe('uploaded');
+  expect(provisioners.has(original.token)).toBe(false);
+});
+
+it('does not wait for or release a pending acquisition during deletion recovery', async () => {
+  const { storage, provisioners } = setup();
+  const entered = barrier();
+  const done = barrier();
+  const failure = new Error('acknowledgement lost');
+  storage.acquireFileProvision.mockImplementationOnce(async (claim) => {
+    provisioners.set(claim.token, key(claim));
+    entered.release();
+    await done.wait;
+    throw failure;
+  });
+  const upload = jest.fn(async () => result());
+  const work = provision(storage, upload);
+  const rejected = expect(work).rejects.toMatchObject({ cause: failure });
+  await entered.wait;
+  await storage.recovery.recover(scope, storage);
+  await expect(
+    withFileDeletion({ file, userId: 'caller', storage, operation: jest.fn() }),
+  ).rejects.toThrow('conflicts');
+  expect(storage.releaseFileProvision).not.toHaveBeenCalled();
+  expect(upload).not.toHaveBeenCalled();
+  done.release();
+  await rejected;
+  await storage.recovery.recover(scope, storage);
+  expect(storage.releaseFileProvision).toHaveBeenCalledWith(
+    storage.acquireFileProvision.mock.calls[0][0],
+  );
+  expect(provisioners.size).toBe(0);
+});
+
+it('retains a synchronous acquisition failure without reentrant recovery releasing it', async () => {
+  const { storage } = setup();
+  const failure = new Error('synchronous acquisition failure');
+  let recovery: Promise<void> | undefined;
+  storage.acquireFileProvision.mockImplementationOnce(() => {
+    recovery = storage.recovery.recover(scope, storage);
+    throw failure;
+  });
+  await expect(provision(storage)).rejects.toMatchObject({ cause: failure });
+  await recovery;
+  expect(storage.releaseFileProvision).not.toHaveBeenCalled();
+  await expect(provision(storage)).resolves.toBe('uploaded');
+  expect(storage.acquireFileProvision).toHaveBeenCalledTimes(2);
+});
+
+it('assigns the recovery attempt before a release can reenter recovery', async () => {
+  const { storage, provisioners } = setup();
+  storage.acquireFileProvision.mockRejectedValueOnce(new Error('acknowledgement lost'));
+  await expect(provision(storage)).rejects.toBeInstanceOf(FileProvisionPersistenceError);
+  let reentrant: Promise<void> | undefined;
+  storage.releaseFileProvision.mockImplementationOnce(async (claim) => {
+    reentrant = storage.recovery.recover(scope, storage);
+    provisioners.delete(claim.token);
+    return true;
+  });
+  await storage.recovery.recover(scope, storage);
+  await reentrant;
+  expect(storage.releaseFileProvision).toHaveBeenCalledTimes(1);
+  expect(storage.commitFileProvision).not.toHaveBeenCalled();
+});
+
+it('discards an explicitly contended acquisition without attempting to release it', async () => {
+  const { storage } = setup();
+  storage.acquireFileProvision.mockResolvedValueOnce(false);
+  await expect(provision(storage)).rejects.toThrow('conflicts');
+  expect(storage.releaseFileProvision).not.toHaveBeenCalled();
+  await expect(provision(storage)).resolves.toBe('uploaded');
 });
 
 it('reuses one active upload for overlapping same-destination calls', async () => {
@@ -429,9 +588,7 @@ it.each([
   Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }),
   Object.assign(new Error('aborted'), { name: 'AbortError' }),
   new Error('lost response'),
-  { response: { status: 408 } },
-  { response: { status: 409 } },
-  { response: { status: 500 } },
+  ...[408, 409, 500, 503].flatMap(storageStatusErrors),
 ])('retains an ambiguous started upload without retrying or releasing: %j', async (error) => {
   const { storage, provisioners } = setup();
   const upload = jest.fn(async (_claim: FileStorageClaim, start: () => void) => {
@@ -460,11 +617,10 @@ it.each([
   expect(storage.acquireFileDeletion).not.toHaveBeenCalled();
 });
 
-it.each([403, 429])(
-  'releases a definitive HTTP %s upload rejection and permits a fresh upload',
-  async (status) => {
+it.each([403, 429].flatMap(storageStatusErrors))(
+  'releases a definitive SDK upload rejection and permits a fresh upload: %j',
+  async (error) => {
     const { storage, provisioners } = setup();
-    const error = { response: { status } };
     const upload = jest.fn(async (_claim: FileStorageClaim, start: () => void) => {
       start();
       throw error;
@@ -482,7 +638,7 @@ it.each([403, 429])(
 it.each([
   new Error('lost deletion response'),
   Object.assign(new Error('aborted'), { name: 'AbortError' }),
-  { response: { status: 500 } },
+  ...[408, 409, 500, 503].flatMap(storageStatusErrors),
 ])('retains deletion intent after ambiguous primary dispatch: %j', async (error) => {
   const { storage } = setup();
   await expect(
@@ -491,7 +647,7 @@ it.each([
       userId: 'caller',
       storage,
       operation: async (primaryDeleted) => {
-        primaryDeleted();
+        primaryDeleted(false);
         throw error;
       },
     }),
@@ -502,7 +658,7 @@ it.each([
   await expect(provision(storage)).rejects.toThrow('conflicts');
 });
 
-it.each([{ response: { status: 403 } }, Object.assign(new Error('denied'), { code: 'EACCES' })])(
+it.each([...storageStatusErrors(403), Object.assign(new Error('denied'), { code: 'EACCES' })])(
   'clears newly acquired deletion intent after a definitive primary rejection: %j',
   async (error) => {
     const { storage } = setup();
@@ -524,36 +680,38 @@ it.each([{ response: { status: 403 } }, Object.assign(new Error('denied'), { cod
   },
 );
 
-it('never clears resumed deletion intent on a definitive rejection', async () => {
-  const { storage } = setup();
-  await withFileDeletion({
-    file,
-    userId: 'caller',
-    storage,
-    operation: async (primaryDeleted) => primaryDeleted(),
-  });
-  const error = { response: { status: 403 } };
-  await expect(
-    withFileDeletion({
+it.each(storageStatusErrors(403))(
+  'never clears resumed deletion intent on an SDK rejection: %j',
+  async (error) => {
+    const { storage } = setup();
+    await withFileDeletion({
       file,
       userId: 'caller',
       storage,
-      operation: async (primaryDeleted) => {
-        primaryDeleted();
-        throw error;
-      },
-    }),
-  ).rejects.toBe(error);
-  expect(storage.releaseFileDeletion).toHaveBeenLastCalledWith(
-    expect.objectContaining({ retainDeletion: true }),
-  );
-  await expect(provision(storage)).rejects.toThrow('conflicts');
-});
+      operation: async (primaryDeleted) => primaryDeleted(),
+    });
+    await expect(
+      withFileDeletion({
+        file,
+        userId: 'caller',
+        storage,
+        operation: async (primaryDeleted) => {
+          primaryDeleted(false);
+          throw error;
+        },
+      }),
+    ).rejects.toBe(error);
+    expect(storage.releaseFileDeletion).toHaveBeenLastCalledWith(
+      expect.objectContaining({ retainDeletion: true }),
+    );
+    await expect(provision(storage)).rejects.toThrow('conflicts');
+  },
+);
 
-it.each([400, 401, 403, 404, 413, 415, 422, 429])(
-  'classifies explicit response HTTP %s as definitive',
-  (status) => {
-    expect(isDefinitiveFileStorageFailure({ response: { status } })).toBe(true);
+it.each([400, 401, 403, 404, 413, 415, 422, 429].flatMap(storageStatusErrors))(
+  'classifies explicit numeric SDK HTTP denial as definitive: %j',
+  (error) => {
+    expect(isDefinitiveFileStorageFailure(error)).toBe(true);
   },
 );
 
@@ -568,8 +726,9 @@ it.each([
   undefined,
   null,
   '403',
-  { status: 403 },
-  { response: { status: '403' } },
+  ...storageStatusErrors('403'),
+  ...storageStatusErrors(undefined),
+  ...storageStatusErrors(null),
   { response: { status: 408 } },
   { response: { status: 409 } },
   { response: { status: 502 } },
@@ -623,25 +782,28 @@ it('bounds cause traversal and does not override an explicit ambiguous response'
   ).toBe(false);
 });
 
-it('keeps confirmed primary removal fenced even if later reconciliation has a denial-shaped cause', async () => {
-  const { storage } = setup();
-  await expect(
-    withFileDeletion({
-      file,
-      userId: 'caller',
-      storage,
-      operation: async (primaryDeleted) => {
-        primaryDeleted(true);
-        throw new Error('reconciliation failed', {
-          cause: Object.assign(new Error('unavailable'), { response: { status: 403 } }),
-        });
-      },
-    }),
-  ).rejects.toThrow('reconciliation failed');
-  expect(storage.releaseFileDeletion).toHaveBeenCalledWith(
-    expect.objectContaining({ retainDeletion: true }),
-  );
-});
+it.each(storageStatusErrors(403))(
+  'keeps confirmed primary removal fenced after an SDK denial: %j',
+  async (error) => {
+    const { storage } = setup();
+    await expect(
+      withFileDeletion({
+        file,
+        userId: 'caller',
+        storage,
+        operation: async (primaryDeleted) => {
+          primaryDeleted(true);
+          throw new Error('reconciliation failed', {
+            cause: error,
+          });
+        },
+      }),
+    ).rejects.toThrow('reconciliation failed');
+    expect(storage.releaseFileDeletion).toHaveBeenCalledWith(
+      expect.objectContaining({ retainDeletion: true }),
+    );
+  },
+);
 
 it('retains any unknown secondary outcome even when another copy reports a definitive denial', async () => {
   const { storage } = setup();
@@ -659,4 +821,25 @@ it('retains any unknown secondary outcome even when another copy reports a defin
   expect(storage.releaseFileDeletion).toHaveBeenCalledWith(
     expect.objectContaining({ retainDeletion: true }),
   );
+});
+
+it.each([408, 409, 500, 503, '403', undefined].flatMap(storageStatusErrors))(
+  'does not let a safe code or deeper denial override an explicit unknown SDK status: %j',
+  (error) => {
+    expect(
+      isDefinitiveFileStorageFailure({
+        ...error,
+        code: 'EACCES',
+        cause: { response: { status: 403 } },
+      }),
+    ).toBe(false);
+  },
+);
+
+it.each([
+  { response: { status: 500 }, $metadata: { httpStatusCode: 403 }, statusCode: 403, status: 403 },
+  { $metadata: { httpStatusCode: 500 }, statusCode: 403, status: 403 },
+  { statusCode: 500, status: 403 },
+])('prioritizes SDK HTTP contracts in adapter order: %j', (error) => {
+  expect(isDefinitiveFileStorageFailure(error)).toBe(false);
 });

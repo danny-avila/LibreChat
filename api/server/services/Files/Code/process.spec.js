@@ -3242,6 +3242,93 @@ describe('Code Process', () => {
       expect(mockReleaseFileProvision).toHaveBeenCalledWith(originalClaim);
     });
 
+    it.each(['primer', 'callback'])(
+      'recovers a %s upload through the other producer while provisioning an independent file',
+      async (first) => {
+        const { createProvisionFilesCallback } = jest.requireActual('@librechat/api');
+        const { getFileStorage } = require('~/server/services/Files/operations');
+        const dbFile = claimedFile();
+        const independent = {
+          ...claimedFile(),
+          file_id: 'independent-file',
+          filename: 'independent.csv',
+        };
+        const { handleFileUpload } = setupReuploadMocks({
+          storage_session_id: 'NEW_SESSION',
+          file_id: 'NEW_ID',
+          filename: 'stored.csv',
+        });
+        handleFileUpload.mockImplementation(async ({ filename }) => ({
+          storage_session_id: 'NEW_SESSION',
+          file_id: filename === dbFile.filename ? 'NEW_ID' : 'INDEPENDENT_ID',
+          filename: filename === dbFile.filename ? 'stored.csv' : filename,
+        }));
+        const req = { user: { id: 'user-123', role: 'USER' } };
+        const provisionToCodeEnv = jest.fn(async ({ file, sandboxFilename }) => {
+          const ref = {
+            kind: 'user',
+            id: req.user.id,
+            storage_session_id: 'NEW_SESSION',
+            file_id: file === dbFile ? 'NEW_ID' : 'INDEPENDENT_ID',
+            sandboxFilename: file === dbFile ? 'stored.csv' : sandboxFilename,
+          };
+          return {
+            referenceSet: { codeEnvRefs: { default: ref } },
+            refUpdate: { file_id: file.file_id, routeKey: 'default', ref },
+            sandboxFilename: ref.sandboxFilename,
+          };
+        });
+        const callback = (files) => {
+          const provisionState = {
+            codeEnvFiles: files,
+            vectorDBFiles: [],
+            aliveFileIds: new Set(),
+            agentScopedFileIds: new Set(),
+          };
+          return createProvisionFilesCallback({
+            req,
+            fileStorage: getFileStorage(),
+            agentToolContexts: new Map([['agent-id', { provisionState }]]),
+            provisionToCodeEnv,
+            provisionToVectorDB: jest.fn(),
+            updateFile: jest.fn(),
+            updateCodeEnvRef: jest.fn(),
+            addEmbeddedEntity: jest.fn(),
+          })(['execute_code'], 'agent-id');
+        };
+        const primer = (files) => {
+          getFiles.mockResolvedValue(files);
+          return primeFiles({
+            req,
+            tool_resources: { execute_code: { file_ids: files.map((file) => file.file_id) } },
+            agentId: 'agent-id',
+          });
+        };
+        mockCommitFileProvision.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+        await expect(first === 'primer' ? primer([dbFile]) : callback([dbFile])).rejects.toThrow();
+        const claim = mockAcquireFileProvision.mock.calls[0][0];
+        const result =
+          first === 'primer'
+            ? await callback([dbFile, independent])
+            : (await primer([dbFile, independent])).files;
+        expect(result).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: 'NEW_ID', name: 'stored.csv' }),
+            expect.objectContaining({ id: 'INDEPENDENT_ID', name: 'independent.csv' }),
+          ]),
+        );
+        expect(result).toHaveLength(2);
+        expect(handleFileUpload).toHaveBeenCalledTimes(1);
+        expect(provisionToCodeEnv).toHaveBeenCalledTimes(1);
+        expect(mockAcquireFileProvision).toHaveBeenCalledTimes(2);
+        expect(mockReleaseFileProvision).toHaveBeenCalledWith(claim);
+        expect(dbFile.metadata.codeEnvRefs.default).toMatchObject({
+          file_id: 'NEW_ID',
+          sandboxFilename: 'stored.csv',
+        });
+      },
+    );
+
     it.each(['upload', 'persist'])(
       'handles the durable claim after a %s failure',
       async (failure) => {

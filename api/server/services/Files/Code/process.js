@@ -899,6 +899,7 @@ const primeFiles = async (options) => {
             };
           },
         });
+        file.metadata = { ...file.metadata, ...mergeCodeEnvRef(file.metadata, newRef) };
         pushFile(newRef.storage_session_id, newRef.file_id, newRef.sandboxFilename);
         logger.debug(`[primeCodeFiles] file=${file.file_id} path=reupload-success`);
       } catch (error) {

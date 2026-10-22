@@ -82,6 +82,36 @@ it('recovers the original remote result and claim after the database becomes ava
   ).toEqual({ resumed: false });
 });
 
+it('reconciles a lost acquisition acknowledgment without abandoning its applied token', async () => {
+  const storage = { ...methods, recovery: createFileProvisionRecovery() };
+  const acquire = jest
+    .spyOn(storage, 'acquireFileProvision')
+    .mockImplementationOnce(async (claim) => {
+      await methods.acquireFileProvision(claim);
+      throw new Error('acquisition acknowledgment lost');
+    });
+  const release = jest.spyOn(storage, 'releaseFileProvision');
+  const operation = jest.fn(async () => ({
+    value: ref,
+    commit: { code: { routeKey: 'default', ref } },
+  }));
+  const options = { file, userId: scope.userId, storage, destination: 'code', operation };
+  await expect(withFileProvisioning(options)).rejects.toThrow();
+  expect(operation).not.toHaveBeenCalled();
+  const original = acquire.mock.calls[0][0];
+  expect(
+    (await File.findOne({ file_id: file.file_id }).lean())?.storageOperations?.provisioning,
+  ).toEqual([original.token]);
+  await expect(withFileProvisioning(options)).resolves.toBe(ref);
+  expect(operation).toHaveBeenCalledTimes(1);
+  expect(release).toHaveBeenCalledWith(original);
+  const stored = await File.findOne({ file_id: file.file_id }).lean();
+  expect(stored?.storageOperations?.provisioning).toEqual([]);
+  expect(
+    await methods.acquireFileDeletion({ ...scope, updatedAt: stored?.updatedAt, token: 'delete' }),
+  ).toEqual({ resumed: false });
+});
+
 it('retries release only after a lost acknowledgment without overwriting a later pointer', async () => {
   const storage = { ...methods, recovery: createFileProvisionRecovery() };
   const release = jest

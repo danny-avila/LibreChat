@@ -1,8 +1,16 @@
-/** Marks dispatch only after local preflight has succeeded. */
-export function dispatchFileStorageOperation<T>(
-  onStart: (() => void) | undefined,
+import type { FileStorageUploadObserver } from './operations';
+import { isDefinitiveFileStorageFailure } from './operations';
+
+/** Definitive rejection closes this attempt before an outer retry can wait or cancel. */
+export async function dispatchFileStorageOperation<T>(
+  onStart: FileStorageUploadObserver | undefined,
   operation: () => Promise<T>,
 ): Promise<T> {
   onStart?.();
-  return operation();
+  try {
+    return await operation();
+  } catch (error) {
+    if (isDefinitiveFileStorageFailure(error)) onStart?.('rejected');
+    throw error;
+  }
 }

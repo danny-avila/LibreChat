@@ -1,14 +1,14 @@
 import { Constants } from '@librechat/agents';
 import { FileSources, FileContext, EToolResources } from 'librechat-data-provider';
 import type { FileProvisionCommit, FileStorageClaim } from '@librechat/data-schemas';
-import type { TFile } from 'librechat-data-provider';
+import type { CodeEnvRef, TFile } from 'librechat-data-provider';
 import type { ProvisionCallbackDeps, ProvisionToolContext } from './callback';
 import type { ProvisionState } from '~/agents/resources';
 import type { CodeFileAgent } from '../code/queued';
 import type { ServerRequest } from '~/types';
+import { createFileProvisionRecovery, withFileProvisioning } from '../operations';
 import { mergeCodeFilesIntoContext } from '~/agents/codeFilesSession';
 import { prepareQueuedCodeFileContext } from '../code/queued';
-import { createFileProvisionRecovery } from '../operations';
 import { createSubagentCodeRouting } from '~/code/targets';
 import { createProvisionFilesCallback } from './callback';
 
@@ -17,6 +17,15 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 const req = { user: { id: 'user-1' } } as ServerRequest;
+
+function wrapUpload<TArgs extends unknown[], T>(
+  mock: jest.MockInstance<Promise<T>, TArgs>,
+  run: (execute: () => Promise<T>) => Promise<T>,
+): void {
+  const original = mock.getMockImplementation();
+  if (!original) throw new Error('Missing upload implementation');
+  mock.mockImplementation((...args: TArgs) => run(() => original(...args)));
+}
 
 function makeFile(overrides: Partial<TFile> = {}): TFile {
   return {
@@ -60,9 +69,12 @@ function buildHarness({
     typeof createProvisionFilesCallback
   >[0]['resolveExecutionContext'];
 }) {
-  const provisionToCodeEnv =
+  const provisionToCodeEnv: jest.MockedFunction<ProvisionCallbackDeps['provisionToCodeEnv']> =
     codeImpl ??
-    jest.fn(async ({ file, sandboxFilename }: { file: TFile; sandboxFilename: string }) => ({
+    jest.fn<
+      ReturnType<ProvisionCallbackDeps['provisionToCodeEnv']>,
+      Parameters<ProvisionCallbackDeps['provisionToCodeEnv']>
+    >(async ({ file, sandboxFilename }) => ({
       referenceSet: {
         codeEnvRefs: {
           default: {
@@ -80,11 +92,14 @@ function buildHarness({
       },
       /* Mirrors the service: the sandbox stores a converted image under a corrected
        * extension, so the name the model is told is not always the record's. */
-      sandboxFilename,
+      sandboxFilename: sandboxFilename ?? file.filename,
     }));
-  const provisionToVectorDB =
+  const provisionToVectorDB: jest.MockedFunction<ProvisionCallbackDeps['provisionToVectorDB']> =
     vectorImpl ??
-    jest.fn(async ({ file }: { file: TFile }) => ({
+    jest.fn<
+      ReturnType<ProvisionCallbackDeps['provisionToVectorDB']>,
+      Parameters<ProvisionCallbackDeps['provisionToVectorDB']>
+    >(async ({ file }) => ({
       embedded: true,
       fileUpdate: { file_id: file.file_id, embedded: true },
     }));
@@ -141,6 +156,76 @@ function buildHarness({
 }
 
 describe('createProvisionFilesCallback', () => {
+  it.each(['primer', 'callback'] as const)(
+    'recovers the canonical ref across producers when the %s uploads first',
+    async (first) => {
+      const oldRef: CodeEnvRef = {
+        kind: 'user',
+        id: 'user-1',
+        storage_session_id: 'other-session',
+        file_id: 'other-file',
+        executionProfile: 'stateful',
+      };
+      const userId = 'user-1';
+      const file = makeFile({ metadata: { codeEnvRef: oldRef, destinationChosen: false } });
+      const provisionState = state([file], []);
+      const h = buildHarness({ contexts: [['agent-a', { provisionState }]] });
+      const ref: CodeEnvRef = {
+        kind: 'user',
+        id: 'user-1',
+        storage_session_id: 'stored-session',
+        file_id: 'stored-file',
+        sandboxFilename: 'stored.csv',
+      };
+      h.provisionToCodeEnv.mockResolvedValue({
+        referenceSet: { codeEnvRefs: { default: ref } },
+        refUpdate: { file_id: file.file_id, routeKey: 'default', ref },
+        sandboxFilename: ref.sandboxFilename!,
+      });
+      const upload = jest.fn(async () => ({
+        value: ref,
+        commit: { code: { routeKey: 'default', ref } },
+      }));
+      const primer = () =>
+        withFileProvisioning({
+          file,
+          userId,
+          storage: h.fileStorage,
+          destination: JSON.stringify(['code', 'default', 'user', userId, null, file.filename]),
+          operation: upload,
+        });
+      const callback = () => h.provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+      h.fileStorage.commitFileProvision.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+      await expect(first === 'primer' ? primer() : callback()).rejects.toThrow();
+      const claim = h.fileStorage.acquireFileProvision.mock.calls[0][0];
+      if (first === 'primer') {
+        await expect(callback()).resolves.toEqual([
+          {
+            id: ref.file_id,
+            resource_id: ref.id,
+            storage_session_id: ref.storage_session_id,
+            name: ref.sandboxFilename,
+            kind: ref.kind,
+          },
+        ]);
+        expect(h.provisionToCodeEnv).not.toHaveBeenCalled();
+        expect(file.metadata).toMatchObject({
+          destinationChosen: false,
+          codeEnvRefs: { default: ref, stateful: oldRef },
+        });
+        expect(provisionState.codeEnvFiles).toEqual([]);
+      } else {
+        await expect(primer()).resolves.toEqual(ref);
+        expect(upload).not.toHaveBeenCalled();
+      }
+      expect(h.fileStorage.acquireFileProvision).toHaveBeenCalledTimes(1);
+      expect(h.fileStorage.commitFileProvision).toHaveBeenLastCalledWith(
+        expect.objectContaining({ claim, code: expect.objectContaining({ ref }) }),
+      );
+      expect(h.fileStorage.releaseFileProvision).toHaveBeenCalledWith(claim);
+    },
+  );
+
   describe.each(['code', 'vector'] as const)('%s provisioning claims', (destination) => {
     const toolNames = destination === 'code' ? [Constants.EXECUTE_CODE] : ['file_search'];
     function claimHarness() {
@@ -210,12 +295,13 @@ describe('createProvisionFilesCallback', () => {
       const writeGate = new Promise<void>((resolve) => {
         finishWrite = resolve;
       });
-      const original = harness.upload.getMockImplementation()!;
-      harness.upload.mockImplementation(async (...args: Parameters<typeof original>) => {
+      const paused = async <T>(execute: () => Promise<T>): Promise<T> => {
         expect(harness.fileStorage.acquireFileProvision).toHaveBeenCalledTimes(1);
         await uploadGate;
-        return original(...args);
-      });
+        return execute();
+      };
+      if (destination === 'code') wrapUpload(harness.provisionToCodeEnv, paused);
+      else wrapUpload(harness.provisionToVectorDB, paused);
       harness.persist.mockImplementation(async () => {
         await writeGate;
         return {};
@@ -252,12 +338,13 @@ describe('createProvisionFilesCallback', () => {
     it('records a successful remote result before honoring cancellation', async () => {
       const harness = claimHarness();
       const controller = new AbortController();
-      const upload = harness.upload.getMockImplementation()!;
-      harness.upload.mockImplementation(async (...args: Parameters<typeof upload>) => {
-        const result = await upload(...args);
+      const cancelled = async <T>(execute: () => Promise<T>): Promise<T> => {
+        const result = await execute();
         controller.abort();
         return result;
-      });
+      };
+      if (destination === 'code') wrapUpload(harness.provisionToCodeEnv, cancelled);
+      else wrapUpload(harness.provisionToVectorDB, cancelled);
       await expect(
         harness.provisionFiles(toolNames, 'agent-a', controller.signal),
       ).rejects.toMatchObject({ name: 'AbortError' });
@@ -312,8 +399,8 @@ describe('createProvisionFilesCallback', () => {
     it('retains the claim when a dispatched upload loses its response', async () => {
       const harness = claimHarness();
       harness.upload.mockImplementationOnce(
-        async ({ onUploadStart }: { onUploadStart: () => void }) => {
-          onUploadStart();
+        async ({ onUploadStart }: { onUploadStart?: (outcome?: 'rejected') => void }) => {
+          onUploadStart?.();
           throw new Error('transport response lost');
         },
       );
@@ -332,8 +419,8 @@ describe('createProvisionFilesCallback', () => {
     it('releases a dispatched claim after a definitive access rejection', async () => {
       const harness = claimHarness();
       harness.upload.mockImplementationOnce(
-        async ({ onUploadStart }: { onUploadStart: () => void }) => {
-          onUploadStart();
+        async ({ onUploadStart }: { onUploadStart?: (outcome?: 'rejected') => void }) => {
+          onUploadStart?.();
           throw Object.assign(new Error('denied'), { response: { status: 403 } });
         },
       );

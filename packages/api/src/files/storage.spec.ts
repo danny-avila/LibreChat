@@ -244,11 +244,14 @@ describe('createDeleteFileWithSecondaryStorage', () => {
     );
   });
 
-  it('reopens repair after a definitive primary access rejection', async () => {
+  it.each([
+    { response: { status: 403 } },
+    { $metadata: { httpStatusCode: 403 } },
+    { statusCode: 403 },
+    { status: 403 },
+  ])('reopens repair after a definitive primary access rejection: %j', async (denial) => {
     const { primary, fileStorage, remove } = setup();
-    primary.mockRejectedValue(
-      Object.assign(new Error('access denied'), { response: { status: 403 } }),
-    );
+    primary.mockRejectedValue(Object.assign(new Error('access denied'), denial));
     await expect(remove(req, file)).rejects.toThrow('access denied');
     expect(fileStorage.releaseFileDeletion).toHaveBeenCalledWith(
       expect.objectContaining({ retainDeletion: false }),

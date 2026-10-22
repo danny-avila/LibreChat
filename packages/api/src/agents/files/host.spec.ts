@@ -705,7 +705,16 @@ describe('run file execution host', () => {
     const h = harness({ setup: [] });
     const first = identity('first');
     const second = identity('second');
-    await Promise.all([h.prepare(first), h.prepare(second)]);
+    const same = identity('same');
+    await Promise.all([h.prepare(first), h.prepare(second), h.prepare(same)]);
+    const secondContext = h.host.getContext('worker', second)!;
+    await h.deps.prepareAgent({
+      actor: h.host.session.actorFor('worker', second),
+      files: [file('independent')],
+      sessionKey: secondContext.codeExecutionContext!.codeSessionKey,
+      revision: 100,
+      signal: h.signal,
+    });
     const entered = deferred<void>();
     const finish = deferred<void>();
     h.provisionToCodeEnv.mockImplementationOnce(async (params) => {
@@ -728,10 +737,31 @@ describe('run file execution host', () => {
       .then(() => {
         refreshed = true;
       });
-    await h.host.provision([Constants.EXECUTE_CODE], 'worker', h.signal, second);
-    expect(refreshed).toBe(false);
-    finish.resolve();
-    await Promise.all([upload, refresh]);
+    let sharedSettled = false;
+    const shared = h.host
+      .provisionPrepared([Constants.EXECUTE_CODE], 'worker', h.signal, same)
+      .then((result) => {
+        sharedSettled = true;
+        return result;
+      });
+    try {
+      const independent = await h.host.provisionPrepared(
+        [Constants.EXECUTE_CODE],
+        'worker',
+        h.signal,
+        second,
+      );
+      expect(independent?.map((entry) => entry.id)).toEqual(['remote-independent']);
+      expect(refreshed).toBe(false);
+      expect(sharedSettled).toBe(false);
+    } finally {
+      finish.resolve();
+      await Promise.all([upload, refresh, shared]);
+    }
+    expect((await shared)?.map((entry) => entry.id)).toEqual(['remote-input']);
+    expect(
+      h.provisionToCodeEnv.mock.calls.filter(([params]) => params.file.file_id === 'input'),
+    ).toHaveLength(1);
     expect(h.host.getContext('worker', first)).toBe(before);
     expect(before.tool_resources?.execute_code?.files?.map((entry) => entry.file_id)).toEqual([
       'input',
