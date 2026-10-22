@@ -171,15 +171,16 @@ function spellsRecipe(value, need) {
     const recipe = RECIPE_VARIANTS.get(variants[marker]);
     if (!(need.topology === 'any' || recipe === need.topology)) return false;
     if (need.important && !match[1] && !match[2]) return false;
-    const rest = variants.filter((_, i) => i !== marker);
     if (!dimEnclosing.some((variant) => variant.startsWith('['))) {
-      return rest.every((variant) => dimEnclosing.includes(variant));
+      return variants
+        .filter((_, i) => i !== marker)
+        .every((variant) => dimEnclosing.includes(variant));
     }
-    let from = 0;
-    return rest.every((variant) => {
-      from = dimEnclosing.indexOf(variant, from) + 1;
-      return from > 0;
-    });
+    return (
+      marker === dim.variants.findIndex(isDisabledVariant) &&
+      variants.length === dim.variants.length &&
+      variants.every((variant, i) => i === marker || variant === dim.variants[i])
+    );
   });
 }
 

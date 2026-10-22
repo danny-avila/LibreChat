@@ -207,6 +207,10 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
       errors: [missing('hover:[&_button]:disabled:opacity-50')],
     },
     {
+      code: "cn('[&_button]:disabled:opacity-50', 'theme-disabled:[&_button]:opacity-100')",
+      errors: [missing('[&_button]:disabled:opacity-50')],
+    },
+    {
       code: "cn('[&:disabled]:opacity-40')",
       errors: [missing('[&:disabled]:opacity-40')],
     },
