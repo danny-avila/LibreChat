@@ -303,6 +303,38 @@ describe('getApplicableConfigs', () => {
     expect(configs[1].principalId).toBe('admin');
   });
 
+  it('returns Base first and a stable order for equal priorities, whatever the stored ones', async () => {
+    const groups = Array.from({ length: 5 }, () => new Types.ObjectId().toString());
+    for (const groupId of groups) {
+      await methods.upsertConfig(PrincipalType.GROUP, groupId, PrincipalModel.GROUP, {}, 20);
+    }
+    await methods.upsertConfig(PrincipalType.USER, 'u1', PrincipalModel.USER, {}, 20);
+    await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, {}, 20);
+    await methods.upsertConfig(PrincipalType.ROLE, '__base__', PrincipalModel.ROLE, {}, 90);
+    const principals = [
+      { principalType: PrincipalType.USER, principalId: 'u1' },
+      { principalType: PrincipalType.ROLE, principalId: 'admin' },
+      ...groups.map((principalId) => ({ principalType: PrincipalType.GROUP, principalId })),
+    ];
+    const order = async () =>
+      (await methods.getApplicableConfigs(principals)).map(
+        (config) => `${config.principalType}:${config.principalId}`,
+      );
+
+    const first = await order();
+    expect(first[0]).toBe('role:__base__');
+    expect(first[1]).toBe('role:admin');
+    expect(first[first.length - 1]).toBe('user:u1');
+    for (let round = 0; round < 5; round++) {
+      expect(await order()).toEqual(first);
+    }
+    expect(
+      (await methods.listAllConfigs()).map(
+        (config) => `${config.principalType}:${config.principalId}`,
+      ),
+    ).toEqual(first);
+  });
+
   it('skips principals with undefined principalId', async () => {
     await methods.upsertConfig(PrincipalType.ROLE, '__base__', PrincipalModel.ROLE, {}, 0);
 
@@ -570,6 +602,302 @@ describe('upsertConfig', () => {
     );
 
     expect(result!.tombstones).toContain('mcpServers.github');
+  });
+});
+
+describe('upsertConfig priority', () => {
+  it('keeps the stored priority when none is given, and defaults by principal type on create', async () => {
+    const groupId = new Types.ObjectId().toString();
+    const created = await methods.upsertConfig(PrincipalType.GROUP, groupId, PrincipalModel.GROUP, {
+      interface: { modelSelect: false },
+    });
+    expect(created!.priority).toBe(20);
+
+    await methods.setConfigPriority(PrincipalType.GROUP, groupId, 35);
+    const replaced = await methods.upsertConfig(
+      PrincipalType.GROUP,
+      groupId,
+      PrincipalModel.GROUP,
+      { interface: { modelSelect: true } },
+    );
+    expect(replaced!.priority).toBe(35);
+  });
+});
+
+describe('setConfigPriority', () => {
+  it('changes only the priority of a stored document', async () => {
+    await methods.patchConfigFields(PrincipalType.ROLE, 'prio', PrincipalModel.ROLE, {
+      'interface.customWelcome': 'hi',
+    });
+    await methods.tombstoneConfigField(PrincipalType.ROLE, 'prio', PrincipalModel.ROLE, 'memory');
+    await methods.toggleConfigActive(PrincipalType.ROLE, 'prio', false);
+
+    const result = await methods.setConfigPriority(PrincipalType.ROLE, 'prio', 3);
+
+    expect(result!.changed).toBe(true);
+    const stored = await methods.findConfigByPrincipal(PrincipalType.ROLE, 'prio', {
+      includeInactive: true,
+    });
+    expect(stored).toMatchObject({
+      priority: 3,
+      overrides: { interface: { customWelcome: 'hi' } },
+      tombstones: ['memory'],
+      isActive: false,
+      configVersion: 4,
+    });
+    expect(await methods.setConfigPriority(PrincipalType.ROLE, 'missing', 3)).toBeNull();
+  });
+});
+
+describe('renameConfigPrincipal', () => {
+  it('moves a profile with dotted keys, storing them as the engine accepts them', async () => {
+    const profiles = { 'us.anthropic.claude-sonnet-4-5': 'arn:aws:x' };
+    await methods.patchConfigFields(PrincipalType.ROLE, 'editor', PrincipalModel.ROLE, {
+      'endpoints.bedrock.inferenceProfiles': profiles,
+    });
+
+    const moved = await methods.renameConfigPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+
+    expect(moved!.principalId).toBe('writer');
+    expect(moved!.overrides).toEqual({ endpoints: { bedrock: { inferenceProfiles: profiles } } });
+    expect(await raw().findOne({ principalId: 'editor' })).toBeNull();
+    const stored = await raw().findOne({ principalId: 'writer' });
+    expect(stored!.overrides.endpoints.bedrock.inferenceProfiles).toEqual(profiles);
+    expect(stored!.keyEncoding).toBeUndefined();
+  });
+
+  it('refuses to move onto a principal that has a profile, changing nothing', async () => {
+    await methods.patchConfigFields(PrincipalType.ROLE, 'a', PrincipalModel.ROLE, { x: 1 });
+    await methods.patchConfigFields(PrincipalType.ROLE, 'b', PrincipalModel.ROLE, { y: 1 });
+
+    await expect(methods.renameConfigPrincipal(PrincipalType.ROLE, 'a', 'b')).rejects.toMatchObject(
+      { code: 'CONFIG_PRINCIPAL_EXISTS' },
+    );
+    expect((await methods.findConfigByPrincipal(PrincipalType.ROLE, 'a'))!.overrides).toEqual({
+      x: 1,
+    });
+    expect((await methods.findConfigByPrincipal(PrincipalType.ROLE, 'b'))!.overrides).toEqual({
+      y: 1,
+    });
+  });
+});
+
+const inTenant = <T>(tenantId: string, run: () => Promise<T>): Promise<T> =>
+  tenantStorage.run({ tenantId }, run);
+const seedTenant = (tenantId: string, principalId: string, overrides: Record<string, unknown>) =>
+  inTenant(tenantId, () =>
+    methods.patchConfigFields(PrincipalType.ROLE, principalId, PrincipalModel.ROLE, overrides),
+  );
+/**
+ * A platform-level document, inserted directly so it keeps exactly the tenantless form it is
+ * given: no `tenantId`, or an unclaimed `null` or `''`.
+ */
+const seedPlatform = (
+  principalId: string,
+  overrides: Record<string, unknown>,
+  tenant: { tenantId?: string | null } = {},
+) =>
+  raw().insertOne({
+    principalType: PrincipalType.ROLE,
+    principalId,
+    principalModel: PrincipalModel.ROLE,
+    priority: 10,
+    overrides,
+    tombstones: [],
+    isActive: true,
+    configVersion: 1,
+    ...tenant,
+  });
+/** Every stored role document as `tenant/principalId`, platform-level ones as `-/…`. */
+const layout = async () =>
+  (
+    await raw()
+      .find({ principalType: PrincipalType.ROLE })
+      .project<{ principalId: string; tenantId?: string | null }>({ principalId: 1, tenantId: 1 })
+      .toArray()
+  )
+    .map((document) => `${document.tenantId || '-'}/${document.principalId}`)
+    .sort();
+/** Every stored role document as `tenant/principalId:priority`, platform-level ones as `-/…`. */
+const priorities = async () =>
+  (
+    await raw()
+      .find({ principalType: PrincipalType.ROLE })
+      .project<{ principalId: string; priority: number; tenantId?: string | null }>({
+        principalId: 1,
+        priority: 1,
+        tenantId: 1,
+      })
+      .toArray()
+  )
+    .map((document) => `${document.tenantId || '-'}/${document.principalId}:${document.priority}`)
+    .sort();
+
+describe('renameConfigPrincipal in the caller tenant partition', () => {
+  it('moves only the platform-level profile for a caller without a tenant', async () => {
+    await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
+    await seedPlatform('editor', { x: 'platform' });
+
+    const moved = await methods.renameConfigPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+
+    expect(moved!.overrides).toEqual({ x: 'platform' });
+    expect(moved!.tenantId).toBeUndefined();
+    expect(await layout()).toEqual(['-/writer', 'tenant-a/editor']);
+  });
+
+  it("never moves a tenant's profile to the platform when the platform role has none", async () => {
+    await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
+
+    expect(await methods.renameConfigPrincipal(PrincipalType.ROLE, 'editor', 'writer')).toBeNull();
+    expect(await layout()).toEqual(['tenant-a/editor']);
+  });
+
+  it('is refused only by a profile at the new name in the same partition', async () => {
+    await seedTenant('tenant-a', 'writer', { x: 'tenant-a' });
+    await seedPlatform('editor', { x: 'platform' });
+
+    const moved = await methods.renameConfigPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+
+    expect(moved!.overrides).toEqual({ x: 'platform' });
+    expect(await layout()).toEqual(['-/writer', 'tenant-a/writer']);
+    await seedPlatform('editor', { x: 'again' });
+    await expect(
+      methods.renameConfigPrincipal(PrincipalType.ROLE, 'editor', 'writer'),
+    ).rejects.toMatchObject({ code: 'CONFIG_PRINCIPAL_EXISTS' });
+    expect(await layout()).toEqual(['-/editor', '-/writer', 'tenant-a/writer']);
+  });
+
+  it("moves only the active tenant's profile inside a tenant", async () => {
+    await seedPlatform('editor', { x: 'platform' });
+    await seedTenant('tenant-b', 'editor', { x: 'tenant-b' });
+    await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
+
+    const moved = await inTenant('tenant-a', () =>
+      methods.renameConfigPrincipal(PrincipalType.ROLE, 'editor', 'writer'),
+    );
+
+    expect(moved!.overrides).toEqual({ x: 'tenant-a' });
+    expect(moved!.tenantId).toBe('tenant-a');
+    expect(await layout()).toEqual(['-/editor', 'tenant-a/writer', 'tenant-b/editor']);
+  });
+
+  it('treats an unclaimed profile (null or empty tenant) as platform-level', async () => {
+    await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
+    await seedPlatform('editor', { x: 'unclaimed' }, { tenantId: '' });
+    await seedPlatform('author', { x: 'unclaimed' }, { tenantId: null });
+
+    const moved = await Promise.all([
+      methods.renameConfigPrincipal(PrincipalType.ROLE, 'editor', 'writer'),
+      methods.renameConfigPrincipal(PrincipalType.ROLE, 'author', 'reader'),
+    ]);
+
+    expect(moved.map((record) => record!.overrides)).toEqual([
+      { x: 'unclaimed' },
+      { x: 'unclaimed' },
+    ]);
+    expect(await layout()).toEqual(['-/reader', '-/writer', 'tenant-a/editor']);
+  });
+
+  it("reads a role's profile only in the caller partition, as a rename's target check does", async () => {
+    await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
+
+    const platformRead = await methods.findConfigByPrincipal(PrincipalType.ROLE, 'editor', {
+      includeInactive: true,
+    });
+    const tenantRead = await inTenant('tenant-a', () =>
+      methods.findConfigByPrincipal(PrincipalType.ROLE, 'editor'),
+    );
+
+    expect(platformRead).toBeNull();
+    expect(tenantRead!.overrides).toEqual({ x: 'tenant-a' });
+  });
+
+  /**
+   * The driver applies the next insert and reports a dropped connection instead of its reply;
+   * with `unsettled`, the lookup that would settle it fails as well.
+   */
+  function loseNextCreateAcknowledgement(options: { unsettled?: boolean } = {}): Error {
+    const collection = mongoose.models.Config.collection;
+    const findOneAndUpdate = collection.findOneAndUpdate.bind(collection);
+    const lost = new mongoose.mongo.MongoNetworkError('connection reset after the write applied');
+    jest.spyOn(collection, 'findOneAndUpdate').mockImplementationOnce((async (
+      ...args: Parameters<typeof findOneAndUpdate>
+    ) => {
+      await findOneAndUpdate(...args);
+      if (options.unsettled) {
+        jest
+          .spyOn(collection, 'findOne')
+          .mockRejectedValueOnce(new mongoose.mongo.MongoNetworkError('still disconnected'));
+      }
+      throw lost;
+    }) as unknown as typeof collection.findOneAndUpdate);
+    return lost;
+  }
+
+  it("settles a copy whose acknowledgement was lost and finishes the move in the caller's tenant", async () => {
+    await seedTenant('tenant-b', 'writer', { x: 'tenant-b' });
+    await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
+    loseNextCreateAcknowledgement();
+
+    const moved = await inTenant('tenant-a', () =>
+      methods.renameConfigPrincipal(PrincipalType.ROLE, 'editor', 'writer'),
+    );
+
+    expect(moved!.overrides).toEqual({ x: 'tenant-a' });
+    expect(moved!.tenantId).toBe('tenant-a');
+    expect(await layout()).toEqual(['tenant-a/writer', 'tenant-b/writer']);
+  });
+
+  it('keeps both documents and rethrows when a lost acknowledgement cannot be settled', async () => {
+    await seedPlatform('editor', { x: 'platform' });
+    const lost = loseNextCreateAcknowledgement({ unsettled: true });
+
+    await expect(
+      methods.renameConfigPrincipal(PrincipalType.ROLE, 'editor', 'writer'),
+    ).rejects.toBe(lost);
+    expect(await layout()).toEqual(['-/editor', '-/writer']);
+  });
+});
+
+describe('setConfigPriority in the caller tenant partition', () => {
+  it('changes only the platform-level profile for a caller without a tenant', async () => {
+    await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
+    await seedPlatform('editor', { x: 'platform' });
+    await seedPlatform('author', { x: 'unclaimed' }, { tenantId: '' });
+
+    const result = await methods.setConfigPriority(PrincipalType.ROLE, 'editor', 40);
+    const unclaimed = await methods.setConfigPriority(PrincipalType.ROLE, 'author', 30);
+
+    expect(result).toMatchObject({ changed: true, config: { priority: 40 } });
+    expect(result!.config.overrides).toEqual({ x: 'platform' });
+    expect(result!.config.tenantId).toBeUndefined();
+    expect(unclaimed).toMatchObject({ changed: true, config: { overrides: { x: 'unclaimed' } } });
+    expect(await priorities()).toEqual(['-/author:30', '-/editor:40', 'tenant-a/editor:10']);
+  });
+
+  it("never changes or returns a tenant's profile when the platform role has none", async () => {
+    const tenantProfile = await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
+
+    expect(await methods.setConfigPriority(PrincipalType.ROLE, 'editor', 40)).toBeNull();
+    await expect(
+      methods.setConfigPriority(PrincipalType.ROLE, 'editor', 40, {
+        expectedRevision: `${tenantProfile!._id}:${tenantProfile!.configVersion}`,
+      }),
+    ).rejects.toMatchObject({ code: 'CONFIG_VERSION_CONFLICT', currentRevision: null });
+    expect(await priorities()).toEqual(['tenant-a/editor:10']);
+  });
+
+  it("changes only the active tenant's profile inside a tenant", async () => {
+    await seedPlatform('editor', { x: 'platform' });
+    await seedTenant('tenant-b', 'editor', { x: 'tenant-b' });
+    await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
+
+    const result = await inTenant('tenant-a', () =>
+      methods.setConfigPriority(PrincipalType.ROLE, 'editor', 40),
+    );
+
+    expect(result!.config).toMatchObject({ tenantId: 'tenant-a', overrides: { x: 'tenant-a' } });
+    expect(await priorities()).toEqual(['-/editor:10', 'tenant-a/editor:40', 'tenant-b/editor:10']);
   });
 });
 
@@ -1384,6 +1712,21 @@ describe('key encoding at rest', () => {
     expect(patched.overrides.endpoints).toMatchObject({
       bedrock: { inferenceProfiles: { 'eu.meta.llama': 'arn:eu' } },
     });
+  });
+
+  it('moves a profile on an engine that refuses raw key names, keeping its keys encoded', async () => {
+    const refusing = createConfigMethods(mongoose);
+    const findOneAndUpdate = refuseRawKeyNames();
+    await refusing.upsertConfig(PrincipalType.ROLE, 'from', PrincipalModel.ROLE, dotted as never);
+
+    const moved = await refusing.renameConfigPrincipal(PrincipalType.ROLE, 'from', 'to');
+
+    expect(moved!.overrides).toEqual(dotted);
+    expect(await raw().findOne({ principalId: 'from' })).toBeNull();
+    const stored = await raw().findOne({ principalId: 'to' });
+    expect(stored!.keyEncoding).toBe(1);
+    expect(stored!.overrides['%24top']).toEqual({ 'a%2Eb': '$value.stays' });
+    expect(findOneAndUpdate).toHaveBeenCalled();
   });
 
   it('restores a deleted document with dotted keys in the form the engine accepts', async () => {

@@ -283,7 +283,6 @@ function createRealHandlers(
     listAllConfigs: configMethods.listAllConfigs,
     findConfigByPrincipal: configMethods.findConfigByPrincipal,
     writeConfigDocument: configMethods.writeConfigDocument,
-    tombstoneConfigField: configMethods.tombstoneConfigField,
     unsetConfigField: configMethods.unsetConfigField,
     deleteConfig: configMethods.deleteConfig,
     toggleConfigActiveTracked: configMethods.toggleConfigActiveTracked,
@@ -1418,9 +1417,6 @@ describe('config secret registry — real handlers against a real Config collect
         writeConfigDocument: async () => {
           throw new Error('not written in this test');
         },
-        tombstoneConfigField: async () => {
-          throw new Error('not written in this test');
-        },
         unsetConfigField: async () => null,
         deleteConfig: async () => null,
         toggleConfigActiveTracked: async () => null,
@@ -1496,9 +1492,6 @@ describe('config secret registry — real handlers against a real Config collect
         listAllConfigs: async () => [],
         findConfigByPrincipal: async () => null,
         writeConfigDocument: async () => {
-          throw new Error('not written in this test');
-        },
-        tombstoneConfigField: async () => {
           throw new Error('not written in this test');
         },
         unsetConfigField: async () => null,
@@ -2760,6 +2753,49 @@ describe('secrets a layer below moved (`ignored` in write responses)', () => {
     expect(pinned.body!.ignored).toBeUndefined();
   });
 
+  it('reports `ignored` over the Base the write was judged on, without reading Base again', async () => {
+    let baseReads = 0;
+    const yamlHandlers = createRealHandlers({
+      getAppConfig: async () => baseAppConfig as never,
+      findConfigByPrincipal: (principalType, principalId, options) => {
+        if (principalId === basePrincipalId) {
+          baseReads += 1;
+        }
+        return configMethods.findConfigByPrincipal(principalType, principalId, options);
+      },
+    });
+    const baseMoved = await patch(
+      basePrincipalId,
+      [{ fieldPath: 'mcpServers.tools.url', value: 'https://attacker.example/mcp' }],
+      {},
+      yamlHandlers,
+    );
+    expect(baseMoved.statusCode).toBe(200);
+    const batch = (dryRun: boolean) =>
+      send(yamlHandlers.applyConfigChanges, {
+        params: { principalType: 'role', principalId: nextPrincipalId() },
+        body: { ops: [{ op: 'set', ...ownKey }], dryRun },
+      });
+
+    /** Each attempt reads Base beside the profile, and a written profile reads it once more. */
+    const requests: Array<[string, () => Promise<MockResponse>, number]> = [
+      ['PATCH', () => patch(nextPrincipalId(), [ownKey], {}, yamlHandlers), 2],
+      ['a written batch', () => batch(false), 2],
+      ['a dry run', () => batch(true), 1],
+    ];
+    for (const [, request, reads] of requests) {
+      baseReads = 0;
+      const res = await request();
+      expect(res.statusCode).toBe(200);
+      expect(res.body!.ignored).toContainEqual({
+        path: 'mcpServers.tools.apiKey.key',
+        segments: ['mcpServers', 'tools', 'apiKey', 'key'],
+        reason: 'secret_rebinding',
+      });
+      expect(baseReads).toBe(reads);
+    }
+  });
+
   it('reports the summarization key the Base profile entered once a profile switches provider', async () => {
     const yamlHandlers = createRealHandlers({
       getAppConfig: async () => ({ config: {} }) as never,
@@ -2984,11 +3020,43 @@ describe('write guards on every handler that changes a document', () => {
     getConfig: 'reads',
     deleteConfigOverrides: 'removes the whole document, credentials and all',
     toggleConfig: 'switches the document on or off; the merge judges the layers it brings in',
+    updateConfigPriority:
+      'sets only the priority, keeping overrides and tombstones; the merge judges the order it brings in',
   };
 
   it('lists every handler', () => {
     const listed = new Set([...Object.keys(CONTENT_WRITERS), ...Object.keys(OTHER_HANDLERS)]);
     expect(Object.keys(handlers).filter((name) => !listed.has(name))).toEqual([]);
+  });
+
+  it('keeps stored credentials through a priority change and answers with their previews only', async () => {
+    const principalId = nextPrincipalId();
+    const seeded = await patch(principalId, [
+      { fieldPath: 'mcpServers.github', value: mcpServer() },
+    ]);
+    expect(seeded.statusCode).toBe(200);
+    const before = await configMethods.findConfigByPrincipal(PrincipalType.ROLE, principalId);
+    const stored = await storedServer(principalId, 'github');
+
+    const res = await send(
+      createRealHandlers({ setConfigPriority: configMethods.setConfigPriority })
+        .updateConfigPriority,
+      { params: at(principalId), body: { priority: 42 } },
+    );
+
+    expect(res.statusCode).toBe(200);
+    const after = await configMethods.findConfigByPrincipal(PrincipalType.ROLE, principalId);
+    expect(after?.priority).toBe(42);
+    expect(after?.overrides).toEqual(before?.overrides);
+    const body = JSON.stringify(res.body);
+    for (const value of [API_KEY, CLIENT_SECRET, stored.apiKey.key, stored.oauth.client_secret]) {
+      expect(body).not.toContain(value);
+    }
+    expect(getAtPath(res.body, 'config.overrides.mcpServers.github.apiKey')).toEqual({
+      source: 'admin',
+      authorization_type: 'bearer',
+      keyPreview: stored.apiKey.keyPreview,
+    });
   });
 
   describe.each(Object.entries(CONTENT_WRITERS))('%s', (_name, { move, envReference, rebind }) => {
@@ -3069,6 +3137,30 @@ describe('a document an MCP removal creates', () => {
 
       expect(mcp.priority).toEqual(expect.any(Number));
       expect(mcp).toEqual(await tombstone('ocr.baseURL'));
+    },
+  );
+
+  it.each([PrincipalType.GROUP, PrincipalType.USER])(
+    'is refused for a %s that does not exist, and an unset finds no document',
+    async (principalType) => {
+      const guarded = createRealHandlers({ principalExists: configMethods.principalExists });
+      const principalId = new mongoose.Types.ObjectId().toString();
+      const params = { principalType, principalId };
+
+      const tombstoned = await send(guarded.tombstoneConfigField, {
+        params,
+        body: { fieldPath: 'mcpServers.github.url' },
+      });
+      const unset = await send(guarded.deleteConfigField, {
+        params,
+        query: { fieldPath: 'mcpServers.github.url' },
+      });
+
+      expect(tombstoned.statusCode).toBe(404);
+      expect(tombstoned.body).toMatchObject({ code: 'PRINCIPAL_NOT_FOUND' });
+      expect(unset.statusCode).toBe(404);
+      expect(unset.body).toEqual({ error: 'Config not found' });
+      expect(await mongoose.models.Config.findOne({ principalId })).toBeNull();
     },
   );
 });

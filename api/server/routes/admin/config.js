@@ -24,10 +24,11 @@ const handlers = createAdminConfigHandlers({
   listAllConfigs: db.listAllConfigs,
   findConfigByPrincipal: db.findConfigByPrincipal,
   writeConfigDocument: db.writeConfigDocument,
-  tombstoneConfigField: db.tombstoneConfigField,
   unsetConfigField: db.unsetConfigField,
   deleteConfig: db.deleteConfig,
   toggleConfigActiveTracked: db.toggleConfigActiveTracked,
+  setConfigPriority: db.setConfigPriority,
+  principalExists: db.principalExists,
   hasAnyConfigReadAccess,
   getReadableConfigSections,
   hasConfigCapability,
@@ -53,5 +54,6 @@ router.delete('/:principalType/:principalId/fields', handlers.deleteConfigField)
 router.post('/:principalType/:principalId/changes', handlers.applyConfigChanges);
 router.delete('/:principalType/:principalId', handlers.deleteConfigOverrides);
 router.patch('/:principalType/:principalId/active', handlers.toggleConfig);
+router.patch('/:principalType/:principalId/priority', handlers.updateConfigPriority);
 
 module.exports = router;

@@ -95,7 +95,6 @@ function createDeps(overrides: Partial<AdminConfigDeps> = {}): AdminConfigDeps {
     listAllConfigs: methods.listAllConfigs,
     findConfigByPrincipal: methods.findConfigByPrincipal,
     writeConfigDocument: jest.fn(methods.writeConfigDocument),
-    tombstoneConfigField: methods.tombstoneConfigField,
     unsetConfigField: methods.unsetConfigField,
     deleteConfig: methods.deleteConfig,
     toggleConfigActiveTracked: methods.toggleConfigActiveTracked,

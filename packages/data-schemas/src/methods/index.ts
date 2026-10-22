@@ -204,6 +204,7 @@ import {
 } from './agent';
 /* Config */
 import { createConfigMethods, type ConfigMethods } from './config';
+import { createPrincipalMethods, type PrincipalMethods } from './principal';
 import {
   createMCPAuthorityMethods,
   MCPAuthorityProofError,
@@ -317,6 +318,7 @@ export type AllMethods = SubagentContentMethods &
   ScheduleMethods &
   AgentMethods &
   ConfigMethods &
+  PrincipalMethods &
   MCPAuthorityMethods &
   InsightsMethods;
 
@@ -566,6 +568,7 @@ export function createMethods(
     ...agentMethods,
     /* Config */
     ...createConfigMethods(mongoose),
+    ...createPrincipalMethods(mongoose),
     /* MCP authority proofs */
     ...createMCPAuthorityMethods(mongoose),
     /* Insights */
@@ -662,6 +665,7 @@ export type {
   AgentGraphAccess,
   AgentGraphAccessContext,
   ConfigMethods,
+  PrincipalMethods,
   MCPAuthorityMethods,
   MCPAuthorityMethodHooks,
   MCPAuthorityConfigSourceDocument,

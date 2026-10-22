@@ -31,7 +31,6 @@ import { getSafeErrorMetadata } from '~/utils/errors';
 import { createAdminAuditEmitter } from './audit';
 import { mergeHeaders } from '~/utils/headers';
 
-const DEFAULT_PRIORITY = 10;
 const ENCRYPTED_PREFIX = 'v3:';
 const LANGFUSE_VERIFICATION_TIMEOUT_MS = 10_000;
 
@@ -61,13 +60,16 @@ export interface AdminLangfuseDeps {
     principalId: string,
     options?: { includeInactive?: boolean },
   ) => Promise<ConfigRecord | null>;
-  /** Sets the fields in one compare-and-swap write, re-reading on a concurrent change. */
+  /**
+   * Sets the fields in one compare-and-swap write, re-reading on a concurrent change. An
+   * omitted priority keeps the stored one (Base merges first whatever its priority).
+   */
   patchConfigFields: (
     principalType: PrincipalType,
     principalId: string,
     principalModel: PrincipalModel,
     fields: Record<string, unknown>,
-    priority: number,
+    priority?: number,
   ) => Promise<ConfigRecord | null>;
   toggleConfigActive: (
     principalType: PrincipalType,
@@ -455,7 +457,6 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         BASE_CONFIG_PRINCIPAL_ID,
         PrincipalModel.ROLE,
         encryptConfigSecretFields(fields),
-        existing?.priority ?? DEFAULT_PRIORITY,
       );
       /** The patch has committed by now, so a failed activation must not skip the cache
        * invalidation or the audit entry; it is rethrown once both have started. */

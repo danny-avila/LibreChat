@@ -40,6 +40,7 @@ import {
   isSameConfigValue,
   isConfigRevision,
   isConfigPathError,
+  resolveRawConfig,
   isFieldNameRejection,
   getDottedSectionIssues,
   runConfigMutation,
@@ -47,15 +48,18 @@ import {
   toConfigOverrideState,
   tombstoneConfigPaths,
   applyConfigTombstones,
+  isBaseConfigPrincipal,
+  ABSENT_CONFIG_REVISION,
   replaceConfigOverrides,
   parseConfigPathSegments,
   getConfigOverrideIssues,
   getExpectedRevision,
   MAX_CONFIG_PATH_DEPTH,
-  DEFAULT_CONFIG_PRIORITY,
+  getDefaultConfigPriority,
   BASE_CONFIG_PRINCIPAL_ID,
   isConfigRevisionConflict,
   isConfigOverrideStateEmpty,
+  toConfigDraft,
 } from '@librechat/data-schemas';
 import type {
   AppConfig,
@@ -63,6 +67,7 @@ import type {
   ConfigChange,
   ConfigRecord,
   ConfigSection,
+  ConfigWriteOutcome,
   ConfigRevision,
   ConfigFieldWrite,
   SystemCapability,
@@ -81,15 +86,16 @@ import type {
   AdminConfigChangesResponse,
   AdminConfigChangeErrorResponse,
   ConfigMutationOutcome,
+  ConfigMutationPlan,
 } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Response } from 'express';
-import type { AdminAuditEvent, RecordAuditEntry } from './audit';
 import type { CapabilityUser } from '~/middleware/capabilities';
 import type { EnvReferencePolicy } from '~/app/allowlist';
 import type { ConfigSecretRename } from './secrets';
 import type { SecretReentryIssue } from './binding';
 import type { ServerRequest } from '~/types/http';
+import type { RecordAuditEntry } from './audit';
 import type { SecretReentry } from './reentry';
 import {
   encryptConfigSecretFields,
@@ -116,10 +122,10 @@ import {
 import { REBINDING_SECTIONS, toIgnoredSecretOverride } from '~/app/rebinding';
 import { getWebSearchReentryIssues, isWebSearchBindingPath } from './binding';
 import { MCP_SERVER_SECTIONS, findSecretReentry } from './reentry';
+import { createAdminAuditEmitter, configTarget } from './audit';
 import { DEFAULT_OVERRIDE_CACHE_TTL } from '~/app/service';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { mergeOverrideLayers } from '~/app/overrides';
-import { createAdminAuditEmitter } from './audit';
 import { buildAdminConfigMeta } from './meta';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
@@ -556,25 +562,15 @@ export interface AdminConfigDeps {
   ) => Promise<ConfigRecord | null>;
   /**
    * Writes the principal's whole document when it is still at `expected` (`absent`: only when
-   * none exists), or throws a `ConfigRevisionConflictError`. PUT and PATCH plan the next
-   * document from the one they read, so validation and secret preservation see exactly what the
-   * write replaces.
+   * none exists), or throws a `ConfigRevisionConflictError`. PUT, PATCH, POST `/changes`,
+   * tombstones and web search unsets plan the next document from the one they read, so
+   * validation, the principal check and secret preservation see exactly what the write replaces.
    */
   writeConfigDocument: (
     principalType: PrincipalType,
     principalId: string,
     draft: ConfigDraft,
     expected: ConfigRevision,
-  ) => Promise<ConfigRecord>;
-  /** Tombstones every path in one write; an omitted `priority` keeps the stored one. */
-  tombstoneConfigField: (
-    principalType: PrincipalType,
-    principalId: string,
-    principalModel: PrincipalModel,
-    fieldPaths: ConfigPathInputs,
-    priority?: number,
-    session?: NoSession,
-    options?: ConfigWriteOptions,
   ) => Promise<ConfigRecord>;
   /**
    * Removes every path (dotted, or `{ segments }` for keys that contain dots) in one write,
@@ -600,6 +596,26 @@ export interface AdminConfigDeps {
     isActive: boolean,
     options?: ConfigLifecycleOptions,
   ) => Promise<{ config: ConfigRecord; changed: boolean } | null>;
+  /**
+   * Sets only the document's priority in the caller's tenant partition (platform-level without
+   * a tenant, never a tenant's document for the same principal); resolves to it and whether
+   * this write changed it, or `null` when the principal has none there. Without it the priority
+   * route answers 501.
+   */
+  setConfigPriority?: (
+    principalType: PrincipalType,
+    principalId: string,
+    priority: number,
+    options?: ConfigWriteOptions,
+  ) => Promise<ConfigWriteOutcome | null>;
+  /**
+   * Whether the role (exact name), group or user (ObjectId) exists in the caller's tenant
+   * partition: the caller's tenant, or without one only platform-level principals. A write that
+   * would create a principal's first document refuses one that does not (404
+   * `PRINCIPAL_NOT_FOUND`), since that profile would never apply to anyone. Without this
+   * lookup nothing is checked.
+   */
+  principalExists?: (principalType: PrincipalType, principalId: string) => Promise<boolean>;
   hasConfigCapability: (
     user: CapabilityUser,
     section: ConfigSection | null,
@@ -641,13 +657,6 @@ export interface AdminConfigDeps {
   overrideEnvAllowlist?: string;
 }
 
-/** Audit target for a principal's override document. Records field paths and
- * sections only: override values can carry secrets. */
-function configTarget(principalType: string, principalId: string): AdminAuditEvent['target'] {
-  const key = `${principalType}:${principalId}`;
-  return { type: 'config', id: key, name: key };
-}
-
 // ── Validation helpers ───────────────────────────────────────────────
 
 const CONFIG_PRINCIPAL_TYPES = new Set([
@@ -658,6 +667,20 @@ const CONFIG_PRINCIPAL_TYPES = new Set([
 
 function validatePrincipalType(value: string): value is PrincipalType {
   return CONFIG_PRINCIPAL_TYPES.has(value as PrincipalType);
+}
+
+const INVALID_PRIORITY_ERROR = 'priority must be a non-negative number';
+
+function isValidPriority(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function invalidPriorityResponse(res: Response): Response {
+  return res.status(400).json({ error: INVALID_PRIORITY_ERROR, code: 'INVALID_PRIORITY' });
+}
+
+function principalNotFoundResponse(res: Response): Response {
+  return res.status(404).json({ error: 'Principal not found', code: 'PRINCIPAL_NOT_FOUND' });
 }
 
 function principalModel(type: PrincipalType): PrincipalModel {
@@ -941,6 +964,33 @@ function secretReentryResponse(res: Response, issues: SecretReentryIssue[]): Res
   });
 }
 
+/**
+ * A write run on the validation floor, with the active Base document it was last judged on
+ * (`undefined` when the write read none: Base itself, or a write with nothing to validate).
+ */
+type FloorOutcome<T> = ConfigMutationOutcome<T> & { base?: ConfigRecord | null };
+
+/**
+ * Why a planned unset or tombstone wrote nothing: no document to unset, no principal to create
+ * one for, or a stored credential it would send elsewhere without entering it again.
+ */
+type RemovalStop =
+  | { status: 404; missing: 'config' | 'principal' }
+  | { status: 400; reentry: SecretReentryIssue[] }
+  | { status: 400; mcpReentry: SecretReentry };
+
+function removalStopResponse(res: Response, stop: RemovalStop): Response {
+  if ('reentry' in stop) {
+    return secretReentryResponse(res, stop.reentry);
+  }
+  if ('mcpReentry' in stop) {
+    return mcpReentryResponse(res, stop.mcpReentry);
+  }
+  return stop.missing === 'principal'
+    ? principalNotFoundResponse(res)
+    : res.status(404).json({ error: 'Config not found' });
+}
+
 const INVALID_EXPECTED_REVISION_ERROR =
   'expectedRevision must be "absent" or a revision returned by the config API';
 
@@ -1105,9 +1155,6 @@ const MCP_SECTIONS = new Set<string>(MCP_SERVER_SECTIONS);
 /** A removal enters no secret: whatever credential it leaves in place was kept. */
 const NO_ENTERED_SECRETS: ReadonlySet<string> = new Set();
 
-/** Why a write that keeps a stored credential while changing where it is sent was refused. */
-type ReentryStop = { reentry: SecretReentryIssue[] } | { mcpReentry: SecretReentry };
-
 /**
  * Whether removing or tombstoning `target` can change where a stored credential is sent: a web
  * search URL (or the whole section) beside a stored key, or any field of an MCP server.
@@ -1117,12 +1164,6 @@ function isBoundRemoval(target: FieldTarget): boolean {
     (target.dotFree && isWebSearchBindingPath(target.fieldPath)) ||
     MCP_SECTIONS.has(target.segments[0])
   );
-}
-
-function reentryStopResponse(res: Response, stop: ReentryStop): Response {
-  return 'reentry' in stop
-    ? secretReentryResponse(res, stop.reentry)
-    : mcpReentryResponse(res, stop.mcpReentry);
 }
 
 // ── Change batches ───────────────────────────────────────────────────
@@ -1723,15 +1764,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   applyConfigChanges: (req: ServerRequest, res: Response) => Promise<Response>;
   deleteConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
   toggleConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+  updateConfigPriority: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
   const {
     listAllConfigs,
     findConfigByPrincipal,
     writeConfigDocument,
-    tombstoneConfigField: writeConfigTombstone,
     unsetConfigField,
     deleteConfig,
     toggleConfigActiveTracked,
+    setConfigPriority,
+    principalExists,
     hasConfigCapability,
     hasAnyConfigReadAccess = async () => false,
     getReadableConfigSections = async (u, sections) => {
@@ -1825,7 +1868,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     });
   }
 
-  /** Maps the expected failures of a write to their responses; anything else is rethrown. */
+  /**
+   * Maps the expected failures of a write to their responses; anything else is rethrown. A
+   * conflict that does not carry the current revision rereads it from the document the write
+   * addressed (for a role, in the caller's tenant partition).
+   */
   async function writeFailureResponse(
     res: Response,
     error: unknown,
@@ -1842,33 +1889,37 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   }
 
   /**
-   * Unsets or tombstones a field whose removal can change where a stored credential is sent
-   * ({@link isBoundRemoval}), in a write planned from the document it replaces, so the re-entry
-   * checks judge exactly the revision the write lands on: a web search URL beside a stored key,
-   * and a field of an MCP server that keeps a stored credential, which must then be entered
-   * again, as a write would. A write that lands in between is re-read and re-checked, or answers
-   * 409 under `expectedRevision`. Stops with the refusal, or with `null` when an unset finds no
-   * document.
+   * Unsets or tombstones a path (a dot-free secret together with its preview) in a write
+   * planned from the document it replaces, so each check judges exactly the revision the write
+   * lands on: a tombstone that creates the principal's first document needs the principal
+   * (`canCreateFor`), and a removal that changes where a stored credential is sent needs it
+   * entered again, as a write would: a web search URL beside a stored key, or a field of an MCP
+   * server that keeps a stored credential (judged over librechat.yaml, as on every write). A
+   * write that lands in between is re-read and re-checked, or answers 409 under
+   * `expectedRevision`. An unset stops when there is no document.
    */
-  async function removeBoundField(
+  async function removeConfigPath(
     principalType: PrincipalType,
     principalId: string,
     target: FieldTarget,
     removal: { tombstone: true; priority?: number } | { tombstone: false },
     expectedRevision: ConfigRevision | undefined,
     tenantId: string | undefined,
-  ): Promise<ConfigMutationOutcome<ReentryStop | null>> {
+  ): Promise<ConfigMutationOutcome<RemovalStop>> {
     const paths = getRemovalPaths(target);
     const base = MCP_SECTIONS.has(target.segments[0]) ? await getBaseYamlConfig(tenantId) : {};
-    return runConfigMutation<ReentryStop | null>(
+    return runConfigMutation<RemovalStop>(
       {
         read: () => readStoredConfig(principalType, principalId),
         write: (draft, revision) =>
           writeConfigDocument(principalType, principalId, draft, revision),
       },
-      (stored) => {
+      async (stored) => {
         if (!stored && !removal.tombstone) {
-          return { draft: null, result: null };
+          return { draft: null, result: { status: 404, missing: 'config' } };
+        }
+        if (!stored && !(await canCreateFor(principalType, principalId))) {
+          return { draft: null, result: { status: 404, missing: 'principal' } };
         }
         const current = toConfigOverrideState(stored);
         const state = removal.tombstone
@@ -1876,7 +1927,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           : unsetConfigPaths(current, paths);
         const reentry = getWebSearchReentryIssues(stored, state, NO_ENTERED_SECRETS);
         if (reentry.length > 0) {
-          return { draft: null, result: { reentry } };
+          return { draft: null, result: { status: 400, reentry } };
         }
         const mcpReentry = findSecretReentry({
           stored,
@@ -1885,7 +1936,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           entered: NO_ENTERED_SECRETS,
         });
         if (mcpReentry) {
-          return { draft: null, result: { mcpReentry } };
+          return { draft: null, result: { status: 400, mcpReentry } };
         }
         return {
           draft: {
@@ -1893,7 +1944,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             priority:
               (removal.tombstone ? removal.priority : undefined) ??
               stored?.priority ??
-              DEFAULT_CONFIG_PRIORITY,
+              getDefaultConfigPriority({ principalType, principalId }),
             overrides: state.overrides,
             tombstones: state.tombstones,
             isActive: stored?.isActive ?? true,
@@ -1927,17 +1978,22 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   /**
    * The secrets the written document's layer drops at merge (`app/rebinding.ts`): inherited ones
    * it sends somewhere new, and its own whose destination a layer below changed. Judged on the
-   * Base floor: librechat.yaml, then the Base profile (for any other principal), then this
-   * document. A user or group can have other profiles in between, so this is what the document
-   * does over the floor. PUT, PATCH and change batches report it (a dry run for the document it
-   * plans), and so do field removals and tombstones in a section with bound secrets; the base
-   * config is loaded only when the document overrides or tombstones such a section. A failure is
-   * logged and reports nothing: the write itself has committed.
+   * Base floor: librechat.yaml, then the active Base profile (for any other principal; Base
+   * always merges first), then this document. A user or group can have other profiles in
+   * between, so this is what the document does over the floor. PUT, PATCH and change batches
+   * report it (a dry run for the document it plans) on the Base their write was last judged on
+   * (`base`), and field removals and tombstones in a section with bound secrets read it; the
+   * base config is loaded only when the document overrides or tombstones such a section. A
+   * failure is logged and reports nothing: the write itself has committed.
    */
   async function reportIgnored(
     written: ConfigOverrideLayer,
     tenantId: string | undefined,
-    loaded?: { baseConfig: AppConfig | undefined; envPolicy: EnvReferencePolicy },
+    loaded?: {
+      baseConfig: AppConfig | undefined;
+      envPolicy: EnvReferencePolicy;
+      base?: ConfigRecord | null;
+    },
   ): Promise<AdminConfigIgnoredSecret[]> {
     if (!touchesBoundSecretSections(written)) {
       return [];
@@ -1949,11 +2005,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const envPolicy = loaded?.envPolicy ?? getEnvPolicy(baseConfig.config ?? {});
       const writtenId = written.principalId?.toString();
-      const isBase = writtenId === BASE_CONFIG_PRINCIPAL_ID;
-      const storedBase = isBase
-        ? null
-        : await readStoredConfig(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID);
-      const floor = storedBase?.isActive === false ? null : storedBase;
+      const isBase = isBaseConfigPrincipal(written);
+      let floor: ConfigRecord | null = null;
+      if (!isBase) {
+        floor = loaded?.base !== undefined ? loaded.base : await readActiveBase();
+      }
       const ignored: AdminConfigIgnoredSecret[] = [];
       mergeOverrideLayers(baseConfig, floor ? [floor, written] : [written], {
         envPolicy,
@@ -1974,6 +2030,147 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       );
       return [];
     }
+  }
+
+  /**
+   * The active Base document, from the caller's tenant partition (platform-level without one),
+   * as the config store addresses every role document.
+   */
+  function readActiveBase(): Promise<ConfigRecord | null> {
+    return findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID);
+  }
+
+  /**
+   * Takes back a write this request made, only while the document is still at the revision the
+   * write produced: the document it replaced is written back, or the one it created removed. A
+   * write that landed since throws a revision conflict, and is left as it is.
+   */
+  async function withdrawWrite(
+    principalType: PrincipalType,
+    principalId: string,
+    written: ConfigRecord,
+    previous: ConfigRecord | null,
+  ): Promise<ConfigRecord | null> {
+    const revision = getConfigRevision(written);
+    if (previous) {
+      return writeConfigDocument(principalType, principalId, toConfigDraft(previous), revision);
+    }
+    await deleteConfig(principalType, principalId, undefined, { expectedRevision: revision });
+    return null;
+  }
+
+  /**
+   * Reads Base again after a profile write committed and, when it is no longer `read` (the Base
+   * the write was planned on), judges the request on it. `null` when Base did not move, or when
+   * that cannot be told: the committed write then stands, as it would had Base moved just after
+   * it, and is never turned into a failure.
+   */
+  async function judgeOnLandedBase<T>(
+    read: ConfigRecord | null,
+    judge: (landed: ConfigRecord | null) => Promise<ConfigMutationPlan<T>>,
+  ): Promise<ConfigMutationPlan<T> | null> {
+    try {
+      const landed = await readActiveBase();
+      if ((landed && getConfigRevision(landed)) === (read && getConfigRevision(read))) {
+        return null;
+      }
+      return await judge(landed);
+    } catch (error) {
+      logger.warn(
+        '[adminConfig] A profile write could not be checked on the Base it landed over; it stands',
+        getSafeErrorMetadata(error),
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Runs a write that validates on the config the principal's overrides land on, before its own
+   * tombstones (the floor): `librechat.yaml` with the active Base document resolved over it,
+   * exactly as the merge layers Base under every profile (Base always merges first), or
+   * `librechat.yaml` alone for Base itself. The principal's other profiles vary per user and
+   * are left to the merge. Base is read from the caller's tenant partition, so a caller without
+   * a tenant validates on the platform-level Base and never on a tenant's. With `yaml` `null`
+   * the write does not validate on the floor, and `plan` gets an empty one.
+   *
+   * Base is its own document, which the profile's compare-and-swap does not cover. So each
+   * attempt reads Base beside the profile (a retry never reuses a Base a concurrent write has
+   * replaced), and once the write commits Base is read again. When it moved meanwhile, the
+   * request is judged once more, `plan` on the document the write replaced, on the Base the
+   * write landed over (`judgeOnLandedBase`): a write still valid there stands, and one that is
+   * not is withdrawn (`withdrawWrite`) and answered with that judgement.
+   *
+   * The outcome carries the Base it was last judged on (`base`, `undefined` when none was
+   * read), so what the written or planned document drops at merge (`reportIgnored`) is judged
+   * on the same Base without reading it again.
+   */
+  async function runOnValidationFloor<T>(
+    principalType: PrincipalType,
+    principalId: string,
+    tenantId: string | undefined,
+    yaml: Partial<TCustomConfig> | null,
+    plan: (
+      stored: ConfigRecord | null,
+      floor: Partial<TCustomConfig>,
+    ) => Promise<ConfigMutationPlan<T>>,
+    expectedRevision: ConfigRevision | undefined,
+  ): Promise<FloorOutcome<T>> {
+    const readsBase = yaml != null && !isBaseConfigPrincipal({ principalType, principalId });
+    const attempt: { base: ConfigRecord | null } = { base: null };
+    const floorOver = (base: ConfigRecord | null): Partial<TCustomConfig> => {
+      if (yaml == null) {
+        return {};
+      }
+      return base ? resolveRawConfig(yaml, [base]) : yaml;
+    };
+    const outcome = await runConfigMutation<T>(
+      {
+        read: async () => {
+          const [stored, base] = await Promise.all([
+            readStoredConfig(principalType, principalId),
+            readsBase ? readActiveBase() : null,
+          ]);
+          attempt.base = base;
+          return stored;
+        },
+        write: (draft, revision) =>
+          writeConfigDocument(principalType, principalId, draft, revision),
+      },
+      (stored) => plan(stored, floorOver(attempt.base)),
+      { expectedRevision },
+    );
+    if (!readsBase) {
+      return outcome;
+    }
+    if (!outcome.written) {
+      return { ...outcome, base: attempt.base };
+    }
+    const judged = await judgeOnLandedBase(attempt.base, (landed) => {
+      attempt.base = landed;
+      return plan(outcome.previous, floorOver(landed));
+    });
+    if (judged == null || judged.draft != null) {
+      return { ...outcome, base: attempt.base };
+    }
+    const current = await withdrawWrite(
+      principalType,
+      principalId,
+      outcome.record,
+      outcome.previous,
+    );
+    await invalidateCaches(tenantId, 'withdrawn write');
+    return { written: false, current, result: judged.result, base: attempt.base };
+  }
+
+  /**
+   * Whether a write may create the principal's first document: it must exist in the caller's
+   * tenant partition. Base always may, and nothing is checked without `principalExists`.
+   */
+  async function canCreateFor(principalType: PrincipalType, principalId: string): Promise<boolean> {
+    if (!principalExists || isBaseConfigPrincipal({ principalType, principalId })) {
+      return true;
+    }
+    return principalExists(principalType, principalId);
   }
 
   /**
@@ -2173,8 +2370,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: LANGFUSE_HEADERS_CONFIG_ERROR });
       }
 
-      if (priority != null && (typeof priority !== 'number' || priority < 0)) {
-        return res.status(400).json({ error: 'priority must be a non-negative number' });
+      if (priority != null && !isValidPriority(priority)) {
+        return invalidPriorityResponse(res);
       }
 
       const user = getCapabilityUser(req);
@@ -2241,8 +2438,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const overrideSections = Object.keys(filteredOverrides);
+      /** A create-only request is a lifecycle write even when it carries nothing. */
+      const createOnly = expected.value === ABSENT_CONFIG_REVISION;
 
-      if (overrideSections.length === 0 && priority == null) {
+      if (overrideSections.length === 0 && priority == null && !createOnly) {
         return noopResponse(
           res,
           'No actionable override sections provided',
@@ -2285,22 +2484,27 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       /** What the request itself supplies, before secret preservation fills in what it omits. */
       const requestWrites: ConfigFieldWrite[] = [{ segments: [], value: encryptedOverrides }];
       const entered = getEnteredConfigSecrets(requestWrites);
+      /** A write without override sections (create-only or priority-only) validates nothing. */
+      const yaml = overrideSections.length > 0 ? baseYaml : null;
 
       type PutStop =
         | { status: 403 }
+        | { status: 404 }
         | { status: 400; issues: ConfigOverrideIssue[] }
         | { status: 400; renameIssue: string }
         | { status: 400; reentry: SecretReentryIssue[] }
         | { status: 400; mcpReentry: SecretReentry };
       let outcome;
       try {
-        outcome = await runConfigMutation<PutStop>(
-          {
-            read: () => readStoredConfig(principalType, principalId),
-            write: (draft, revision) =>
-              writeConfigDocument(principalType, principalId, draft, revision),
-          },
-          (stored) => {
+        outcome = await runOnValidationFloor<PutStop>(
+          principalType,
+          principalId,
+          user.tenantId,
+          yaml,
+          async (stored, floor) => {
+            if (!stored && !(await canCreateFor(principalType, principalId))) {
+              return { draft: null, result: { status: 404 } };
+            }
             /** Assign-only callers manage the profile's lifecycle, never its contents. */
             if (
               !hasBroadManage &&
@@ -2319,7 +2523,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             /** A full replace keeps the principal's tombstones, so they shape its base. */
             const issues = getConfigOverrideIssues(
               preserved,
-              applyConfigTombstones(baseYaml, stored?.tombstones),
+              applyConfigTombstones(floor, stored?.tombstones),
             );
             if (issues.length > 0) {
               return { draft: null, result: { status: 400, issues } };
@@ -2349,19 +2553,22 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
               toConfigOverrideState(stored),
               next as Partial<TCustomConfig>,
             );
+            /** An omitted priority keeps the stored one, so a replace never reorders profiles. */
+            const requestedPriority = hasBroadManage ? priority : undefined;
             return {
               draft: {
                 principalModel: principalModel(principalType),
-                priority: hasBroadManage
-                  ? (priority ?? DEFAULT_CONFIG_PRIORITY)
-                  : (stored?.priority ?? DEFAULT_CONFIG_PRIORITY),
+                priority:
+                  requestedPriority ??
+                  stored?.priority ??
+                  getDefaultConfigPriority({ principalType, principalId }),
                 overrides: state.overrides,
                 tombstones: state.tombstones,
                 isActive: true,
               },
             };
           },
-          { expectedRevision: expected.value },
+          expected.value,
         );
       } catch (error) {
         return await writeFailureResponse(res, error, principalType, principalId);
@@ -2371,6 +2578,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         const stop = outcome.result;
         if (stop.status === 403) {
           return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+        if (stop.status === 404) {
+          return principalNotFoundResponse(res);
         }
         if ('renameIssue' in stop) {
           return invalidRenameResponse(res, stop.renameIssue);
@@ -2402,7 +2612,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         created ? 201 : 200,
         config,
         hasBroadManage ? FULL_READ_ACCESS : NO_READ_ACCESS,
-        await reportIgnored(config, user.tenantId, { baseConfig, envPolicy }),
+        await reportIgnored(config, user.tenantId, { baseConfig, envPolicy, base: outcome.base }),
       );
     } catch (error) {
       if (isFieldNameRejection(error)) {
@@ -2436,8 +2646,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         priority?: number;
       };
 
-      if (priority != null && (typeof priority !== 'number' || priority < 0)) {
-        return res.status(400).json({ error: 'priority must be a non-negative number' });
+      if (priority != null && !isValidPriority(priority)) {
+        return invalidPriorityResponse(res);
       }
 
       const expected = readExpectedRevision(
@@ -2576,22 +2786,25 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const entered = getEnteredConfigSecrets(requestWrites);
 
       type PatchStop =
-        | { issues: ConfigOverrideIssue[] }
-        | { renameIssue: string }
-        | { reentry: SecretReentryIssue[] }
-        | { mcpReentry: SecretReentry };
+        | { status: 404 }
+        | { status: 400; issues: ConfigOverrideIssue[] }
+        | { status: 400; renameIssue: string }
+        | { status: 400; reentry: SecretReentryIssue[] }
+        | { status: 400; mcpReentry: SecretReentry };
       let outcome;
       try {
-        outcome = await runConfigMutation<PatchStop>(
-          {
-            read: () => readStoredConfig(principalType, principalId),
-            write: (draft, revision) =>
-              writeConfigDocument(principalType, principalId, draft, revision),
-          },
-          (stored) => {
+        outcome = await runOnValidationFloor<PatchStop>(
+          principalType,
+          principalId,
+          user.tenantId,
+          baseYaml,
+          async (stored, floor) => {
+            if (!stored && !(await canCreateFor(principalType, principalId))) {
+              return { draft: null, result: { status: 404 } };
+            }
             const renameIssue = getRenameIssue(renames.renames, stored, requestWrites);
             if (renameIssue) {
-              return { draft: null, result: { renameIssue } };
+              return { draft: null, result: { status: 400, renameIssue } };
             }
             /** Secrets an object omits are kept before validation sees the document. */
             const preservedFields = preservePatchedConfigSecretFields(
@@ -2604,15 +2817,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
               }
             }
             const writes = toOrderedWrites(validEntries, preservedFields);
-            const fieldIssues = getConfigFieldIssues(writes, baseYaml, stored);
+            const fieldIssues = getConfigFieldIssues(writes, floor, stored);
             if (fieldIssues.length > 0) {
-              return { draft: null, result: { issues: fieldIssues } };
+              return { draft: null, result: { status: 400, issues: fieldIssues } };
             }
             const state = setConfigFields(toConfigOverrideState(stored), writes);
             /** A changed URL beside a stored key that stays needs that key entered again. */
             const reentry = getWebSearchReentryIssues(stored, state, entered);
             if (reentry.length > 0) {
-              return { draft: null, result: { reentry } };
+              return { draft: null, result: { status: 400, reentry } };
             }
             const mcpReentry = findSecretReentry({
               stored,
@@ -2621,19 +2834,22 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
               entered,
             });
             if (mcpReentry) {
-              return { draft: null, result: { mcpReentry } };
+              return { draft: null, result: { status: 400, mcpReentry } };
             }
             return {
               draft: {
                 principalModel: principalModel(principalType),
-                priority: requestedPriority ?? stored?.priority ?? DEFAULT_CONFIG_PRIORITY,
+                priority:
+                  requestedPriority ??
+                  stored?.priority ??
+                  getDefaultConfigPriority({ principalType, principalId }),
                 overrides: state.overrides,
                 tombstones: state.tombstones,
                 isActive: stored?.isActive ?? true,
               },
             };
           },
-          { expectedRevision: expected.value },
+          expected.value,
         );
       } catch (error) {
         return await writeFailureResponse(res, error, principalType, principalId);
@@ -2641,6 +2857,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       if (!outcome.written) {
         const stop = outcome.result;
+        if (stop.status === 404) {
+          return principalNotFoundResponse(res);
+        }
         if ('renameIssue' in stop) {
           return invalidRenameResponse(res, stop.renameIssue);
         }
@@ -2669,7 +2888,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         200,
         config,
         access,
-        await reportIgnored(config, user.tenantId, { baseConfig, envPolicy }),
+        await reportIgnored(config, user.tenantId, { baseConfig, envPolicy, base: outcome.base }),
       );
     } catch (error) {
       if (isFieldNameRejection(error)) {
@@ -2708,8 +2927,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: 'fieldPath is required' });
       }
 
-      if (priority != null && (typeof priority !== 'number' || priority < 0)) {
-        return res.status(400).json({ error: 'priority must be a non-negative number' });
+      if (priority != null && !isValidPriority(priority)) {
+        return invalidPriorityResponse(res);
       }
 
       const expected = readExpectedRevision(
@@ -2780,40 +2999,27 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
 
-      let config: ConfigRecord;
+      let outcome: ConfigMutationOutcome<RemovalStop>;
       try {
-        if (isBoundRemoval(read.target)) {
-          const outcome = await removeBoundField(
-            principalType,
-            principalId,
-            read.target,
-            { tombstone: true, priority: requestedPriority },
-            expected.value,
-            user.tenantId,
-          );
-          if (!outcome.written) {
-            return reentryStopResponse(res, outcome.result ?? { reentry: [] });
-          }
-          config = outcome.record;
-        } else {
-          /** A secret and its preview companion are suppressed together, in one write. */
-          config = await writeConfigTombstone(
-            principalType,
-            principalId,
-            principalModel(principalType),
-            getConfigSecretMutationPaths(fieldPath),
-            requestedPriority,
-            undefined,
-            { expectedRevision: expected.value },
-          );
-        }
+        outcome = await removeConfigPath(
+          principalType,
+          principalId,
+          read.target,
+          { tombstone: true, priority: requestedPriority },
+          expected.value,
+          user.tenantId,
+        );
       } catch (error) {
         return await writeFailureResponse(res, error, principalType, principalId);
       }
+      if (!outcome.written) {
+        return removalStopResponse(res, outcome.result);
+      }
 
+      const { record: config, previous } = outcome;
       await invalidateCaches(user.tenantId, 'field tombstone');
       await emitAudit(req, {
-        action: config.configVersion === 1 ? 'config.created' : 'config.updated',
+        action: previous == null ? 'config.created' : 'config.updated',
         target: configTarget(principalType, principalId),
         metadata: { operation: 'tombstone', fieldPath },
       });
@@ -2908,7 +3114,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       let config: ConfigRecord | null;
       try {
         if (isBoundRemoval(target)) {
-          const outcome = await removeBoundField(
+          const outcome = await removeConfigPath(
             principalType,
             principalId,
             target,
@@ -2916,10 +3122,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             expected.value,
             user.tenantId,
           );
-          if (!outcome.written && outcome.result) {
-            return reentryStopResponse(res, outcome.result);
+          if (!outcome.written) {
+            return removalStopResponse(res, outcome.result);
           }
-          config = outcome.written ? outcome.record : null;
+          config = outcome.record;
         } else {
           /**
            * A secret and its preview companion are removed together, in one write. A path with
@@ -2989,13 +3195,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       };
       const { ops, priority } = body;
 
-      if (
-        priority != null &&
-        (typeof priority !== 'number' || !Number.isFinite(priority) || priority < 0)
-      ) {
-        return res
-          .status(400)
-          .json({ error: 'priority must be a non-negative number', code: 'INVALID_PRIORITY' });
+      if (priority != null && !isValidPriority(priority)) {
+        return invalidPriorityResponse(res);
       }
 
       if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') {
@@ -3115,15 +3316,20 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         planned?: ConfigOverrideState;
       }
       type ChangesStop =
+        | { kind: 'principal' }
         | { kind: 'issues'; issues: ConfigOverrideIssue[] }
         | { kind: 'reentry'; issues: SecretReentryIssue[] }
         | { kind: 'mcpReentry'; reentry: SecretReentry }
         | { kind: 'change'; failure: ChangeFailure };
       type ChangesResult = { report: ChangesReport; stop?: never } | { stop: ChangesStop };
 
-      const plan = (
+      const plan = async (
         stored: ConfigRecord | null,
-      ): { draft: ConfigDraft | null; result: ChangesResult } => {
+        floor: Partial<TCustomConfig>,
+      ): Promise<ConfigMutationPlan<ChangesResult>> => {
+        if (!stored && !(await canCreateFor(principalType, principalId))) {
+          return { draft: null, result: { stop: { kind: 'principal' } } };
+        }
         const report: ChangesReport = {
           applied: [],
           unchanged: [],
@@ -3209,14 +3415,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           report.ignored = [];
           report.appliedChanges = [];
         }
-        /** As on PUT, a priority for a principal without a document creates one that holds it. */
+        /** As on PUT, a priority for an existing principal without a document creates one that
+         *  holds it. */
         const priorityChanged = requestedPriority != null && requestedPriority !== stored?.priority;
         if (!documentChanged && !priorityChanged) {
           return { draft: null, result: { report } };
         }
         if (documentChanged) {
           const written = getConfigBatchWrittenPaths(appliedSteps, state, storedState);
-          const issues = getConfigChangeIssues(state, baseYaml, stored, written);
+          const issues = getConfigChangeIssues(state, floor, stored, written);
           if (issues.length > 0) {
             return { draft: null, result: { stop: { kind: 'issues', issues } } };
           }
@@ -3243,7 +3450,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return {
           draft: {
             principalModel: principalModel(principalType),
-            priority: requestedPriority ?? stored?.priority ?? DEFAULT_CONFIG_PRIORITY,
+            priority:
+              requestedPriority ??
+              stored?.priority ??
+              getDefaultConfigPriority({ principalType, principalId }),
             overrides: state.overrides,
             tombstones: state.tombstones,
             isActive: stored?.isActive ?? true,
@@ -3254,20 +3464,22 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       let outcome;
       try {
-        outcome = await runConfigMutation<ChangesResult>(
-          {
-            read: () => readStoredConfig(principalType, principalId),
-            write: (draft, revision) =>
-              writeConfigDocument(principalType, principalId, draft, revision),
-          },
+        outcome = await runOnValidationFloor<ChangesResult>(
+          principalType,
+          principalId,
+          user.tenantId,
+          baseYaml,
           plan,
-          { expectedRevision: expected.value },
+          expected.value,
         );
       } catch (error) {
         return await writeFailureResponse(res, error, principalType, principalId);
       }
 
       const result = outcome.result as ChangesResult;
+      if (result.stop?.kind === 'principal') {
+        return principalNotFoundResponse(res);
+      }
       if (result.stop?.kind === 'change') {
         return res.status(400).json(result.stop.failure);
       }
@@ -3288,12 +3500,19 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         : report.planned && {
             principalType,
             principalId,
-            priority: requestedPriority ?? config?.priority ?? DEFAULT_CONFIG_PRIORITY,
+            priority:
+              requestedPriority ??
+              config?.priority ??
+              getDefaultConfigPriority({ principalType, principalId }),
             overrides: report.planned.overrides,
             tombstones: report.planned.tombstones,
           };
       const ignoredSecrets = rebound
-        ? await reportIgnored(rebound, user.tenantId, { baseConfig, envPolicy })
+        ? await reportIgnored(rebound, user.tenantId, {
+            baseConfig,
+            envPolicy,
+            base: outcome.base,
+          })
         : [];
 
       if (outcome.written) {
@@ -3406,6 +3625,82 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   }
 
   /**
+   * PATCH /:principalType/:principalId/priority — Set only the document's priority.
+   *
+   * Overrides, tombstones and `isActive` stay as stored, so a priority change never re-sends
+   * (and so never risks clobbering) a profile's contents. Broad `manage:configs` only, like
+   * every other priority change. An unchanged priority is not written or audited. Only the
+   * caller's tenant partition is addressed, so a caller without a tenant reorders a
+   * platform-level profile and gets 404 for one that only a tenant holds.
+   */
+  async function updateConfigPriority(req: ServerRequest, res: Response): Promise<Response> {
+    try {
+      const { principalType, principalId } = req.params as {
+        principalType: string;
+        principalId: string;
+      };
+
+      if (!validatePrincipalType(principalType)) {
+        return res.status(400).json({
+          error: `Invalid principalType: ${principalType}`,
+          code: 'INVALID_PRINCIPAL_TYPE',
+        });
+      }
+
+      const { priority } = req.body as { priority?: unknown };
+      if (!isValidPriority(priority)) {
+        return invalidPriorityResponse(res);
+      }
+
+      const expected = readExpectedRevision(
+        (req.body as { expectedRevision?: unknown }).expectedRevision,
+      );
+      if (!expected.ok) {
+        return invalidExpectedRevisionResponse(res);
+      }
+
+      const user = getCapabilityUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+      }
+
+      if (!(await hasConfigCapability(user, null, 'manage'))) {
+        return res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+      }
+
+      if (!setConfigPriority) {
+        return res.status(501).json({ error: 'Priority updates are not configured' });
+      }
+
+      let updated: ConfigWriteOutcome | null;
+      try {
+        updated = await setConfigPriority(principalType, principalId, priority, {
+          expectedRevision: expected.value,
+        });
+      } catch (error) {
+        return await writeFailureResponse(res, error, principalType, principalId);
+      }
+      if (!updated) {
+        return res.status(404).json({ error: 'Config not found', code: 'CONFIG_NOT_FOUND' });
+      }
+
+      const { config, changed } = updated;
+      if (changed) {
+        await invalidateCaches(user.tenantId, 'priority');
+        await emitAudit(req, {
+          action: 'config.updated',
+          target: configTarget(principalType, principalId),
+          metadata: { operation: 'priority', priority: config.priority },
+        });
+      }
+      return res.status(200).json({ config: redactConfigForResponse(config) });
+    } catch (error) {
+      logger.error('[adminConfig] updateConfigPriority error:', getSafeErrorMetadata(error));
+      return res.status(500).json({ error: 'Failed to update config priority' });
+    }
+  }
+
+  /**
    * PATCH /:principalType/:principalId/active — Toggle isActive.
    */
   async function toggleConfig(req: ServerRequest, res: Response): Promise<Response> {
@@ -3505,5 +3800,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     applyConfigChanges: applyChanges,
     deleteConfigOverrides,
     toggleConfig,
+    updateConfigPriority,
   };
 }
