@@ -1,11 +1,14 @@
 import type { TEndpointsConfig } from './types';
+
 import {
   allowedAddressesSchema,
   agentsEndpointSchema,
   DEFAULT_RETAINED_ANSWER_TOKENS,
+  DEFAULT_HISTORY_CACHE_MAX_BYTES,
   DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
   bedrockModels,
   configSchema,
+  telemetrySchema,
   chatProjectsConfigSchema,
   DEFAULT_STEER_ARM_CONFIRMATION_TIMEOUT_MS,
   codeEnvironmentUserConfigSchema,
@@ -28,6 +31,27 @@ import {
   resolveEndpointType,
   webSearchSchema,
 } from './config';
+
+describe('independent browser replay opt-in', () => {
+  it('preserves absent configuration for existing environment-based RUM deployments', () => {
+    expect(configSchema.parse({ version: '1.3.17' }).telemetry).toBeUndefined();
+    expect(telemetrySchema.parse({ rum: { enabled: true } })).toEqual({ rum: { enabled: true } });
+  });
+
+  it('defaults an explicitly configured replay block to off', () => {
+    expect(telemetrySchema.parse({ rum: { enabled: true, sessionReplay: {} } })).toEqual({
+      rum: { enabled: true, sessionReplay: { enabled: false } },
+    });
+  });
+
+  it.each([
+    { rum: { sessionReplay: { enabled: 'true' } } },
+    { rum: { sessionReplay: { enable: false } } },
+    { rum: { enable: true } },
+  ])('rejects invalid or misspelled policy %p', (telemetry) => {
+    expect(telemetrySchema.safeParse(telemetry).success).toBe(false);
+  });
+});
 import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
 import { getEndpointFileConfig, mergeFileConfig } from './file-config';
 import { DEFAULT_MCP_APP_CSP_LIMITS } from './mcp/csp';
@@ -232,6 +256,26 @@ describe('repository instruction configuration', () => {
       ).toBe(false);
     }
   });
+});
+
+describe('inactive history payload budget', () => {
+  it('defaults the budget with and without an interface block', () => {
+    expect(interfaceSchema.parse({}).historyCacheMaxBytes).toBe(DEFAULT_HISTORY_CACHE_MAX_BYTES);
+    expect(interfaceSchema.parse(undefined).historyCacheMaxBytes).toBe(
+      DEFAULT_HISTORY_CACHE_MAX_BYTES,
+    );
+  });
+
+  it('accepts zero to disable the inactive-history grace', () => {
+    expect(interfaceSchema.parse({ historyCacheMaxBytes: 0 }).historyCacheMaxBytes).toBe(0);
+  });
+
+  it.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1, '8MB'])(
+    'rejects an invalid payload budget %p',
+    (historyCacheMaxBytes) => {
+      expect(interfaceSchema.safeParse({ historyCacheMaxBytes }).success).toBe(false);
+    },
+  );
 });
 
 describe('steer escalation confirmation timeout', () => {

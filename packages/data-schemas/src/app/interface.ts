@@ -64,6 +64,7 @@ export async function loadDefaultInterface({
     composerRecentFiles: interfaceConfig?.composerRecentFiles ?? defaults.composerRecentFiles,
     historyCacheTtlMs: interfaceConfig?.historyCacheTtlMs ?? defaults.historyCacheTtlMs,
     historyCacheRecent: interfaceConfig?.historyCacheRecent ?? defaults.historyCacheRecent,
+    historyCacheMaxBytes: interfaceConfig?.historyCacheMaxBytes ?? defaults.historyCacheMaxBytes,
 
     // Permissions and related settings - only include if explicitly configured
     bookmarks: interfaceConfig?.bookmarks,
