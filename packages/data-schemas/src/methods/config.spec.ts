@@ -195,6 +195,58 @@ describe('listAllConfigs', () => {
   });
 });
 
+describe('listConfigTombstones', () => {
+  it('returns only active profiles with a tombstone at or below the path, without their overrides', async () => {
+    const tombstone = (principalId: string, fieldPath: string, priority: number) =>
+      methods.tombstoneConfigField(
+        PrincipalType.ROLE,
+        principalId,
+        PrincipalModel.ROLE,
+        fieldPath,
+        priority,
+      );
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'hides',
+      PrincipalModel.ROLE,
+      { interface: { modelSelect: false }, mcpServers: { docs: { url: 'https://docs.test/mcp' } } },
+      20,
+    );
+    await tombstone('hides', 'mcpServers.github', 20);
+    await tombstone('section', 'mcpServers', 10);
+    await tombstone('other', 'webSearch', 5);
+    await tombstone('prefix', 'mcpServersArchive', 5);
+    await tombstone('inactive', 'mcpServers.github', 5);
+    await methods.toggleConfigActive(PrincipalType.ROLE, 'inactive', false);
+    await mongoose.models.Config.create({
+      principalType: PrincipalType.ROLE,
+      principalId: 'USER',
+      principalModel: PrincipalModel.ROLE,
+      priority: 30,
+      tenantId: 'acme',
+      overrides: { mcpServers: { github: { timeout: 1 } } },
+      tombstones: ['mcpServers.github.headers', 'webSearch'],
+    });
+
+    const found = await methods.listConfigTombstones('mcpServers');
+
+    expect(found).toEqual([
+      { principalType: PrincipalType.ROLE, principalId: 'section', tombstones: ['mcpServers'] },
+      {
+        principalType: PrincipalType.ROLE,
+        principalId: 'hides',
+        tombstones: ['mcpServers.github'],
+      },
+      {
+        principalType: PrincipalType.ROLE,
+        principalId: 'USER',
+        tenantId: 'acme',
+        tombstones: ['mcpServers.github.headers', 'webSearch'],
+      },
+    ]);
+  });
+});
+
 describe('getApplicableConfigs', () => {
   it('always includes the __base__ config', async () => {
     await methods.upsertConfig(
@@ -471,6 +523,78 @@ describe('unsetConfigField', () => {
     const result = await methods.unsetConfigField(PrincipalType.ROLE, 'admin', 'mcpServers.github');
 
     expect(result!.tombstones).not.toContain('mcpServers.github');
+  });
+});
+
+/** Storage half of removing one inherited MCP record key; the merge half is in `resolution.spec.ts`. */
+describe('MCP record-key tombstones', () => {
+  const KEY = 'mcpServers.github.headers.Authorization';
+
+  async function tombstoneKey(): Promise<void> {
+    await methods.tombstoneConfigField(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, KEY, 10);
+  }
+
+  it('survives a write to a sibling key of the same record', async () => {
+    await tombstoneKey();
+
+    const result = await methods.patchConfigFields(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { 'mcpServers.github.headers.X-Extra': 'added' },
+      10,
+    );
+
+    expect(result!.tombstones).toEqual([KEY]);
+  });
+
+  it('is cleared when the profile writes that key itself', async () => {
+    await tombstoneKey();
+
+    const result = await methods.patchConfigFields(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { [KEY]: 'Bearer {{SCOPED}}' },
+      10,
+    );
+
+    expect(result!.tombstones).toEqual([]);
+  });
+
+  it('is removed alone by a reset of the same path', async () => {
+    await tombstoneKey();
+    await methods.tombstoneConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      'mcpServers.github.headers.X-Team',
+      10,
+    );
+
+    const result = await methods.unsetConfigField(PrincipalType.ROLE, 'admin', KEY);
+
+    expect(result!.tombstones).toEqual(['mcpServers.github.headers.X-Team']);
+  });
+
+  it('is removed by a reset of the whole record, along with the keys the profile wrote', async () => {
+    await methods.patchConfigFields(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { 'mcpServers.github.headers.X-Extra': 'added' },
+      10,
+    );
+    await tombstoneKey();
+
+    const result = await methods.unsetConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      'mcpServers.github.headers',
+    );
+
+    expect(result!.tombstones).toEqual([]);
+    expect(result!.overrides).toEqual({});
   });
 });
 

@@ -75,6 +75,12 @@ export type ConfigDraft = Pick<
   'principalModel' | 'priority' | 'overrides' | 'tombstones' | 'isActive'
 >;
 
+/** The parts of a document that name its principal and its tombstones. */
+export type ConfigTombstones = Pick<
+  ConfigRecord,
+  'principalType' | 'principalId' | 'tenantId' | 'tombstones'
+>;
+
 export interface ConfigStore {
   /** The principal's document, active or not, or `null` when it has none. */
   read(principal: ConfigPrincipal): Promise<ConfigRecord | null>;
@@ -295,6 +301,17 @@ function toPathList(paths: ConfigPathInputs): ConfigPathSegments[] {
   return Array.isArray(paths) ? paths.map(toSegments) : [toSegments(paths as ConfigPathInput)];
 }
 
+function isPathOrDescendant(path: string, fieldPath: string): boolean {
+  return path === fieldPath || path.startsWith(`${fieldPath}.`);
+}
+
+function toTombstones(record: ConfigRecord): ConfigTombstones {
+  const { principalType, principalId, tenantId, tombstones } = record;
+  return tenantId == null
+    ? { principalType, principalId, tombstones }
+    : { principalType, principalId, tenantId, tombstones };
+}
+
 type ActiveToggle = { config: ConfigRecord; changed: boolean };
 
 export interface ConfigOperations {
@@ -305,6 +322,7 @@ export interface ConfigOperations {
   getApplicableConfigs(
     principals?: ReadonlyArray<{ principalType: string; principalId?: { toString(): string } }>,
   ): Promise<ConfigRecord[]>;
+  listTombstones(fieldPath: string): Promise<ConfigTombstones[]>;
   replaceOverrides(
     principal: ConfigPrincipal,
     principalModel: PrincipalModel,
@@ -391,6 +409,20 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
       }
     }
     return store.listActive(query);
+  }
+
+  /**
+   * The active documents with a tombstone at `fieldPath` or below it, in store order, without
+   * their overrides. Tombstones are dotted paths, so `fieldPath` is too.
+   */
+  async function listTombstones(fieldPath: string): Promise<ConfigTombstones[]> {
+    const found: ConfigTombstones[] = [];
+    for (const record of await store.list({ isActive: true })) {
+      if (record.tombstones.some((path) => isPathOrDescendant(path, fieldPath))) {
+        found.push(toTombstones(record));
+      }
+    }
+    return found;
   }
 
   /** Replaces the overrides whole and activates the document; tombstones stay. */
@@ -551,6 +583,7 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
   return {
     findConfig,
     getApplicableConfigs,
+    listTombstones,
     replaceOverrides,
     setFields,
     tombstoneFields,

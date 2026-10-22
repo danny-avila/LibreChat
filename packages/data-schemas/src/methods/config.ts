@@ -7,6 +7,7 @@ import type {
   ConfigRecord,
   ConfigRevision,
   ConfigPrincipal,
+  ConfigTombstones,
   ConfigPathInputs,
   ConfigWriteOptions,
   ConfigLifecycleOptions,
@@ -352,6 +353,13 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
       principals?: Array<{ principalType: string; principalId?: ConfigPrincipalId }>,
       _session?: NoSession,
     ): Promise<ConfigRecord[]> => operations.getApplicableConfigs(principals),
+
+    /**
+     * Active documents with a tombstone at `fieldPath` or below it, across every tenant the
+     * caller's scope can read, in store order and without their overrides.
+     */
+    listConfigTombstones: (fieldPath: string, _session?: NoSession): Promise<ConfigTombstones[]> =>
+      operations.listTombstones(fieldPath),
 
     /** Replaces the overrides whole and activates the document; tombstones stay. */
     upsertConfig: (

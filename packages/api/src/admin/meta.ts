@@ -28,6 +28,7 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   prunesEmptyParents: true,
   awaitedInvalidation: true,
   changesBatch: true,
+  yamlMcpHide: true,
 };
 
 /**

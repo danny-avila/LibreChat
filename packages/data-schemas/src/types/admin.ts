@@ -269,6 +269,13 @@ export type AdminConfigChangeErrorResponse = {
  *   `limits.maxChangeOps` set, unset, tombstone, entry upsert/remove and rename ops to one
  *   document in order, as one compare-and-swap write judged on the end state: an invalid op
  *   writes nothing, ops that cancel out write nothing, and `dryRun` reports without writing.
+ * - `yamlMcpHide`: a tombstone at `mcpServers.<name>` hides that librechat.yaml MCP server from
+ *   the profile's principals, and one at `mcpServers.<name>.<field>` removes that field. A hidden
+ *   server is an access boundary, not a catalog filter: lookups that name the principal leave it
+ *   out, and checkout refuses it, including for agents saved before the hide. When the
+ *   principal's config cannot be read, every hideable server is withheld. Process-backed
+ *   (`stdio`) and Agent Plugins servers cannot be hidden, and deleting the tombstone shows the
+ *   server again.
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'
@@ -278,7 +285,8 @@ export type AdminConfigFeatureFlag =
   | 'expectedRevision'
   | 'prunesEmptyParents'
   | 'awaitedInvalidation'
-  | 'changesBatch';
+  | 'changesBatch'
+  | 'yamlMcpHide';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
 
