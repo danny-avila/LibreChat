@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { isDeepStrictEqual } from 'node:util';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import type { AppConfig, ConfigDraft } from '@librechat/data-schemas';
@@ -573,6 +574,345 @@ describe('POST …/changes: a stored web search key and the URL it is sent to', 
     const after = await storedDocument(params.principalId);
     expect(after!.overrides.webSearch.searxngInstanceUrl).toBe('https://other.example.com');
     expect(decryptV3(after!.overrides.webSearch.searxngApiKey)).toBe('other-secret-key');
+  });
+});
+
+describe('POST …/changes: a stored MCP credential and where it is sent', () => {
+  const GOOD = 'https://good.example.com/mcp';
+  const EVIL = 'https://evil.example.com/mcp';
+  const server = (url: string, key?: string) => ({
+    type: 'streamable-http',
+    url,
+    apiKey: { source: 'admin', authorization_type: 'bearer', ...(key != null && { key }) },
+  });
+  const REENTRY = (name: string) => ({
+    error: expect.stringContaining('Re-enter apiKey.key'),
+    code: 'MCP_API_KEY_REENTRY_REQUIRED',
+    server: name,
+    fields: ['url'],
+  });
+
+  /** Stores each named server with its own key, as an admin who can enter them would. */
+  async function storeServers(servers: Record<string, ReturnType<typeof server>>) {
+    const params = nextParams();
+    const { status } = await send(
+      {
+        ops: Object.entries(servers).map(([name, value]) => ({
+          op: 'set',
+          fieldPath: `mcpServers.${name}`,
+          value,
+        })),
+      },
+      params,
+    );
+    expect(status).toBe(200);
+    return { params, before: await storedDocument(params.principalId) };
+  }
+
+  /** Sends the batch as a dry run and for real; what each answered, and whether it wrote. */
+  async function attempt(
+    params: { principalType: string; principalId: string },
+    ops: Array<Record<string, unknown>>,
+  ) {
+    const before = await storedDocument(params.principalId);
+    const answers = [];
+    for (const dryRun of [true, false]) {
+      const { status, body } = await send({ ops, dryRun }, params);
+      answers.push({ status, body });
+    }
+    const unchanged = isDeepStrictEqual(await storedDocument(params.principalId), before);
+    return { answers, unchanged };
+  }
+
+  /** Both the dry run and the write refused, naming the server, and nothing stored. */
+  const refused = (name: string) => ({
+    answers: [
+      { status: 400, body: REENTRY(name) },
+      { status: 400, body: REENTRY(name) },
+    ],
+    unchanged: true,
+  });
+
+  it('encrypts a key set on a server, returns only its preview, and keeps it when a set omits it', async () => {
+    const { params, before } = await storeServers({ probe: server(GOOD, 'sk-probe-secret-1111') });
+    const key = before!.overrides.mcpServers.probe.apiKey.key as string;
+    expect(key.startsWith('v3:')).toBe(true);
+    expect(decryptV3(key)).toBe('sk-probe-secret-1111');
+    expect(before!.overrides.mcpServers.probe.apiKey.keyPreview).toBe('...1111');
+
+    const { status, body } = await send(
+      {
+        ops: [{ op: 'set', fieldPath: 'mcpServers.probe', value: { ...server(GOOD), title: 'P' } }],
+      },
+      params,
+    );
+
+    expect(status).toBe(200);
+    const after = await storedDocument(params.principalId);
+    expect(after!.overrides.mcpServers.probe.apiKey.key).toBe(key);
+    expect(after!.overrides.mcpServers.probe.title).toBe('P');
+    const payload = JSON.stringify(body);
+    expect(payload).not.toContain('sk-probe-secret-1111');
+    expect(payload).not.toContain(key);
+    expect(payload).toContain('...1111');
+  });
+
+  it('refuses a URL change that keeps the stored key', async () => {
+    const { params } = await storeServers({ probe: server(GOOD, 'sk-probe-secret-1111') });
+
+    expect(
+      await attempt(params, [{ op: 'set', fieldPath: 'mcpServers.probe.url', value: EVIL }]),
+    ).toEqual(refused('probe'));
+  });
+
+  it('refuses a batch that renames the server away and back around a decoy key', async () => {
+    const { params } = await storeServers({ probe: server(GOOD, 'sk-probe-secret-1111') });
+
+    expect(
+      await attempt(params, [
+        { op: 'rename', fieldPath: 'mcpServers', from: 'probe', to: 'tmp' },
+        { op: 'set', fieldPath: 'mcpServers.probe.apiKey.key', value: 'sk-decoy-key-0000' },
+        { op: 'unset', fieldPath: 'mcpServers.probe' },
+        { op: 'rename', fieldPath: 'mcpServers', from: 'tmp', to: 'probe' },
+        { op: 'set', fieldPath: 'mcpServers.probe.url', value: EVIL },
+      ]),
+    ).toEqual(refused('probe'));
+  });
+
+  it('follows a key through a rename, or a chain of them, to the server it came from', async () => {
+    const { params } = await storeServers({ a: server(GOOD, 'sk-a-secret-key-1111') });
+
+    expect(
+      await attempt(params, [
+        { op: 'rename', fieldPath: 'mcpServers', from: 'a', to: 'b' },
+        { op: 'set', fieldPath: 'mcpServers.b.url', value: EVIL },
+      ]),
+    ).toEqual(refused('b'));
+    expect(
+      await attempt(params, [
+        { op: 'rename', fieldPath: 'mcpServers', from: 'a', to: 'b' },
+        { op: 'rename', fieldPath: 'mcpServers', from: 'b', to: 'c' },
+        { op: 'set', fieldPath: 'mcpServers.c.url', value: EVIL },
+      ]),
+    ).toEqual(refused('c'));
+  });
+
+  it('accepts a rename that keeps where the key goes, or a move that enters the key again', async () => {
+    const { params, before } = await storeServers({ a: server(GOOD, 'sk-a-secret-key-1111') });
+    const key = before!.overrides.mcpServers.a.apiKey.key as string;
+
+    const renamed = await send(
+      { ops: [{ op: 'rename', fieldPath: 'mcpServers', from: 'a', to: 'b' }] },
+      params,
+    );
+    expect(renamed.status).toBe(200);
+    expect((await storedDocument(params.principalId))!.overrides.mcpServers.b.apiKey.key).toBe(key);
+
+    const moved = await send(
+      {
+        ops: [
+          { op: 'rename', fieldPath: 'mcpServers', from: 'b', to: 'c' },
+          { op: 'set', fieldPath: 'mcpServers.c.url', value: EVIL },
+          { op: 'set', fieldPath: 'mcpServers.c.apiKey.key', value: 'sk-entered-again-2222' },
+        ],
+      },
+      params,
+    );
+    expect(moved.status).toBe(200);
+    const stored = (await storedDocument(params.principalId))!.overrides.mcpServers.c;
+    expect(stored.url).toBe(EVIL);
+    expect(decryptV3(stored.apiKey.key)).toBe('sk-entered-again-2222');
+  });
+
+  it('accepts a name swap that moves each key with its own server', async () => {
+    const { params, before } = await storeServers({
+      a: server(GOOD, 'sk-a-secret-key-1111'),
+      b: server(EVIL, 'sk-b-secret-key-2222'),
+    });
+    const { a, b } = before!.overrides.mcpServers;
+
+    const { status } = await send(
+      {
+        ops: [
+          { op: 'rename', fieldPath: 'mcpServers', from: 'a', to: 'tmp' },
+          { op: 'rename', fieldPath: 'mcpServers', from: 'b', to: 'a' },
+          { op: 'rename', fieldPath: 'mcpServers', from: 'tmp', to: 'b' },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(200);
+    expect((await storedDocument(params.principalId))!.overrides.mcpServers).toEqual({
+      a: b,
+      b: a,
+    });
+  });
+});
+
+describe('POST …/changes: env references and the credentials a write leaves elsewhere', () => {
+  it('names an upserted entry by its position once the batch has moved it', async () => {
+    const params = nextParams();
+    await seedDocument(
+      params.principalId,
+      { endpoints: { custom: [endpoint('first'), endpoint('second')] } },
+      [],
+    );
+
+    const { status, body } = await send(
+      {
+        ops: [
+          { op: 'removeEntry', fieldPath: 'endpoints.custom', key: 'first' },
+          {
+            op: 'upsertEntry',
+            fieldPath: 'endpoints.custom',
+            entry: endpoint('second', { baseURL: 'https://h.example/${LC8_UNLISTED_NAME}' }),
+          },
+          {
+            op: 'upsertEntry',
+            fieldPath: 'endpoints.custom',
+            entry: endpoint('third', { headers: { 'X-Key': '${LC8_UNLISTED_NAME}' } }),
+          },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(400);
+    expect(body).toMatchObject({
+      code: 'CONFIG_OVERRIDE_INVALID',
+      issues: [
+        {
+          path: 'endpoints.custom.0.baseURL',
+          segments: ['endpoints', 'custom', '0', 'baseURL'],
+          code: 'env_reference_not_allowed',
+        },
+        {
+          path: 'endpoints.custom.1.headers.X-Key',
+          segments: ['endpoints', 'custom', '1', 'headers', 'X-Key'],
+          code: 'env_reference_not_allowed',
+        },
+      ],
+    });
+    expect((await storedDocument(params.principalId))!.overrides.endpoints.custom).toEqual([
+      endpoint('first'),
+      endpoint('second'),
+    ]);
+  });
+
+  it('names an upserted entry where the batch leaves it, whatever a later change did', async () => {
+    const unlisted = 'https://h.example/${LC8_UNLISTED_NAME}';
+    const cases = [
+      {
+        ops: [
+          { op: 'upsertEntry', entry: endpoint('bad', { baseURL: unlisted }) },
+          { op: 'removeEntry', key: 'first' },
+        ],
+        path: ['endpoints', 'custom', '1', 'baseURL'],
+      },
+      {
+        ops: [
+          { op: 'upsertEntry', entry: endpoint('bad', { baseURL: unlisted }) },
+          { op: 'set', value: [endpoint('c')] },
+        ],
+        path: ['endpoints', 'custom', 'bad', 'baseURL'],
+      },
+    ];
+
+    for (const { ops, path } of cases) {
+      const params = nextParams();
+      await seedDocument(
+        params.principalId,
+        { endpoints: { custom: [endpoint('first'), endpoint('second')] } },
+        [],
+      );
+
+      const { status, body } = await send(
+        {
+          dryRun: true,
+          ops: ops.map((op) => ({ ...op, fieldPath: 'endpoints.custom' })),
+        },
+        params,
+      );
+
+      expect(status).toBe(400);
+      expect(body).toMatchObject({
+        code: 'CONFIG_OVERRIDE_INVALID',
+        issues: [{ path: path.join('.'), segments: path, code: 'env_reference_not_allowed' }],
+      });
+      expect(body.issues).toHaveLength(1);
+    }
+  });
+
+  it('names a value under a key a later rename moved by the new key', async () => {
+    const params = nextParams();
+
+    const { status, body } = await send(
+      {
+        ops: [
+          {
+            op: 'set',
+            fieldPath: 'mcpServers.draft',
+            value: { type: 'streamable-http', url: 'https://h.example/${LC8_UNLISTED_NAME}' },
+          },
+          { op: 'rename', fieldPath: 'mcpServers', from: 'draft', to: 'tools' },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(400);
+    expect(body).toMatchObject({
+      code: 'CONFIG_OVERRIDE_INVALID',
+      issues: [
+        {
+          path: 'mcpServers.tools.url',
+          segments: ['mcpServers', 'tools', 'url'],
+          code: 'env_reference_not_allowed',
+        },
+      ],
+    });
+    expect(await storedDocument(params.principalId)).toBeNull();
+  });
+
+  it('reports the librechat.yaml key a batch leaves on a new URL, written or planned', async () => {
+    const yaml = {
+      ...YAML,
+      mcpServers: {
+        ...YAML.mcpServers,
+        tools: {
+          type: 'streamable-http',
+          url: 'https://tools.example.com/mcp',
+          apiKey: { source: 'admin', authorization_type: 'bearer', key: '${TOOLS_KEY}' },
+        },
+      },
+    };
+    const deps = createDeps({
+      getAppConfig: async () =>
+        ({ config: yaml, mcpConfig: structuredClone(yaml.mcpServers) }) as unknown as AppConfig,
+    });
+    const ops = [
+      { op: 'set', fieldPath: 'mcpServers.tools.url', value: 'https://evil.example.com/mcp' },
+    ];
+    const rebinding = {
+      path: 'mcpServers.tools.apiKey.key',
+      segments: ['mcpServers', 'tools', 'apiKey', 'key'],
+      reason: 'secret_rebinding',
+    };
+
+    const planned = await send({ ops, dryRun: true }, nextParams(), deps);
+    expect(planned.status).toBe(200);
+    expect(planned.body).toMatchObject({ dryRun: true, written: false });
+    expect(planned.body.ignored).toEqual([rebinding]);
+
+    const params = nextParams();
+    const written = await send({ ops }, params, deps);
+    expect(written.status).toBe(200);
+    expect(written.body.written).toBe(true);
+    expect(written.body.ignored).toEqual([rebinding]);
+    expect((await storedDocument(params.principalId))!.overrides.mcpServers.tools.url).toBe(
+      'https://evil.example.com/mcp',
+    );
   });
 });
 

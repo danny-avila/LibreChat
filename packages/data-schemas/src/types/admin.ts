@@ -176,6 +176,21 @@ export type AdminConfigSkipReason =
  */
 export type AdminConfigIgnoreReason = 'process_mcp_server' | 'base_only_path';
 
+/**
+ * A credential the runtime merge leaves out of a document's layer, or a destination it sets back,
+ * because the document would send a credential somewhere it was not entered for
+ * (`secret_rebinding`): an inherited secret whose destination the document changes without
+ * entering the secret again, or its own secret whose destination a layer below changed. PUT,
+ * PATCH, field deletes, tombstones and `POST …/changes` list these in `ignored`, judged on the
+ * document as written over `librechat.yaml` and the Base profile. Each describes the stored
+ * document rather than one change, so it names a location, not an op.
+ */
+export type AdminConfigIgnoredSecret = {
+  path: string;
+  segments: string[];
+  reason: 'secret_rebinding';
+};
+
 /** A change of the batch, by position, with the location it addressed. */
 export type AdminConfigChangeRef = {
   /** Index of the change in the request's `ops`. */
@@ -205,8 +220,15 @@ export type AdminConfigChangesResponse = {
   applied: AdminConfigChangeRef[];
   /** Changes, or parts of a `set` value (at their own `segments`), that were not stored. */
   skipped: Array<AdminConfigChangeRef & { reason: AdminConfigSkipReason }>;
-  /** Applied changes, or parts of one (at their own `segments`), the runtime merge does not use. */
-  ignored: Array<AdminConfigChangeRef & { reason: AdminConfigIgnoreReason }>;
+  /**
+   * Applied changes, or parts of one (at their own `segments`), the runtime merge does not use,
+   * then the credentials it leaves out of the document as written (`secret_rebinding`, also on a
+   * dry run, for the planned document), in the sections the caller can read (on a dry run, the
+   * sections the batch writes).
+   */
+  ignored: Array<
+    (AdminConfigChangeRef & { reason: AdminConfigIgnoreReason }) | AdminConfigIgnoredSecret
+  >;
   /**
    * Valid changes that left the document as it was: it was already in that state, or the
    * batch's changes cancel out (a `set`, then an `unset` of its parent), in which case every
@@ -249,7 +271,8 @@ export type AdminConfigChangeErrorResponse = {
  *   URL stored in config only when the same layer set both; it is kept over an inherited
  *   `${VAR}` or default URL. A later layer that changes, blanks or removes the paired URL drops
  *   the key, and a write that changes or removes the URL beside a stored key must enter the key
- *   again (400 `CONFIG_SECRET_REENTRY_REQUIRED`).
+ *   again (400 `CONFIG_SECRET_REENTRY_REQUIRED`); the key counts as entered only when the written
+ *   document holds the value the request entered.
  * - `expectedRevision`: every config document a response returns carries `revision`
  *   (`<id>:<configVersion>`), and a write with nothing to apply answers `{ message, revision }`.
  *   PUT, PATCH `/fields`, POST `/fields/tombstone` and PATCH `/active` take `expectedRevision` in
@@ -276,6 +299,65 @@ export type AdminConfigChangeErrorResponse = {
  *   principal's config cannot be read, every hideable server is withheld. Process-backed
  *   (`stdio`) and Agent Plugins servers cannot be hidden, and deleting the tombstone shows the
  *   server again.
+ * - `recordSecrets`: each MCP server's `apiKey.key` and `oauth.client_secret`
+ *   (`rules.recordSecretFields`, which also lists Azure `groupMap`) is stored encrypted with a masked preview beside it
+ *   (`keyPreview`, `client_secretPreview`), left out of every read (GET `/base` included, and
+ *   the end-user MCP server list never carries a preview), kept when a write omits it, and
+ *   decrypted for the MCP runtime. A `${VAR}` or `{{VAR}}` reference stays readable. A `renames`
+ *   hint (`[{ path: 'mcpServers', previousName, name }]`) on PUT and PATCH, or a `rename` op in
+ *   a change batch, carries the stored credentials to the new name. A write that keeps a stored
+ *   credential while changing where the server sends it (URL, transport, proxy, auth header,
+ *   OAuth endpoints) answers 400 `MCP_API_KEY_REENTRY_REQUIRED` or
+ *   `MCP_OAUTH_SECRET_REENTRY_REQUIRED` with `server` and `fields`: on PUT, PATCH, field
+ *   deletes, tombstones and change batches. A credential counts as entered again only when the
+ *   written document holds the value the request entered, whatever order its writes came in;
+ *   one a rename, a copy or a chain of renames carried is compared with the server it came from,
+ *   so a name swap that moves each key with its own server is accepted. The rule covers MCP
+ *   credentials and web search keys (`webSearchStoredKeys`) only: a custom endpoint, Azure group,
+ *   OCR or speech key a document stores stays with that document when the same document changes
+ *   its destination; only the merge's cross-layer rule (`secretRebinding`) applies to those.
+ * - `azureGroupSecrets`: `endpoints.azureOpenAI.groups[].apiKey` is stored encrypted with
+ *   `apiKeyPreview`, matched across writes by `group` (omit it to keep it), left out of reads
+ *   and decrypted in the resolved config. The Azure clients read `groupMap`, which the groups
+ *   librechat.yaml defines resolve to, until overrides are re-derived after the merge. An
+ *   override that writes `endpoints.azureOpenAI.groupMap.<group>.apiKey` directly (a record
+ *   secret, `rules.recordSecretFields`) gets the same treatment: encrypted with `apiKeyPreview`,
+ *   kept when a write of its group omits it, left out of every read (GET `/base` included, where
+ *   a librechat.yaml literal shows the fixed mask) and decrypted for the Azure clients. A write
+ *   that keeps a group's key while changing its `instanceName` or `baseURL`, in `groups` or in
+ *   `groupMap`, is not refused: only the merge's cross-layer rule (`secretRebinding`) binds it.
+ * - `yamlSecretPreview`: a read of a secret with no stored preview (a librechat.yaml literal,
+ *   or ciphertext stored without one) shows the fixed mask `********` in its preview field
+ *   instead of nothing, so it reads as set; nothing about the value is revealed. A `${VAR}`
+ *   reference, where the field allows one, stays readable.
+ * - `envAllowlist`: a `${NAME}` reference in a value written through the admin config API is
+ *   refused unless `NAME` is referenced in librechat.yaml, is a built-in endpoint credential
+ *   (`OPENAI_API_KEY`, ...) or is listed in `CONFIG_OVERRIDE_ENV_ALLOWLIST`: 400
+ *   `CONFIG_OVERRIDE_INVALID` with issue `env_reference_not_allowed`, on PUT, PATCH and change
+ *   batches (an issue is named where the batch leaves the value: an upserted entry by its index
+ *   in the collection the batch leaves, a value under a renamed key by its new name). Text no
+ *   reader expands (`interface`, `modelSpecs`, prompt fields) is exempt, and so are the
+ *   `${INSTANCE_NAME}` and `${DEPLOYMENT_NAME}` templates the Azure client fills in a group's
+ *   `baseURL` (`groups` or `groupMap`), which are not env references. At runtime an unlisted
+ *   reference in a stored override resolves to nothing. The allowlist decides which names a
+ *   value may reference, not where the value is sent: an allowed name may appear in any value,
+ *   a URL, a header or a key beside a host of the writer's choosing.
+ * - `secretRebinding`: the merge drops a credential a layer would send somewhere it was not
+ *   entered for: an inherited one whose destination the layer changes without entering it again,
+ *   or the layer's own one whose destination a layer below changed (MCP servers, custom
+ *   endpoints, OCR, speech, web search, Azure `groupMap`); for summarization and Vertex AI,
+ *   which fall back to a deployment credential, it sets the destination back instead. A custom
+ *   endpoint's destination is its `baseURL`, its `provider` (the client that reads the rest) and
+ *   the options in `addParams` and `dropParams` named like a destination, such as the
+ *   `anthropicApiUrl` the native Anthropic client sends to; an entry is matched under any
+ *   spelling the merge folds (`ollama` is `Ollama`) and reported by the name the merge keeps. Write
+ *   responses list each in `ignored` with reason `secret_rebinding` (`AdminConfigIgnoredSecret`),
+ *   in the sections the response shows (`readFilteredWriteResponses`; a dry run shows the ones it
+ *   writes).
+ *   A secret the layer writes counts as entered, a `${VAR}` reference included: restating the
+ *   reference librechat.yaml uses beside a new destination keeps it, so for allowlisted names
+ *   (`envAllowlist`) the rule stops a destination change that leaves the reference out, not one
+ *   that restates it. Header maps are not covered.
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'
@@ -286,7 +368,12 @@ export type AdminConfigFeatureFlag =
   | 'prunesEmptyParents'
   | 'awaitedInvalidation'
   | 'changesBatch'
-  | 'yamlMcpHide';
+  | 'yamlMcpHide'
+  | 'recordSecrets'
+  | 'azureGroupSecrets'
+  | 'yamlSecretPreview'
+  | 'envAllowlist'
+  | 'secretRebinding';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
 
@@ -305,6 +392,16 @@ export type AdminConfigArraySecretFieldRule = {
   secretKey: string;
   previewKey: string;
   identityKey: string;
+};
+
+/** A secret every entry of a record keyed by entry name holds, such as each MCP server's. */
+export type AdminConfigRecordSecretFieldRule = {
+  /** The record's dot-path (`mcpServers`, `endpoints.azureOpenAI.groupMap`). */
+  recordPath: string;
+  /** The secret's location inside each entry, as a dot-path. */
+  secretPath: string;
+  /** Its masked-preview companion inside each entry; never writable. */
+  previewPath: string;
 };
 
 /** How overrides merge, in override (`librechat.yaml`) key names. */
@@ -328,6 +425,8 @@ export type AdminConfigRules = AdminConfigMergeRules & {
   baseOnlyPaths: string[];
   secretFields: AdminConfigSecretFieldRule[];
   arraySecretFields: AdminConfigArraySecretFieldRule[];
+  /** Secrets of record entries, kept and encrypted per entry like array secrets. */
+  recordSecretFields: AdminConfigRecordSecretFieldRule[];
   /** Maps of credentials admin writes are refused for; reads mask their values. */
   refusedMaps: string[];
   /** MCP server fields that make a server process-backed; only `librechat.yaml` sets them. */

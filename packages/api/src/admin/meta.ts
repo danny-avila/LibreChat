@@ -29,6 +29,11 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   awaitedInvalidation: true,
   changesBatch: true,
   yamlMcpHide: true,
+  recordSecrets: true,
+  azureGroupSecrets: true,
+  yamlSecretPreview: true,
+  envAllowlist: true,
+  secretRebinding: true,
 };
 
 /**

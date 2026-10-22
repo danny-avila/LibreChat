@@ -334,7 +334,12 @@ async function resolveConfigValue(
 }
 
 /**
- * Loads authentication configuration from OCR config
+ * Loads authentication configuration from OCR config.
+ *
+ * An empty API key falls back to the deployment's `OCR_API_KEY` only while the base URL is the
+ * deployment's own too (unset, or a `${VAR}` reference). With a configured literal base URL an
+ * empty key stays empty: the deployment's key is never sent to a host a config override chose,
+ * including when the override's inherited key was dropped for pointing OCR elsewhere.
  */
 async function loadAuthConfig(context: OCRContext): Promise<AuthConfig> {
   const appConfig = context.req.config;
@@ -344,21 +349,31 @@ async function loadAuthConfig(context: OCRContext): Promise<AuthConfig> {
     ? (decryptConfigSecret(rawApiKeyConfig) ?? '')
     : rawApiKeyConfig;
   const baseURLConfig = ocrConfig?.baseURL || '';
+  const baseURLFromEnv = needsEnvLoad(baseURLConfig);
+  const apiKeyBlank = !apiKeyConfig.trim();
+  const apiKeyFromEnv = envVarRegex.test(apiKeyConfig) || (apiKeyBlank && baseURLFromEnv);
+  const literalApiKey = apiKeyBlank ? '' : apiKeyConfig;
 
-  if (!needsEnvLoad(apiKeyConfig) && !needsEnvLoad(baseURLConfig)) {
+  if (apiKeyBlank && !baseURLFromEnv) {
+    logger.warn(
+      '[loadAuthConfig] OCR has a configured base URL and no API key; the default OCR_API_KEY is only used with the default OCR base URL',
+    );
+  }
+
+  if (!apiKeyFromEnv && !baseURLFromEnv) {
     return {
-      apiKey: apiKeyConfig,
+      apiKey: literalApiKey,
       baseURL: baseURLConfig,
     };
   }
 
   const authFields: string[] = [];
 
-  if (needsEnvLoad(baseURLConfig)) {
+  if (baseURLFromEnv) {
     authFields.push(getEnvVarName(baseURLConfig, 'OCR_BASEURL'));
   }
 
-  if (needsEnvLoad(apiKeyConfig)) {
+  if (apiKeyFromEnv) {
     authFields.push(getEnvVarName(apiKeyConfig, 'OCR_API_KEY'));
   }
 
@@ -368,7 +383,9 @@ async function loadAuthConfig(context: OCRContext): Promise<AuthConfig> {
     optional: new Set(['OCR_BASEURL']),
   });
 
-  const apiKey = await resolveConfigValue(apiKeyConfig, 'OCR_API_KEY', authValues);
+  const apiKey = apiKeyFromEnv
+    ? await resolveConfigValue(apiKeyConfig, 'OCR_API_KEY', authValues)
+    : literalApiKey;
   const baseURL = await resolveConfigValue(
     baseURLConfig,
     'OCR_BASEURL',

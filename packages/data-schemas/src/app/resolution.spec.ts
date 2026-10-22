@@ -2321,6 +2321,141 @@ describe('getConfigFieldIssues', () => {
   });
 });
 
+describe('mergeConfigOverrides: afterLayer', () => {
+  const base = {
+    config: { ocr: { baseURL: 'https://yaml.example' } },
+    ocr: { baseURL: 'https://yaml.example', mistralModel: 'base' },
+    mcpConfig: { tools: { url: 'https://tools.example/mcp' } },
+  } as unknown as AppConfig;
+
+  it('sees each layer in priority order: what it inherited, contributed and produced', () => {
+    const steps: Array<{ principalId: string; below: unknown; applied: unknown; merged: unknown }> =
+      [];
+    mergeConfigOverrides(
+      base,
+      [
+        fakeConfig({ ocr: { mistralModel: 'role' } }, 20, undefined, 'role'),
+        fakeConfig({ mcpServers: { tools: { title: 'Tools' } } }, 0, undefined, 'base'),
+      ],
+      {
+        afterLayer: ({ layer, below, applied, merged }) => {
+          steps.push({
+            principalId: layer.principalId.toString(),
+            below: below.ocr,
+            applied,
+            merged: merged.ocr,
+          });
+          return merged;
+        },
+      },
+    );
+
+    expect(steps).toEqual([
+      {
+        principalId: 'base',
+        below: base.ocr,
+        /** Under the AppConfig section name the merge applies it to. */
+        applied: { mcpConfig: { tools: { title: 'Tools' } } },
+        merged: base.ocr,
+      },
+      {
+        principalId: 'role',
+        below: base.ocr,
+        applied: { ocr: { mistralModel: 'role' } },
+        merged: { baseURL: 'https://yaml.example', mistralModel: 'role' },
+      },
+    ]);
+  });
+
+  it('merges the next layer onto the config the hook returns', () => {
+    const merged = mergeConfigOverrides(
+      base,
+      [
+        fakeConfig({ ocr: { mistralModel: 'low' } }, 10, undefined, 'low'),
+        fakeConfig({ ocr: { strategy: 'mistral_ocr' } }, 20, undefined, 'high'),
+      ],
+      {
+        afterLayer: ({ layer, merged: next }) =>
+          layer.principalId.toString() === 'low'
+            ? ({ ...next, ocr: { ...next.ocr, baseURL: '' } } as AppConfig)
+            : next,
+      },
+    );
+
+    expect(merged.ocr).toEqual({ baseURL: '', mistralModel: 'low', strategy: 'mistral_ocr' });
+  });
+
+  it('shows each layer alone over the base config, after its own tombstones only', () => {
+    const alone: Record<string, unknown> = {};
+    let calls = 0;
+    mergeConfigOverrides(
+      base,
+      [
+        fakeConfig({ ocr: { mistralModel: 'low' } }, 10, ['ocr.mistralModel'], 'low'),
+        fakeConfig(
+          { ocr: { apiKey: 'own' }, mcpServers: { tools: { title: 'Tools' } } },
+          20,
+          ['ocr.baseURL'],
+          'high',
+        ),
+      ],
+      {
+        afterLayer: (step) => {
+          if (step.layer.principalId.toString() === 'high') {
+            calls++;
+            const first = step.alone();
+            expect(step.alone()).toBe(first);
+            alone.ocr = first.ocr;
+            alone.mcpConfig = first.mcpConfig;
+          }
+          return step.merged;
+        },
+      },
+    );
+
+    expect(calls).toBe(1);
+    /** Not the lower layer's model, and without the base URL this layer tombstones. */
+    expect(alone.ocr).toEqual({ mistralModel: 'base', apiKey: 'own' });
+    expect(alone.mcpConfig).toEqual({
+      tools: { url: 'https://tools.example/mcp', title: 'Tools' },
+    });
+    expect(base.ocr).toEqual({ baseURL: 'https://yaml.example', mistralModel: 'base' });
+  });
+
+  it('shows every layer the base config the merge started from', () => {
+    const bases: unknown[] = [];
+    mergeConfigOverrides(
+      base,
+      [
+        fakeConfig({ ocr: { mistralModel: 'low' } }, 10, undefined, 'low'),
+        fakeConfig({ ocr: { mistralModel: 'high' } }, 20, undefined, 'high'),
+      ],
+      {
+        afterLayer: (step) => {
+          bases.push(step.base);
+          return step.merged;
+        },
+      },
+    );
+
+    expect(bases).toEqual([base, base]);
+    expect(bases[1]).toBe(base);
+  });
+
+  it('runs for a layer that only tombstones, with nothing applied', () => {
+    const applied: unknown[] = [];
+    const merged = mergeConfigOverrides(base, [fakeConfig({}, 10, ['ocr.baseURL'])], {
+      afterLayer: (step) => {
+        applied.push(step.applied);
+        return step.merged;
+      },
+    });
+
+    expect(applied).toEqual([{}]);
+    expect(merged.ocr).toEqual({ mistralModel: 'base' });
+  });
+});
+
 describe('top-level sections an override may hold', () => {
   /** Runtime state AppService builds that `configSchema` does not define, so no override may set it. */
   const RUNTIME_KEYS = [

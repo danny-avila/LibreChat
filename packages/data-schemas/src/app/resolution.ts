@@ -1231,6 +1231,49 @@ function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
   return filtered;
 }
 
+/** One layer's step through {@link mergeConfigOverrides}, as `afterLayer` sees it. */
+export interface ConfigMergeStep {
+  layer: ConfigOverrideLayer;
+  /** The base config the merge started from, before any layer. */
+  base: AppConfig;
+  /** The merged config before this layer applied its tombstones and overrides. */
+  below: AppConfig;
+  /**
+   * What the layer's overrides contributed, under AppConfig section names (`mcpConfig`,
+   * `interfaceConfig`, ...), after invalid, base-only and filtered values were removed.
+   */
+  applied: Readonly<Record<string, unknown>>;
+  /** The merged config with this layer applied. */
+  merged: AppConfig;
+  /**
+   * The base config with only this layer applied (its tombstones, then its overrides), as if no
+   * other layer were below it. Computed on first call.
+   */
+  alone: () => AppConfig;
+}
+
+export interface MergeConfigOverridesOptions {
+  /**
+   * Runs after each layer merges; the config it returns is what the next layer merges onto. A
+   * caller uses it to apply a policy that depends on what a layer inherited and what it changed,
+   * such as dropping an inherited credential the layer sends somewhere new.
+   */
+  afterLayer?: (step: ConfigMergeStep) => AppConfig;
+  /**
+   * Told about each stored web search key the merge withholds from the URL it was not entered
+   * for, with the layer whose write moved it: the URL's writer when it is the later layer, and
+   * otherwise the key's own. When given, it reports these instead of the merge's own warning.
+   */
+  onWebSearchKeyUnbound?: (unbound: WebSearchKeyUnbound) => void;
+}
+
+/** A stored web search key the merge withholds, and the layer whose write caused it. */
+export interface WebSearchKeyUnbound {
+  layer: ConfigOverrideLayer;
+  url: TWebSearchKeys;
+  apiKey: TWebSearchKeys;
+}
+
 /** The override document that last set or removed a paired web search field, and its merge position. */
 interface WebSearchWriter {
   config: ConfigOverrideLayer;
@@ -1289,7 +1332,11 @@ function describeLayer(writer?: WebSearchWriter): string {
  * never sends on a key it cannot read. `writers` lists the override document
  * behind each field; unlisted fields come from the base config.
  */
-function bindWebSearchKeys(merged: AppConfig, writers: WebSearchWriters): AppConfig {
+function bindWebSearchKeys(
+  merged: AppConfig,
+  writers: WebSearchWriters,
+  onUnbound?: MergeConfigOverridesOptions['onWebSearchKeyUnbound'],
+): AppConfig {
   const { webSearch, unbound } = unbindWebSearchKeys(
     merged.webSearch,
     (field) => writers.get(field)?.order,
@@ -1299,8 +1346,16 @@ function bindWebSearchKeys(merged: AppConfig, writers: WebSearchWriters): AppCon
   }
   for (const { url, apiKey } of unbound) {
     const urlWriter = writers.get(url);
+    const keyWriter = writers.get(apiKey);
+    if (onUnbound) {
+      const cause = (urlWriter?.order ?? -1) > (keyWriter?.order ?? -1) ? urlWriter : keyWriter;
+      if (cause) {
+        onUnbound({ layer: cause.config, url, apiKey });
+      }
+      continue;
+    }
     logger.warn(
-      `[mergeConfigOverrides] Ignoring webSearch.${apiKey} from ${describeLayer(writers.get(apiKey))}: ` +
+      `[mergeConfigOverrides] Ignoring webSearch.${apiKey} from ${describeLayer(keyWriter)}: ` +
         `webSearch.${url} is ${urlWriter?.removed ? 'removed' : 'set'} by ${describeLayer(urlWriter)}. ` +
         'Store the key in the same config as the URL.',
     );
@@ -1362,6 +1417,7 @@ function withAcceptedSections(config: ConfigOverrideLayer): ConfigOverrideLayer 
 export function mergeConfigOverrides(
   baseConfig: AppConfig,
   configs: readonly ConfigOverrideLayer[],
+  options: MergeConfigOverridesOptions = {},
 ): AppConfig {
   if (!configs || configs.length === 0) {
     return baseConfig;
@@ -1375,6 +1431,9 @@ export function mergeConfigOverrides(
   const webSearchWriters: WebSearchWriters = new Map();
   for (let order = 0; order < sorted.length; order++) {
     const config = withAcceptedSections(sorted[order]);
+    const below = merged;
+    let contributed: AnyObject = {};
+    const removed: string[] = [];
     const isBasePrincipal = config.principalId?.toString() === BASE_CONFIG_PRINCIPAL_ID;
     if (Array.isArray(config.tombstones)) {
       const removal: WebSearchWriter = { config, order, removed: true };
@@ -1384,7 +1443,9 @@ export function mergeConfigOverrides(
           !isBaseOnlyOverridePath(path) &&
           (isBasePrincipal || !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(path.split('.')[0]))
         ) {
-          merged = deleteConfigPath(merged, remapOverridePath(path));
+          const mappedPath = remapOverridePath(path);
+          removed.push(mappedPath);
+          merged = deleteConfigPath(merged, mappedPath);
           raw = deletePath(raw as AnyObject, path) as Partial<TCustomConfig>;
           recordWebSearchTombstone(webSearchWriters, path, removal);
         }
@@ -1457,10 +1518,30 @@ export function mergeConfigOverrides(
         order,
         removed: false,
       });
+      contributed = remapped;
+    }
+
+    if (options.afterLayer) {
+      const applied = contributed;
+      let alone: AppConfig | undefined;
+      merged = options.afterLayer({
+        layer: config,
+        base: baseConfig,
+        below,
+        applied,
+        merged,
+        alone: () => {
+          alone ??= deepMerge(
+            removed.reduce((current, path) => deleteConfigPath(current, path), { ...baseConfig }),
+            applied,
+          );
+          return alone;
+        },
+      });
     }
   }
 
-  merged = bindWebSearchKeys(merged, webSearchWriters);
+  merged = bindWebSearchKeys(merged, webSearchWriters, options.onWebSearchKeyUnbound);
   return preserveBaseOnlyPaths(baseConfig, preserveRuntimeStops(baseConfig, merged));
 }
 

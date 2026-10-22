@@ -37,6 +37,7 @@ const handlers = createAdminConfigHandlers({
   recordAuditEntry: db.recordAuditEntry,
   auditFailClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
   overrideCacheTtlMs: overrideCacheTtl,
+  overrideEnvAllowlist: process.env.CONFIG_OVERRIDE_ENV_ALLOWLIST,
 });
 
 router.use(requireJwtAuth, requireAdminAccess, rejectUnsafeConfigKeys);
