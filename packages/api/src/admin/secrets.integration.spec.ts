@@ -1439,7 +1439,11 @@ describe('config secret registry — real handlers against a real Config collect
           getAtPath(config, 'config.endpoints.anthropic.vertex.serviceKeyFile'),
         ).toBeUndefined();
       }
-      expect(getAppConfig.mock.calls.map(([options]) => options?.baseOnly)).toEqual([false, true]);
+      expect(getAppConfig.mock.calls.map(([options]) => options?.baseOnly)).toEqual([
+        false,
+        true,
+        true,
+      ]);
       expect(JSON.stringify(appConfig)).toContain(AZURE_KEY);
     });
   });

@@ -3002,6 +3002,8 @@ describe('createAdminConfigHandlers', () => {
         expect.anything(),
         { 'registration.futureOption': 1 },
         10,
+        undefined,
+        undefined,
       );
     });
 
@@ -3029,7 +3031,13 @@ describe('createAdminConfigHandlers', () => {
       await handlers.deleteConfigField(mockReq({ params, query: { fieldPath: 'paths' } }), res);
 
       expect(res.statusCode).toBe(200);
-      expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'paths');
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        'paths',
+        undefined,
+        undefined,
+      );
     });
 
     it('does not let a section-scoped manager remove a value under an unknown section', async () => {
@@ -3296,8 +3304,17 @@ describe('createAdminConfigHandlers', () => {
     });
 
     it('field delete: a section manager sees only that section, secrets redacted', async () => {
-      const { handlers } = createHandlers({
+      const before = writtenDoc();
+      const { handlers, deps } = createHandlers({
         hasConfigCapability: scopedCapability(['manage:webSearch']),
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          ...before,
+          configVersion: 1,
+          overrides: {
+            ...before.overrides,
+            webSearch: { ...before.overrides.webSearch, jinaApiUrl: 'https://jina.example.com' },
+          },
+        }),
         unsetConfigField: jest.fn().mockResolvedValue(writtenDoc()),
       });
       const res = mockRes();
@@ -3308,6 +3325,13 @@ describe('createAdminConfigHandlers', () => {
       );
 
       expect(res.statusCode).toBe(200);
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        'editors',
+        'webSearch.jinaApiUrl',
+        undefined,
+        { expectedVersion: 1 },
+      );
       const body = res.body!.config as WrittenBody;
       expect(body.overrides).toEqual({
         webSearch: { searchProvider: 'serper', serperApiKeyPreview: '...wxyz' },
