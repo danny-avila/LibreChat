@@ -22,6 +22,7 @@ const {
   getAvatarSaveParams,
   isEmailDomainAllowed,
   getAvatarFileStrategy,
+  resolvePreAuthAppConfig,
   resolveAppConfigForUser,
   getOpenIdProxyDispatcher,
   getOpenIdRoleSyncOptions,
@@ -582,7 +583,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   const email = getOpenIdEmail(userinfo);
   const openidIssuer = getOpenIdIssuer(claims, openidConfig);
 
-  const baseConfig = await getAppConfig({ baseOnly: true });
+  const baseConfig = await resolvePreAuthAppConfig(getAppConfig);
   if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
     logger.error(
       `[OpenID Strategy] Authentication blocked - email domain not allowed [Identifier: ${email}]`,
@@ -606,7 +607,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     throw new Error(ErrorTypes.AUTH_FAILED);
   }
 
-  let appConfig = user?.tenantId ? await resolveAppConfigForUser(getAppConfig, user) : baseConfig;
+  let appConfig = user ? await resolveAppConfigForUser(getAppConfig, user) : baseConfig;
 
   if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
     logger.error(
@@ -701,7 +702,6 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     ({ user, appConfig } = await createOpenIDUser({
       lookup,
       profile,
-      appConfig,
       getAppConfig,
       getBalanceConfig,
       createUserIfAbsent,
@@ -759,7 +759,6 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   }
 
   if (!adminRoleGranted) {
-    const roleBeforeSync = user.role;
     await applyOpenIdRoleSync({
       user,
       username,
@@ -768,20 +767,22 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       userinfo,
       resolvedOverageGroups,
     });
-    /**
-     * The earlier login-policy check ran with the pre-sync role. If role sync moved a
-     * tenant user into a different role, re-resolve the tenant config and re-enforce
-     * `allowedDomains` so role-scoped overrides for the new role are honored and a token
-     * cannot complete login under the previous role's looser policy.
-     */
-    if (user?.tenantId && user.role !== roleBeforeSync) {
-      const postSyncConfig = await resolveAppConfigForUser(getAppConfig, user);
-      if (!isEmailDomainAllowed(email, postSyncConfig?.registration?.allowedDomains)) {
-        logger.error(
-          `[OpenID Strategy] Authentication blocked after role sync - email domain not allowed [Identifier: ${email}]`,
-        );
-        throw new Error('Email domain not allowed');
-      }
+  }
+
+  /**
+   * The earlier login-policy check ran with the role the account had before this token's
+   * claims: its stored role, or the role it was created with. If the admin role claim or role
+   * sync moved it into a different role, re-resolve its config (in its tenant, if any) and
+   * re-enforce `allowedDomains`, so the new role's overrides are honored and a token cannot
+   * complete login under the previous role's looser policy.
+   */
+  if (user.role !== roleBeforeClaims) {
+    appConfig = await resolveAppConfigForUser(getAppConfig, user);
+    if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+      logger.error(
+        `[OpenID Strategy] Authentication blocked after a role change - email domain not allowed [Identifier: ${email}]`,
+      );
+      throw new Error('Email domain not allowed');
     }
   }
 

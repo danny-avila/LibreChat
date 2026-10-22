@@ -337,17 +337,16 @@ export function applyOpenIDProfile<T extends UserRecord>(user: T, profile: OpenI
 }
 
 /**
- * Creates a first-login OpenID user through `createUserOnce`, which recovers a concurrent first
- * login by repeating `findOpenIDUser`, with its provider and issuer checks, once the winner
- * finished provisioning the account, and admits that account exactly as a found one (tenant
- * config and email-domain policy). The recovered account is refreshed with this callback's
- * claims like any account the lookup finds. Returns the account with the config the login
- * continues under (`appConfig` for a user this request created).
+ * Creates a first-login OpenID user through `createUserOnce`, which admits it under the USER
+ * role's config before creating it and recovers a concurrent first login by repeating
+ * `findOpenIDUser`, with its provider and issuer checks, once the winner finished provisioning
+ * the account, admitting that account exactly as a found one (its own config and email-domain
+ * policy). The recovered account is refreshed with this callback's claims like any account the
+ * lookup finds. Returns the account with the config the login continues under.
  */
 export async function createOpenIDUser({
   lookup,
   profile,
-  appConfig,
   getAppConfig,
   getBalanceConfig,
   createUserIfAbsent,
@@ -355,7 +354,6 @@ export async function createOpenIDUser({
 }: {
   lookup: Parameters<typeof findOpenIDUser>[0];
   profile: OpenIDProfile;
-  appConfig: AppConfig;
   getAppConfig: GetAppConfig;
   getBalanceConfig: GetBalanceConfig;
   createUserIfAbsent: CreateUserIfAbsent;
@@ -374,7 +372,6 @@ export async function createOpenIDUser({
       openidIssuer: profile.openidIssuer,
     },
     email: profile.email ?? '',
-    appConfig,
     getAppConfig,
     getBalanceConfig,
     lookup: () => findOpenIDUser(lookup),
