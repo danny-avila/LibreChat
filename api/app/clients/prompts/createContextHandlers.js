@@ -3,8 +3,10 @@ const {
   isEnabled,
   generateShortLivedToken,
   logAxiosError,
+  hasEntityEmbeddings,
   createRagContextHandlers,
 } = require('@librechat/api');
+const { getAgents } = require('~/models');
 
 function createContextHandlers(req, userMessageContent) {
   return createRagContextHandlers({
@@ -16,6 +18,8 @@ function createContextHandlers(req, userMessageContent) {
     isEnabled,
     generateShortLivedToken,
     logAxiosError,
+    getAgents,
+    hasEntityEmbeddings,
   });
 }
 

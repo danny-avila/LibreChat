@@ -1,15 +1,14 @@
+import type { TFile } from 'librechat-data-provider';
 import type { AxiosResponse } from 'axios';
 import type axios from 'axios';
+import type { EntityFile, TGetFileSearchAgents } from './entity';
+import type { THasEntityEmbeddings } from '~/agents/resources';
 import type { logAxiosError } from '~/utils/axios';
 import type { isEnabled } from '~/utils/common';
 import { getOutboundTimeoutMs, outboundRequestBudget } from '~/utils/timeouts';
+import { createEntityResolver } from './entity';
 
-interface ContextFile {
-  embedded?: boolean;
-  file_id: string;
-  filename: string;
-  type?: string;
-}
+type ContextFile = EntityFile & Partial<Pick<TFile, 'embedded' | 'type'>>;
 
 interface SearchHit {
   page_content?: string;
@@ -27,6 +26,8 @@ interface RagContextOptions {
   generateShortLivedToken: (userId: string) => string;
   isEnabled: typeof isEnabled;
   logAxiosError: typeof logAxiosError;
+  getAgents?: TGetFileSearchAgents;
+  hasEntityEmbeddings?: THasEntityEmbeddings;
 }
 
 const footer = `Use the context as your learned knowledge to better answer the user.
@@ -47,6 +48,8 @@ export function createRagContextHandlers({
   generateShortLivedToken,
   isEnabled,
   logAxiosError,
+  getAgents,
+  hasEntityEmbeddings,
 }: RagContextOptions):
   | {
       processFile: (file: ContextFile) => Promise<void>;
@@ -66,13 +69,27 @@ export function createRagContextHandlers({
     typeof userMessageContent === 'string' && userMessageContent.trim().length > 0;
 
   const timeout = getOutboundTimeoutMs(req.config, 'ragMs');
+  const resolveEntityId = createEntityResolver({
+    userId: req.user.id,
+    getAgents,
+    hasEntityEmbeddings,
+    timeoutMs: timeout,
+  });
+
+  const entityFor = (file: ContextFile): Promise<string | undefined> =>
+    resolveEntityId(file).catch((error) => {
+      logAxiosError({ message: `Error resolving the RAG namespace of ${file.filename}`, error });
+      return undefined;
+    });
 
   const query = async (file: ContextFile): Promise<ContextResponse> => {
+    const entity_id = await entityFor(file);
     if (useFullContext) {
       return httpClient.get<string>(`${ragApiUrl}/documents/${file.file_id}/context`, {
         headers: {
           Authorization: `Bearer ${jwtToken}`,
         },
+        ...(entity_id ? { params: { entity_id } } : {}),
         ...outboundRequestBudget(timeout, 'ragMs'),
       });
     }
@@ -83,6 +100,7 @@ export function createRagContextHandlers({
         file_id: file.file_id,
         query: userMessageContent,
         k: 4,
+        ...(entity_id ? { entity_id } : {}),
       },
       {
         headers: {

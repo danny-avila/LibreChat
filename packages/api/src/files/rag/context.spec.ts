@@ -1,3 +1,5 @@
+import { FileContext } from 'librechat-data-provider';
+import type { AxiosRequestConfig } from 'axios';
 import { createRagContextHandlers } from './context';
 
 const req: { user: { id: string }; config?: { timeouts?: { ragMs?: number } } } = {
@@ -106,6 +108,121 @@ describe('legacy RAG context', () => {
     await expect(handlers?.createContext()).rejects.toBe(failure);
     expect(logAxiosError).toHaveBeenCalledWith({
       message: 'Error creating context',
+      error: failure,
+    });
+  });
+});
+
+describe('legacy RAG context for files embedded under an agent', () => {
+  const agentFile = {
+    file_id: 'agent-file',
+    filename: 'policy.pdf',
+    type: 'application/pdf',
+    embedded: true,
+    context: FileContext.agents,
+    metadata: { embeddedEntities: ['agent_a'] },
+  };
+
+  /** Mirrors rag-api v0.9.0: the top chunk's owner must be the entity_id or the token's user. */
+  function fakeRag(owners: Record<string, string>) {
+    const allowed = (fileId: string, entityId?: string) =>
+      owners[fileId] === entityId || owners[fileId] === req.user.id;
+    return {
+      get: jest.fn().mockImplementation(async (url: string, config?: AxiosRequestConfig) => {
+        const fileId = url.split('/documents/')[1].split('/')[0];
+        return { data: allowed(fileId, config?.params?.entity_id) ? 'whole policy' : '' };
+      }),
+      post: jest
+        .fn()
+        .mockImplementation(
+          async (_url: string, body: { file_id: string; entity_id?: string }) => ({
+            data: allowed(body.file_id, body.entity_id)
+              ? [[{ page_content: 'Policy excerpt' }, 0.1]]
+              : [],
+          }),
+        ),
+    };
+  }
+
+  function setupWithRag(
+    httpClient: ReturnType<typeof fakeRag>,
+    extra: Pick<Parameters<typeof createRagContextHandlers>[0], 'hasEntityEmbeddings'> = {},
+    fullContextSetting?: string,
+  ) {
+    const logAxiosError = jest.fn(() => 'logged');
+    const handlers = createRagContextHandlers({
+      req,
+      userMessageContent: 'what does the policy say?',
+      ragApiUrl: 'http://rag',
+      fullContextSetting,
+      httpClient,
+      generateShortLivedToken: () => 'signed-token',
+      isEnabled: (setting?: string | boolean | null) => setting === 'true',
+      logAxiosError,
+      ...extra,
+    });
+    return { handlers, logAxiosError };
+  }
+
+  it('reads the agent namespace on /query so the context is not empty', async () => {
+    const httpClient = fakeRag({ 'agent-file': 'agent_a' });
+    const { handlers } = setupWithRag(httpClient);
+    await handlers?.processFile(agentFile);
+    expect(await handlers?.createContext()).toContain('Policy excerpt');
+    expect(httpClient.post.mock.calls[0][1]).toEqual({
+      file_id: 'agent-file',
+      query: 'what does the policy say?',
+      k: 4,
+      entity_id: 'agent_a',
+    });
+  });
+
+  it('reads the agent namespace for the full document', async () => {
+    const httpClient = fakeRag({ 'agent-file': 'agent_a' });
+    const { handlers } = setupWithRag(httpClient, {}, 'true');
+    await handlers?.processFile(agentFile);
+    expect(await handlers?.createContext()).toContain('whole policy');
+    expect(httpClient.get.mock.calls[0][1]).toMatchObject({ params: { entity_id: 'agent_a' } });
+  });
+
+  it("keeps the request unchanged for the user's own file", async () => {
+    const httpClient = fakeRag({ 'file-0': req.user.id });
+    const { handlers } = setupWithRag(httpClient, {}, 'true');
+    await handlers?.processFile(files[0]);
+    expect(await handlers?.createContext()).toContain('whole policy');
+    expect(httpClient.get.mock.calls[0][1]).not.toHaveProperty('params');
+  });
+
+  it('reads the agent that holds the vectors when several are recorded', async () => {
+    const httpClient = fakeRag({ 'agent-file': 'agent_b' });
+    const hasEntityEmbeddings = jest.fn(
+      async ({ entity_id }: { entity_id: string }) => entity_id === 'agent_b',
+    );
+    const { handlers } = setupWithRag(httpClient, { hasEntityEmbeddings });
+    await handlers?.processFile({
+      ...agentFile,
+      metadata: { embeddedEntities: ['agent_a', 'agent_b'] },
+    });
+    expect(await handlers?.createContext()).toContain('Policy excerpt');
+    expect(httpClient.post.mock.calls[0][1]).toMatchObject({ entity_id: 'agent_b' });
+  });
+
+  it('falls back to the current request when the namespace cannot be resolved', async () => {
+    const httpClient = fakeRag({ 'agent-file': 'agent_a' });
+    const failure = new Error('lookup failed');
+    const { handlers, logAxiosError } = setupWithRag(httpClient);
+    await handlers?.processFile({
+      ...agentFile,
+      metadata: {
+        get embeddedEntities(): string[] {
+          throw failure;
+        },
+      },
+    });
+    await handlers?.createContext();
+    expect(httpClient.post.mock.calls[0][1]).not.toHaveProperty('entity_id');
+    expect(logAxiosError).toHaveBeenCalledWith({
+      message: 'Error resolving the RAG namespace of policy.pdf',
       error: failure,
     });
   });
