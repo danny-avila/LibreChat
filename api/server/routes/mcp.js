@@ -430,9 +430,8 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     };
 
     await runWithTenant(async () => {
-      const oauthHeaders =
-        flowState.oauthHeaders ?? (await getOAuthHeaders(serverName, flowState.userId));
       let recoveryPolicy;
+      let activeConfig;
       const resolveActiveServer = async () => {
         /** Strict: a degraded read falls back to the base config, which still lists hidden servers. */
         const [configs, appConfig] = await Promise.all([
@@ -440,7 +439,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           getAppConfig({ userId: flowState.userId, tenantId: getTenantId(), failClosed: true }),
         ]);
         recoveryPolicy = appConfig?.mcpSettings?.catalogRecovery;
-        const activeConfig =
+        activeConfig =
           configs?.[serverName] ??
           appConfig?.mcpConfig?.[serverName] ??
           (await getMCPServersRegistry().getServerConfig(serverName, flowState.userId));
@@ -455,6 +454,12 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       if (!(await resolveActiveServer())) {
         throw new Error(`MCP server ${serverName} was deleted during OAuth authorization`);
       }
+      /**
+       * Initiation snapshots the principal's headers, an empty map included. A flow started before
+       * empty snapshots were stored has none: read the principal's config, never the librechat.yaml
+       * base, whose headers a profile may have removed.
+       */
+      const oauthHeaders = flowState.oauthHeaders ?? activeConfig.oauth_headers ?? {};
       const rollbackStoredTokens = async (storedTokens) => {
         const storedMetadata = MCPOAuthHandler.buildStoredClientMetadata(
           flowState.metadata,
