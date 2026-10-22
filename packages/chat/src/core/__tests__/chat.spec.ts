@@ -3370,7 +3370,7 @@ describe('Chat', () => {
       );
     });
 
-    it('ends the pause of a generation whose stream failed', async () => {
+    it('keeps the pause of a generation whose stream failed while read, and a stop ends it', async () => {
       const failing: ChatStream = {
         streamId: 'convo-1',
         close: () => undefined,
@@ -3384,7 +3384,12 @@ describe('Chat', () => {
 
       await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
 
+      /** The stream failed, not the generation, which still waits on its pause. */
       expect(chat.status).toBe('error');
+      expect(chat.pendingAction?.actionId).toBe('action-5');
+      transport.abort.mockResolvedValueOnce({ success: true });
+      await chat.stop();
+      expect(transport.abort).toHaveBeenCalledTimes(1);
       expect(chat.pendingAction).toBeUndefined();
       transport.sendMessages.mockResolvedValueOnce({
         status: 'settled',

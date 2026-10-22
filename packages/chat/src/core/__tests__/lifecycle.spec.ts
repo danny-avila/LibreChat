@@ -2373,7 +2373,7 @@ describe('Chat identity every frame carries', () => {
     await flush();
     stream.push(frame);
     await flush();
-    stream.push({ type: 'error', status: 500, data: 'failed' } as ChatEvent);
+    stream.push({ type: 'error', data: 'failed' } as ChatEvent);
     await flush();
 
     const last = h.finishes[h.finishes.length - 1];
@@ -2573,5 +2573,27 @@ describe('Chat stops while a lost start is owed', () => {
     } as unknown as ChatAbortResult);
 
     await expect(h.chat.stop()).resolves.toEqual({ status: 'stopped' });
+  });
+});
+
+describe('Chat reattachments that fail over HTTP', () => {
+  it('(2) a reattachment that fails with an HTTP status keeps its generation stoppable', async () => {
+    const h = createHarness();
+    const stream = createStream({ streamId: 'convo-1', generationCreatedAt: 700 });
+    h.transport.reconnectToStream.mockResolvedValueOnce(stream);
+    h.chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 700 }).then(
+      () => undefined,
+      () => undefined,
+    );
+    await flush();
+    stream.push({ type: 'error', status: 502, data: 'Bad gateway' } as ChatEvent);
+    await flush();
+
+    expect(h.finishes[h.finishes.length - 1]).toMatchObject({ isDisconnect: true });
+    h.transport.abort.mockResolvedValueOnce({ success: true });
+    await h.chat.stop();
+    expect(h.transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({ generationCreatedAt: 700 }),
+    );
   });
 });

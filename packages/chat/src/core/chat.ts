@@ -243,6 +243,11 @@ type ActiveRequest = {
   reattach?: { streamId?: string; continuation?: boolean };
   /** The error the request settled with when its connection dropped. */
   disconnected?: Error;
+  /**
+   * The stream came from attaching to a running generation, whose HTTP failure ends only the
+   * attachment unless the server says the generation is gone.
+   */
+  attached?: boolean;
   /** The generation a reattachment continued; a stream of another one starts a new record. */
   inheritedGeneration?: number;
   /** Set once the start was handed to the transport, so the server may be running it. */
@@ -350,6 +355,13 @@ const isGone = (error: ChatTransportError): boolean =>
   error.code === 'NO_ACTIVE_RUN' ||
   error.response?.status === 404 ||
   error.response?.status === 410;
+
+/**
+ * An error frame the attachment's HTTP response raised rather than the generation: the transport
+ * sets `status` only then, and a 404 or 410 says the generation itself is gone.
+ */
+const isAttachFailure = (event: Extract<ChatEvent, { type: 'error' }>): boolean =>
+  event.status != null && event.status !== 404 && event.status !== 410;
 
 /**
  * A frame the chat failed to apply. A terminal frame still ended the generation, which the host
@@ -784,6 +796,7 @@ export class Chat {
     active.inheritedGeneration =
       options.generationCreatedAt ?? continued?.target.generationCreatedAt ?? paused?.createdAt;
     active.reattach = { streamId: options.streamId ?? continued?.target.streamId };
+    active.attached = true;
     this.active = active;
     const superseded =
       this.action &&
@@ -1617,6 +1630,7 @@ export class Chat {
         /** The replacement it names, so a stream of yet another generation gets its own record. */
         active.inheritedGeneration = generationCreatedAt;
         active.reattach = { streamId: result.streamId };
+        active.attached = true;
         if (
           generationCreatedAt != null &&
           generationCreatedAt === dropped?.target.generationCreatedAt
@@ -1712,7 +1726,7 @@ export class Chat {
             handling = event;
             /** Recorded first, so a host that stops from the event's own callbacks names the run. */
             this.track(active, event);
-            outcome = this.apply(event);
+            outcome = this.apply(event, active);
             handling = undefined;
           }
         });
@@ -1756,7 +1770,7 @@ export class Chat {
   }
 
   /** Applies one event; returns the turn's outcome when the event ends it. */
-  private apply(event: ChatEvent): Outcome | undefined {
+  private apply(event: ChatEvent, active: ActiveRequest): Outcome | undefined {
     /** A pause that expired or that this chat already resumed is stale, so no card is drawn for it. */
     /** A replay of a pause older than one already seen in this generation is stale too. */
     const older =
@@ -1810,7 +1824,7 @@ export class Chat {
       this.decisions.clear();
       outcome = { kind: 'abort' };
     } else if (event.type === 'error') {
-      const disconnect = event.status === 0;
+      const disconnect = event.status === 0 || (active.attached === true && isAttachFailure(event));
       if (!disconnect) {
         /** A dropped connection leaves the server's generation, and its pause, as it was. */
         this.action = undefined;
@@ -1913,8 +1927,9 @@ export class Chat {
         this.endedGenerations.add(ended);
       }
     }
-    const { responseId, responseUnknown, responseless } = active.generation;
-    this.publish(outcome, responseId, responseUnknown, responseless);
+    const { responseId, responseUnknown, responseless, conversationId } = active.generation;
+    const named = conversationId !== Constants.NEW_CONVO ? conversationId : undefined;
+    this.publish({ ...outcome, conversationId: named }, responseId, responseUnknown, responseless);
   }
 
   /** Records the ids and pause an event reports for the request it arrived on. */
