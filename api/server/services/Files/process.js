@@ -271,6 +271,7 @@ const processDeleteRequest = async ({ req, files }) => {
         deleteFile,
         getDeleteFile: (src) => getDeleteMethod({ source: src, deletionMethods }),
         clearFileEmbeddings: db.clearFileEmbeddings,
+        isFileStorageClean: db.isFileStorageClean,
         logger,
       }),
       promises,
@@ -285,7 +286,7 @@ const processDeleteRequest = async ({ req, files }) => {
   let metadataDeletedFileIds = deletedFileIds;
   if (deletedFileIds.length > 0) {
     try {
-      await db.deleteFiles(deletedFileIds);
+      await db.deleteFiles(deletedFileIds, undefined, { files, userId: req.user.id });
     } catch (error) {
       logger.error('Error deleting file metadata after storage deletion', error);
       deletedFileIds.forEach((fileId) => failedFileIds.add(fileId));

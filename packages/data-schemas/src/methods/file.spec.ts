@@ -166,7 +166,7 @@ describe('File Methods', () => {
         },
       });
       const before = await read();
-      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(false);
       expect(await read()).toEqual(before);
     });
 
@@ -189,7 +189,7 @@ describe('File Methods', () => {
             ...(prior === undefined ? {} : { codeDestination: prior }),
           },
         });
-        expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+        expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(matches);
         expect((await read())?.metadata?.codeDestination).toBe(matches ? true : prior);
       },
     );
@@ -201,7 +201,7 @@ describe('File Methods', () => {
         metadata: { codeEnvRef: replacement, codeEnvRefs: { default: replacement } },
       });
       const before = await read();
-      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(false);
       expect(await read()).toEqual(before);
     });
 
@@ -224,7 +224,7 @@ describe('File Methods', () => {
           ...snapshot,
           refs: [{ routeKey: 'default', ref: absent }],
         }),
-      ).toBe(true);
+      ).toBe(false);
       expect(await read()).toEqual(before);
       await File.collection.updateOne(
         { file_id: snapshot.file_id },
@@ -236,7 +236,7 @@ describe('File Methods', () => {
           ...snapshot,
           refs: [{ routeKey: 'default', ref: explicitNull }],
         }),
-      ).toBe(true);
+      ).toBe(false);
       expect(await read()).toEqual(withoutField);
       await File.collection.updateOne(
         { file_id: snapshot.file_id },
@@ -282,7 +282,7 @@ describe('File Methods', () => {
           ...snapshot,
           refs: [...snapshot.refs, { routeKey: 'stateful:a', ref: statefulRef }],
         }),
-      ).toBe(true);
+      ).toBe(false);
       const stored = await read();
       expect(stored?.metadata?.codeEnvRef).toEqual(replacement);
       expect(stored?.metadata?.codeEnvRefs).toEqual({ default: replacement });
@@ -292,7 +292,7 @@ describe('File Methods', () => {
       'preserves an unrelated or replaced legacy alias: %p',
       async (alias) => {
         await seed({ metadata: { ...metadata, codeEnvRef: alias } });
-        expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+        expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(alias === statefulRef);
         const stored = await read();
         expect(stored?.metadata?.codeEnvRef).toEqual(alias);
         expect(stored?.metadata?.codeEnvRefs?.default).toBeUndefined();
@@ -323,7 +323,7 @@ describe('File Methods', () => {
         }
         return updateOne(...args);
       });
-      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(false);
       const stored = await read();
       expect(stored?.metadata?.codeEnvRef).toEqual(replacement);
       expect(stored?.metadata?.codeEnvRefs).toEqual({ 'stateful:a': sibling });
@@ -331,30 +331,41 @@ describe('File Methods', () => {
     });
 
     it.each(['metadata.codeEnvRefs.default', 'metadata.codeEnvRef'])(
-      'skips the existence read when only %s matches',
+      'confirms route absence with a narrow owned read when only %s matches',
       async (path) => {
         await seed({ metadata: {} });
         await File.collection.updateOne(
           { file_id: snapshot.file_id },
           { $set: { [path]: defaultRef } },
         );
-        const exists = jest.spyOn(mongoose.models.File, 'exists');
+        const find = jest.spyOn(mongoose.models.File, 'findOne');
         expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
-        expect(exists).not.toHaveBeenCalled();
+        expect(find).toHaveBeenCalledTimes(1);
+        expect(find).toHaveBeenCalledWith(
+          {
+            file_id: snapshot.file_id,
+            user: snapshot.userId,
+            $and: [{ tenantId: snapshot.tenantId }],
+          },
+          { _id: 0, 'metadata.codeEnvRef': 1, 'metadata.codeEnvRefs': 1 },
+        );
         expect((await read())?.metadata?.codeDestination).toBe(true);
       },
     );
 
-    it('checks owned existence only when every conditional write misses', async () => {
+    it('confirms route absence when every conditional write misses', async () => {
       await seed({ metadata: {} });
-      const exists = jest.spyOn(mongoose.models.File, 'exists');
+      const find = jest.spyOn(mongoose.models.File, 'findOne');
       expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
-      expect(exists).toHaveBeenCalledTimes(1);
-      expect(exists).toHaveBeenCalledWith({
-        file_id: snapshot.file_id,
-        user: snapshot.userId,
-        $and: [{ tenantId: snapshot.tenantId }],
-      });
+      expect(find).toHaveBeenCalledTimes(1);
+      expect(find).toHaveBeenCalledWith(
+        {
+          file_id: snapshot.file_id,
+          user: snapshot.userId,
+          $and: [{ tenantId: snapshot.tenantId }],
+        },
+        { _id: 0, 'metadata.codeEnvRef': 1, 'metadata.codeEnvRefs': 1 },
+      );
       expect((await read())?.metadata).toEqual({});
     });
 
@@ -539,7 +550,7 @@ describe('File Methods', () => {
       },
     );
 
-    it('reports existence for empty or already-cleared snapshots', async () => {
+    it('confirms no code refs remain for empty or already-cleared snapshots', async () => {
       expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(false);
       await seed({ metadata: {} });
       expect(await fileMethods.clearFileCodeEnvRefs({ ...snapshot, refs: [] })).toBe(true);
@@ -547,6 +558,69 @@ describe('File Methods', () => {
       expect(
         await fileMethods.clearFileCodeEnvRefs({ ...snapshot, file_id: 'missing', refs: [] }),
       ).toBe(false);
+    });
+
+    it.each(['metadata.codeEnvRef', 'metadata.codeEnvRefs.default'])(
+      'rejects a primary-code-only replacement at %s',
+      async (path) => {
+        await seed({
+          source: 'execute_code',
+          context: FileContext.execute_code,
+          embedded: false,
+          metadata: {},
+        });
+        const replacement = { ...defaultRef, provisionedAt: 124 };
+        await File.collection.updateOne(
+          { file_id: snapshot.file_id },
+          { $set: { [path]: replacement } },
+        );
+        const before = await read();
+        expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(false);
+        expect(await read()).toEqual(before);
+      },
+    );
+
+    it.each([false, true])(
+      'returns false when only one route or alias snapshot matches: %s',
+      async (aliasMatches) => {
+        const replacement = { ...defaultRef, provisionedAt: 124 };
+        await seed({
+          metadata: {
+            codeEnvRef: aliasMatches ? defaultRef : replacement,
+            codeEnvRefs: { default: aliasMatches ? replacement : defaultRef },
+          },
+        });
+        expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(false);
+        const stored = await read();
+        expect(stored?.metadata?.codeEnvRef).toEqual(aliasMatches ? undefined : replacement);
+        expect(stored?.metadata?.codeEnvRefs).toEqual(aliasMatches ? { default: replacement } : {});
+        expect(stored?.updatedAt).toEqual(updatedAt);
+      },
+    );
+
+    it.each([defaultRef, statefulRef])(
+      'rejects an empty snapshot while any canonical or legacy code ref remains: %p',
+      async (ref) => {
+        await seed({ metadata: { codeEnvRef: ref } });
+        expect(await fileMethods.clearFileCodeEnvRefs({ ...snapshot, refs: [] })).toBe(false);
+        await File.collection.updateOne(
+          { file_id: snapshot.file_id },
+          { $set: { metadata: { codeEnvRefs: { unknown: ref } } } },
+        );
+        expect(await fileMethods.clearFileCodeEnvRefs({ ...snapshot, refs: [] })).toBe(false);
+      },
+    );
+
+    it('propagates the final metadata read failure after writes settle', async () => {
+      await seed();
+      jest.spyOn(mongoose.models.File, 'findOne').mockImplementationOnce(() => {
+        throw new Error('metadata read unavailable');
+      });
+      await expect(fileMethods.clearFileCodeEnvRefs(snapshot)).rejects.toThrow(
+        'metadata read unavailable',
+      );
+      expect((await read())?.metadata?.codeEnvRef).toBeUndefined();
+      expect((await read())?.metadata?.codeEnvRefs).toEqual({ 'stateful:a': statefulRef });
     });
 
     it.each(['', 'stateful.invalid', '$stateful'])(
@@ -584,7 +658,7 @@ describe('File Methods', () => {
         await pendingWrite;
         return updateOne(...args);
       });
-      const exists = jest.spyOn(mongoose.models.File, 'exists');
+      const find = jest.spyOn(mongoose.models.File, 'findOne');
       let returned = false;
       const clearing = fileMethods.clearFileCodeEnvRefs(snapshot).catch((error: Error) => {
         returned = true;
@@ -597,7 +671,7 @@ describe('File Methods', () => {
         finishWrite();
       }
       expect(await clearing).toBe(failure);
-      expect(exists).not.toHaveBeenCalled();
+      expect(find).not.toHaveBeenCalled();
       const stored = await read();
       expect(stored?.metadata?.codeEnvRef).toBeUndefined();
       expect(stored?.metadata?.codeEnvRefs?.default).toEqual(defaultRef);
@@ -719,6 +793,50 @@ describe('File Methods', () => {
       expect(clearedIds).toEqual([first.insertedId]);
     });
 
+    it.each([null, undefined])(
+      'clears only the untenanted row during system reconciliation: %p',
+      async (tenantId) => {
+        const foreign = await seed();
+        const local = await seed({ tenantId });
+        const before = await File.collection.findOne({ _id: foreign.insertedId });
+        expect(
+          await runAsSystem(() => fileMethods.clearFileEmbeddings({ ...snapshot, tenantId })),
+        ).toBe(true);
+        expect(await File.collection.findOne({ _id: foreign.insertedId })).toEqual(before);
+        const stored = await File.collection.findOne({ _id: local.insertedId });
+        expect(stored?.embedded).toBe(false);
+        expect(stored?.metadata?.embeddedEntities).toBeUndefined();
+        expect(stored?.metadata?.searchDestination).toBe(true);
+        expect(stored?.updatedAt).toEqual(updatedAt);
+      },
+    );
+
+    it.each([null, undefined, 'tenant-b'])(
+      'does not clear a tenant row for a mismatched system scope: %p',
+      async (tenantId) => {
+        const seeded = await seed();
+        const before = await File.collection.findOne({ _id: seeded.insertedId });
+        expect(
+          await runAsSystem(() => fileMethods.clearFileEmbeddings({ ...snapshot, tenantId })),
+        ).toBe(false);
+        expect(await File.collection.findOne({ _id: seeded.insertedId })).toEqual(before);
+      },
+    );
+
+    it.each([null, undefined, 'tenant-b'])(
+      'does not let embedding tenant middleware replace the caller scope: %p',
+      async (tenantId) => {
+        const seeded = await seed();
+        const before = await File.collection.findOne({ _id: seeded.insertedId });
+        expect(
+          await tenantStorage.run({ tenantId: snapshot.tenantId }, () =>
+            fileMethods.clearFileEmbeddings({ ...snapshot, tenantId }),
+          ),
+        ).toBe(false);
+        expect(await File.collection.findOne({ _id: seeded.insertedId })).toEqual(before);
+      },
+    );
+
     it('clears legacy vector flags without an entity list', async () => {
       await seed({ metadata: { destinationChosen: true } });
       const legacy = { ...snapshot, embeddedEntities: undefined };
@@ -754,6 +872,97 @@ describe('File Methods', () => {
         update.mockRestore();
       }
       expect((await File.collection.findOne({ file_id: snapshot.file_id }))?.embedded).toBe(true);
+    });
+  });
+
+  describe('final file storage snapshot', () => {
+    const user = new mongoose.Types.ObjectId();
+    const updatedAt = new Date('2026-10-20');
+    const snapshot = {
+      file_id: 'cleanup-race',
+      user,
+      tenantId: 'tenant-a',
+      updatedAt,
+      source: 'local',
+    };
+    const options = { files: [snapshot], userId: user.toString() };
+    const check = { ...snapshot, userId: user.toString() };
+    const seed = (overrides = {}) => File.collection.insertOne({ ...snapshot, ...overrides });
+
+    it('confirms a cleared snapshot and removes only its matching owned row', async () => {
+      await seed({ embedded: false, metadata: { codeEnvRefs: {}, codeDestination: true } });
+      await seed({ tenantId: 'tenant-b' });
+      expect(await fileMethods.isFileStorageClean(check)).toBe(true);
+      expect(await fileMethods.deleteFiles([snapshot.file_id], undefined, options)).toEqual(
+        expect.objectContaining({ deletedCount: 1 }),
+      );
+      expect(await File.collection.countDocuments({ file_id: snapshot.file_id })).toBe(1);
+      expect(await fileMethods.isFileStorageClean(check)).toBe(false);
+      expect(await fileMethods.deleteFiles([snapshot.file_id], undefined, options)).toEqual(
+        expect.objectContaining({ deletedCount: 0 }),
+      );
+    });
+
+    it.each([
+      { metadata: { codeEnvRefs: { default: { file_id: 'replacement' } } } },
+      { metadata: { codeEnvRef: { file_id: 'replacement' } } },
+      { embedded: true, metadata: { embeddedEntities: ['new-namespace'] } },
+      { updatedAt: new Date(updatedAt.getTime() + 1) },
+    ])(
+      'retains a reprovisioned row and reports incomplete metadata deletion: %p',
+      async (change) => {
+        await seed();
+        expect(await fileMethods.isFileStorageClean(check)).toBe(true);
+        await File.collection.updateOne({ file_id: snapshot.file_id }, { $set: change });
+        const before = await File.collection.findOne({ file_id: snapshot.file_id });
+        expect(await fileMethods.isFileStorageClean(check)).toBe(false);
+        await expect(
+          fileMethods.deleteFiles([snapshot.file_id], undefined, options),
+        ).rejects.toThrow('File storage snapshot changed before metadata deletion');
+        expect(await File.collection.findOne({ file_id: snapshot.file_id })).toEqual(before);
+      },
+    );
+
+    it('does not delete a copy attached between the metadata read and conditional delete', async () => {
+      await seed();
+      const deleteMany = File.collection.deleteMany.bind(File.collection);
+      jest.spyOn(File.collection, 'deleteMany').mockImplementationOnce(async (...args) => {
+        await File.collection.updateOne(
+          { file_id: snapshot.file_id },
+          { $set: { 'metadata.codeEnvRefs.default': { file_id: 'late-copy' } } },
+        );
+        return deleteMany(...args);
+      });
+      await expect(fileMethods.deleteFiles([snapshot.file_id], undefined, options)).rejects.toThrow(
+        'File storage snapshot changed before metadata deletion',
+      );
+      const stored = await File.collection.findOne({ file_id: snapshot.file_id });
+      expect(stored?.metadata?.codeEnvRefs?.default?.file_id).toBe('late-copy');
+    });
+
+    it('accepts primary vector cleanup only for its original namespace snapshot', async () => {
+      const vector = {
+        ...snapshot,
+        source: 'vectordb',
+        embedded: true,
+        metadata: { embeddedEntities: ['original'] },
+      };
+      await seed(vector);
+      const primary = {
+        ...check,
+        source: vector.source,
+        embedded: true,
+        embeddedEntities: ['original'],
+      };
+      expect(await fileMethods.isFileStorageClean(primary)).toBe(true);
+      await File.collection.updateOne(
+        { file_id: snapshot.file_id },
+        { $set: { 'metadata.embeddedEntities': ['replacement'] } },
+      );
+      expect(await fileMethods.isFileStorageClean(primary)).toBe(false);
+      await expect(
+        fileMethods.deleteFiles([snapshot.file_id], undefined, { ...options, files: [vector] }),
+      ).rejects.toThrow('File storage snapshot changed');
     });
   });
 

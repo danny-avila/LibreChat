@@ -268,7 +268,7 @@ describe('deleteUserController - 2FA enforcement', () => {
     const req = { user: { id: USER_ID, _id: USER_ID, email: 'a@b.com' } };
     const res = createRes();
     mockGetUserById.mockResolvedValue({ _id: USER_ID, twoFactorEnabled: false });
-    mockGetFiles.mockResolvedValue(files);
+    mockGetFiles.mockResolvedValueOnce(files);
 
     await deleteUserController(req, res);
 

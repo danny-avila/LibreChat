@@ -109,6 +109,7 @@ it('invalidates a confirmed code pointer even when a later vector deletion fails
             throw new Error('vector unavailable');
           },
     clearFileEmbeddings,
+    isFileStorageClean: jest.fn().mockResolvedValue(true),
     logger: { warn: jest.fn() },
   });
   await expect(

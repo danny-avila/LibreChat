@@ -236,7 +236,10 @@ export async function eraseUserData(
   if (outcome.failedFileIds.length > 0 || files?.some((file) => !deleted.has(file.file_id))) {
     throw new Error('Stored file deletion incomplete');
   }
-  await deps.deleteFiles([], userId);
+  await deps.deleteFiles([...deleted], undefined, { files: files ?? [], userId });
+  if ((await deps.getFiles({ user: userId }, undefined, 1))?.length) {
+    throw new Error('Stored file deletion incomplete');
+  }
   await deps.deleteAllUserSessions({ userId });
   deps.onSessionsDeleted?.();
   await deps.deleteRefreshTokenBridges({ userId, tenantId });

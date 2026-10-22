@@ -29,14 +29,25 @@ function setup(source: string = FileSources.local) {
   );
   const logger = { warn: jest.fn() };
   const clearFileEmbeddings = jest.fn().mockResolvedValue(true);
+  const isFileStorageClean = jest.fn().mockResolvedValue(true);
   const remove = createDeleteFileWithSecondaryStorage<typeof req, typeof file, typeof client>({
     source,
     deleteFile: primary,
     getDeleteFile,
     clearFileEmbeddings,
+    isFileStorageClean,
     logger,
   });
-  return { primary, vectors, code, getDeleteFile, clearFileEmbeddings, logger, remove };
+  return {
+    primary,
+    vectors,
+    code,
+    getDeleteFile,
+    clearFileEmbeddings,
+    isFileStorageClean,
+    logger,
+    remove,
+  };
 }
 
 describe('createDeleteFileWithSecondaryStorage', () => {
@@ -64,6 +75,19 @@ describe('createDeleteFileWithSecondaryStorage', () => {
     expect(file.user).toBe('owner');
     expect(file.tenantId).toBe('tenant-a');
   });
+
+  it.each(['replacement', 'failure'])(
+    'retains primary bytes when final code-only cleanup has a %s',
+    async (mode) => {
+      const { primary, code, isFileStorageClean, remove } = setup();
+      file.embedded = false;
+      if (mode === 'replacement') isFileStorageClean.mockResolvedValue(false);
+      else isFileStorageClean.mockRejectedValue(new Error('resource not found'));
+      await expect(remove(req, file)).rejects.toThrow('File storage cleanup was not confirmed');
+      expect(code).toHaveBeenCalledTimes(1);
+      expect(primary).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([401, 403, 500])('keeps primary bytes on HTTP %s', async (status) => {
     const { primary, code, remove } = setup();
@@ -191,6 +215,7 @@ describe('createDeleteFileWithSecondaryStorage', () => {
       deleteFile: primary,
       getDeleteFile: () => code,
       clearFileEmbeddings: jest.fn().mockResolvedValue(true),
+      isFileStorageClean: jest.fn().mockResolvedValue(true),
       logger: { warn: jest.fn() },
     });
     await deleteMapped(req, mapped);
@@ -299,6 +324,7 @@ describe('createDeleteFileWithSecondaryStorage', () => {
       deleteFile: primary,
       getDeleteFile,
       clearFileEmbeddings: jest.fn().mockResolvedValue(true),
+      isFileStorageClean: jest.fn().mockResolvedValue(true),
       logger: { warn: jest.fn() },
     });
     await remove(req, {
@@ -317,6 +343,7 @@ describe('createDeleteFileWithSecondaryStorage', () => {
       deleteFile: primary,
       getDeleteFile,
       clearFileEmbeddings: jest.fn().mockResolvedValue(true),
+      isFileStorageClean: jest.fn().mockResolvedValue(true),
       logger: { warn: jest.fn() },
     });
     await remove(req, {});

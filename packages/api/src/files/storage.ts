@@ -1,5 +1,5 @@
 import { FileSources, getCodeEnvRefs } from 'librechat-data-provider';
-import type { ClearFileEmbeddingsParams } from '@librechat/data-schemas';
+import type { ClearFileEmbeddingsParams, FileStorageCleanupParams } from '@librechat/data-schemas';
 import type { CodeEnvReferenceSet } from 'librechat-data-provider';
 import { getSafeErrorMetadata } from '../utils/errors';
 
@@ -81,12 +81,14 @@ export function createDeleteFileWithSecondaryStorage<
   deleteFile,
   getDeleteFile,
   clearFileEmbeddings,
+  isFileStorageClean,
   logger,
 }: {
   source: string;
   deleteFile: DeleteStorageFile<TRequest, TFile, TClient>;
   getDeleteFile: (source: string) => DeleteStorageFile<TRequest, TFile>;
   clearFileEmbeddings: (data: ClearFileEmbeddingsParams) => Promise<boolean>;
+  isFileStorageClean: (data: FileStorageCleanupParams) => Promise<boolean>;
   logger: { warn: (message: string, error: unknown) => void };
 }): DeleteStorageFile<TRequest, TFile, TClient> {
   return async (req, file, client) => {
@@ -170,6 +172,27 @@ export function createDeleteFileWithSecondaryStorage<
     ) {
       throw new Error('Code storage deletion was not confirmed');
     }
+    const confirmCleanup = async (): Promise<void> => {
+      if (!file.file_id) return;
+      try {
+        if (
+          !(await isFileStorageClean({
+            file_id: file.file_id,
+            userId: file.user?.toString() ?? req.user.id,
+            tenantId: file.tenantId,
+            updatedAt: file.updatedAt,
+            source,
+            embedded: file.embedded,
+            embeddedEntities: readEmbeddedEntities(file.metadata?.embeddedEntities),
+          }))
+        ) {
+          throw new Error('File storage snapshot changed');
+        }
+      } catch (error) {
+        throw new Error('File storage cleanup was not confirmed', { cause: error });
+      }
+    };
+    if (source !== FileSources.execute_code) await confirmCleanup();
     const primary = await remove(() => deleteFile(req, file, client));
     if (
       ((source === FileSources.vectordb && file.embedded === true) ||
@@ -181,5 +204,6 @@ export function createDeleteFileWithSecondaryStorage<
     ) {
       throw new Error('Primary secondary-store deletion was not confirmed');
     }
+    if (source === FileSources.execute_code) await confirmCleanup();
   };
 }

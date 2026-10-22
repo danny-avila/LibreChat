@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { createHash } from 'crypto';
-import { EToolResources, FileContext, FileSources } from 'librechat-data-provider';
+import { EToolResources, FileContext, FileSources, getCodeEnvRefs } from 'librechat-data-provider';
 import type { CodeEnvRef, TFile } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
 import type {
@@ -12,6 +12,8 @@ import type {
   RunArtifactRunScope,
   PublishRunArtifactInput,
   ClearFileCodeEnvRefsParams,
+  FileStorageCleanupParams,
+  DeleteFilesOptions,
 } from '~/types/file';
 import type { IChatProjectDocument } from '~/types';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
@@ -241,6 +243,24 @@ function withOwnerScope<T extends FilterQuery<IMongoFile>>(
   return scopedFilter;
 }
 
+/** Re-provisioned copies keep their parent row and erasure retry anchor. */
+function fileStorageCleanupFilter(data: FileStorageCleanupParams): FilterQuery<IMongoFile> {
+  return {
+    file_id: data.file_id,
+    user: data.userId,
+    $and: [{ tenantId: data.tenantId ?? null }],
+    updatedAt: data.updatedAt ?? { $exists: false },
+    'metadata.codeEnvRef': null,
+    'metadata.codeEnvRefs': { $in: [null, {}] },
+    ...(data.source === FileSources.vectordb
+      ? {
+          embedded: data.embedded ?? { $ne: true },
+          'metadata.embeddedEntities': data.embeddedEntities ?? null,
+        }
+      : { embedded: { $ne: true } }),
+  };
+}
+
 type PlainFileDocument = Omit<TFile, 'user' | '_id'> & {
   user: IMongoFile['user'];
   _id?: IMongoFile['_id'];
@@ -381,6 +401,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }) => Promise<IMongoFile | null>;
   clearFileCodeEnvRefs: (data: ClearFileCodeEnvRefsParams) => Promise<boolean>;
   clearFileEmbeddings: (data: ClearFileEmbeddingsParams) => Promise<boolean>;
+  isFileStorageClean: (data: FileStorageCleanupParams) => Promise<boolean>;
   addFileEmbeddedEntity: (data: {
     file_id: string;
     entityId: string;
@@ -396,7 +417,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     tenantId?: string | null;
   }) => Promise<IMongoFile | null>;
   deleteFile: (file_id: string) => Promise<IMongoFile | null>;
-  deleteFiles: (file_ids: string[], user?: string) => Promise<{ deletedCount?: number }>;
+  deleteFiles: (
+    file_ids: string[],
+    user?: string,
+    options?: DeleteFilesOptions,
+  ) => Promise<{ deletedCount?: number }>;
   deleteFileByFilter: (filter: FilterQuery<IMongoFile>) => Promise<IMongoFile | null>;
   batchUpdateFiles: (
     updates: Array<{
@@ -1246,7 +1271,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     ).lean<IMongoFile>();
   }
 
-  /** Reconciles deleted snapshots; replaced or already-cleared pointers are successful no-ops. */
+  /** Confirms targeted routes are absent after reconciling deleted snapshots. */
   async function clearFileCodeEnvRefs(data: ClearFileCodeEnvRefsParams): Promise<boolean> {
     const File = mongoose.models.File as Model<IMongoFile>;
     /* Tenant middleware adds its own predicate; it must not replace the snapshot scope. */
@@ -1255,10 +1280,6 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       user: data.userId,
       $and: [{ tenantId: data.tenantId ?? null }],
     };
-    if (data.refs.length === 0) {
-      return (await File.exists(query)) != null;
-    }
-
     /* Compare contract fields individually: BSON object equality depends on field order. */
     const matchesRef = (path: string, ref: CodeEnvRef): FilterQuery<IMongoFile> => {
       const fields = {
@@ -1301,30 +1322,40 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         ),
       ),
     );
-    let matched = false;
     for (const result of results) {
       if (result.status === 'rejected') {
         throw result.reason;
       }
-      matched = matched || result.value.matchedCount > 0;
     }
-    return matched || (await File.exists(query)) != null;
+    const stored = await File.findOne(query, {
+      _id: 0,
+      'metadata.codeEnvRef': 1,
+      'metadata.codeEnvRefs': 1,
+    }).lean<Pick<IMongoFile, 'metadata'>>();
+    if (!stored) {
+      return false;
+    }
+    const remaining = getCodeEnvRefs(stored.metadata);
+    if (data.refs.length === 0) {
+      return remaining.length === 0;
+    }
+    const routes = new Set(data.refs.map(({ routeKey }) => routeKey));
+    return !remaining.some(([routeKey]) => routes.has(routeKey));
   }
 
   /** Clears only the embedding snapshot whose vector deletion was confirmed. */
   async function clearFileEmbeddings(data: ClearFileEmbeddingsParams): Promise<boolean> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    const query = withOwnerScope(
-      {
-        file_id: data.file_id,
-        updatedAt: data.updatedAt ?? { $exists: false },
-        $or: [
-          { embedded: true, 'metadata.embeddedEntities': data.embeddedEntities ?? null },
-          { embedded: false, 'metadata.embeddedEntities': { $exists: false } },
-        ],
-      },
-      { userId: data.userId, tenantId: data.tenantId },
-    );
+    const query: FilterQuery<IMongoFile> = {
+      file_id: data.file_id,
+      user: data.userId,
+      $and: [{ tenantId: data.tenantId ?? null }],
+      updatedAt: data.updatedAt ?? { $exists: false },
+      $or: [
+        { embedded: true, 'metadata.embeddedEntities': data.embeddedEntities ?? null },
+        { embedded: false, 'metadata.embeddedEntities': { $exists: false } },
+      ],
+    };
     const result = await File.updateOne(
       query,
       {
@@ -1334,6 +1365,12 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       { timestamps: false },
     );
     return result.matchedCount === 1;
+  }
+
+  /** Checks the final content/presence snapshot before removing primary storage. */
+  async function isFileStorageClean(data: FileStorageCleanupParams): Promise<boolean> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    return (await File.exists(fileStorageCleanupFilter(data))) != null;
   }
 
   /**
@@ -1519,8 +1556,44 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   async function deleteFiles(
     file_ids: string[],
     user?: string,
+    options?: DeleteFilesOptions,
   ): Promise<{ deletedCount?: number }> {
     const File = mongoose.models.File as Model<IMongoFile>;
+    if (options) {
+      const ids = new Set(file_ids);
+      if (ids.size === 0) return { deletedCount: 0 };
+      const snapshots = new Map(options.files.map((file) => [file.file_id, file]));
+      const scopes = [...ids].map((id) => {
+        const file = snapshots.get(id);
+        if (!file) throw new Error('Missing file deletion snapshot');
+        return {
+          file_id: id,
+          userId: file.user?.toString() ?? options.userId,
+          tenantId: file.tenantId,
+          updatedAt: file.updatedAt,
+          source: file.source,
+          embedded: file.embedded,
+          embeddedEntities: file.metadata?.embeddedEntities,
+        };
+      });
+      const deleteQuery = { $or: scopes.map(fileStorageCleanupFilter) };
+      const doomed = await File.find(deleteQuery)
+        .select({ file_id: 1, user: 1 })
+        .lean<IMongoFile[]>();
+      const result = await File.deleteMany(deleteQuery);
+      if (result.deletedCount !== ids.size) {
+        const retained = await File.exists({
+          $or: scopes.map((scope) => ({
+            file_id: scope.file_id,
+            user: scope.userId,
+            $and: [{ tenantId: scope.tenantId ?? null }],
+          })),
+        });
+        if (retained) throw new Error('File storage snapshot changed before metadata deletion');
+      }
+      await detachFilesFromProjects(doomed);
+      return result;
+    }
     if (user) {
       const result = await File.deleteMany({ user });
       await detachAllUserFilesFromProjects(user);
@@ -1757,6 +1830,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     clearFileCodeEnvRefs,
     addFileEmbeddedEntity,
     clearFileEmbeddings,
+    isFileStorageClean,
     adoptLegacySearchEmbeddings,
     updateFileUsage,
     deleteFile,

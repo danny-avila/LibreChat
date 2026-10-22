@@ -7,6 +7,27 @@ import type {
   TFile,
 } from 'librechat-data-provider';
 
+/** Content snapshot whose primary and secondary storage cleanup must agree. */
+export type FileStorageCleanupParams = {
+  file_id: string;
+  userId: string;
+  tenantId?: string | null;
+  updatedAt?: Date | string;
+  source?: string;
+  embedded?: boolean;
+  embeddedEntities?: string[];
+};
+
+export type FileDeletionSnapshot = Omit<FileStorageCleanupParams, 'userId' | 'embeddedEntities'> & {
+  user?: { toString(): string };
+  metadata?: { embeddedEntities?: string[] };
+};
+
+export type DeleteFilesOptions = {
+  files: FileDeletionSnapshot[];
+  userId: string;
+};
+
 export type ClearFileCodeEnvRefsParams = {
   file_id: string;
   userId: string;

@@ -243,6 +243,7 @@ jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({ file_id: 'created-file-id' }),
   updateFileUsage: jest.fn(),
   deleteFiles: jest.fn(),
+  isFileStorageClean: jest.fn().mockResolvedValue(true),
   clearFileEmbeddings: jest.fn().mockResolvedValue(true),
   findFileById: jest.fn(),
   getConvo: jest.fn(),
@@ -2679,7 +2680,11 @@ describe('processDeleteRequest', () => {
       ],
     });
 
-    expect(db.deleteFiles).toHaveBeenCalledWith(['expired-file']);
+    expect(db.deleteFiles).toHaveBeenCalledWith(
+      ['expired-file'],
+      undefined,
+      expect.objectContaining({ userId: req.user.id }),
+    );
     expect(result).toEqual({ deletedFileIds: ['expired-file'], failedFileIds: [] });
   });
 
@@ -2729,7 +2734,11 @@ describe('processDeleteRequest', () => {
       }),
     ).rejects.toThrow('mongo unavailable');
 
-    expect(db.deleteFiles).toHaveBeenCalledWith(['expired-file']);
+    expect(db.deleteFiles).toHaveBeenCalledWith(
+      ['expired-file'],
+      undefined,
+      expect.objectContaining({ userId: req.user.id }),
+    );
     expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
   });
 
@@ -2758,7 +2767,11 @@ describe('processDeleteRequest', () => {
 
     expect(primaryDelete).toHaveBeenCalledWith(req, file, undefined);
     expect(vectorDelete).toHaveBeenCalledWith(req, file);
-    expect(db.deleteFiles).toHaveBeenCalledWith(['embedded-file']);
+    expect(db.deleteFiles).toHaveBeenCalledWith(
+      ['embedded-file'],
+      undefined,
+      expect.objectContaining({ userId: req.user.id }),
+    );
     expect(result).toEqual({ deletedFileIds: ['embedded-file'], failedFileIds: [] });
   });
 
@@ -2843,7 +2856,11 @@ describe('processDeleteRequest', () => {
     expect(vectorDelete).toHaveBeenCalledTimes(1);
     expect(db.clearFileEmbeddings).toHaveBeenCalledTimes(1);
     expect(codeDelete).toHaveBeenCalledTimes(2);
-    expect(db.deleteFiles).toHaveBeenCalledWith(['retry-file']);
+    expect(db.deleteFiles).toHaveBeenCalledWith(
+      ['retry-file'],
+      undefined,
+      expect.objectContaining({ userId: req.user.id }),
+    );
     expect(db.removeAgentResourceFilesFromAllAgents).toHaveBeenCalledWith({
       file_ids: ['retry-file'],
     });
@@ -3029,7 +3046,11 @@ describe('processDeleteRequest', () => {
 
     expect(primaryDelete).toHaveBeenCalledWith(req, file, undefined);
     expect(vectorDelete).toHaveBeenCalledWith(req, file);
-    expect(db.deleteFiles).toHaveBeenCalledWith(['embedded-file']);
+    expect(db.deleteFiles).toHaveBeenCalledWith(
+      ['embedded-file'],
+      undefined,
+      expect.objectContaining({ userId: req.user.id }),
+    );
     expect(result).toEqual({ deletedFileIds: ['embedded-file'], failedFileIds: [] });
   });
 
@@ -3065,7 +3086,11 @@ describe('processDeleteRequest', () => {
 
     expect(primaryDelete).toHaveBeenCalledWith(req, file, undefined);
     expect(codeDelete).toHaveBeenCalledWith(req, file);
-    expect(db.deleteFiles).toHaveBeenCalledWith(['code-resource-file']);
+    expect(db.deleteFiles).toHaveBeenCalledWith(
+      ['code-resource-file'],
+      undefined,
+      expect.objectContaining({ userId: req.user.id }),
+    );
     expect(result).toEqual({ deletedFileIds: ['code-resource-file'], failedFileIds: [] });
   });
 });

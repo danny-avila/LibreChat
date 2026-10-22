@@ -204,6 +204,27 @@ describe('eraseUserData', () => {
     expect(await count('RefreshTokenBridge', { userId: otherId.toString() })).toBe(1);
   });
 
+  it('keeps new file retry anchors and provider credentials after concurrent provisioning', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const user = userId.toString();
+    await seedUser(userId);
+    const { deps } = createDeps();
+    deps.deleteStoredFiles = jest.fn(async (files) => {
+      await model('File').insertOne({
+        user: userId,
+        file_id: 'newly-provisioned',
+        metadata: { codeEnvRefs: { default: { file_id: 'remote-copy' } } },
+      });
+      return { deletedFileIds: files.map((file) => file.file_id), failedFileIds: [] };
+    });
+    const deleteKeys = jest.spyOn(deps, 'deleteUserKey');
+    await expect(eraseUserData({ userId: user }, deps)).rejects.toThrow(
+      'Stored file deletion incomplete',
+    );
+    expect(await count('File', { user: userId, file_id: 'newly-provisioned' })).toBe(1);
+    expect(deleteKeys).not.toHaveBeenCalled();
+  });
+
   it('keeps the transaction ledger when the operator retains it', async () => {
     const userId = new mongoose.Types.ObjectId();
     await seedUser(userId);
