@@ -60,12 +60,20 @@ export type AdminConfigDeleteResponse = {
  *   `${VAR}` or default URL. A later layer that changes, blanks or removes the paired URL drops
  *   the key, and a write that changes or removes the URL beside a stored key must enter the key
  *   again (400 `CONFIG_SECRET_REENTRY_REQUIRED`).
+ * - `yamlMcpHide`: a tombstone at `mcpServers.<name>` hides that librechat.yaml MCP server from
+ *   the profile's principals, and one at `mcpServers.<name>.<field>` removes that field. A hidden
+ *   server is an access boundary, not a catalog filter: lookups that name the principal leave it
+ *   out, and checkout refuses it, including for agents saved before the hide. When the
+ *   principal's config cannot be read, every hideable server is withheld. Process-backed
+ *   (`stdio`) and Agent Plugins servers cannot be hidden, and deleting the tombstone shows the
+ *   server again.
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'
   | 'sectionAllowlist'
   | 'readFilteredWriteResponses'
-  | 'webSearchStoredKeys';
+  | 'webSearchStoredKeys'
+  | 'yamlMcpHide';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
 

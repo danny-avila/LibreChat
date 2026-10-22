@@ -1,4 +1,5 @@
 import { join } from 'path';
+import mongoose from 'mongoose';
 import { readFileSync } from 'fs';
 import mongoSanitize from 'express-mongo-sanitize';
 import {
@@ -26,11 +27,14 @@ import type {
   AppConfig,
   IConfig,
 } from '@librechat/data-schemas';
+import type { MCPOptions } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { AdminConfigDeps } from './config';
 import { createRequestSanitizer, rejectUnsafeConfigKeys } from '~/middleware/sanitize';
 import { redactConfigSecrets, encryptConfigSecretFields } from './secrets';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+import { createMCPPolicyResolver } from '~/mcp/registry/policy';
 import { createAdminConfigHandlers } from './config';
 import { ADMIN_CONFIG_FEATURES } from './meta';
 import { loadWebSearchAuth } from '~/web';
@@ -166,6 +170,7 @@ describe('GET /api/admin/config/meta', () => {
       'readFilteredWriteResponses',
       'sectionAllowlist',
       'webSearchStoredKeys',
+      'yamlMcpHide',
     ]);
     expect(meta.limits).toEqual({ maxPatchEntries: 100, overrideCacheTtlMs: 60_000 });
     expect(Object.keys(meta.rules).sort()).toEqual([
@@ -388,6 +393,56 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     const requiresReentry =
       rebinding.statusCode === 400 && rebinding.body?.code === 'CONFIG_SECRET_REENTRY_REQUIRED';
     return encrypted && usesStoredKey && requiresReentry;
+  },
+  async yamlMcpHide() {
+    const docs: MCPOptions = { type: 'streamable-http', url: 'https://docs.example.com/mcp' };
+    const local: MCPOptions = { type: 'stdio', command: 'node', args: ['tools.js'] };
+    const yaml = { docs, local };
+    const principal = { id: 'u1', role: 'USER' };
+
+    const tombstoneConfigField = jest.fn().mockResolvedValue(storedConfig({}));
+    const written = mockRes();
+    await createHandlers({ tombstoneConfigField }).tombstoneConfigField(
+      mockReq({
+        params: { principalType: 'role', principalId: 'r1' },
+        body: { fieldPath: 'mcpServers.docs' },
+      }),
+      written,
+    );
+    const storesTombstone =
+      written.statusCode === 200 && tombstoneConfigField.mock.calls[0]?.[3] === 'mcpServers.docs';
+
+    const merged = mergeConfigOverrides(
+      { config: { mcpServers: yaml }, mcpConfig: yaml } as Partial<AppConfig> as AppConfig,
+      [{ ...storedConfig({}), tombstones: ['mcpServers.docs', 'mcpServers.local'] } as IConfig],
+    );
+    const registry = new MCPServersRegistry(
+      mongoose,
+      null,
+      null,
+      createMCPPolicyResolver(jest.fn().mockResolvedValue(merged)),
+    );
+    registry.setYamlServerOptions(yaml);
+    await registry.addServerStub('docs', docs, 'CACHE');
+    const appLevel = await registry.getServerConfig('docs');
+    const withheld =
+      appLevel !== undefined &&
+      (await registry.getServerConfig('docs', principal.id, undefined, principal.role)) ===
+        undefined;
+    const refusesCheckout =
+      appLevel !== undefined && (await registry.isHiddenFromPrincipal('docs', appLevel, principal));
+    const hidden = await registry.resolveHiddenServerNames({ userId: principal.id, role: 'USER' });
+
+    const unreadable = new MCPServersRegistry(
+      mongoose,
+      null,
+      null,
+      jest.fn().mockRejectedValue(new Error('config read failed')),
+    );
+    unreadable.setYamlServerOptions(yaml);
+    const failsClosed = (await unreadable.resolveHiddenServerNames({ userId: 'u2' })).has('docs');
+
+    return storesTombstone && withheld && refusesCheckout && !hidden.has('local') && failsClosed;
   },
 };
 

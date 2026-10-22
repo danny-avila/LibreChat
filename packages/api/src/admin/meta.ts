@@ -24,6 +24,7 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   sectionAllowlist: false,
   readFilteredWriteResponses: false,
   webSearchStoredKeys: true,
+  yamlMcpHide: true,
 };
 
 /**
