@@ -238,6 +238,7 @@ router.get('/', async function (req, res) {
       const payload = {
         ...preLoginPayload,
         socialLogins: baseConfig?.registration?.socialLogins ?? defaultSocialLogins,
+        openidSessionCheckEnabled: baseConfig?.registration?.openidSessionCheck === true,
         turnstile: baseConfig?.turnstileConfig,
         rum: getRumConfig(baseConfig?.config?.telemetry),
       };
@@ -309,6 +310,7 @@ router.get('/', async function (req, res) {
       conversationListLimits,
       sharedLinksSnapshotFilesEnabled: sharedLinksEnabled && isFileSnapshotEnabled(appConfig),
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
+      openidSessionCheckEnabled: appConfig?.registration?.openidSessionCheck === true,
       projects: appConfig?.projects,
       interface: appConfig?.interfaceConfig,
       titleGenerationTiming: resolveTitleTiming({
