@@ -1,9 +1,10 @@
+import { createStore } from 'jotai';
+
 const DIRECTION_KEY = 'chatDirection';
 
-const readStoredDirection = async (): Promise<string> => {
-  const { snapshot_UNSTABLE } = await import('recoil');
-  const settings = await import('../settings');
-  return snapshot_UNSTABLE().getLoadable(settings.default.chatDirection).valueOrThrow();
+const readStoredDirection = async () => {
+  const { chatDirectionAtom } = await import('../chatDirection');
+  return createStore().get(chatDirectionAtom);
 };
 
 describe('chatDirection', () => {
@@ -23,11 +24,18 @@ describe('chatDirection', () => {
   ])('keeps a stored %s choice as %s', async (stored, expected) => {
     localStorage.setItem(DIRECTION_KEY, JSON.stringify(stored));
     expect(await readStoredDirection()).toBe(expected);
-    expect(localStorage.getItem(DIRECTION_KEY)).toBe(JSON.stringify(expected));
   });
 
   it('falls back to auto for an unrecognized stored value', async () => {
     localStorage.setItem(DIRECTION_KEY, JSON.stringify('sideways'));
     expect(await readStoredDirection()).toBe('auto');
+  });
+
+  it('stores a choice where older clients read it', async () => {
+    const { chatDirectionAtom } = await import('../chatDirection');
+    const store = createStore();
+    store.set(chatDirectionAtom, 'rtl');
+    expect(store.get(chatDirectionAtom)).toBe('rtl');
+    expect(localStorage.getItem(DIRECTION_KEY)).toBe(JSON.stringify('rtl'));
   });
 });

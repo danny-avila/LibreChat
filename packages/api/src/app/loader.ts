@@ -14,6 +14,7 @@ import {
 } from 'librechat-data-provider';
 import type { TCustomConfig, TEndpoint } from 'librechat-data-provider';
 import type { ZodIssue } from 'zod';
+import { isAgentInferenceExtension } from '../agents/inference';
 import { checkConfigTheme } from './theme';
 
 type CustomParams = NonNullable<TEndpoint['customParams']>;
@@ -123,8 +124,8 @@ function parseCustomParams(endpointName: string | undefined, customParams: Custo
     defaultParams.map((param) => [param.key, param as CustomParamDefinition]),
   );
   const invalidKeys = paramDefinitions
-    .map((param) => param.key)
-    .filter((key) => !defaultParamsMap.has(key));
+    .filter((param) => !defaultParamsMap.has(param.key) && !isAgentInferenceExtension(param))
+    .map((param) => param.key);
   if (invalidKeys.length > 0) {
     throw new Error(
       `paramDefinitions of "${endpointName}" endpoint contains invalid key(s). ` +

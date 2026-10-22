@@ -1,12 +1,12 @@
-import { useRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { Dropdown } from '@librechat/client';
-import type { ChatDirection as TChatDirection } from '~/store/settings';
+import type { ChatDirection as TChatDirection } from '~/store/chatDirection';
+import { chatDirectionAtom } from '~/store/chatDirection';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 
 const ChatDirection = () => {
   const localize = useLocalize();
-  const [direction, setDirection] = useRecoilState(store.chatDirection);
+  const [direction, setDirection] = useAtom(chatDirectionAtom);
 
   const options = [
     { value: 'auto', label: localize('com_ui_auto') },

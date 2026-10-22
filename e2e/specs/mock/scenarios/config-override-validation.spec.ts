@@ -122,10 +122,16 @@ test.describe('Principal config override validation', () => {
       expect(res.status()).toBe(400);
       const body = (await res.json()) as {
         code: string;
-        issues: Array<{ path: string; code: string }>;
+        issues: Array<{ path: string; segments: string[]; code: string }>;
       };
       expect(body.code).toBe('CONFIG_OVERRIDE_INVALID');
-      expect(body.issues).toEqual([{ path: 'interface.contextCost', code: 'invalid_type' }]);
+      expect(body.issues).toEqual([
+        {
+          path: 'interface.contextCost',
+          segments: ['interface', 'contextCost'],
+          code: 'invalid_type',
+        },
+      ]);
 
       expect(await storedOverrides(request, admin, target.userId)).toBeNull();
       const iface = await readInterface(request, target);
