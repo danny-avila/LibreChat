@@ -15,6 +15,7 @@ import {
   hasActivePiiPatterns,
   replaceSpecialVars,
   providerEndpointMap,
+  normalizeEndpointName,
 } from 'librechat-data-provider';
 import type {
   AgentToolResources,
@@ -1367,6 +1368,16 @@ export async function initializeAgent(
     }
   }
 
+  /**
+   * An agent saved under another spelling of a folded endpoint name (`Ollama`) runs on the
+   * endpoint the runtime serves (`ollama`). Folded once, before anything keys on it: the
+   * `allowedProviders` check (served names, `normalizeEndpointReferences`), provider setup,
+   * user key lookups and token configs all read the served name.
+   */
+  const servedProvider = normalizeEndpointName(agent.provider);
+  if (servedProvider !== agent.provider) {
+    agent.provider = servedProvider;
+  }
   if (
     isAgentsEndpoint(endpointOption?.endpoint) &&
     allowedProviders.size > 0 &&

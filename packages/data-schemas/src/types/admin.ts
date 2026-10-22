@@ -111,7 +111,8 @@ export type AdminConfigTombstoneRequest = AdminConfigWritePrecondition &
  * Only sections `configSchema` defines can be written or hidden; `unset` may also remove what
  * an older server stored outside them. Entries of a merged-by-key array are addressed by key,
  * never by position: a `set`, `unset` or `rename` whose path runs into one
- * (`endpoints.custom.0.headers`) is refused.
+ * (`endpoints.custom.0.headers`) is refused. A key names the entry the runtime merge matches it
+ * to: a custom endpoint `ollama` in any case is the one entry `Ollama` also names.
  * - `upsertEntry` replaces the principal's own entry of a merged-by-key array (`endpoints.custom`,
  *   keyed by `name`) with `entry`, or appends it. An entry that omits a stored `apiKey` keeps it.
  * - `removeEntry` removes the principal's own entry with that key; an inherited entry of the
