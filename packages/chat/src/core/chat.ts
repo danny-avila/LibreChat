@@ -632,6 +632,37 @@ const markApproval = (
 };
 
 /**
+ * Undoes an optimistic write on the list as it stands now: rows it added go, rows it changed or
+ * removed come back as they were, and a row someone else wrote since then keeps that write.
+ */
+const undoOptimisticWrite = (
+  before: TMessage[],
+  written: TMessage[],
+  current: TMessage[],
+): TMessage[] => {
+  const prior = new Map(before.map((message) => [message.messageId, message]));
+  const wrote = new Map(written.map((message) => [message.messageId, message]));
+  const next: TMessage[] = [];
+  const kept = new Set<string>();
+  for (const message of current) {
+    const was = prior.get(message.messageId);
+    const ours = wrote.get(message.messageId) === message;
+    if (was == null && ours) {
+      continue;
+    }
+    next.push(ours && was != null ? was : message);
+    kept.add(message.messageId);
+  }
+  before.forEach((message, index) => {
+    if (kept.has(message.messageId) || wrote.has(message.messageId)) {
+      return;
+    }
+    next.splice(Math.min(index, next.length), 0, message);
+  });
+  return next;
+};
+
+/**
  * One conversation's turn lifecycle, framework free. AI SDK: `AbstractChat`.
  *
  * A turn is `submitted` while the request is in flight, `streaming` from its first content event,
@@ -1628,10 +1659,11 @@ export class Chat {
           active.inheritedGeneration = generationCreatedAt;
         }
       } else if (result.status === 'replaced') {
-        if (added.size > 0) {
-          /** The server ran another generation instead, so this turn's optimistic rows go. */
+        const rollback = optimisticWrite;
+        if (rollback) {
+          /** The server ran another generation instead, so this turn's optimistic write is undone. */
           await this.executor.run(() => {
-            this.write(this.messages.filter((message) => !added.has(message.messageId)));
+            this.write(undoOptimisticWrite(rollback.before, rollback.written, this.messages));
           });
         }
         const generationCreatedAt = result.generationCreatedAt ?? undefined;
@@ -1939,7 +1971,15 @@ export class Chat {
     }
     const { responseId, responseUnknown, responseless, conversationId } = active.generation;
     const named = conversationId !== Constants.NEW_CONVO ? conversationId : undefined;
-    this.publish({ ...outcome, conversationId: named }, responseId, responseUnknown, responseless);
+    /** A lost start still owed its own abort keeps the failure it reported. */
+    const lost = this.unaddressed && this.unaddressed !== active ? this.unaddressed : undefined;
+    this.publish(
+      { ...outcome, conversationId: named },
+      responseId,
+      responseUnknown,
+      responseless,
+      lost?.disconnected,
+    );
   }
 
   /** Records the ids and pause an event reports for the request it arrived on. */
@@ -1991,7 +2031,7 @@ export class Chat {
     if (state.status !== status) {
       state.status = status;
     }
-    state.error = owed ?? (outcome.kind === 'error' ? outcome.error : undefined);
+    state.error = outcome.kind === 'error' ? outcome.error : owed;
     const messages = this.messages;
     let message: TMessage | undefined;
     if (responseId !== undefined) {
@@ -2229,11 +2269,16 @@ export class Chat {
          * it or a newer generation replaced it. It ends here, and a probe finds what runs now.
          */
         /** A newer pause restored meanwhile owns the chat, and the probe would end it. */
-        const owned = !this.action || this.action.actionId === action.actionId;
-        if (this.action?.actionId === action.actionId) {
+        const ours = this.action?.actionId === action.actionId;
+        const probing = (ours || !this.action) && !this.active && !this.disposed;
+        if (!probing && ours) {
           this.clearAction();
         }
-        if (owned && !this.active && !this.disposed) {
+        if (probing) {
+          /**
+           * Started while the pause still names its generation, so a subscriber cannot take the
+           * chat first and the reattachment settles or replaces the pause by what it finds.
+           */
           this.reattach(
             {
               streamId: action.streamId,

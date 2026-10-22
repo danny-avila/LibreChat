@@ -2408,7 +2408,7 @@ describe('Chat late answers and lost starts', () => {
     await lost(h);
     const chat = h.chat;
     const unsubscribe = chat.subscribe(() => {
-      if (!started && prepared === 2 && chat.status === 'ready') {
+      if (!started && prepared === 2 && chat.status !== 'submitted') {
         started = true;
         chat.sendMessage({ parts: [{ type: 'text', text: 'Successor' }] }).then(
           () => undefined,
@@ -2680,5 +2680,54 @@ describe('Chat resume conflicts after a newer pause', () => {
 
     expect(h.chat.pendingAction?.actionId).toBe('action-newer');
     expect(h.transport.reconnectToStream).not.toHaveBeenCalled();
+  });
+});
+
+describe('Chat lost starts and conflict probes', () => {
+  it('(2) a retry stopped before it is sent keeps the lost start failure', async () => {
+    let prepared = 0;
+    const h = createHarness({
+      prepareRequest: () => {
+        prepared += 1;
+        if (prepared > 1) {
+          return new Promise<never>(() => undefined);
+        }
+        return { payload, messages: [userMessage, placeholder], responseMessageId: 'response-1' };
+      },
+    });
+    await lost(h);
+    send(h);
+    await flush();
+
+    await expect(h.chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+    expect(h.chat.status).toBe('error');
+    expect(h.chat.error).toBeDefined();
+  });
+
+  it('(1) a resume conflict probes before a subscriber can take the chat, and settles the pause it finds ended', async () => {
+    const h = createHarness();
+    await states.restored(h);
+    h.transport.resume.mockRejectedValueOnce(
+      Object.assign(new Error('Conflict'), {
+        response: { status: 409, data: { error: 'No live pending action to resume' }, headers: {} },
+      }),
+    );
+    let raced = false;
+    const unsubscribe = h.chat.subscribe(() => {
+      if (!raced && !h.chat.pendingAction && h.chat.status === 'ready') {
+        raced = true;
+        h.chat.sendMessage({ parts: [{ type: 'text', text: 'Next' }] }).then(
+          () => undefined,
+          () => undefined,
+        );
+      }
+    });
+
+    await h.chat.addToolOutput({ toolCallId: 'ask-1', output: 'A' }).catch(() => undefined);
+    await flush();
+    unsubscribe();
+
+    expect(h.transport.reconnectToStream).toHaveBeenCalledTimes(1);
+    expect(h.finishes[0]).toMatchObject({ isSettled: true });
   });
 });
