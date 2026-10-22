@@ -113,5 +113,9 @@ those principals get it as a failed configuration, inspected again every 5 minut
 back to the `librechat.yaml` definition, which still has the value. A change that removes nothing
 (such as a new `timeout`) still falls back to `librechat.yaml` while its inspection fails.
 
+Removing `oauth_headers` keys, or the whole field, also covers OAuth sign-in. The callback that
+completes a sign-in sends the headers the principal's config had when the sign-in started, and sends
+none when that config had none left.
+
 Removing a `customUserVars` key that a header still references as `{{VAR}}` leaves that placeholder
 unresolved for those principals; remove or change the header too.
