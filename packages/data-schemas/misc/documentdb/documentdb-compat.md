@@ -347,3 +347,39 @@ those namespaces before opening the transaction.
 This sweep exists because every incompatibility found so far was invisible
 until someone thought to look for its class; here the engine adjudicates
 whatever each method emits, known class or not.
+
+## Dotted keys in admin config overrides (2026-10-20, DocumentDB pending)
+
+The admin config API keeps dotted record keys in write bodies: Bedrock
+inference profiles (`us.anthropic.claude-sonnet-4-6`), model names
+(`gpt-4.1`), MIME types and header names. They land in the `overrides` Mixed
+subdocument through two write shapes: `patchConfigFields` sets a dotted
+`overrides.<path>` whose value carries dotted keys, and `upsertConfig` sets
+the whole `overrides` object. Dots in path segments are never written as
+paths; only keys inside values hold them.
+
+`compat.documentdb.spec.ts` › "admin config overrides with dotted record keys"
+covers both shapes and records whether the engine stores a `$`-prefixed key
+inside a value. Local runs used the whole compat suite against a single-node
+replica set of each server (16 of 16 passing on every version):
+
+| Engine                      | Dotted keys, `$set` path | Dotted keys, whole `$set` | `$` key inside a value |
+| --------------------------- | ------------------------ | ------------------------- | ---------------------- |
+| MongoDB 4.4.29 (local)      | supported                | supported                 | rejected               |
+| MongoDB 5.0.31 (local)      | supported                | supported                 | stored                 |
+| MongoDB 6.0.26 (local)      | supported                | supported                 | stored                 |
+| MongoDB 7.0.14 (local)      | supported                | supported                 | stored                 |
+| MongoDB 8.2.6 (local)       | supported                | supported                 | stored                 |
+| Amazon DocumentDB 5.0       | **not yet run**          | **not yet run**           | **not yet run**        |
+| Azure Cosmos DB for MongoDB | **not yet run**          | **not yet run**           | **not yet run**        |
+
+- MongoDB 5.0 and later store a `$` key inside a value, so the admin config
+  router's post-auth guard (`CONFIG_UNSAFE_KEY`) is the only `$` check there.
+- Before a release that advertises `dottedKeys`, run the block against a
+  DocumentDB 5.0 cluster (and Cosmos DB where it is supported):
+  `npx jest --config misc/documentdb/jest.documentdb.config.mjs -t 'dotted record keys'`.
+- If an engine rejects the writes, the request fails with 422
+  `CONFIG_KEY_NOT_STORABLE` (`isFieldNameRejection` recognizes the engine's
+  error) and nothing is stored; nothing is silently dropped. The fallback is
+  reversible key encoding at the data-schemas storage boundary (escape `.`, a
+  leading `$` and the escape character on write; decode on read).

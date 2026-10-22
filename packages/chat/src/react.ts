@@ -66,13 +66,44 @@ export {
   showStopButtonByIndex,
   abortScrollFamily,
 } from './react/generation';
-export { SteerHostProvider, setDefaultSteerHost, useSteerHost } from './react/steer/host';
+export { SteerHostProvider, useSteerHost } from './react/steer/host';
 export type {
   SteerHost,
+  SteerPane,
   SteerSettings,
+  QueuedTurnCache,
+  QueuedTurnSnapshot,
   SteerMessageKey,
   SteerNotification,
   SteerRequestCallbacks,
 } from './react/steer/host';
 export { presetFamily, filesFamily, optionSettingsFamily } from './react/pane';
 export type { PaneOptionSettings } from './react/pane';
+export { default as useSteering } from './react/steering/useSteering';
+export type { SteeringControls, UseSteeringParams } from './react/steering/useSteering';
+export type { ComposerFile, ComposerFileSetter } from './react/steering/types';
+export {
+  default as useSteerCancel,
+  useSteerRehome,
+  useSteerReclaim,
+  useSteerMoveToQueue,
+} from './react/steering/useSteerCancel';
+export type {
+  SteerRehomeOptions,
+  SteerCancelOutcome,
+  SteerRehomeTarget,
+} from './react/steering/useSteerCancel';
+export { default as useSteerConvert } from './react/steering/useSteerConvert';
+export type { ConvertibleSteer, SteerConvertOptions } from './react/steering/useSteerConvert';
+export { default as useSteerEscalate } from './react/steering/useSteerEscalate';
+export type { EscalateTarget } from './react/steering/useSteerEscalate';
+export { resolveAcknowledgedSteer } from './react/steering/chips';
+export { default as useQueueDrain } from './react/steering/useQueueDrain';
+export { default as useSteerRecovery } from './react/steering/useSteerRecovery';
+export type { SteerRecoveryActions } from './react/steering/useSteerRecovery';
+export {
+  default as useQueuedTurnReveal,
+  hasRevealSuccessor,
+  shouldRollbackReveal,
+  buildRevealedMessage,
+} from './react/steering/useQueuedTurnReveal';

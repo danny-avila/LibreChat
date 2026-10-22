@@ -4,6 +4,7 @@ import type { AppConfig } from '@librechat/data-schemas';
 import {
   createAppConfigService,
   createMessageBudgetReader,
+  DEFAULT_OVERRIDE_CACHE_TTL,
   _resetOverrideStrictCache,
   getAppConfigOptionsFromUser,
 } from './service';
@@ -1448,6 +1449,44 @@ describe('createAppConfigService', () => {
 
       // Should not throw — logs warning and relies on TTL expiry
       await expect(clearOverrideCache()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('overrideCacheTtl', () => {
+    const overrideDeps = (overrides = {}) =>
+      createDeps({
+        getApplicableConfigs: jest
+          .fn()
+          .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+        ...overrides,
+      });
+
+    it('reports the TTL it caches merged configs for', async () => {
+      const deps = overrideDeps({ overrideCacheTtl: 15_000 });
+      const service = createAppConfigService(deps);
+
+      await service.getAppConfig({ role: 'ADMIN' });
+
+      expect(service.overrideCacheTtl).toBe(15_000);
+      expect(deps._cache.set).toHaveBeenCalledWith(
+        expect.stringContaining('ADMIN'),
+        expect.anything(),
+        15_000,
+      );
+    });
+
+    it('reports the default TTL when none is configured', async () => {
+      const deps = overrideDeps();
+      const service = createAppConfigService(deps);
+
+      await service.getAppConfig({ role: 'ADMIN' });
+
+      expect(service.overrideCacheTtl).toBe(DEFAULT_OVERRIDE_CACHE_TTL);
+      expect(deps._cache.set).toHaveBeenCalledWith(
+        expect.stringContaining('ADMIN'),
+        expect.anything(),
+        DEFAULT_OVERRIDE_CACHE_TTL,
+      );
     });
   });
 });

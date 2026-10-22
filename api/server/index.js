@@ -54,6 +54,10 @@ const {
   getRemainingShutdownMs,
   registerBackgroundTaskShutdown,
   configureServerTimeouts,
+  createReadinessHandler,
+  keyvRedisClient,
+  ioredisClient,
+  cacheConfig,
   setupGracefulShutdown,
   updateInterfacePermissions,
   configureMessageFilterRegexValidator,
@@ -65,6 +69,7 @@ const {
   waitForKeyvRedisClient,
   warnOnUnreachableDeliveryPaths,
   createCodeApiUploadRegistry,
+  createRequestSanitizer,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -350,12 +355,14 @@ const startServer = async () => {
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
   app.get('/livez', (_req, res) => res.status(200).send('OK'));
-  app.get('/readyz', (_req, res) => {
-    if (!serverReady) {
-      return res.status(503).send('NOT_READY');
-    }
-    return res.status(200).send('OK');
-  });
+  app.get(
+    '/readyz',
+    createReadinessHandler(() => serverReady, {
+      useRedis: cacheConfig.USE_REDIS,
+      ioredis: ioredisClient,
+      keyv: keyvRedisClient,
+    }),
+  );
 
   /* Middleware */
   app.use(requestContextMiddleware);
@@ -379,7 +386,7 @@ const startServer = async () => {
     next();
   });
 
-  app.use(mongoSanitize());
+  app.use(createRequestSanitizer(mongoSanitize));
   app.use(cors());
   app.use(cookieParser());
 
