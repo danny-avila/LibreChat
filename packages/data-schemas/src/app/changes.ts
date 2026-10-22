@@ -12,8 +12,12 @@ import {
   pruneEmptyAncestors,
   getClearedTombstones,
 } from './paths';
+import {
+  getConfigEntryIdentity,
+  getConfigArrayMergeKey,
+  combineFoldedConfigEntries,
+} from './resolution';
 import { setConfigFields, unsetConfigPaths, tombstoneConfigPaths } from './mutations';
-import { getConfigArrayMergeKey } from './resolution';
 
 /**
  * Atomic batches of override changes.
@@ -44,15 +48,18 @@ export type ConfigChange =
   | { op: 'tombstone'; segments: ConfigPathSegments }
   /**
    * Replaces the principal's own entry of a merged-by-key array whose key matches the entry's
-   * (every own entry with that key), or appends it. The array is created when missing.
+   * (every own entry with that key), or appends it. The array is created when missing. Entry
+   * keys of every entry change match by identity (`getConfigEntryMatcher`): `ollama` addresses
+   * a stored `Ollama`.
    */
   | { op: 'upsertEntry'; segments: ConfigPathSegments; entry: Record<string, unknown> }
   /** Removes the principal's own entries of a merged-by-key array that have this key. */
   | { op: 'removeEntry'; segments: ConfigPathSegments; key: string }
   /**
    * Renames one of the principal's own entries, moving everything stored on it (encrypted
-   * secrets included): an entry of a merged-by-key array gets a new key value in place, and a
-   * record key is moved with its value, keeping the record's key order.
+   * secrets included): an entry of a merged-by-key array gets a new key value in place (one
+   * stored in two spellings of its key is combined first, as the runtime merge combines it),
+   * and a record key is moved with its value, keeping the record's key order.
    */
   | { op: 'rename'; segments: ConfigPathSegments; from: string; to: string };
 
@@ -182,8 +189,21 @@ function requireKeyField(segments: ConfigPathSegments): string {
   return keyField;
 }
 
-function hasKey(item: unknown, keyField: string, key: string): boolean {
-  return isPlainRecord(item) && item[keyField] === key;
+/**
+ * A test for the entries of the merged-by-key array at `segments` that key `key` names. Keys
+ * compare by identity (`getConfigEntryIdentity`), so `Ollama` and `ollama` address the one
+ * custom endpoint the runtime merge makes of them.
+ */
+export function getConfigEntryMatcher(
+  segments: ConfigPathSegments,
+  keyField: string,
+  key: string,
+): (item: unknown) => boolean {
+  const identity = getConfigEntryIdentity(segments, key);
+  return (item) => {
+    const itemKey = isPlainRecord(item) ? item[keyField] : undefined;
+    return typeof itemKey === 'string' && getConfigEntryIdentity(segments, itemKey) === identity;
+  };
 }
 
 /** The key of an entry written into a merged-by-key array. */
@@ -219,7 +239,8 @@ function applyUpsertEntry(
     throw new ConfigEntryError([...segments], 'invalid_entry');
   }
   const items = readKeyedArray(state, segments);
-  const index = items.findIndex((item) => hasKey(item, keyField, key));
+  const isEntry = getConfigEntryMatcher(segments, keyField, key);
+  const index = items.findIndex(isEntry);
   const next =
     index === -1
       ? [...items, entry]
@@ -227,7 +248,7 @@ function applyUpsertEntry(
           if (position === index) {
             return [entry];
           }
-          return hasKey(item, keyField, key) ? [] : [item];
+          return isEntry(item) ? [] : [item];
         });
   return isSameConfigValue(items, next) ? state : writeKeyedArray(state, segments, next);
 }
@@ -239,7 +260,8 @@ function applyRemoveEntry(
 ): ConfigOverrideState {
   const keyField = requireKeyField(segments);
   const items = readKeyedArray(state, segments);
-  const next = items.filter((item) => !hasKey(item, keyField, key));
+  const isEntry = getConfigEntryMatcher(segments, keyField, key);
+  const next = items.filter((item) => !isEntry(item));
   return next.length === items.length ? state : writeKeyedArray(state, segments, next);
 }
 
@@ -251,16 +273,27 @@ function renameKeyedEntry(
   to: string,
 ): ConfigOverrideState {
   const items = readKeyedArray(state, segments);
-  const index = items.findIndex((item) => hasKey(item, keyField, from));
+  const isFrom = getConfigEntryMatcher(segments, keyField, from);
+  const index = items.findIndex(isFrom);
   if (index === -1) {
     throw new ConfigEntryError([...segments], 'entry_not_found');
   }
-  if (items.some((item) => hasKey(item, keyField, to))) {
+  const isTo = getConfigEntryMatcher(segments, keyField, to);
+  if (items.some((item) => isTo(item) && !isFrom(item))) {
     throw new ConfigEntryError([...segments], 'entry_exists');
   }
-  const next = items.map((item) =>
-    hasKey(item, keyField, from) ? { ...(item as JsonRecord), [keyField]: to } : item,
-  );
+  const renamed = (item: unknown): JsonRecord => ({ ...(item as JsonRecord), [keyField]: to });
+  /** One entry stored in two spellings moves as the single entry the runtime merge combines. */
+  const combined = combineFoldedConfigEntries(segments, items.filter(isFrom));
+  const next = items.flatMap((item, position) => {
+    if (!isFrom(item)) {
+      return [item];
+    }
+    if (combined.length > 1) {
+      return [renamed(item)];
+    }
+    return position === index ? [renamed(combined[0])] : [];
+  });
   return writeKeyedArray(state, segments, next);
 }
 
@@ -404,7 +437,7 @@ export function getConfigChangeWrittenPaths(
   const items = getAtPath(result.overrides, segments);
   const index =
     Array.isArray(items) && keyField && key
-      ? items.findIndex((item) => hasKey(item, keyField, key))
+      ? items.findIndex(getConfigEntryMatcher(change.segments, keyField, key))
       : -1;
   return index === -1 ? [] : [[...segments, String(index)]];
 }
@@ -429,7 +462,7 @@ function getStoredCounterpart(
     const key = keyField ? getConfigEntryKey(next, keyField) : undefined;
     if (keyField && key !== undefined) {
       counterpart = Array.isArray(counterpart)
-        ? counterpart.find((item) => hasKey(item, keyField, key))
+        ? counterpart.find(getConfigEntryMatcher(segments.slice(0, index), keyField, key))
         : undefined;
     } else {
       counterpart = getAtPath(counterpart, [segment]);

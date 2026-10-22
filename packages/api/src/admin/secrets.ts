@@ -1,6 +1,12 @@
 import isPlainObject from 'lodash/isPlainObject';
-import { encryptV3, decryptV3, logger } from '@librechat/data-schemas';
 import { envVarRegex, extractEnvVariable } from 'librechat-data-provider';
+import {
+  logger,
+  encryptV3,
+  decryptV3,
+  foldConfigMergeKey,
+  combineFoldedConfigItems,
+} from '@librechat/data-schemas';
 import type { AdminConfigRules } from '@librechat/data-schemas';
 import { isUserProvided } from '~/utils/common';
 
@@ -68,10 +74,15 @@ interface ArraySecretField {
   secretKey: string;
   /** Masked-preview companion on each item, always the sibling `<secretKey>Preview`. */
   previewKey: string;
-  /** Item field matched verbatim across writes for omit-to-keep round-trips. */
+  /** Item field matched across writes for omit-to-keep round-trips, as the merge keys it. */
   identityKey: string;
   /** Reference values that must stay readable and never encrypt, e.g. `user_provided`, `${ENV_VAR}`. */
   isPassthroughValue: (value: string) => boolean;
+}
+
+/** `user_provided` and `${ENV_VAR}`: values that name where a credential comes from, not the credential. */
+function isCredentialReference(value: string): boolean {
+  return isUserProvided(value) || envVarRegex.test(value);
 }
 
 /**
@@ -85,9 +96,32 @@ const ARRAY_SECRET_FIELDS: readonly ArraySecretField[] = [
     secretKey: 'apiKey',
     previewKey: 'apiKeyPreview',
     identityKey: 'name',
-    isPassthroughValue: (value) => isUserProvided(value) || envVarRegex.test(value),
+    isPassthroughValue: isCredentialReference,
   },
 ];
+
+/** A credential location in a resolved config; `*` matches every item of an array or value of a record. */
+interface ResolvedSecretField {
+  segments: readonly string[];
+  isPassthroughValue: (value: string) => boolean;
+}
+
+/**
+ * Credentials that reach the resolved config (AppService output, and the raw `librechat.yaml`
+ * copy it carries as `config`) from places the write registry above does not cover yet: Azure
+ * group keys, which `azureConfigSetup` also copies into `groupMap`, and the Vertex service key,
+ * which `vertexConfigSetup` resolves from `${ENV_VAR}` into `vertexConfig`. Reads remove them;
+ * writes to these paths are unchanged.
+ */
+const RESOLVED_SECRET_FIELDS: readonly ResolvedSecretField[] = [
+  { path: 'endpoints.azureOpenAI.groups.*.apiKey', isPassthroughValue: isCredentialReference },
+  { path: 'endpoints.azureOpenAI.groupMap.*.apiKey', isPassthroughValue: isCredentialReference },
+  { path: 'endpoints.anthropic.vertex.serviceKeyFile', isPassthroughValue: isEnvPlaceholder },
+  {
+    path: 'endpoints.anthropic.vertexConfig.serviceKeyFile',
+    isPassthroughValue: isEnvPlaceholder,
+  },
+].map(({ path, isPassthroughValue }) => ({ segments: path.split('.'), isPassthroughValue }));
 
 const SECRET_FIELDS_BY_PATH = new Map<string, ConfigSecretField>(
   CONFIG_SECRET_FIELDS.map((field) => [field.path, field]),
@@ -506,16 +540,18 @@ function getSecretArray(root: unknown, field: ArraySecretField, basePath = ''): 
 }
 
 /**
- * Exact-string entry identity for preserve matching. Deliberately untrimmed:
- * the runtime config merge keys entries by their verbatim name, so `"Prod"`
- * and `" Prod "` are distinct endpoints with distinct credentials.
+ * Entry identity for preserve matching: the identity the runtime config merge keys entries
+ * by (`foldConfigMergeKey`), so `Ollama` and `ollama` share one stored key. Deliberately
+ * untrimmed: `"Prod"` and `" Prod "` are distinct endpoints with distinct credentials.
  */
 function getEntryIdentity(
   entry: Record<string, unknown> | null,
   field: ArraySecretField,
 ): string | undefined {
   const value = entry?.[field.identityKey];
-  return typeof value === 'string' && value !== '' ? value : undefined;
+  return typeof value === 'string' && value !== ''
+    ? foldConfigMergeKey(field.arrayPath, value)
+    : undefined;
 }
 
 /**
@@ -569,10 +605,20 @@ function applyArraySecretWrites(entries: unknown[], field: ArraySecretField): vo
   }
 }
 
+/**
+ * Stored entries as the runtime merge reads them: a document stored before names were folded
+ * may name one entry in two spellings, which the merge combines (`combineFoldedConfigItems`),
+ * so the secret an omitted key keeps is the one the runtime uses.
+ */
+function getStoredSecretEntries(existing: unknown, field: ArraySecretField): unknown[] | null {
+  const entries = getSecretArray(existing, field);
+  return entries && combineFoldedConfigItems(field.arrayPath, entries);
+}
+
 function preserveArraySecrets(result: unknown, existing: unknown, basePath: string): void {
   for (const field of ARRAY_SECRET_FIELDS) {
     const entries = getSecretArray(result, field, basePath);
-    const existingEntries = getSecretArray(existing, field);
+    const existingEntries = getStoredSecretEntries(existing, field);
     if (!entries || !existingEntries) {
       continue;
     }
@@ -1097,6 +1143,53 @@ export function redactConfigSecrets<T>(
         delete entry[field.secretKey];
       }
     }
+  }
+  return root;
+}
+
+/** Deletes the value at `segments` under `node` unless it is empty or a pass-through reference. */
+function redactResolvedSecret(
+  node: unknown,
+  segments: readonly string[],
+  field: ResolvedSecretField,
+): void {
+  const [segment, ...rest] = segments;
+  if (segment === '*') {
+    const children = Array.isArray(node) ? node : Object.values(getPlainRecord(node) ?? {});
+    for (const child of children) {
+      redactResolvedSecret(child, rest, field);
+    }
+    return;
+  }
+  const record = getPlainRecord(node);
+  if (!record || !Object.prototype.hasOwnProperty.call(record, segment)) {
+    return;
+  }
+  if (rest.length > 0) {
+    redactResolvedSecret(record[segment], rest, field);
+    return;
+  }
+  const value = record[segment];
+  if (typeof value === 'string') {
+    const normalized = normalizeSecretString(value);
+    if (normalized == null || field.isPassthroughValue(normalized)) {
+      return;
+    }
+  }
+  delete record[segment];
+}
+
+/**
+ * Deletes, in place, the credentials a resolved config carries outside the write registry
+ * (`RESOLVED_SECRET_FIELDS`), for admin reads of the AppConfig or its raw `config`. Empty
+ * values and pass-through references stay readable; anything else that is not a string is
+ * removed too. Stored override documents are left alone: their writes do not preserve an
+ * omitted value at these paths yet, so redacting them would break a read-then-write round
+ * trip. The caller passes a cloned object.
+ */
+export function redactResolvedConfigSecrets<T>(root: T): T {
+  for (const field of RESOLVED_SECRET_FIELDS) {
+    redactResolvedSecret(root, field.segments, field);
   }
   return root;
 }
