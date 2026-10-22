@@ -1495,15 +1495,22 @@ const initializeClientWithProvider = async ({
     if (config.userMCPAuthMap) {
       Object.assign(userMCPAuthMap, config.userMCPAuthMap);
     }
+    const toolContext = buildAgentToolContext({ agent: routedAgent, config });
     subagentCodeRouting.attach(agentToolContexts, {
       agentId,
       context,
       placement,
       codeExecutionContext: config.codeExecutionContext,
-      toolContext: buildAgentToolContext({ agent: routedAgent, config }),
+      toolContext,
     });
     endpointTokenConfigByAgentId.set(agentId, config.endpointTokenConfig);
-    await primeAttachments([config], context.signal);
+    /** A routed execution keeps its own tool context, so provision against exactly that one. */
+    const ownToolContexts = new Map([[agentId, toolContext]]);
+    await primeAttachments([config], {
+      signal: context.signal,
+      toolContexts: ownToolContexts,
+      provisionFiles: createProvisionFilesCallback({ req, agentToolContexts: ownToolContexts }),
+    });
     return config;
   };
   const initializeLazySubagent = async ({
@@ -2047,7 +2054,7 @@ const initializeClientWithProvider = async ({
   toolExecuteOptions.provisionFiles = runFileBindings.wrapProvision(
     toolExecuteOptions.provisionFiles,
   );
-  await primeAttachments([primaryConfig, ...agentConfigs.values()], signal);
+  await primeAttachments([primaryConfig, ...agentConfigs.values()], { signal });
 
   const eventHandlers = getDefaultHandlers({
     res,

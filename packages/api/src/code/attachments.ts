@@ -58,6 +58,7 @@ export type WorkspaceAttachmentUnavailableReason =
   | 'not_staged'
   | 'too_large'
   | 'conflict'
+  | 'not_ignored'
   | 'timeout'
   | 'failed';
 
@@ -74,6 +75,7 @@ const UNAVAILABLE_REASONS: Record<WorkspaceAttachmentUnavailableReason, string> 
   not_staged: 'it could not be prepared for transfer to this machine',
   too_large: "it is larger than this machine's file size limit",
   conflict: `a different file already uses that name in ${WORKSPACE_ATTACHMENTS_DIRECTORY}`,
+  not_ignored: `the existing ${WORKSPACE_ATTACHMENTS_DIRECTORY}/.gitignore does not ignore the folder, so a copy could end up in the repository; adding a line with * to it enables copies`,
   timeout: 'copying it to this machine did not finish in time; it is retried next turn',
   failed: 'copying it to this machine failed',
 };
@@ -351,9 +353,9 @@ export async function importWorkspaceAttachments({
       recordedNames[index] ?? claimAttachmentName(taken, toAttachmentName(candidate.file.filename)),
   }));
 
-  let gitignore: Promise<void> | undefined;
-  const ensureGitignore = (): Promise<void> =>
-    (gitignore ??= writeAttachmentsGitignore({ target, deps, signal }));
+  let gitignore: Promise<WorkspaceAttachmentUnavailableReason | null> | undefined;
+  const ensureIgnored = (): Promise<WorkspaceAttachmentUnavailableReason | null> =>
+    (gitignore ??= ensureAttachmentsIgnored({ target, deps, signal }));
 
   await mapConcurrent(pending, WORKSPACE_ATTACHMENT_IMPORT_CONCURRENCY, async (item) => {
     const sharedKey = JSON.stringify([
@@ -365,7 +367,7 @@ export async function importWorkspaceAttachments({
     ]);
     let outcome = shared?.get(sharedKey);
     if (outcome == null) {
-      outcome = importOne({ ...item, target, taken, deps, signal, ensureGitignore });
+      outcome = importOne({ ...item, target, taken, deps, signal, ensureIgnored });
       shared?.set(sharedKey, outcome);
     }
     outcomes.set(item.candidate.file.file_id, await outcome);
@@ -406,7 +408,7 @@ async function importOne({
   taken,
   deps,
   signal,
-  ensureGitignore,
+  ensureIgnored,
 }: {
   candidate: WorkspaceAttachmentCandidate;
   name: string;
@@ -414,7 +416,8 @@ async function importOne({
   taken: Set<string>;
   deps: WorkspaceAttachmentDeps;
   signal: AbortSignal;
-  ensureGitignore: () => Promise<void>;
+  /** Null once the folder is known to ignore itself, else why copies cannot go there. */
+  ensureIgnored: () => Promise<WorkspaceAttachmentUnavailableReason | null>;
 }): Promise<WorkspaceAttachmentOutcome> {
   const { file, source } = candidate;
   if (source == null) {
@@ -441,7 +444,10 @@ async function importOne({
     if (recorded?.sha256 === digest.sha256) {
       return { status: 'imported', path: recorded.path };
     }
-    void ensureGitignore();
+    const notIgnored = await ensureIgnored();
+    if (notIgnored != null) {
+      return { status: 'unavailable', reason: signal.aborted ? 'timeout' : notIgnored };
+    }
     let attemptName = name;
     for (let attempt = 0; ; attempt++) {
       try {
@@ -578,8 +584,26 @@ async function persistImport({
   }
 }
 
-/** Keeps copied attachments out of the user's repository; never replaces their own file. */
-async function writeAttachmentsGitignore({
+/** Rules that ignore every entry of the folder they sit in. */
+const IGNORE_ALL_RULES: ReadonlySet<string> = new Set(['*', '/*', '**', '/**']);
+
+/** Whether a `.gitignore` ignores everything beside it, with no negation re-including a file. */
+export function ignoresWholeFolder(content: string): boolean {
+  const rules = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'));
+  return (
+    rules.some((rule) => IGNORE_ALL_RULES.has(rule)) && !rules.some((rule) => rule.startsWith('!'))
+  );
+}
+
+/**
+ * Copies go only where they cannot surface as repository content: the folder's `.gitignore` is
+ * created with `*`, never replaced, and an existing one must already ignore the whole folder.
+ * Resolves to null when that holds, otherwise to why copies cannot be placed.
+ */
+async function ensureAttachmentsIgnored({
   target,
   deps,
   signal,
@@ -587,7 +611,7 @@ async function writeAttachmentsGitignore({
   target: ImportTarget;
   deps: WorkspaceAttachmentDeps;
   signal: AbortSignal;
-}): Promise<void> {
+}): Promise<WorkspaceAttachmentUnavailableReason | null> {
   const cacheKey = JSON.stringify([
     deps.userId,
     target.context.baseUrl,
@@ -596,35 +620,56 @@ async function writeAttachmentsGitignore({
     target.workspaceInstanceId ?? null,
   ]);
   if (gitignoreTargets.has(cacheKey)) {
-    return;
+    return null;
   }
+  const workspace = {
+    workspaceId: target.workspaceId,
+    ...(target.workspaceInstanceId ? { workspaceInstanceId: target.workspaceInstanceId } : {}),
+  };
   try {
     await executeWorkspaceTool({
       ...workspaceRequestOptions(target, deps, signal),
       request: {
         protocolVersion: 1,
         operation: 'write_file',
-        workspaceId: target.workspaceId,
-        ...(target.workspaceInstanceId ? { workspaceInstanceId: target.workspaceInstanceId } : {}),
+        ...workspace,
         path: WORKSPACE_ATTACHMENTS_GITIGNORE,
         content: '*\n',
         overwrite: false,
       },
     });
   } catch (error) {
-    const exists =
-      error instanceof WorkspaceToolHttpError &&
-      error.upstreamStatus === 409 &&
-      CONFLICT_CODES.has(error.upstreamCode ?? '');
-    if (!exists) {
-      logger.debug('[workspaceAttachments] Could not create the attachments .gitignore', error);
-      return;
+    if (classifyImportFailure(error) !== 'conflict') {
+      logger.warn('[workspaceAttachments] Could not create the attachments .gitignore', error);
+      return classifyImportFailure(error);
+    }
+    if (target.context.codeWorkspace?.operations.includes('read_file') !== true) {
+      return 'not_ignored';
+    }
+    try {
+      const existing = await executeWorkspaceTool({
+        ...workspaceRequestOptions(target, deps, signal),
+        request: {
+          protocolVersion: 1,
+          operation: 'read_file',
+          ...workspace,
+          path: WORKSPACE_ATTACHMENTS_GITIGNORE,
+          maxLines: 200,
+        },
+      });
+      if (existing.operation !== 'read_file' || !ignoresWholeFolder(existing.content)) {
+        return 'not_ignored';
+      }
+    } catch (readError) {
+      logger.warn('[workspaceAttachments] Could not read the attachments .gitignore', readError);
+      return classifyImportFailure(readError);
     }
   }
   if (gitignoreTargets.size >= MAX_GITIGNORE_CACHE_ENTRIES) {
     gitignoreTargets.delete(gitignoreTargets.values().next().value!);
   }
   gitignoreTargets.add(cacheKey);
+  return null;
 }
 
 /** Test seam: forget which workspaces already hold the ignore file. */
@@ -694,7 +739,7 @@ export interface WorkspaceAttachmentToolContext {
   pendingProvisionedCodeFiles?: CodeEnvFile[];
 }
 
-type ProvisionFiles = (
+export type ProvisionFiles = (
   toolNames: string[],
   agentId?: string,
   signal?: AbortSignal,
@@ -795,6 +840,14 @@ async function provisionQueued({
     .catch(() => undefined);
 }
 
+/** Overrides for one priming call: a routed subagent brings the exact tool context it runs
+ *  in, and a provisioning callback bound to it, rather than the turn's per-agent defaults. */
+export interface WorkspaceAttachmentPrimeOptions {
+  signal?: AbortSignal;
+  toolContexts?: ReadonlyMap<string, WorkspaceAttachmentToolContext>;
+  provisionFiles?: ProvisionFiles;
+}
+
 /**
  * Primes every agent once per turn, whether it is initialized with the turn or joins later as
  * a lazily selected subagent. `getProvisionFiles` is read at call time, so a callback wrapped
@@ -810,10 +863,10 @@ export function createWorkspaceAttachmentPrimer({
   deps: WorkspaceAttachmentDeps;
 }): (
   agents: ReadonlyArray<WorkspaceAttachmentAgent | null | undefined>,
-  signal?: AbortSignal,
+  options?: WorkspaceAttachmentPrimeOptions,
 ) => Promise<void> {
   const primed = new WeakSet<WorkspaceAttachmentAgent>();
-  return (agents, signal) => {
+  return (agents, options = {}) => {
     const pending = agents.filter(
       (agent): agent is WorkspaceAttachmentAgent => agent != null && !primed.has(agent),
     );
@@ -822,9 +875,9 @@ export function createWorkspaceAttachmentPrimer({
     }
     return primeWorkspaceAttachments({
       agents: pending,
-      toolContexts,
-      provisionFiles: getProvisionFiles?.(),
-      signal,
+      toolContexts: options.toolContexts ?? toolContexts,
+      provisionFiles: options.provisionFiles ?? getProvisionFiles?.(),
+      signal: options.signal,
       deps,
     });
   };
@@ -859,11 +912,11 @@ export async function primeWorkspaceAttachments({
   if (eligibleAgents.length === 0) {
     return;
   }
+  signal?.throwIfAborted();
   const deadline = new AbortController();
   const shared = new Map<string, Promise<WorkspaceAttachmentOutcome>>();
   const timeoutMs = deps.timeoutMs ?? WORKSPACE_ATTACHMENT_IMPORT_TIMEOUT_MS;
   const timer = setTimeout(() => deadline.abort(), timeoutMs);
-  signal?.throwIfAborted();
   const abortOnTurn = () => deadline.abort(signal?.reason);
   signal?.addEventListener('abort', abortOnTurn, { once: true });
   try {

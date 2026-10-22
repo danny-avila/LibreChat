@@ -9,6 +9,7 @@ import type { ProvisionState } from '~/agents/resources';
 import type { CodeBridgeFetch } from './bridge';
 import {
   toAttachmentName,
+  ignoresWholeFolder,
   createWorkspaceAttachmentPrimer,
   assignAttachmentNames,
   primeWorkspaceAttachments,
@@ -38,7 +39,8 @@ type WorkspaceRequest = {
 /**
  * In-memory stand-in for the Code API and its attached worker, implementing the
  * `import_file` contract: stored objects are copied by reference, a same-digest file is left
- * unchanged, a different file at the path is a conflict, and `write_file` is create-only.
+ * unchanged, a different file at the path is a conflict, `write_file` is create-only, and
+ * `read_file` returns what is stored.
  */
 function createFakeWorker({
   objects = new Map<string, string>(),
@@ -62,6 +64,19 @@ function createFakeWorker({
       });
     }
     const key = `${request.workspaceInstanceId ?? 'root'}:${request.path}`;
+    if (request.operation === 'read_file') {
+      const content = files.get(key) ?? '';
+      return reply(200, {
+        protocolVersion: 1,
+        operation: 'read_file',
+        workspaceId: request.workspaceId,
+        path: request.path,
+        content,
+        startLine: 1,
+        endLine: content.split('\n').length,
+        truncated: false,
+      });
+    }
     if (denyWrites) {
       return reply(403, { code: 'WRITE_DISABLED', error: 'File writes are disabled' });
     }
@@ -469,16 +484,40 @@ describe('primeWorkspaceAttachments', () => {
     );
   });
 
-  it('accepts an ignore file the user already has', async () => {
+  it('keeps an ignore file the user already has when it ignores the folder', async () => {
     const worker = createFakeWorker();
-    worker.files.set('root:.librechat/attachments/.gitignore', '# mine\n');
+    worker.files.set('root:.librechat/attachments/.gitignore', '# mine\n*\n');
     const { deps } = createDeps(worker);
     const file = remember(chatFile('a.txt', 'a', worker.objects));
 
     await primeWorkspaceAttachments({ agents: [agentWith(attachedContext(), [file])], deps });
 
-    expect(worker.files.get('root:.librechat/attachments/.gitignore')).toBe('# mine\n');
+    expect(worker.files.get('root:.librechat/attachments/.gitignore')).toBe('# mine\n*\n');
     expect(worker.files.get('root:.librechat/attachments/a.txt')).toBe('a');
+  });
+
+  it('copies nothing into a folder whose existing ignore file does not ignore it', async () => {
+    const worker = createFakeWorker();
+    worker.files.set('root:.librechat/attachments/.gitignore', '# mine\n*.log\n');
+    const { deps } = createDeps(worker);
+    const file = remember(chatFile('a.txt', 'a', worker.objects));
+    const agent = agentWith(attachedContext(), [file]);
+
+    await primeWorkspaceAttachments({ agents: [agent], deps });
+
+    expect(worker.files.has('root:.librechat/attachments/a.txt')).toBe(false);
+    expect(worker.requests.some((request) => request.operation === 'import_file')).toBe(false);
+    expect(agent.dynamicToolContextMap?.[Tools.execute_code]).toContain(
+      'a.txt (attached by user): the existing .librechat/attachments/.gitignore does not ignore the folder',
+    );
+  });
+
+  it('recognizes only rules that ignore the whole folder', () => {
+    expect(ignoresWholeFolder('*\n')).toBe(true);
+    expect(ignoresWholeFolder('# keep out\n/**\n')).toBe(true);
+    expect(ignoresWholeFolder('*.zip\n')).toBe(false);
+    expect(ignoresWholeFolder('*\n!keep.txt\n')).toBe(false);
+    expect(ignoresWholeFolder('')).toBe(false);
   });
 
   it('copies into the conversation checkout and keeps its marker apart from the root', async () => {
@@ -706,7 +745,7 @@ describe('primeWorkspaceAttachments', () => {
 
     await prime([primary]);
     lazy.dynamicToolContextMap = { [Tools.execute_code]: 'stale programmatic note' };
-    await prime([lazy, primary]);
+    await prime([lazy, primary], { toolContexts: new Map([[lazy.id, {}]]) });
 
     expect(lazy.dynamicToolContextMap?.[Tools.execute_code]).toContain(
       '.librechat/attachments/report.pdf',
