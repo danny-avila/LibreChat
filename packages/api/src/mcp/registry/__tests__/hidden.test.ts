@@ -529,11 +529,14 @@ describe('stored MCP tombstones reported at startup', () => {
     ]);
   });
 
-  it('logs them once, by principal', async () => {
+  it('logs them once, by principal, reading only the profiles with tombstones under mcpServers', async () => {
     const warn = jest.spyOn(logger, 'warn').mockReturnValue(logger);
+    const listProfiles = jest.fn(async (_fieldPath: string) => profiles);
 
-    await reportStoredMCPTombstones(async () => profiles, YAML);
+    await reportStoredMCPTombstones(listProfiles, YAML);
 
+    expect(listProfiles).toHaveBeenCalledTimes(1);
+    expect(listProfiles).toHaveBeenCalledWith('mcpServers');
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toContain(
       '3 stored config tombstones hide librechat.yaml MCP servers or remove their fields',

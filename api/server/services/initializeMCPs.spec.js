@@ -85,11 +85,11 @@ const mockGetDeploymentPluginMcpServers = jest.fn(() => ({}));
 const mockPolicyResolver = jest.fn();
 const mockCreateMCPPolicyResolver = jest.fn(() => mockPolicyResolver);
 const mockReportStoredMCPTombstones = jest.fn();
-const mockListAllConfigs = jest.fn();
+const mockListConfigTombstones = jest.fn();
 
 jest.mock('~/models', () => ({
-  get listAllConfigs() {
-    return mockListAllConfigs;
+  get listConfigTombstones() {
+    return mockListConfigTombstones;
   },
 }));
 
@@ -155,21 +155,47 @@ describe('initializeMCPs', () => {
   });
 
   describe('stored MCP tombstones', () => {
-    it('reports the active profiles against the librechat.yaml servers once registry is ready', async () => {
+    it('reports the tombstoned profiles against the librechat.yaml servers once registry is ready', async () => {
       const mcpConfig = { github: { type: 'streamable-http', url: 'https://github.example.com' } };
-      const profiles = [{ principalType: 'role', principalId: 'USER', tombstones: [] }];
+      const profiles = [
+        { principalType: 'role', principalId: 'USER', tombstones: ['mcpServers.github'] },
+      ];
       mockGetAppConfig.mockResolvedValue({ mcpConfig });
-      mockListAllConfigs.mockResolvedValue(profiles);
+      mockListConfigTombstones.mockResolvedValue(profiles);
 
       await initializeMCPs();
 
       expect(mockReportStoredMCPTombstones).toHaveBeenCalledWith(expect.any(Function), mcpConfig);
       const [listProfiles] = mockReportStoredMCPTombstones.mock.calls[0];
-      await expect(listProfiles()).resolves.toBe(profiles);
-      expect(mockListAllConfigs).toHaveBeenCalledWith({ isActive: true });
+      await expect(listProfiles('mcpServers')).resolves.toBe(profiles);
+      expect(mockListConfigTombstones).toHaveBeenCalledWith('mcpServers');
       expect(mockCreateMCPServersRegistry.mock.invocationCallOrder[0]).toBeLessThan(
         mockReportStoredMCPTombstones.mock.invocationCallOrder[0],
       );
+    });
+
+    it('connects the MCP servers without waiting for the report, and resolves once it is logged', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        mcpConfig: { github: { type: 'streamable-http', url: 'https://github.example.com' } },
+      });
+      let finishReport;
+      mockReportStoredMCPTombstones.mockReturnValue(
+        new Promise((resolve) => {
+          finishReport = resolve;
+        }),
+      );
+      let settled = false;
+
+      const initialized = initializeMCPs().then(() => {
+        settled = true;
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mockMCPManagerInstance.connectAppServers).toHaveBeenCalledTimes(1);
+      expect(settled).toBe(false);
+      finishReport();
+      await initialized;
+      expect(settled).toBe(true);
     });
   });
 

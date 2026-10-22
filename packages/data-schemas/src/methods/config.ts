@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import type { FilterQuery, Model, ClientSession } from 'mongoose';
 import type { TCustomConfig } from 'librechat-data-provider';
-import type { IConfig } from '~/types';
+import type { IConfig, ConfigTombstones } from '~/types';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { escapeRegExp } from '~/utils/string';
 
@@ -21,6 +21,7 @@ function getPathAndDescendantsRegex(fieldPath: string): RegExp {
 
 export function createConfigMethods(mongoose: typeof import('mongoose')): {
   listAllConfigs: (filter?: { isActive?: boolean }, session?: ClientSession) => Promise<IConfig[]>;
+  listConfigTombstones: (fieldPath: string, session?: ClientSession) => Promise<ConfigTombstones[]>;
   findConfigByPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -116,6 +117,25 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       .sort({ priority: 1 })
       .session(session ?? null)
       .lean<IConfig[]>();
+  }
+
+  /**
+   * Active profiles with a tombstone at `fieldPath` or below it, across every tenant the caller's
+   * scope can read. Projects only what names the principal and the tombstones, so a scan never
+   * loads the profiles' overrides.
+   */
+  async function listConfigTombstones(
+    fieldPath: string,
+    session?: ClientSession,
+  ): Promise<ConfigTombstones[]> {
+    const Config = mongoose.models.Config as Model<IConfig>;
+    return await Config.find(
+      { isActive: true, tombstones: { $regex: getPathAndDescendantsRegex(fieldPath) } },
+      { _id: 0, principalType: 1, principalId: 1, tenantId: 1, tombstones: 1 },
+    )
+      .sort({ priority: 1, _id: 1 })
+      .session(session ?? null)
+      .lean<ConfigTombstones[]>();
   }
 
   async function getApplicableConfigs(
@@ -401,6 +421,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
 
   return {
     listAllConfigs,
+    listConfigTombstones,
     findConfigByPrincipal,
     getApplicableConfigs,
     upsertConfig,

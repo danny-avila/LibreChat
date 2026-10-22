@@ -227,12 +227,14 @@ export function findStoredMCPTombstones(
  * Logs, once at startup, the stored tombstones that now hide librechat.yaml MCP servers or remove
  * their fields. Profiles could store them before the registry honoured them, so an upgrade can
  * withdraw servers from whole roles or groups; this names them so an operator can review them.
- * `listProfiles` runs in the system tenant scope, because the report covers every tenant and
- * startup has no tenant of its own, which strict tenant isolation would reject.
+ * `listProfiles` receives the `mcpServers` path and returns only the active profiles with a
+ * tombstone at or below it, projected to {@link StoredMCPProfile}, so the read stays small however
+ * many profiles exist. It runs in the system tenant scope, because the report covers every tenant
+ * and startup has no tenant of its own, which strict tenant isolation would reject.
  * Never rejects: a failed read is logged and startup continues.
  */
 export async function reportStoredMCPTombstones(
-  listProfiles: () => Promise<readonly StoredMCPProfile[]>,
+  listProfiles: (fieldPath: string) => Promise<readonly StoredMCPProfile[]>,
   yamlServers?: Readonly<Record<string, t.ParsedServerConfig>> | null,
 ): Promise<void> {
   const hideable = getHideableServerNames(yamlServers);
@@ -241,7 +243,10 @@ export async function reportStoredMCPTombstones(
   }
   let found: StoredMCPTombstone[];
   try {
-    found = findStoredMCPTombstones(await runAsSystem(listProfiles), hideable);
+    found = findStoredMCPTombstones(
+      await runAsSystem(() => listProfiles(MCP_SERVERS_PATH)),
+      hideable,
+    );
   } catch (error) {
     logger.warn(
       '[MCP] Could not read config profiles to report MCP tombstones',

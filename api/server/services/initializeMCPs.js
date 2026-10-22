@@ -115,8 +115,9 @@ async function initializeMCPs() {
     throw error;
   }
 
-  await reportStoredMCPTombstones(
-    () => db.listAllConfigs({ isActive: true }),
+  /** Runs alongside the connections below. It never rejects, so a failed start leaves no unhandled rejection. */
+  const tombstoneReport = reportStoredMCPTombstones(
+    (fieldPath) => db.listConfigTombstones(fieldPath),
     appConfig?.mcpConfig,
   );
 
@@ -160,6 +161,7 @@ async function initializeMCPs() {
     logger.error('[MCP] Failed to initialize MCPManager:', error);
     throw error;
   }
+  await tombstoneReport;
 }
 
 module.exports = initializeMCPs;

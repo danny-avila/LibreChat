@@ -36,3 +36,9 @@ export type IConfig = Config &
   Document & {
     _id: Types.ObjectId;
   };
+
+/** The parts of a config profile that name its principal and its tombstones. */
+export type ConfigTombstones = Pick<
+  Config,
+  'principalType' | 'principalId' | 'tenantId' | 'tombstones'
+>;

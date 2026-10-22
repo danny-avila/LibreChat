@@ -194,6 +194,58 @@ describe('listAllConfigs', () => {
   });
 });
 
+describe('listConfigTombstones', () => {
+  it('returns only active profiles with a tombstone at or below the path, without their overrides', async () => {
+    const tombstone = (principalId: string, fieldPath: string, priority: number) =>
+      methods.tombstoneConfigField(
+        PrincipalType.ROLE,
+        principalId,
+        PrincipalModel.ROLE,
+        fieldPath,
+        priority,
+      );
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'hides',
+      PrincipalModel.ROLE,
+      { interface: { modelSelect: false }, mcpServers: { docs: { url: 'https://docs.test/mcp' } } },
+      20,
+    );
+    await tombstone('hides', 'mcpServers.github', 20);
+    await tombstone('section', 'mcpServers', 10);
+    await tombstone('other', 'webSearch', 5);
+    await tombstone('prefix', 'mcpServersArchive', 5);
+    await tombstone('inactive', 'mcpServers.github', 5);
+    await methods.toggleConfigActive(PrincipalType.ROLE, 'inactive', false);
+    await mongoose.models.Config.create({
+      principalType: PrincipalType.ROLE,
+      principalId: 'USER',
+      principalModel: PrincipalModel.ROLE,
+      priority: 30,
+      tenantId: 'acme',
+      overrides: { mcpServers: { github: { timeout: 1 } } },
+      tombstones: ['mcpServers.github.headers', 'webSearch'],
+    });
+
+    const found = await methods.listConfigTombstones('mcpServers');
+
+    expect(found).toEqual([
+      { principalType: PrincipalType.ROLE, principalId: 'section', tombstones: ['mcpServers'] },
+      {
+        principalType: PrincipalType.ROLE,
+        principalId: 'hides',
+        tombstones: ['mcpServers.github'],
+      },
+      {
+        principalType: PrincipalType.ROLE,
+        principalId: 'USER',
+        tenantId: 'acme',
+        tombstones: ['mcpServers.github.headers', 'webSearch'],
+      },
+    ]);
+  });
+});
+
 describe('getApplicableConfigs', () => {
   it('always includes the __base__ config', async () => {
     await methods.upsertConfig(
