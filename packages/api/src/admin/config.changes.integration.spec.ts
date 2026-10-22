@@ -658,6 +658,51 @@ describe('POST …/changes: entries librechat.yaml owns', () => {
     expect((await storedDocument(params.principalId))!.tombstones).toEqual(['mcpServers']);
   });
 
+  it('reports a rename under a YAML stdio server as ignored, but not an unset there', async () => {
+    const params = nextParams();
+    await seedDocument(
+      params.principalId,
+      {
+        mcpServers: {
+          'yaml-stdio': {
+            title: 'Local',
+            customUserVars: { OLD: { title: 'T', description: 'D' } },
+          },
+        },
+      },
+      [],
+    );
+
+    const { status, body } = await send(
+      {
+        ops: [
+          {
+            op: 'rename',
+            fieldPath: 'mcpServers.yaml-stdio.customUserVars',
+            from: 'OLD',
+            to: 'NEW',
+          },
+          { op: 'unset', fieldPath: 'mcpServers.yaml-stdio.title' },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(200);
+    expect(body.applied.map((ref) => ref.opIndex)).toEqual([0, 1]);
+    expect(body.ignored).toEqual([
+      {
+        opIndex: 0,
+        op: 'rename',
+        segments: ['mcpServers', 'yaml-stdio', 'customUserVars'],
+        reason: 'process_mcp_server',
+      },
+    ]);
+    expect((await storedDocument(params.principalId))!.overrides).toEqual({
+      mcpServers: { 'yaml-stdio': { customUserVars: { NEW: { title: 'T', description: 'D' } } } },
+    });
+  });
+
   it('refuses process-only MCP fields as PATCH does', async () => {
     const { status, body } = await send(
       { ops: [{ op: 'set', fieldPath: 'mcpServers.mine.command', value: 'rm' }] },
@@ -1331,6 +1376,42 @@ describe('POST …/changes: access', () => {
     );
     expect(priorityOnly.body.written).toBe(true);
     expect((await storedDocument(params.principalId))!.priority).toBe(42);
+  });
+
+  it('creates a document holding only the priority a broad manager sets on an absent principal', async () => {
+    const absent = nextParams();
+    const noop = { ops: [{ op: 'unset', fieldPath: 'interface.missing' }], priority: 42 };
+
+    const dry = await send({ ...noop, dryRun: true }, absent);
+    expect(dry.body).toMatchObject({ written: false, dryRun: true, revision: null });
+    const scoped = await send(noop, absent, sectionManager(['interface']));
+    expect(scoped.body).toMatchObject({ written: false, revision: null });
+    expect(await storedDocument(absent.principalId)).toBeNull();
+
+    const recordAuditEntry = jest.fn(async () => undefined);
+    const created = await send(noop, absent, createDeps({ recordAuditEntry }));
+    expect(created.status).toBe(200);
+    expect(created.body).toMatchObject({
+      written: true,
+      applied: [],
+      unchanged: [{ opIndex: 0, op: 'unset', segments: ['interface', 'missing'] }],
+    });
+    expect(created.body.revision).toEqual(expect.any(String));
+    expect(await storedDocument(absent.principalId)).toMatchObject({
+      priority: 42,
+      overrides: {},
+      tombstones: [],
+      isActive: true,
+    });
+    expect(created.deps.invalidateConfigCaches).toHaveBeenCalledTimes(1);
+    expect(recordAuditEntry).toHaveBeenCalledTimes(1);
+    expect(recordAuditEntry.mock.calls[0]).toMatchObject([
+      { action: 'config.created', metadata: { operation: 'batch', changes: 0, priority: 42 } },
+    ]);
+
+    const repeated = await send(noop, absent);
+    expect(repeated.body).toMatchObject({ written: false, revision: created.body.revision });
+    expect(repeated.deps.writeConfigDocument).not.toHaveBeenCalled();
   });
 
   it('records one audit entry naming paths and entries, never values', async () => {

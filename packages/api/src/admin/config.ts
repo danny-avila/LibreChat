@@ -854,6 +854,13 @@ const INDEXED_PATH_OPS: ReadonlySet<ChangeOpKind> = new Set<ChangeOpKind>([
   'rename',
 ]);
 
+/** Changes that leave an override in place, which the runtime merge may then drop. */
+const IGNORABLE_OPS: ReadonlySet<ChangeOpKind> = new Set<ChangeOpKind>([
+  'set',
+  'tombstone',
+  'rename',
+]);
+
 type SkippedChange = AdminConfigChangeRef & { reason: AdminConfigSkipReason };
 type IgnoredChange = AdminConfigChangeRef & { reason: AdminConfigIgnoreReason };
 
@@ -1250,19 +1257,18 @@ function getProcessServerNames(base: Partial<TCustomConfig>): Set<string> {
 }
 
 /**
- * The parts of an applied change the runtime merge drops: a write or tombstone under an MCP
- * server librechat.yaml runs as a process, whose overrides the merge never applies, and each
- * such server a tombstone of the whole section leaves in place.
+ * The parts of an applied change the runtime merge drops: a write, rename or tombstone under an
+ * MCP server librechat.yaml runs as a process, whose overrides the merge never applies, and each
+ * such server a tombstone of the whole section leaves in place. An `unset` there is not one: it
+ * asks for the YAML value, which is what runs. A rename of a server itself never names a YAML
+ * one, which the handler refuses.
  */
 function getIgnoredSegments(
   change: PreparedChange,
   processServers: ReadonlySet<string>,
 ): string[][] {
   const [section, name] = change.target.segments;
-  if (section !== 'mcpServers' || processServers.size === 0) {
-    return [];
-  }
-  if (change.op !== 'set' && change.op !== 'tombstone') {
+  if (section !== 'mcpServers' || processServers.size === 0 || !IGNORABLE_OPS.has(change.op)) {
     return [];
   }
   if (name !== undefined) {
@@ -2413,8 +2419,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           report.ignored = [];
           report.appliedChanges = [];
         }
-        const priorityChanged =
-          stored != null && requestedPriority != null && requestedPriority !== stored.priority;
+        /** As on PUT, a priority for a principal without a document creates one that holds it. */
+        const priorityChanged = requestedPriority != null && requestedPriority !== stored?.priority;
         if (!documentChanged && !priorityChanged) {
           return { draft: null, result: { report } };
         }

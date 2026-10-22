@@ -139,7 +139,11 @@ export type AdminConfigChangeOp = AdminConfigFieldTarget &
 export type AdminConfigChangesRequest = AdminConfigWritePrecondition & {
   /** 1 to 1000 changes. */
   ops: AdminConfigChangeOp[];
-  /** Broad `manage:configs` only; anyone else's is ignored and the stored priority kept. */
+  /**
+   * Broad `manage:configs` only; anyone else's is ignored and the stored priority kept. A new
+   * priority is written even when no change alters the document, and on a principal without
+   * one it creates a document that holds only the priority, as PUT does.
+   */
   priority?: number;
   /** Validate and report without writing. */
   dryRun?: boolean;
@@ -160,9 +164,10 @@ export type AdminConfigSkipReason =
   | 'interface_permission';
 
 /**
- * Why a stored change has no effect at runtime. `process_mcp_server`: the change addresses an
- * MCP server `librechat.yaml` runs as a local process, whose configuration overrides never
- * change.
+ * Why a stored change has no effect at runtime. `process_mcp_server`: a `set`, `tombstone` or
+ * `rename` addresses an MCP server `librechat.yaml` runs as a local process, whose configuration
+ * overrides never change. An `unset` there is not reported: it asks for the YAML value, which is
+ * what runs.
  */
 export type AdminConfigIgnoreReason = 'process_mcp_server';
 
@@ -185,7 +190,10 @@ export type AdminConfigChangesResponse = {
   config?: AdminConfig | null;
   /** The stored document's revision after the batch (before it, on a dry run). */
   revision: string | null;
-  /** Whether a document was written: a batch that changes nothing writes nothing. */
+  /**
+   * Whether a document was written: a batch that changes nothing, and sets no new `priority`,
+   * writes nothing.
+   */
   written: boolean;
   dryRun: boolean;
   /** Changes that altered the document. */
