@@ -1950,33 +1950,17 @@ export async function initializeAgent(
      * by size, MIME type, or a files-disabled setting must not reach the Code API or
      * RAG through provisioning just because it left the delivery set. */
     if (deferredProvisionFiles.length > 0) {
-      deferredProvisionFiles = partitionCommittedFiles(deferredProvisionFiles, []).pending;
-      /* One request, one total-size allowance. Filtering each set from zero would let a
-       * delivery attachment and a provisioning candidate that each fit alone exceed the
-       * limit together once withDeferredCandidates merges them.
-       *
-       * A file can appear in both sets, an embedded attachment still missing the active
-       * code route being the case in point, and the merge deduplicates afterwards. Charging
-       * it twice would spend an allowance the request never uses and drop a different
-       * candidate that fits, so the shared ones are counted once. */
-      const deferredFileIds = new Set(
-        deferredProvisionFiles
-          .map((file) => file.file_id)
-          .filter((fileId): fileId is string => fileId != null),
+      const { committed, pending } = partitionCommittedFiles(deferredProvisionFiles, currentFiles);
+      /* Current admission is final. Charge only new deferred identities against its
+       * remainder, regardless of their order relative to overlapping current files. */
+      deferredProvisionFiles = committed.concat(
+        filterFilesByEndpointRuntimeConfig(appConfig, {
+          files: pending,
+          endpoint: agent.endpoint ?? '',
+          endpointType,
+          consumedBytes: sumUniqueBytes(currentFiles),
+        }) as IMongoFile[],
       );
-      deferredProvisionFiles = filterFilesByEndpointRuntimeConfig(appConfig, {
-        files: deferredProvisionFiles,
-        endpoint: agent.endpoint ?? '',
-        endpointType,
-        /* The deferred pass charges its own list as it walks it, so a file in both sets
-         * is counted there. Only what delivery spends on files the deferred pass will
-         * not see is carried in. */
-        consumedBytes: sumUniqueBytes(
-          (currentFiles ?? []).filter(
-            (file) => file.file_id == null || !deferredFileIds.has(file.file_id),
-          ),
-        ),
-      }) as IMongoFile[];
     }
   }
 

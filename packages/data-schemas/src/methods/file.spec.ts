@@ -117,28 +117,21 @@ describe('File Methods', () => {
       const update = jest.spyOn(mongoose.models.File, 'updateOne');
       expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
       expect(update).toHaveBeenCalledTimes(2);
-      const clearedPaths: string[] = [];
-      for (const [filter, operation, options] of update.mock.calls) {
-        expect(filter).toEqual({
-          file_id: snapshot.file_id,
-          user: snapshot.userId,
-          $and: [{ tenantId: snapshot.tenantId }],
-          $or: [expect.any(Object)],
-        });
-        expect(Array.isArray(operation)).toBe(false);
-        if (operation == null || Array.isArray(operation)) {
-          throw new Error('Expected a classic update');
-        }
-        const paths = Object.keys(operation.$unset ?? {});
-        clearedPaths.push(...paths);
-        expect(operation).toEqual({
-          $unset: { [paths[0]]: '' },
-          $set: { 'metadata.codeDestination': true },
-        });
-        expect(options).toEqual({ timestamps: false });
-        expect(JSON.stringify([filter, operation])).not.toMatch(/\$expr|\$\$REMOVE/);
+      const paths = ['metadata.codeEnvRefs.default', 'metadata.codeEnvRef'];
+      for (const [index, path] of paths.entries()) {
+        expect(update).toHaveBeenNthCalledWith(
+          index + 1,
+          {
+            file_id: snapshot.file_id,
+            user: snapshot.userId,
+            $and: [{ tenantId: snapshot.tenantId }],
+            $or: [expect.any(Object)],
+          },
+          { $unset: { [path]: '' }, $set: { 'metadata.codeDestination': true } },
+          { timestamps: false },
+        );
       }
-      expect(clearedPaths).toEqual(['metadata.codeEnvRefs.default', 'metadata.codeEnvRef']);
+      expect(JSON.stringify(update.mock.calls)).not.toMatch(/\$expr|\$\$REMOVE/);
       const after = await read();
       const { codeEnvRef: _alias, codeEnvRefs: _routes, ...intent } = metadata;
       expect(after).toEqual({

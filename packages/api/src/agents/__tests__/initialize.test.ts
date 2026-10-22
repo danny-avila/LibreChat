@@ -894,6 +894,23 @@ describe('initializeAgent: ChatProject context', () => {
       },
     );
 
+    it.each([false, true])(
+      'reserves current admission before deferred candidates (overlap first: %s)',
+      async (overlapFirst) => {
+        const current = repairFile({ file_id: 'current', bytes: (MB * 3) / 4 });
+        const other = repairFile({ file_id: 'deferred', bytes: (MB * 3) / 4 });
+        const { result } = await initializeRepairs({
+          projectFiles: [current, other],
+          current: [current],
+          deferred: overlapFirst ? [current, other] : [other, current],
+          fileConfig: { endpoints: { [EModelEndpoint.openAI]: { totalSizeLimit: 1 } } },
+        });
+        expect(result.provisionState?.vectorDBFiles.map((file) => file.file_id)).toEqual([
+          'current',
+        ]);
+      },
+    );
+
     it('does not charge duplicate current files twice before admitting other project repairs', async () => {
       const shared = repairFile({ file_id: 'shared-current', bytes: MB / 2 });
       const other = repairFile({ file_id: 'other-project', bytes: MB / 2 });
@@ -4740,10 +4757,10 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
     const deferredOnly = { file_id: 'deferred', filename: 'b.csv', bytes: 100 };
     const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
 
-    /* Delivery keeps the shared file; the deferred pass keeps both. */
+    /* Delivery has admitted the shared file; deferred screening sees only new ids. */
     filterFilesByEndpointRuntimeConfig
       .mockReturnValueOnce([shared])
-      .mockReturnValueOnce([shared, deferredOnly]);
+      .mockReturnValueOnce([deferredOnly]);
     const getDeferredProvisionFiles = jest.fn().mockResolvedValue([shared, deferredOnly]);
     const getConvoFiles = jest.fn().mockResolvedValue(['shared', 'deferred']);
     const getToolFilesByIds = jest.fn().mockResolvedValue([shared]);
@@ -4772,9 +4789,12 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
     const chargedToDeferred = filterFilesByEndpointRuntimeConfig.mock.calls
       .map(([, params]) => (params as { consumedBytes?: number }).consumedBytes)
       .find((bytes) => bytes !== undefined);
-    /* The only delivered file is also the shared one, and the deferred pass charges its
-     * own list as it walks it, so nothing is carried in. */
-    expect(chargedToDeferred).toBe(0);
+    expect(chargedToDeferred).toBe(400);
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({ files: [deferredOnly], consumedBytes: 400 }),
+    );
 
     /* The persistent screening runs inside the callback, and must see the two unique
      * files rather than three. */
