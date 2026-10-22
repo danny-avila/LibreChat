@@ -20,6 +20,7 @@ const presets = require('./presets');
 const projects = require('./projects');
 const prompts = require('./prompts');
 const schedules = require('./schedules');
+const channels = require('./channels');
 const skills = require('./skills');
 const balance = require('./balance');
 const actions = require('./actions');
@@ -46,6 +47,7 @@ const rum = require('./rum');
 const insights = require('./insights');
 
 module.exports = {
+  channels,
   pullRequests,
   insights,
   rum,

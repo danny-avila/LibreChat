@@ -31,6 +31,7 @@ const SOURCE_ROOTS = [
   'api',
   'client/src',
   'packages/api/src',
+  'packages/channel-gateway/src',
   'packages/data-provider/src',
   'packages/data-schemas/src',
   'packages/client/src',

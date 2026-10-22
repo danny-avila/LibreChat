@@ -9,9 +9,11 @@ import {
   RequestPasswordReset,
 } from '~/components/Auth';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
+import ChannelSettings from '~/components/Channels/Settings';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import { importWithRecovery } from '~/lib/assets/lazy';
 import RouteErrorBoundary from './RouteErrorBoundary';
+import ChannelLink from '~/components/Channels/Link';
 import StartupLayout from './Layouts/Startup';
 import MarketplaceRoute from './Marketplace';
 import LoginLayout from './Layouts/Login';
@@ -129,10 +131,12 @@ export const router = createBrowserRouter(
               ],
             },
             dashboardRoutes,
+            { path: 'channels/link', element: <ChannelLink /> },
             {
               path: '/',
               element: <Root />,
               children: [
+                { path: 'channels', element: <ChannelSettings /> },
                 {
                   index: true,
                   element: <Navigate to="/c/new" replace={true} />,

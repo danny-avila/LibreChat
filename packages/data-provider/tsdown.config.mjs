@@ -8,7 +8,7 @@ const rootPkg = require('../../package.json');
 const pkg = require('./package.json');
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/react-query/index.ts'],
+  entry: ['src/index.ts', 'src/react-query/index.ts', 'src/channels.ts'],
   format: ['cjs', 'esm'],
   platform: 'neutral',
   // Declarations are emitted separately by `tsc -p tsconfig.build.json` (see the

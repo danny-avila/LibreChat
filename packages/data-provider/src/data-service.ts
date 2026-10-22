@@ -8,6 +8,7 @@ import type {
 } from './types/traces';
 import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
 import type { ScheduleMCPConsentView, ConfirmScheduleMCPConsent } from './types/scheduleConsent';
+import type { ChannelConnection, ChannelConnectionInput, ChannelLinkInfo } from './channels';
 import type { TFileConfig } from './file-config';
 import type * as tl from './types/tools';
 import type * as t from './types';
@@ -28,6 +29,37 @@ import * as config from './config';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
+
+export const getChannelAvailability = (): Promise<{ enabled: boolean }> =>
+  request.get(endpoints.channels('/availability'));
+export const getChannels = (): Promise<{
+  connections: Array<ChannelConnection & { editable: boolean }>;
+}> => request.get(endpoints.channels());
+export const createChannelManifest = (input: {
+  agentId: string;
+  mode: 'http' | 'socket';
+  installationId?: string;
+}): Promise<{ installationId: string; manifest: Record<string, unknown> }> =>
+  request.post(endpoints.channels('/manifest'), input);
+export const saveChannel = (
+  id: string,
+  input: ChannelConnectionInput,
+): Promise<ChannelConnection> =>
+  request.put(endpoints.channels(`/${encodeURIComponent(id)}`), input);
+export const checkChannel = (id: string): Promise<{ connected: boolean }> =>
+  request.post(endpoints.channels(`/${encodeURIComponent(id)}/check`));
+export const enableChannel = (id: string): Promise<{ enabled: boolean }> =>
+  request.post(endpoints.channels(`/${encodeURIComponent(id)}/enable`));
+export const disableChannel = (id: string): Promise<{ disabled: boolean }> =>
+  request.post(endpoints.channels(`/${encodeURIComponent(id)}/disable`));
+export const unlinkChannel = (id: string): Promise<{ unlinked: boolean }> =>
+  request.delete(endpoints.channels(`/${encodeURIComponent(id)}/link`));
+export const getChannelLink = (token: string): Promise<ChannelLinkInfo> =>
+  request.get(endpoints.channels(`/link/${encodeURIComponent(token)}`));
+export const confirmChannelLink = (input: {
+  token: string;
+  code: string;
+}): Promise<{ linked: boolean }> => request.post(endpoints.channels('/link'), input);
 
 export function getInsights(params: TInsightsParams = {}): Promise<TInsightsResponse> {
   const query = new URLSearchParams();

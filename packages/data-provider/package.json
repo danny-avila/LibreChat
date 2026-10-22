@@ -16,6 +16,11 @@
       "import": "./dist/react-query/index.mjs",
       "require": "./dist/react-query/index.js",
       "types": "./dist/types/react-query/index.d.ts"
+    },
+    "./channels": {
+      "import": "./dist/channels.mjs",
+      "require": "./dist/channels.js",
+      "types": "./dist/types/channels.d.ts"
     }
   },
   "files": [
