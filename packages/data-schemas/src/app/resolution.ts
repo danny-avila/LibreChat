@@ -25,6 +25,9 @@ export type ConfigOverrideLayer = Pick<Config, 'principalType' | 'priority' | 'o
 };
 
 const MAX_MERGE_DEPTH = 10;
+const ARRAY_INDEX = /^(?:0|[1-9]\d*)$/;
+/** Schemas whose children the path walk cannot see, so the stored value decides their shape. */
+const OPAQUE_SCHEMA_TYPES = new Set(['ZodAny', 'ZodUnknown', 'ZodIntersection']);
 const MAX_STRIP_PASSES = 16;
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 /** Filters are a fail-closed security boundary even during mixed-package rollouts. */
@@ -493,7 +496,7 @@ function getChildSchema(node: SchemaNode, segment: string, depth = 0): SchemaNod
     return inner._def.valueType;
   }
   if (typeName === 'ZodArray') {
-    return /^(?:0|[1-9]\d*)$/.test(segment) ? inner._def.type : undefined;
+    return ARRAY_INDEX.test(segment) ? inner._def.type : undefined;
   }
   if (
     (typeName === 'ZodUnion' || typeName === 'ZodDiscriminatedUnion') &&
@@ -534,7 +537,10 @@ function isArrayStep(node: SchemaNode, segment: string, depth = 0): boolean {
 
 /**
  * The `configSchema` node an override (YAML) path names (`undefined` when the schema does not
- * define it), and whether the path continues past an array on the way.
+ * define it), and whether the path continues past an array on the way. Below a field of a
+ * known section that the schema does not define (a key it does not know, or what an
+ * intersection or `any` holds), the stored value decides the shape, so an index segment there
+ * is taken to name an array element.
  */
 function resolveConfigSchemaPath(segments: readonly string[]): {
   node?: SchemaNode;
@@ -548,8 +554,10 @@ function resolveConfigSchemaPath(segments: readonly string[]): {
   let node: SchemaNode | undefined = shape[section];
   let throughArray = false;
   for (const segment of rest) {
-    if (!node) {
-      break;
+    if (!node || OPAQUE_SCHEMA_TYPES.has(unwrapSchema(node)._def.typeName ?? '')) {
+      node = undefined;
+      throughArray = throughArray || ARRAY_INDEX.test(segment);
+      continue;
     }
     throughArray = throughArray || isArrayStep(node, segment);
     node = getChildSchema(node, segment);
@@ -569,9 +577,10 @@ export function isConfigRecordPath(segments: readonly string[]): boolean {
 }
 
 /**
- * Whether an override (YAML) path continues past an array of `configSchema`: it names an
- * element of the array or a path inside one. A tombstone there hides nothing, because the
- * merge removes inherited values from objects only (a whole array can be hidden).
+ * Whether an override (YAML) path continues past an array of `configSchema`, or may: it names
+ * an element of the array or a path inside one, or has an index segment below a field of a
+ * known section the schema does not define. A tombstone there hides nothing, because the merge
+ * removes inherited values from objects only (a whole array can be hidden).
  */
 export function isConfigArrayItemPath(segments: readonly string[]): boolean {
   return resolveConfigSchemaPath(segments).throughArray;
@@ -743,13 +752,56 @@ export function getIndexedMergeKeyIssues(
   });
 }
 
+function hasMergeKey(item: unknown, keyField: string): boolean {
+  return isPlainObject(item) && typeof item[keyField] === 'string' && item[keyField] !== '';
+}
+
+/**
+ * Where an issue sits in `overrides`, in a form that survives entries moving: an item of a
+ * merged-by-key array is named by its key, or (without one) by its place among the keyless
+ * items, rather than by its index. Removing one entry shifts the ones after it, and their
+ * issues must still match the ones the stored document already had.
+ */
+function getIssueLocation(segments: readonly string[], overrides: unknown): string {
+  const location: Array<string | { key: unknown } | { keyless: number }> = [];
+  let node: unknown = overrides;
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index];
+    const keyField = Array.isArray(node)
+      ? getConfigArrayMergeKey(segments.slice(0, index))
+      : undefined;
+    if (Array.isArray(node) && keyField) {
+      const position = Number(segment);
+      const item: unknown = node[position];
+      location.push(
+        hasMergeKey(item, keyField)
+          ? { key: (item as AnyObject)[keyField] }
+          : {
+              keyless: node.slice(0, position).filter((other) => !hasMergeKey(other, keyField))
+                .length,
+            },
+      );
+      node = item;
+      continue;
+    }
+    location.push(segment);
+    if (Array.isArray(node)) {
+      node = node[Number(segment)];
+    } else {
+      node = isPlainObject(node) && hasOwn(node, segment) ? node[segment] : undefined;
+    }
+  }
+  return JSON.stringify(location);
+}
+
 /**
  * Checks a principal's next override document in its final state: `candidate` merged over
  * `base` without the candidate's tombstones, so a batch that tombstones a field and sets its
  * replacement is judged on the end result rather than step by step. An issue is reported when
  * it touches a `written` path (in either direction), or when the change introduced it
  * elsewhere (a related field the change made invalid); issues the stored document already had
- * are left to merge time so they do not block an unrelated change.
+ * (at the same location, entries of merged-by-key arrays matched by key) are left to merge
+ * time so they do not block an unrelated change.
  *
  * The stored document is judged on the base its own tombstones leave, so an issue that a
  * removed tombstone brings back counts as new. `lifted` names stored tombstones to treat as
@@ -764,19 +816,18 @@ export function getConfigChangeIssues(
 ): ConfigOverrideIssue[] {
   const candidateState = toConfigOverrideState(candidate);
   const storedState = toConfigOverrideState(stored);
-  const issueKey = (issue: ConfigOverrideIssue): string => JSON.stringify(issue.segments);
   const existing = new Set(
     getConfigOverrideIssues(
       storedState.overrides,
       applyConfigTombstones(base, storedState.tombstones, new Set(lifted)),
-    ).map(issueKey),
+    ).map((issue) => getIssueLocation(issue.segments, storedState.overrides)),
   );
   return getConfigOverrideIssues(
     candidateState.overrides,
     applyConfigTombstones(base, candidateState.tombstones),
   ).filter(
     (issue) =>
-      !existing.has(issueKey(issue)) ||
+      !existing.has(getIssueLocation(issue.segments, candidateState.overrides)) ||
       written.some((segments) => isRelatedPath(issue.segments, [...segments])),
   );
 }

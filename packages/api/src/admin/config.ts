@@ -33,6 +33,7 @@ import {
   getConfigArrayMergeKey,
   getIndexedMergeKeyIssues,
   getConfigChangeWrittenPaths,
+  isSameConfigValue,
   isConfigRevision,
   isConfigPathError,
   runConfigMutation,
@@ -846,6 +847,13 @@ const CHANGE_OPS: ReadonlySet<string> = new Set<ChangeOpKind>([
   'rename',
 ]);
 
+/** Changes whose own path may not reach into a merged-by-key array entry by position. */
+const INDEXED_PATH_OPS: ReadonlySet<ChangeOpKind> = new Set<ChangeOpKind>([
+  'set',
+  'unset',
+  'rename',
+]);
+
 type SkippedChange = AdminConfigChangeRef & { reason: AdminConfigSkipReason };
 type IgnoredChange = AdminConfigChangeRef & { reason: AdminConfigIgnoreReason };
 
@@ -1243,7 +1251,8 @@ function getProcessServerNames(base: Partial<TCustomConfig>): Set<string> {
 
 /**
  * The parts of an applied change the runtime merge drops: a write or tombstone under an MCP
- * server librechat.yaml runs as a process, whose overrides the merge never applies.
+ * server librechat.yaml runs as a process, whose overrides the merge never applies, and each
+ * such server a tombstone of the whole section leaves in place.
  */
 function getIgnoredSegments(
   change: PreparedChange,
@@ -1259,7 +1268,10 @@ function getIgnoredSegments(
   if (name !== undefined) {
     return processServers.has(name) ? [[...change.target.segments]] : [];
   }
-  if (change.op !== 'set' || !isPlainRecord(change.value)) {
+  if (change.op === 'tombstone') {
+    return [...processServers].map((server) => ['mcpServers', server]);
+  }
+  if (!isPlainRecord(change.value)) {
     return [];
   }
   return Object.keys(change.value)
@@ -2374,22 +2386,39 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           state = next;
         }
 
-        /** Entries of a merged-by-key array are named by key: a write or a record rename that
-         *  reaches into one by position is refused. */
+        /** Entries of a merged-by-key array are named by key: a write, a removal or a record
+         *  rename that reaches into one by position is refused, since the position can name
+         *  another entry by the time the batch is applied. */
         const indexed = getIndexedMergeKeyIssues(
           changes
-            .filter((change) => change.op === 'set' || change.op === 'rename')
+            .filter((change) => INDEXED_PATH_OPS.has(change.op))
             .map((change) => change.target.segments),
         );
         if (indexed.length > 0) {
           return { draft: null, result: { stop: { kind: 'issues', issues: indexed } } };
         }
+        /** Changes that cancel out (a set, then an unset of its parent) leave nothing to write. */
+        const storedState = toConfigOverrideState(stored);
+        const documentChanged =
+          report.applied.length > 0 &&
+          !(
+            isSameConfigValue(state.overrides, storedState.overrides) &&
+            isSameConfigValue(state.tombstones, storedState.tombstones)
+          );
+        if (!documentChanged && report.applied.length > 0) {
+          report.unchanged = [...report.applied, ...report.unchanged].sort(
+            (left, right) => left.opIndex - right.opIndex,
+          );
+          report.applied = [];
+          report.ignored = [];
+          report.appliedChanges = [];
+        }
         const priorityChanged =
           stored != null && requestedPriority != null && requestedPriority !== stored.priority;
-        if (report.applied.length === 0 && !priorityChanged) {
+        if (!documentChanged && !priorityChanged) {
           return { draft: null, result: { report } };
         }
-        if (report.applied.length > 0) {
+        if (documentChanged) {
           const issues = getConfigChangeIssues(state, baseYaml, stored, written);
           if (issues.length > 0) {
             return { draft: null, result: { stop: { kind: 'issues', issues } } };

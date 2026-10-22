@@ -374,7 +374,9 @@ export function applyConfigChanges(
 
 /**
  * The paths a change writes, for attributing validation issues to it: the path itself, or for
- * an entry change, the entry (by its index in the resulting own array) or the collection.
+ * an entry change, the entry (by its index in the resulting own array) or the collection. A
+ * removed entry is gone, so `removeEntry` writes nothing an issue could sit on: the entries it
+ * leaves are unchanged, and their existing issues must not block the removal.
  */
 export function getConfigChangeWrittenPaths(
   change: ConfigChange,
@@ -385,7 +387,7 @@ export function getConfigChangeWrittenPaths(
     return [segments];
   }
   if (change.op === 'removeEntry') {
-    return [segments];
+    return [];
   }
   const keyField = getConfigArrayMergeKey(change.segments);
   if (change.op === 'rename' && !keyField) {

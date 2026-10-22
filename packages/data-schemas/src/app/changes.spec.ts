@@ -435,7 +435,7 @@ describe('applyConfigChange: rename', () => {
 });
 
 describe('getConfigChangeWrittenPaths', () => {
-  it('names a field change by its path and an entry change by the entry it wrote', () => {
+  it('names a field change by its path and an entry change by the entry it wrote, a removal by nothing', () => {
     const result = state({ endpoints: { custom: [endpoint('a'), endpoint('b')] } });
 
     expect(
@@ -452,7 +452,7 @@ describe('getConfigChangeWrittenPaths', () => {
     ).toEqual([['endpoints', 'custom', '1']]);
     expect(
       getConfigChangeWrittenPaths({ op: 'removeEntry', segments: CUSTOM, key: 'a' }, result),
-    ).toEqual([CUSTOM]);
+    ).toEqual([]);
     expect(
       getConfigChangeWrittenPaths(
         { op: 'rename', segments: ['mcpServers'], from: 'x', to: 'y' },

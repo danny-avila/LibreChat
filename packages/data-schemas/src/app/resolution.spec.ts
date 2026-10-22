@@ -14,6 +14,7 @@ import {
   getIndexedMergeKeyIssues,
 } from './resolution';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
+import { toConfigOverrideState } from './mutations';
 import { applyConfigChanges } from './changes';
 
 function fakeConfig(
@@ -1769,6 +1770,50 @@ describe('getConfigChangeIssues', () => {
     ]);
   });
 
+  it('matches existing issues of entries by key, so removing one entry does not blame the ones it shifts', () => {
+    const entry = (name: string, extra: Record<string, unknown> = {}) => ({
+      name,
+      baseURL: `https://${name}.example.com/v1`,
+      ...extra,
+    });
+    const stored = {
+      overrides: {
+        endpoints: {
+          custom: [
+            entry('first'),
+            entry('legacy', { baseURL: 42 }),
+            { baseURL: 'https://keyless.example.com' },
+            entry('last'),
+          ],
+        },
+      },
+    };
+    const remove = (key: string) =>
+      applyConfigChanges(toConfigOverrideState(stored), [
+        { op: 'removeEntry', segments: ['endpoints', 'custom'], key },
+      ]).state;
+
+    expect(paths(getConfigChangeIssues(stored, {}, null, []))).toEqual([
+      'endpoints.custom.2',
+      'endpoints.custom.1.baseURL',
+    ]);
+    expect(getConfigChangeIssues(remove('first'), {}, stored, [])).toEqual([]);
+    expect(getConfigChangeIssues(remove('last'), {}, stored, [])).toEqual([]);
+    expect(getConfigChangeIssues(remove('legacy'), {}, stored, [])).toEqual([]);
+
+    const renamed = applyConfigChanges(remove('first'), [
+      { op: 'rename', segments: ['endpoints', 'custom'], from: 'last', to: 'legacy-2' },
+      {
+        op: 'upsertEntry',
+        segments: ['endpoints', 'custom'],
+        entry: entry('fresh', { baseURL: 7 }),
+      },
+    ]).state;
+    expect(paths(getConfigChangeIssues(renamed, {}, stored, []))).toEqual([
+      'endpoints.custom.3.baseURL',
+    ]);
+  });
+
   it('tells apart record keys that contain dots from the nested path their dots spell', () => {
     const stored = {
       overrides: { endpoints: { bedrock: { inferenceProfiles: { 'us.a.b': 5 } } } },
@@ -1840,6 +1885,19 @@ describe('isConfigArrayItemPath', () => {
     expect(isConfigArrayItemPath(['endpoints', 'custom', 'yaml-endpoint'])).toBe(true);
     expect(isConfigArrayItemPath(['modelSpecs', 'list', '0', 'preset'])).toBe(true);
     expect(isConfigArrayItemPath(['mcpServers', 'local', 'args', '0'])).toBe(true);
+  });
+
+  it('takes an index below a field the schema cannot see into to name an array element', () => {
+    expect(isConfigArrayItemPath(['interface', 'futureList', '0'])).toBe(true);
+    expect(isConfigArrayItemPath(['interface', 'futureList', '0', 'name'])).toBe(true);
+    expect(isConfigArrayItemPath(['endpoints', 'azureOpenAI', 'groups', '0'])).toBe(true);
+    expect(isConfigArrayItemPath(['endpoints', 'azureOpenAI', 'groups', '1', 'models'])).toBe(true);
+    expect(
+      isConfigArrayItemPath(['webSearch', 'firecrawlOptions', 'changeTrackingOptions', 'schema']),
+    ).toBe(false);
+    expect(isConfigArrayItemPath(['interface', 'futureList'])).toBe(false);
+    expect(isConfigArrayItemPath(['interface', 'futureMap', 'key'])).toBe(false);
+    expect(isConfigArrayItemPath(['endpoints', 'azureOpenAI', 'groups'])).toBe(false);
   });
 
   it('accepts whole arrays, objects, records and paths the schema does not define', () => {

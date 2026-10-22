@@ -105,10 +105,13 @@ export type AdminConfigTombstoneRequest = AdminConfigWritePrecondition &
  *   the tombstones at or below it: the path inherits again.
  * - `tombstone` removes the override and hides inherited values at the path. Tombstones are
  *   stored as dotted paths, so no segment may contain a dot, and hide whole arrays only: a path
- *   to an element or inside one is refused.
+ *   to an element or inside one is refused, and so is an index segment below a field
+ *   `configSchema` does not define, which may name an array element.
  *
  * Only sections `configSchema` defines can be written or hidden; `unset` may also remove what
- * an older server stored outside them.
+ * an older server stored outside them. Entries of a merged-by-key array are addressed by key,
+ * never by position: a `set`, `unset` or `rename` whose path runs into one
+ * (`endpoints.custom.0.headers`) is refused.
  * - `upsertEntry` replaces the principal's own entry of a merged-by-key array (`endpoints.custom`,
  *   keyed by `name`) with `entry`, or appends it. An entry that omits a stored `apiKey` keeps it.
  * - `removeEntry` removes the principal's own entry with that key; an inherited entry of the
@@ -191,7 +194,11 @@ export type AdminConfigChangesResponse = {
   skipped: Array<AdminConfigChangeRef & { reason: AdminConfigSkipReason }>;
   /** Applied changes the runtime merge does not use. */
   ignored: Array<AdminConfigChangeRef & { reason: AdminConfigIgnoreReason }>;
-  /** Valid changes that left the document as it was (it was already in that state). */
+  /**
+   * Valid changes that left the document as it was: it was already in that state, or the
+   * batch's changes cancel out (a `set`, then an `unset` of its parent), in which case every
+   * change is listed here and nothing is written.
+   */
   unchanged: AdminConfigChangeRef[];
 };
 

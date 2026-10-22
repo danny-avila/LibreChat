@@ -562,6 +562,58 @@ describe('POST …/changes: entries librechat.yaml owns', () => {
     expect((await storedDocument(params.principalId))!.overrides).toEqual({});
   });
 
+  it('removes an entry beside a legacy-invalid one, which it leaves for merge time as before', async () => {
+    const params = nextParams();
+    const legacy = endpoint('legacy', { baseURL: 42 });
+    await seedDocument(
+      params.principalId,
+      {
+        endpoints: {
+          custom: [
+            endpoint('first'),
+            legacy,
+            { baseURL: 'https://keyless.example.com' },
+            endpoint('last'),
+          ],
+        },
+      },
+      [],
+    );
+
+    const { status, body } = await send(
+      {
+        ops: [
+          { op: 'removeEntry', fieldPath: 'endpoints.custom', key: 'first' },
+          { op: 'removeEntry', fieldPath: 'endpoints.custom', key: 'last' },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(200);
+    expect(body.applied.map((ref) => ref.key)).toEqual(['first', 'last']);
+    expect((await storedDocument(params.principalId))!.overrides).toEqual({
+      endpoints: { custom: [legacy, { baseURL: 'https://keyless.example.com' }] },
+    });
+
+    const invalid = await send(
+      {
+        ops: [
+          {
+            op: 'upsertEntry',
+            fieldPath: 'endpoints.custom',
+            entry: endpoint('fresh', { baseURL: 7 }),
+          },
+        ],
+      },
+      params,
+    );
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.issues).toEqual([
+      { path: 'endpoints.custom.2.baseURL', code: 'invalid_type' },
+    ]);
+  });
+
   it('reports writes to a YAML stdio server as applied but ignored at runtime', async () => {
     const params = nextParams();
     const { status, body } = await send(
@@ -584,6 +636,26 @@ describe('POST …/changes: entries librechat.yaml owns', () => {
         reason: 'process_mcp_server',
       },
     ]);
+  });
+
+  it('reports the YAML stdio servers a whole-section tombstone leaves in place as ignored', async () => {
+    const params = nextParams();
+    const { status, body } = await send(
+      { ops: [{ op: 'tombstone', fieldPath: 'mcpServers' }] },
+      params,
+    );
+
+    expect(status).toBe(200);
+    expect(body.applied).toEqual([{ opIndex: 0, op: 'tombstone', segments: ['mcpServers'] }]);
+    expect(body.ignored).toEqual([
+      {
+        opIndex: 0,
+        op: 'tombstone',
+        segments: ['mcpServers', 'yaml-stdio'],
+        reason: 'process_mcp_server',
+      },
+    ]);
+    expect((await storedDocument(params.principalId))!.tombstones).toEqual(['mcpServers']);
   });
 
   it('refuses process-only MCP fields as PATCH does', async () => {
@@ -733,6 +805,52 @@ describe('POST …/changes: no-ops, dry runs and preconditions', () => {
     expect(body.revision).toBe(first.body.revision);
     expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     expect(deps.invalidateConfigCaches).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when the changes cancel out, creating no document and keeping a revision', async () => {
+    const absent = nextParams();
+    const created = await send(
+      {
+        ops: [
+          { op: 'set', fieldPath: 'interface.customWelcome', value: 'hi' },
+          { op: 'unset', fieldPath: 'interface' },
+        ],
+      },
+      absent,
+    );
+
+    expect(created.status).toBe(200);
+    expect(created.body).toMatchObject({
+      written: false,
+      revision: null,
+      applied: [],
+      ignored: [],
+    });
+    expect(created.body.unchanged.map((ref) => ref.opIndex)).toEqual([0, 1]);
+    expect(await storedDocument(absent.principalId)).toBeNull();
+    expect(created.deps.writeConfigDocument).not.toHaveBeenCalled();
+    expect(created.deps.invalidateConfigCaches).not.toHaveBeenCalled();
+    expect(created.deps.recordAuditEntry).not.toHaveBeenCalled();
+
+    const params = nextParams();
+    const first = await send(
+      { ops: [{ op: 'set', fieldPath: 'interface.customWelcome', value: 'hi' }] },
+      params,
+    );
+    const restored = await send(
+      {
+        ops: [
+          { op: 'set', fieldPath: 'interface', value: { customWelcome: 'bye' } },
+          { op: 'set', fieldPath: 'interface.customWelcome', value: 'hi' },
+        ],
+      },
+      params,
+    );
+
+    expect(restored.status).toBe(200);
+    expect(restored.body.written).toBe(false);
+    expect(restored.body.revision).toBe(first.body.revision);
+    expect(restored.deps.writeConfigDocument).not.toHaveBeenCalled();
   });
 
   it('validates and reports on a dry run without writing', async () => {
@@ -1049,6 +1167,50 @@ describe('POST …/changes: request checks', () => {
 
     expect(status).toBe(400);
     expect(body.issues).toEqual([{ path: 'endpoints.custom', code: 'indexed_merge_key_write' }]);
+  });
+
+  it('refuses a tombstone with an index below a field configSchema does not define', async () => {
+    const params = nextParams();
+    const { status, body } = await send(
+      { ops: [{ op: 'tombstone', fieldPath: 'interface.futureList.0' }] },
+      params,
+    );
+
+    expect(status).toBe(400);
+    expect(body).toMatchObject({ code: 'CONFIG_PATH_INVALID', reason: 'inside_array', opIndex: 0 });
+    expect(await storedDocument(params.principalId)).toBeNull();
+
+    const whole = await send(
+      { ops: [{ op: 'tombstone', fieldPath: 'interface.futureList' }] },
+      params,
+    );
+    expect(whole.status).toBe(200);
+  });
+
+  it('refuses an unset that reaches into a merged-by-key array by position', async () => {
+    const params = nextParams();
+    await send(
+      {
+        ops: [
+          {
+            op: 'upsertEntry',
+            fieldPath: 'endpoints.custom',
+            entry: endpoint('own', { headers: { 'X-Old': '1' } }),
+          },
+        ],
+      },
+      params,
+    );
+    const before = await storedDocument(params.principalId);
+
+    const { status, body } = await send(
+      { ops: [{ op: 'unset', fieldPath: 'endpoints.custom.0.headers' }] },
+      params,
+    );
+
+    expect(status).toBe(400);
+    expect(body.issues).toEqual([{ path: 'endpoints.custom', code: 'indexed_merge_key_write' }]);
+    expect(await storedDocument(params.principalId)).toEqual(before);
   });
 
   it('refuses a change the stored document cannot take, writing nothing', async () => {
