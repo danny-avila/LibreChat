@@ -9,6 +9,7 @@ import {
 import {
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
+  configSchema,
   PrincipalType,
   PrincipalModel,
   INTERFACE_PERMISSION_FIELDS,
@@ -348,6 +349,12 @@ const APP_CONFIG_FIELD_TO_SECTION: Readonly<Record<string, string>> = {
 
 type ReadableSections = { broad: boolean; sections: ReadonlySet<string> };
 
+/** Every section `configSchema` defines: a write resolves read access to all of them before it commits. */
+const CONFIG_SCHEMA_SECTIONS = Object.keys(configSchema.shape) as ConfigSection[];
+const FULL_READ_ACCESS: ReadableSections = { broad: true, sections: new Set() };
+/** An assign-only write matches only an empty document (`expectEmpty`), so it has nothing to show. */
+const NO_READ_ACCESS: ReadableSections = { broad: false, sections: new Set() };
+
 function canReadSection(readable: ReadableSections, section: string): boolean {
   return readable.broad || readable.sections.has(section);
 }
@@ -443,6 +450,27 @@ function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
 }
 
 /**
+ * Sends a written document the way a read would return it: redacted, then filtered to the read
+ * access resolved before the write. Redacting first also turns the hydrated document a write
+ * returns into a plain object, which the filter's spread needs: spreading the document itself
+ * would copy its internal `_doc`, every section included.
+ */
+function sendWrittenConfig(
+  res: Response,
+  status: number,
+  config: IConfig | null,
+  access: ReadableSections,
+): Response {
+  if (!config) {
+    return res.status(status).json({ config });
+  }
+  const safeConfig = redactConfigForResponse(config);
+  return res.status(status).json({
+    config: access.broad ? safeConfig : filterConfigDocForReadAccess(safeConfig, access),
+  });
+}
+
+/**
  * Field writes must address a section `configSchema` defines: anything else (`paths`, the raw
  * `config`, an AppService alias such as `interfaceConfig`) would reach runtime state. The path
  * is not echoed back.
@@ -529,34 +557,26 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   }
 
   /**
-   * Sends a written document the way a read would return it: redacted, then filtered to the
-   * sections the caller can read plus the ones this write just managed (`manage:configs:<section>`
-   * does not imply reading it, and the caller needs to see what it wrote). Broad managers can
-   * read every section, so their response skips the lookup. Redacting first also turns the
-   * hydrated document a write returns into a plain object, which the filter's spread needs:
-   * spreading the document itself would copy its internal `_doc`, every section included.
+   * Resolves which sections a write's response may show: the ones the caller can read plus the
+   * ones the write manages (`manage:configs:<section>` does not imply reading it, and the caller
+   * needs to see what it wrote). It covers every schema section in one batched lookup, so it
+   * runs alongside the write's other pre-reads, and a failed lookup fails the request before
+   * anything is stored instead of turning a committed write into a 500. Broad managers can read
+   * every section and skip it.
    */
-  async function respondWithConfig(
-    res: Response,
-    status: number,
+  async function resolveWriteReadAccess(
     user: CapabilityUser,
-    config: IConfig | null,
-    access: { hasBroadManage: boolean; managedSections?: readonly string[] },
-  ): Promise<Response> {
-    if (!config) {
-      return res.status(status).json({ config });
+    hasBroadManage: boolean,
+    managedSections: readonly string[],
+  ): Promise<ReadableSections> {
+    if (hasBroadManage) {
+      return FULL_READ_ACCESS;
     }
-    const safeConfig = redactConfigForResponse(config);
-    if (access.hasBroadManage) {
-      return res.status(status).json({ config: safeConfig });
-    }
-    const readable = await getReadableConfigSections(user, [
-      ...new Set(collectConfigSections(safeConfig)),
-    ] as ConfigSection[]);
-    const sections = new Set([...readable.sections, ...(access.managedSections ?? [])]);
-    return res.status(status).json({
-      config: filterConfigDocForReadAccess(safeConfig, { broad: readable.broad, sections }),
-    });
+    const readable = await getReadableConfigSections(user, CONFIG_SCHEMA_SECTIONS);
+    return {
+      broad: readable.broad,
+      sections: new Set([...readable.sections, ...managedSections]),
+    };
   }
 
   /**
@@ -875,9 +895,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           },
         });
       }
-      return await respondWithConfig(res, config?.configVersion === 1 ? 201 : 200, user, config, {
-        hasBroadManage,
-      });
+      return sendWrittenConfig(
+        res,
+        config?.configVersion === 1 ? 201 : 200,
+        config,
+        hasBroadManage ? FULL_READ_ACCESS : NO_READ_ACCESS,
+      );
     } catch (error) {
       logger.error('[adminConfig] upsertConfigOverrides error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to upsert config' });
@@ -1023,9 +1046,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
 
-      const [existing, baseYaml] = await Promise.all([
+      const [existing, baseYaml, access] = await Promise.all([
         findConfigByPrincipal(principalType, principalId, { includeInactive: true }),
         getBaseYamlConfig(user.tenantId),
+        resolveWriteReadAccess(user, hasBroadManage, [
+          ...new Set(Object.keys(fields).map(getTopLevelSection)),
+        ]),
       ]);
       const encryptedFields = encryptConfigSecretFields(fields);
       const fieldIssues = getConfigFieldIssues(encryptedFields, baseYaml, existing);
@@ -1055,10 +1081,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           metadata: { operation: 'patch', fieldPaths: Object.keys(fields).join(',') },
         });
       }
-      return await respondWithConfig(res, 200, user, config, {
-        hasBroadManage,
-        managedSections: [...new Set(Object.keys(fields).map(getTopLevelSection))],
-      });
+      return sendWrittenConfig(res, 200, config, access);
     } catch (error) {
       logger.error('[adminConfig] patchConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to patch config fields' });
@@ -1152,10 +1175,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
 
-      const existing =
+      const [existing, access] = await Promise.all([
         requestedPriority == null
-          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
-          : null;
+          ? findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+          : null,
+        resolveWriteReadAccess(user, hasBroadManage, [section]),
+      ]);
 
       let config: IConfig | null = null;
       /** Each write bumps configVersion, so creation is read off the first write only. */
@@ -1202,10 +1227,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           metadata: { operation: 'tombstone', fieldPath },
         });
       }
-      return await respondWithConfig(res, 200, user, config, {
-        hasBroadManage,
-        managedSections: [section],
-      });
+      return sendWrittenConfig(res, 200, config, access);
     } catch (error) {
       logger.error('[adminConfig] tombstoneConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to tombstone config field' });
@@ -1256,10 +1278,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      if (
-        !hasBroadManage &&
-        !(await hasConfigCapability(user, section as ConfigSection, 'manage'))
-      ) {
+      const [canManageSection, access] = await Promise.all([
+        hasBroadManage || hasConfigCapability(user, section as ConfigSection, 'manage'),
+        resolveWriteReadAccess(user, hasBroadManage, [section]),
+      ]);
+      if (!canManageSection) {
         return res.status(403).json({
           error: `Insufficient permissions for config section: ${section}`,
         });
@@ -1323,10 +1346,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         target: configTarget(principalType, principalId),
         metadata: { operation: 'unset', fieldPath },
       });
-      return await respondWithConfig(res, 200, user, config, {
-        hasBroadManage,
-        managedSections: [section],
-      });
+      return sendWrittenConfig(res, 200, config, access);
     } catch (error) {
       logger.error('[adminConfig] deleteConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to delete config field' });
@@ -1460,7 +1480,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           metadata: { isActive },
         });
       }
-      return await respondWithConfig(res, 200, user, config, { hasBroadManage });
+      return sendWrittenConfig(
+        res,
+        200,
+        config,
+        hasBroadManage ? FULL_READ_ACCESS : NO_READ_ACCESS,
+      );
     } catch (error) {
       logger.error('[adminConfig] toggleConfig error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to toggle config' });

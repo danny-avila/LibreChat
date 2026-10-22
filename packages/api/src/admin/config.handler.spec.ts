@@ -14,6 +14,7 @@ jest.mock('@librechat/data-schemas', () => {
   };
 });
 
+import { configSchema } from 'librechat-data-provider';
 import { createAdminConfigHandlers } from './config';
 
 function mockReq(overrides = {}) {
@@ -3014,14 +3015,15 @@ describe('createAdminConfigHandlers', () => {
       expect(body.tombstones).toEqual(['endpoints.bedrock', 'memory.tokenLimit']);
     });
 
-    it('PATCH: uses the batched read lookup when the deployment provides one', async () => {
+    it('PATCH: uses the batched read lookup, once and before the write', async () => {
       const getReadableConfigSections = jest
         .fn()
         .mockResolvedValue({ broad: false, sections: new Set(['webSearch']) });
+      const patchConfigFields = jest.fn().mockResolvedValue(writtenDoc());
       const { handlers } = createHandlers({
         hasConfigCapability: scopedCapability(['manage:endpoints']),
         getReadableConfigSections,
-        patchConfigFields: jest.fn().mockResolvedValue(writtenDoc()),
+        patchConfigFields,
       });
       const res = mockRes();
 
@@ -3034,11 +3036,12 @@ describe('createAdminConfigHandlers', () => {
       );
 
       expect(getReadableConfigSections).toHaveBeenCalledTimes(1);
-      expect([...getReadableConfigSections.mock.calls[0][1]].sort()).toEqual([
-        'endpoints',
-        'memory',
-        'webSearch',
-      ]);
+      expect([...getReadableConfigSections.mock.calls[0][1]].sort()).toEqual(
+        Object.keys(configSchema.shape).sort(),
+      );
+      expect(getReadableConfigSections.mock.invocationCallOrder[0]).toBeLessThan(
+        patchConfigFields.mock.invocationCallOrder[0],
+      );
       const body = res.body!.config as WrittenBody;
       expect(Object.keys(body.overrides).sort()).toEqual(['endpoints', 'webSearch']);
       expect(body.overrides.webSearch).toEqual({
@@ -3046,6 +3049,94 @@ describe('createAdminConfigHandlers', () => {
         serperApiKeyPreview: '...wxyz',
       });
     });
+
+    it('PATCH: resolves read access alongside the pre-write reads, not after them', async () => {
+      let releaseExisting: (doc: null) => void = () => undefined;
+      const findConfigByPrincipal = jest.fn(
+        () => new Promise<null>((resolve) => (releaseExisting = resolve)),
+      );
+      const getReadableConfigSections = jest
+        .fn()
+        .mockResolvedValue({ broad: false, sections: new Set<string>() });
+      const patchConfigFields = jest.fn().mockResolvedValue(writtenDoc());
+      const { handlers } = createHandlers({
+        hasConfigCapability: scopedCapability(['manage:endpoints']),
+        findConfigByPrincipal,
+        getReadableConfigSections,
+        patchConfigFields,
+      });
+      const res = mockRes();
+
+      const pending = handlers.patchConfigField(
+        mockReq({
+          params,
+          body: { entries: [{ fieldPath: 'endpoints.agents.disableBuilder', value: true }] },
+        }),
+        res,
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(findConfigByPrincipal).toHaveBeenCalledTimes(1);
+      expect(getReadableConfigSections).toHaveBeenCalledTimes(1);
+      expect(patchConfigFields).not.toHaveBeenCalled();
+      releaseExisting(null);
+      await pending;
+      expect(res.statusCode).toBe(200);
+      expect(patchConfigFields).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      [
+        'PATCH',
+        'patchConfigFields',
+        (h: ReturnType<typeof createHandlers>['handlers'], res: Response) =>
+          h.patchConfigField(
+            mockReq({
+              params,
+              body: { entries: [{ fieldPath: 'endpoints.agents.disableBuilder', value: true }] },
+            }),
+            res,
+          ),
+      ],
+      [
+        'tombstone',
+        'tombstoneConfigField',
+        (h: ReturnType<typeof createHandlers>['handlers'], res: Response) =>
+          h.tombstoneConfigField(
+            mockReq({ params, body: { fieldPath: 'endpoints.bedrock' } }),
+            res,
+          ),
+      ],
+      [
+        'field delete',
+        'unsetConfigField',
+        (h: ReturnType<typeof createHandlers>['handlers'], res: Response) =>
+          h.deleteConfigField(mockReq({ params, query: { fieldPath: 'endpoints.bedrock' } }), res),
+      ],
+    ] as const)(
+      '%s: a failed read lookup fails the request before anything is written',
+      async (_label, write, run) => {
+        const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+        const invalidateConfigCaches = jest.fn().mockResolvedValue(undefined);
+        const { handlers, deps } = createHandlers({
+          hasConfigCapability: scopedCapability(['manage:endpoints']),
+          getReadableConfigSections: jest.fn().mockRejectedValue(new Error('grant lookup down')),
+          patchConfigFields: jest.fn().mockResolvedValue(writtenDoc()),
+          tombstoneConfigField: jest.fn().mockResolvedValue(writtenDoc()),
+          unsetConfigField: jest.fn().mockResolvedValue(writtenDoc()),
+          recordAuditEntry,
+          invalidateConfigCaches,
+        });
+        const res = mockRes();
+
+        await run(handlers, res);
+
+        expect(res.statusCode).toBe(500);
+        expect((deps as Record<string, jest.Mock>)[write]).not.toHaveBeenCalled();
+        expect(recordAuditEntry).not.toHaveBeenCalled();
+        expect(invalidateConfigCaches).not.toHaveBeenCalled();
+      },
+    );
 
     it('a broad manager gets the whole redacted document without a read lookup', async () => {
       const hasConfigCapability = jest.fn().mockResolvedValue(true);
@@ -3112,8 +3203,10 @@ describe('createAdminConfigHandlers', () => {
     });
 
     it('toggle and scope creation: an assign-only caller sees no section it cannot read', async () => {
+      const getReadableConfigSections = jest.fn();
       const deps = {
         hasConfigCapability: scopedCapability([]),
+        getReadableConfigSections,
         hasCapability: jest.fn().mockResolvedValue(true),
         upsertConfig: jest.fn().mockResolvedValue({ ...writtenDoc(), configVersion: 1 }),
         toggleConfigActiveTracked: jest
@@ -3138,6 +3231,7 @@ describe('createAdminConfigHandlers', () => {
         expect(body.tombstones).toEqual([]);
         expect(body).toMatchObject({ principalId: 'editors', isActive: true });
       }
+      expect(getReadableConfigSections).not.toHaveBeenCalled();
     });
   });
 });

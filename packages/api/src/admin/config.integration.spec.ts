@@ -11,9 +11,8 @@ process.env.CREDS_IV = process.env.CREDS_IV ?? '0123456789abcdef0123456789abcdef
 type DataSchemas = typeof import('@librechat/data-schemas');
 type ConfigMethods = ReturnType<DataSchemas['createMethods']>;
 type AdminConfigHandlers = ReturnType<typeof import('./config').createAdminConfigHandlers>;
-type CapabilityCheck = Parameters<
-  typeof import('./config').createAdminConfigHandlers
->[0]['hasConfigCapability'];
+type AdminConfigDeps = Parameters<typeof import('./config').createAdminConfigHandlers>[0];
+type CapabilityCheck = AdminConfigDeps['hasConfigCapability'];
 
 interface MockRes {
   statusCode: number;
@@ -62,7 +61,10 @@ function mockRes(): Response & MockRes {
 }
 
 /** Real handlers over the real Config collection, with the caller's capabilities decided by `hasConfigCapability`. */
-function handlersFor(hasConfigCapability: CapabilityCheck): AdminConfigHandlers {
+function handlersFor(
+  hasConfigCapability: CapabilityCheck,
+  extra: Partial<AdminConfigDeps> = {},
+): AdminConfigHandlers {
   return createAdminConfigHandlers({
     listAllConfigs: methods.listAllConfigs,
     findConfigByPrincipal: methods.findConfigByPrincipal,
@@ -75,6 +77,7 @@ function handlersFor(hasConfigCapability: CapabilityCheck): AdminConfigHandlers 
     hasConfigCapability,
     hasAnyConfigReadAccess: async () => true,
     hasCapability: async () => true,
+    ...extra,
   });
 }
 
@@ -266,6 +269,40 @@ describe('admin config writes against a real Config collection', () => {
       });
       expect(remover.body?.config?.tombstones).toEqual([]);
       expect(JSON.stringify(remover.body)).not.toContain('v3:');
+    });
+
+    it('store nothing when the read lookup fails, so a retry is never a second write', async () => {
+      await seed();
+      const before = await readStored('editors');
+      const failing = handlersFor(scoped(['manage:endpoints', 'manage:memory']), {
+        getReadableConfigSections: async () => {
+          throw new Error('grant lookup down');
+        },
+      });
+
+      const patched = mockRes();
+      await failing.patchConfigField(
+        mockReq({
+          params,
+          body: { entries: [{ fieldPath: 'endpoints.agents.disableBuilder', value: true }] },
+        }),
+        patched,
+      );
+      const tombstoned = mockRes();
+      await failing.tombstoneConfigField(
+        mockReq({ params, body: { fieldPath: 'endpoints.bedrock' } }),
+        tombstoned,
+      );
+      const removed = mockRes();
+      await failing.deleteConfigField(
+        mockReq({ params, query: { fieldPath: 'memory.charLimit' } }),
+        removed,
+      );
+
+      expect([patched.statusCode, tombstoned.statusCode, removed.statusCode]).toEqual([
+        500, 500, 500,
+      ]);
+      expect(await readStored('editors')).toEqual(before);
     });
 
     it('show a broad manager the whole document with secrets redacted', async () => {
