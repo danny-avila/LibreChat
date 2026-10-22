@@ -2830,6 +2830,9 @@ describe('processDeleteRequest', () => {
     expect(db.deleteFiles).not.toHaveBeenCalled();
     expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
 
+    expect(file.embedded).toBe(false);
+    expect(file.metadata.searchDestination).toBe(true);
+
     db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
     expect(await processDeleteRequest({ req, files: [file] })).toEqual({
       deletedFileIds: ['retry-file'],
@@ -2837,7 +2840,8 @@ describe('processDeleteRequest', () => {
     });
     expect(primaryDelete).toHaveBeenCalledTimes(1);
     expect(primaryDelete).toHaveBeenCalledWith(req, file, undefined);
-    expect(vectorDelete).toHaveBeenCalledTimes(2);
+    expect(vectorDelete).toHaveBeenCalledTimes(1);
+    expect(db.clearFileEmbeddings).toHaveBeenCalledTimes(1);
     expect(codeDelete).toHaveBeenCalledTimes(2);
     expect(db.deleteFiles).toHaveBeenCalledWith(['retry-file']);
     expect(db.removeAgentResourceFilesFromAllAgents).toHaveBeenCalledWith({

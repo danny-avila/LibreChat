@@ -791,7 +791,7 @@ describe('initializeAgent: ChatProject context', () => {
         [EToolResources.file_search]: { file_ids: persistent.map((file) => file.file_id) },
       };
       const runtime = projectRuntime();
-      runtime.user = { ...runtime.user!, tenantId: 'tenant-1' };
+      runtime.user!.tenantId = 'tenant-1';
       runtime.appConfig.fileConfig = fileConfig;
       runtime.appConfig.filters = filters;
       runtime.chatProjectContext = {
@@ -810,7 +810,7 @@ describe('initializeAgent: ChatProject context', () => {
           runtime,
           agent,
           loadTools,
-          requestFiles: current,
+          requestFiles: current as IMongoFile[],
           conversationId: deferred.length > 0 ? 'repair-conversation' : undefined,
           allowedProviders: new Set([Providers.OPENAI]),
           useChatProjectContext: true,
