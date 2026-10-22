@@ -903,6 +903,37 @@ describe('Chat attachments and reported conversations', () => {
     },
   );
 
+  it('reports an attachment failure the host reducer threw on as a disconnect', async () => {
+    const stream = createStream({ streamId: 'stream-2', generationCreatedAt: 200 });
+    const { chat, onFinish } = setup(
+      {
+        applyEvent: (event) => {
+          if (event.type === 'error') {
+            throw new Error('reducer failed');
+          }
+        },
+      },
+      {
+        sendMessages: jest.fn(async () => ({
+          status: 'replaced' as const,
+          generationProtocolVersion: 2,
+          conversationId: 'convo-1',
+          streamId: 'stream-2',
+          generationCreatedAt: 200,
+        })),
+        reconnectToStream: jest.fn(async () => stream),
+      },
+    );
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push({ type: 'error', status: 500, data: 'failed' } as ChatEvent);
+    await sent;
+
+    expect(onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({ isDisconnect: true, isSettled: false }),
+    );
+  });
+
   it('reports an error the generation itself sent on an attachment as terminal', async () => {
     const stream = createStream({ streamId: 'stream-2', generationCreatedAt: 200 });
     const { chat, onFinish } = replacing(stream);

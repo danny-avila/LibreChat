@@ -261,12 +261,12 @@ const isGone = (error: ChatTransportError): boolean =>
  * A frame the chat failed to apply. A terminal frame still ended the generation, which the host
  * reloads from what the server kept; any other leaves it running.
  */
-const getApplyFailure = (event: ChatEvent, failure: unknown): Outcome => {
+const getApplyFailure = (event: ChatEvent, failure: unknown, attached: boolean): Outcome => {
   const error = failure instanceof Error ? failure : new Error(String(failure));
   const terminal =
     event.type === 'final' ||
     event.type === 'abort' ||
-    (event.type === 'error' && event.status !== 0);
+    (event.type === 'error' && event.status !== 0 && !(attached && isAttachFailure(event)));
   return terminal
     ? { kind: 'error', error, disconnect: false, settled: {} }
     : { kind: 'error', error, disconnect: true };
@@ -656,7 +656,7 @@ export class Chat {
       if (signal.aborted) {
         outcome = this.toOutcome(error, active);
       } else if (handling) {
-        outcome = getApplyFailure(handling, error);
+        outcome = getApplyFailure(handling, error, active.attached === true);
       } else {
         /** The stream failed before a terminal frame, as one that ends early does: a disconnect. */
         const failure = error instanceof Error ? error : new Error(String(error));
