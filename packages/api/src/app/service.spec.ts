@@ -1343,6 +1343,98 @@ describe('createAppConfigService', () => {
       await getAppConfig();
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
     });
+
+    /** A reload that read librechat.yaml before a clear must not be what the clear leaves cached. */
+    describe('while a reload is in flight', () => {
+      const tick = () => new Promise((resolve) => setImmediate(resolve));
+      const stale = { x: 'stale', availableTools: { staleTool: {} } } as unknown as TestConfig;
+      const fresh = { x: 'fresh', availableTools: { freshTool: {} } } as unknown as TestConfig;
+
+      async function startStaleReload() {
+        const deps = createDeps();
+        const service = createAppConfigService(deps);
+        await service.getAppConfig({ baseOnly: true });
+        await service.clearAppConfigCache();
+        let settleStale: (outcome: AppConfig | Error) => void = () => undefined;
+        deps.loadBaseConfig
+          .mockImplementationOnce(
+            () =>
+              new Promise<AppConfig>((resolve, reject) => {
+                settleStale = (outcome) =>
+                  outcome instanceof Error ? reject(outcome) : resolve(outcome);
+              }),
+          )
+          .mockResolvedValue(fresh);
+        const staleRead = service.getAppConfig({ baseOnly: true });
+        await tick();
+        await service.clearAppConfigCache();
+        return { deps, service, staleRead, settleStale };
+      }
+
+      it('starts a new reload once the stale one settles, and caches only the new one', async () => {
+        const { deps, service, staleRead, settleStale } = await startStaleReload();
+
+        const freshRead = service.getAppConfig({ baseOnly: true });
+        await tick();
+        expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
+        settleStale(stale);
+
+        expect(((await staleRead) as TestConfig).x).toBe('stale');
+        expect(((await freshRead) as TestConfig).x).toBe('fresh');
+        expect(deps.loadBaseConfig).toHaveBeenCalledTimes(3);
+        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).x).toBe('fresh');
+        expect(deps.loadBaseConfig).toHaveBeenCalledTimes(3);
+        expect(deps.setCachedTools).not.toHaveBeenCalledWith(stale.availableTools);
+        expect(deps.setCachedTools).toHaveBeenLastCalledWith(fresh.availableTools);
+      });
+
+      it('leaves the base uncached when the stale reload settles first', async () => {
+        const { deps, service, staleRead, settleStale } = await startStaleReload();
+
+        settleStale(stale);
+        await staleRead;
+
+        expect(deps._cache._store.has('app_config:_BASE_')).toBe(false);
+        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).x).toBe('fresh');
+      });
+
+      it('does not restore the last good config over the clear when the stale reload fails', async () => {
+        const { deps, service, staleRead, settleStale } = await startStaleReload();
+
+        settleStale(new Error('remote fetch failure'));
+
+        expect(await staleRead).toEqual(deps._baseConfig);
+        expect(deps._cache._store.has('app_config:_BASE_')).toBe(false);
+        expect(((await service.getAppConfig({ baseOnly: true })) as TestConfig).x).toBe('fresh');
+      });
+    });
+
+    it('does not cache a merge built on the base it read before the clear', async () => {
+      let releasePrincipals: (principals: unknown[]) => void = () => undefined;
+      const principals = [{ principalType: 'role', principalId: 'USER' }];
+      const deps = createDeps({
+        loadBaseConfig: jest
+          .fn()
+          .mockResolvedValueOnce({ x: 'before' })
+          .mockResolvedValue({ x: 'after' }),
+        getUserPrincipals: jest
+          .fn()
+          .mockImplementationOnce(() => new Promise((resolve) => (releasePrincipals = resolve)))
+          .mockResolvedValue(principals),
+      });
+      const { getAppConfig, clearAppConfigCache } = createAppConfigService(deps);
+      await getAppConfig({ baseOnly: true });
+
+      const inFlight = getAppConfig({ role: 'USER', userId: 'uid1' });
+      await new Promise((resolve) => setImmediate(resolve));
+      await clearAppConfigCache();
+      releasePrincipals(principals);
+      expect(((await inFlight) as TestConfig).x).toBe('before');
+
+      const next = (await getAppConfig({ role: 'USER', userId: 'uid1' })) as TestConfig;
+
+      expect(next.x).toBe('after');
+    });
   });
 
   describe('clearOverrideCache', () => {
