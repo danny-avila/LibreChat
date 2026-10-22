@@ -198,6 +198,10 @@ describe('mergeConfigOverrides', () => {
     const removed = read([fakeConfig({}, 10, ['endpoints.agents.pullRequests.host'])]);
     expect(removed.host).toBe('ghe.example.com');
 
+    for (const ancestor of ['endpoints', 'endpoints.agents', 'endpoints.agents.pullRequests']) {
+      expect(read([fakeConfig({}, 10, [ancestor])])).toEqual({ host: 'ghe.example.com' });
+    }
+
     const unset = { endpoints: { agents: { pullRequests: {} } } } as unknown as AppConfig;
     const added = mergeConfigOverrides(unset, [
       fakeConfig({ endpoints: { agents: { pullRequests: { host: 'evil.example.com' } } } }, 10),

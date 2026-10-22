@@ -658,6 +658,43 @@ describe('POST …/changes: entries librechat.yaml owns', () => {
     expect((await storedDocument(params.principalId))!.tombstones).toEqual(['mcpServers']);
   });
 
+  it('reports the base-only fields librechat.yaml sets that a tombstone above them leaves in place', async () => {
+    const params = nextParams();
+    const pullRequests = { provider: 'github', host: 'ghe.example.com', enabled: true };
+    const yaml = { ...YAML, endpoints: { ...YAML.endpoints, agents: { pullRequests } } };
+    const deps = createDeps({
+      getAppConfig: async () => ({ config: yaml }) as unknown as AppConfig,
+    });
+
+    const { status, body } = await send(
+      {
+        ops: [
+          { op: 'tombstone', fieldPath: 'endpoints.agents' },
+          { op: 'tombstone', fieldPath: 'endpoints.agents.pullRequests.provider' },
+        ],
+      },
+      params,
+      deps,
+    );
+
+    expect(status).toBe(200);
+    expect(body.applied).toEqual([
+      { opIndex: 0, op: 'tombstone', segments: ['endpoints', 'agents'] },
+    ]);
+    expect(body.ignored).toEqual(
+      ['provider', 'host'].map((field) => ({
+        opIndex: 0,
+        op: 'tombstone',
+        segments: ['endpoints', 'agents', 'pullRequests', field],
+        reason: 'base_only_path',
+      })),
+    );
+    expect(body.skipped.map(({ opIndex, reason }) => [opIndex, reason])).toEqual([
+      [1, 'base_only_path'],
+    ]);
+    expect((await storedDocument(params.principalId))!.tombstones).toEqual(['endpoints.agents']);
+  });
+
   it('reports a rename under a YAML stdio server as ignored, but not an unset there', async () => {
     const params = nextParams();
     await seedDocument(
@@ -896,6 +933,72 @@ describe('POST …/changes: no-ops, dry runs and preconditions', () => {
     expect(restored.body.written).toBe(false);
     expect(restored.body.revision).toBe(first.body.revision);
     expect(restored.deps.writeConfigDocument).not.toHaveBeenCalled();
+  });
+
+  it('validates only what the batch leaves changed, not changes a later one undoes', async () => {
+    const params = nextParams();
+    const balance = { enabled: true, startBalance: 'legacy' };
+    await seedDocument(params.principalId, { balance }, []);
+
+    const { status, body } = await send(
+      {
+        ops: [
+          { op: 'set', fieldPath: 'balance.startBalance', value: 1000 },
+          { op: 'set', fieldPath: 'balance', value: balance },
+          { op: 'set', fieldPath: 'interface.customWelcome', value: 'hi' },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(200);
+    expect(body.written).toBe(true);
+    expect((await storedDocument(params.principalId))!.overrides).toEqual({
+      balance,
+      interface: { customWelcome: 'hi' },
+    });
+
+    const rewritten = await send(
+      {
+        ops: [
+          { op: 'set', fieldPath: 'balance.startBalance', value: 1000 },
+          { op: 'set', fieldPath: 'balance', value: { ...balance, enabled: false } },
+        ],
+      },
+      params,
+    );
+    expect(rewritten.status).toBe(400);
+    expect(rewritten.body.issues).toEqual([{ path: 'balance.startBalance', code: 'invalid_type' }]);
+  });
+
+  it('finds an entry a later change moves by its key, not by where it was written', async () => {
+    const params = nextParams();
+    const legacy = endpoint('legacy', { baseURL: 42 });
+    await seedDocument(
+      params.principalId,
+      { endpoints: { custom: [endpoint('first'), endpoint('second'), legacy] } },
+      [],
+    );
+
+    const { status, body } = await send(
+      {
+        ops: [
+          {
+            op: 'upsertEntry',
+            fieldPath: 'endpoints.custom',
+            entry: endpoint('second', { models: { default: ['n'] } }),
+          },
+          { op: 'removeEntry', fieldPath: 'endpoints.custom', key: 'first' },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(200);
+    expect(body.applied.map((ref) => ref.key)).toEqual(['second', 'first']);
+    expect((await storedDocument(params.principalId))!.overrides).toEqual({
+      endpoints: { custom: [endpoint('second', { models: { default: ['n'] } }), legacy] },
+    });
   });
 
   it('validates and reports on a dry run without writing', async () => {

@@ -164,12 +164,16 @@ export type AdminConfigSkipReason =
   | 'interface_permission';
 
 /**
- * Why a stored change has no effect at runtime. `process_mcp_server`: a `set`, `tombstone` or
- * `rename` addresses an MCP server `librechat.yaml` runs as a local process, whose configuration
- * overrides never change. An `unset` there is not reported: it asks for the YAML value, which is
- * what runs.
+ * Why a stored change, or part of one (at its own `segments`), has no effect at runtime.
+ * - `process_mcp_server`: a `set`, `tombstone` or `rename` addresses an MCP server
+ *   `librechat.yaml` runs as a local process, whose configuration overrides never change, or a
+ *   whole-section `mcpServers` tombstone leaves that server in place. An `unset` there is not
+ *   reported: it asks for the YAML value, which is what runs.
+ * - `base_only_path`: a `tombstone` above a base-only field `librechat.yaml` sets
+ *   (`endpoints.agents.pullRequests.provider`, …) leaves that field in place and hides only the
+ *   rest.
  */
-export type AdminConfigIgnoreReason = 'process_mcp_server';
+export type AdminConfigIgnoreReason = 'process_mcp_server' | 'base_only_path';
 
 /** A change of the batch, by position, with the location it addressed. */
 export type AdminConfigChangeRef = {
@@ -200,7 +204,7 @@ export type AdminConfigChangesResponse = {
   applied: AdminConfigChangeRef[];
   /** Changes, or parts of a `set` value (at their own `segments`), that were not stored. */
   skipped: Array<AdminConfigChangeRef & { reason: AdminConfigSkipReason }>;
-  /** Applied changes the runtime merge does not use. */
+  /** Applied changes, or parts of one (at their own `segments`), the runtime merge does not use. */
   ignored: Array<AdminConfigChangeRef & { reason: AdminConfigIgnoreReason }>;
   /**
    * Valid changes that left the document as it was: it was already in that state, or the
