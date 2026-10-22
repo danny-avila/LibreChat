@@ -36,6 +36,8 @@ import {
   isSameConfigValue,
   isConfigRevision,
   isConfigPathError,
+  isFieldNameRejection,
+  getDottedSectionIssues,
   runConfigMutation,
   getConfigFieldIssues,
   toConfigOverrideState,
@@ -91,8 +93,10 @@ import {
   preserveConfigSecrets,
   redactConfigSecrets,
 } from './secrets';
+import { DEFAULT_OVERRIDE_CACHE_TTL } from '~/app/service';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { createAdminAuditEmitter } from './audit';
+import { buildAdminConfigMeta } from './meta';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
@@ -591,6 +595,11 @@ export interface AdminConfigDeps {
   /** When true, a failed audit write surfaces as a 5xx after the mutation has
    * been persisted. Defaults to fail-open. */
   auditFailClosed?: boolean;
+  /**
+   * The `overrideCacheTtl` the app config service runs with, which `GET /meta` reports.
+   * Defaults to the service's own default.
+   */
+  overrideCacheTtlMs?: number;
 }
 
 /** Audit target for a principal's override document. Records field paths and
@@ -777,8 +786,9 @@ function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
 }
 
 /**
- * Reports only the paths and stable codes: schema messages can echo the submitted values.
- * `report` adds what a route reports alongside them (a batch's `skipped`).
+ * Reports only locations and stable codes: schema messages can echo the submitted values.
+ * `segments` names the location key by key, since `path` is ambiguous once a record key
+ * itself holds a dot. `report` adds what a route reports alongside them (a batch's `skipped`).
  */
 function invalidOverrideResponse(
   res: Response,
@@ -788,8 +798,22 @@ function invalidOverrideResponse(
   return res.status(400).json({
     error: 'Invalid config override',
     code: 'CONFIG_OVERRIDE_INVALID',
-    issues: issues.map(({ path, code }) => ({ path, code })),
+    issues: issues.map(({ path, segments, code }) => ({ path, segments, code })),
     ...report,
+  });
+}
+
+/**
+ * The database refused a key name in the written overrides, such as a dotted record key on an
+ * engine that cannot store one. Nothing was written; the key is not echoed.
+ */
+function unstorableKeyResponse(res: Response, operation: string): Response {
+  logger.warn(
+    `[adminConfig] ${operation}: the database rejected a key name in the overrides, such as a dotted record key this engine cannot store`,
+  );
+  return res.status(422).json({
+    error: 'The database cannot store a key name in this config',
+    code: 'CONFIG_KEY_NOT_STORABLE',
   });
 }
 
@@ -1327,6 +1351,7 @@ function describeChange(change: PreparedChange): string {
 
 export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   listConfigs: (req: ServerRequest, res: Response) => Promise<Response>;
+  getConfigMeta: (req: ServerRequest, res: Response) => Promise<Response>;
   getBaseConfig: (req: ServerRequest, res: Response) => Promise<Response>;
   getConfig: (req: ServerRequest, res: Response) => Promise<Response>;
   upsertConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
@@ -1361,6 +1386,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     invalidateConfigCaches,
     recordAuditEntry,
     auditFailClosed,
+    overrideCacheTtlMs = DEFAULT_OVERRIDE_CACHE_TTL,
   } = deps;
 
   const emitAudit = createAdminAuditEmitter({
@@ -1368,6 +1394,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     failClosed: auditFailClosed,
     logPrefix: '[adminConfig]',
   });
+
+  const meta = buildAdminConfigMeta({ maxPatchEntries: MAX_PATCH_ENTRIES, overrideCacheTtlMs });
 
   function readStoredConfig(
     principalType: PrincipalType,
@@ -1477,6 +1505,29 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     } catch (error) {
       logger.error('[adminConfig] listConfigs error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to list configs' });
+    }
+  }
+
+  /**
+   * GET /meta — The contract this server applies to config writes: feature flags, limits,
+   * versions and the rules a client mirrors. An older server answers 404, which a client reads
+   * as every feature off.
+   */
+  async function getConfigMeta(req: ServerRequest, res: Response): Promise<Response> {
+    try {
+      const user = getCapabilityUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      if (!(await hasAnyConfigReadAccess(user))) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      return res.status(200).json(meta);
+    } catch (error) {
+      logger.error('[adminConfig] getConfigMeta error:', getSafeErrorMetadata(error));
+      return res.status(500).json({ error: 'Failed to get config meta' });
     }
   }
 
@@ -1620,6 +1671,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       if (!hasAssignConfigs) {
         return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      /**
+       * Checked before any section rule or secret encryption reads a dotted key as a path. A
+       * dotted key is a section write, which only broad manage may make.
+       */
+      const dottedSectionIssues = getDottedSectionIssues(rawOverrides);
+      if (dottedSectionIssues.length > 0) {
+        return hasBroadManage
+          ? invalidOverrideResponse(res, dottedSectionIssues)
+          : res.status(403).json({ error: 'Insufficient permissions' });
       }
 
       const filteredOverrides = {
@@ -1773,6 +1835,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       });
       return res.status(created ? 201 : 200).json({ config: redactConfigForResponse(config) });
     } catch (error) {
+      if (isFieldNameRejection(error)) {
+        return unstorableKeyResponse(res, 'upsertConfigOverrides');
+      }
       logger.error('[adminConfig] upsertConfigOverrides error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to upsert config' });
     }
@@ -1780,6 +1845,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
   /**
    * PATCH /:principalType/:principalId/fields — Set individual fields via dot-paths.
+   *
+   * A `fieldPath` (here, and for tombstones and unsets) is split on dots, so it cannot address
+   * a record key that holds one, such as a Bedrock inference profile or a `gpt-4.1` model
+   * entry: write that record whole at its own path (`endpoints.bedrock.inferenceProfiles`).
    */
   async function patchConfigField(req: ServerRequest, res: Response): Promise<Response> {
     try {
@@ -1964,6 +2033,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       });
       return res.status(200).json({ config: redactConfigForResponse(config) });
     } catch (error) {
+      if (isFieldNameRejection(error)) {
+        return unstorableKeyResponse(res, 'patchConfigField');
+      }
       logger.error('[adminConfig] patchConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to patch config fields' });
     }
@@ -2694,6 +2766,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
   return {
     listConfigs,
+    getConfigMeta,
     getBaseConfig,
     getConfig,
     upsertConfigOverrides,

@@ -269,7 +269,13 @@ describe('POST …/changes: one atomic write', () => {
 
     expect(status).toBe(400);
     expect(body.code).toBe('CONFIG_OVERRIDE_INVALID');
-    expect(body.issues).toEqual([{ path: 'mcpServers.new.title', code: 'invalid_type' }]);
+    expect(body.issues).toEqual([
+      {
+        path: 'mcpServers.new.title',
+        segments: ['mcpServers', 'new', 'title'],
+        code: 'invalid_type',
+      },
+    ]);
     expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     expect(await storedDocument(params.principalId)).toEqual(before);
   });
@@ -610,7 +616,11 @@ describe('POST …/changes: entries librechat.yaml owns', () => {
     );
     expect(invalid.status).toBe(400);
     expect(invalid.body.issues).toEqual([
-      { path: 'endpoints.custom.2.baseURL', code: 'invalid_type' },
+      {
+        path: 'endpoints.custom.2.baseURL',
+        segments: ['endpoints', 'custom', '2', 'baseURL'],
+        code: 'invalid_type',
+      },
     ]);
   });
 
@@ -968,7 +978,9 @@ describe('POST …/changes: no-ops, dry runs and preconditions', () => {
       params,
     );
     expect(rewritten.status).toBe(400);
-    expect(rewritten.body.issues).toEqual([{ path: 'balance.startBalance', code: 'invalid_type' }]);
+    expect(rewritten.body.issues).toEqual([
+      { path: 'balance.startBalance', segments: ['balance', 'startBalance'], code: 'invalid_type' },
+    ]);
   });
 
   it('finds an entry a later change moves by its key, not by where it was written', async () => {
@@ -1032,7 +1044,13 @@ describe('POST …/changes: no-ops, dry runs and preconditions', () => {
     expect(invalid.status).toBe(400);
     expect(invalid.body).toMatchObject({
       code: 'CONFIG_OVERRIDE_INVALID',
-      issues: [{ path: 'balance.startBalance', code: 'invalid_type' }],
+      issues: [
+        {
+          path: 'balance.startBalance',
+          segments: ['balance', 'startBalance'],
+          code: 'invalid_type',
+        },
+      ],
       skipped: [
         {
           opIndex: 0,
@@ -1314,7 +1332,13 @@ describe('POST …/changes: request checks', () => {
     );
 
     expect(status).toBe(400);
-    expect(body.issues).toEqual([{ path: 'endpoints.custom', code: 'indexed_merge_key_write' }]);
+    expect(body.issues).toEqual([
+      {
+        path: 'endpoints.custom',
+        segments: ['endpoints', 'custom'],
+        code: 'indexed_merge_key_write',
+      },
+    ]);
   });
 
   it('refuses a tombstone with an index below a field configSchema does not define', async () => {
@@ -1357,7 +1381,13 @@ describe('POST …/changes: request checks', () => {
     );
 
     expect(status).toBe(400);
-    expect(body.issues).toEqual([{ path: 'endpoints.custom', code: 'indexed_merge_key_write' }]);
+    expect(body.issues).toEqual([
+      {
+        path: 'endpoints.custom',
+        segments: ['endpoints', 'custom'],
+        code: 'indexed_merge_key_write',
+      },
+    ]);
     expect(await storedDocument(params.principalId)).toEqual(before);
   });
 
@@ -1576,8 +1606,16 @@ describe('PATCH /fields and POST …/changes: tombstones a write lifts', () => {
     const alone = await send({ ops: [{ op: 'set', ...AGENT_SWITCH }] }, batched);
     expect(alone.status).toBe(400);
     expect(alone.body.issues).toEqual([
-      { path: 'memory.agent.provider', code: 'union_dropped_key' },
-      { path: 'memory.agent.model', code: 'union_dropped_key' },
+      {
+        path: 'memory.agent.provider',
+        segments: ['memory', 'agent', 'provider'],
+        code: 'union_dropped_key',
+      },
+      {
+        path: 'memory.agent.model',
+        segments: ['memory', 'agent', 'model'],
+        code: 'union_dropped_key',
+      },
     ]);
 
     const switched = await send(
@@ -1612,8 +1650,16 @@ describe('PATCH /fields and POST …/changes: tombstones a write lifts', () => {
 
     expect(status).toBe(400);
     expect(body.issues).toEqual([
-      { path: 'memory.agent.provider', code: 'union_dropped_key' },
-      { path: 'memory.agent.model', code: 'union_dropped_key' },
+      {
+        path: 'memory.agent.provider',
+        segments: ['memory', 'agent', 'provider'],
+        code: 'union_dropped_key',
+      },
+      {
+        path: 'memory.agent.model',
+        segments: ['memory', 'agent', 'model'],
+        code: 'union_dropped_key',
+      },
     ]);
     expect(await storedDocument(params.principalId)).toEqual(before);
   });

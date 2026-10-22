@@ -44,12 +44,18 @@ export function decodeStoredKey(key: string): string {
   return key.includes('%') ? key.replace(DECODE_PATTERN, (sequence) => DECODED[sequence]) : key;
 }
 
+/**
+ * A JSON-style object: its prototype is `null` or a root `Object.prototype`, from any realm.
+ * Comparing with this realm's `Object.prototype` would skip an object built in another one
+ * (`structuredClone` under Jest returns the host realm's objects), and a skipped object keeps
+ * its dotted keys raw at rest.
+ */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) {
     return false;
   }
   const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
+  return prototype === null || Object.getPrototypeOf(prototype) === null;
 }
 
 /**

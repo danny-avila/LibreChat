@@ -48,7 +48,7 @@ const loadBaseConfig = async (mode) => {
   return AppService({ config, paths, systemTools });
 };
 
-const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfigService({
+const appConfigService = createAppConfigService({
   loadBaseConfig,
   setCachedTools,
   getCache: getLogStores,
@@ -70,6 +70,8 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
     });
   },
 });
+const { getAppConfig, clearAppConfigCache, clearOverrideCache, overrideCacheTtl } =
+  appConfigService;
 
 // Config owns the reader; models never import this module to obtain it.
 db.initializeMessageBudget(getAppConfig);
@@ -105,6 +107,7 @@ function invalidateConfigCaches(tenantId) {
 
 module.exports = {
   getAppConfig,
+  overrideCacheTtl,
   invalidateConfigCaches,
   getCodeEnvironmentRegistry,
   invalidateCodeEnvironmentConfigCache,

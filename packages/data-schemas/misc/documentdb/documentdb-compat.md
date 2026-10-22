@@ -394,3 +394,29 @@ by their field-name rules. Values are never rewritten.
   matches, and a legacy key containing `%` reads as `%25…` once any write has
   re-encoded its document. After a rollback, re-enter the affected values, or
   restore `configs` from a backup taken before the upgrade.
+- `compat.documentdb.spec.ts` › "admin config overrides with dotted record keys"
+  writes through `patchConfigFields` and `upsertConfig`, which now encode keys
+  before the engine sees them, so on DocumentDB and Cosmos it checks the
+  encoded round trip:
+  `npx jest --config misc/documentdb/jest.documentdb.config.mjs -t 'dotted record keys'`.
+- The 422 `CONFIG_KEY_NOT_STORABLE` answer (`isFieldNameRejection`) stays as a
+  guard for an engine that rejects a field name, but the binding no longer
+  sends dotted or `$`-prefixed names.
+
+### Before the encoding: raw dotted keys (2026-10-20)
+
+Before the store encoded keys, dotted record keys reached the engine verbatim
+through a dotted `$set` path and a whole-object `$set`. Documents written then
+carry no `keyEncoding` marker and still hold raw dotted names, which the
+binding reads verbatim. Local runs of the compat suite against a single-node
+replica set of each server (16 of 16 passing on every version):
+
+| Engine                      | Dotted keys, `$set` path | Dotted keys, whole `$set` | `$` key inside a value |
+| --------------------------- | ------------------------ | ------------------------- | ---------------------- |
+| MongoDB 4.4.29 (local)      | supported                | supported                 | rejected               |
+| MongoDB 5.0.31 (local)      | supported                | supported                 | stored                 |
+| MongoDB 6.0.26 (local)      | supported                | supported                 | stored                 |
+| MongoDB 7.0.14 (local)      | supported                | supported                 | stored                 |
+| MongoDB 8.2.6 (local)       | supported                | supported                 | stored                 |
+| Amazon DocumentDB 5.0       | **not yet run**          | **not yet run**           | **not yet run**        |
+| Azure Cosmos DB for MongoDB | **not yet run**          | **not yet run**           | **not yet run**        |
