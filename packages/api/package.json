@@ -1,6 +1,6 @@
 {
   "name": "@librechat/api",
-  "version": "1.7.52",
+  "version": "1.7.53",
   "type": "commonjs",
   "description": "MCP services for LibreChat",
   "main": "dist/index.cjs",
@@ -130,6 +130,7 @@
     "@smithy/node-http-handler": "^4.4.5",
     "ai-tokenizer": "^1.0.6",
     "axios": "^1.20.0",
+    "bcryptjs": "^2.4.3",
     "connect-redis": "^8.1.0",
     "dedent": "^1.5.3",
     "dompurify": "^3.4.16",
@@ -176,6 +177,7 @@
     "croner": "^10.0.1",
     "express-rate-limit": "^8.5.1",
     "helmet": "^8.3.0",
+    "protobufjs": "^7.6.5",
     "proxy-from-env": "^2.1.0",
     "re2js": "^2.8.6"
   }

@@ -575,7 +575,6 @@ describe('createAdminConfigHandlers', () => {
               enabled: false,
               publicKey: 'pk-role',
             },
-            'langfuse.secretKey': 'sk-role',
           },
         },
       });
@@ -585,6 +584,53 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body).toEqual({ message: 'No actionable override sections provided' });
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it('rejects a dotted section name instead of reading it as a path', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: {
+          overrides: {
+            langfuse: { enabled: false },
+            'langfuse.secretKey': 'sk-role',
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Invalid config override',
+        code: 'CONFIG_OVERRIDE_INVALID',
+        issues: [
+          { path: 'langfuse.secretKey', segments: ['langfuse.secretKey'], code: 'dotted_key' },
+        ],
+      });
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['no config capability', false],
+      ['only assign:configs for the principal type', true],
+    ])('answers 403 before judging a dotted section name with %s', async (_label, canAssign) => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(canAssign),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'editor' },
+        body: { overrides: { 'webSearch.serperApiKey': 'sk-serper' } },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(res.body).toEqual({ error: 'Insufficient permissions' });
       expect(deps.upsertConfig).not.toHaveBeenCalled();
     });
 
@@ -774,7 +820,13 @@ describe('createAdminConfigHandlers', () => {
 
       await handlers.deleteConfigField(req, res);
 
-      expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'interface.modelSelect');
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        'interface.modelSelect',
+        undefined,
+        undefined,
+      );
     });
 
     it('allows deleting mcpServers UI sub-key paths', async () => {
@@ -792,6 +844,8 @@ describe('createAdminConfigHandlers', () => {
         'role',
         'admin',
         'interface.mcpServers.placeholder',
+        undefined,
+        undefined,
       );
     });
 
@@ -855,6 +909,8 @@ describe('createAdminConfigHandlers', () => {
         'role',
         'admin',
         'skillSync.github.enabled',
+        undefined,
+        undefined,
       );
     });
 
@@ -869,7 +925,13 @@ describe('createAdminConfigHandlers', () => {
       await handlers.deleteConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'interface.modelSelect');
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        'interface.modelSelect',
+        undefined,
+        undefined,
+      );
     });
 
     it('ignores tenant-wide Langfuse deletes through the generic config API', async () => {
@@ -947,6 +1009,8 @@ describe('createAdminConfigHandlers', () => {
         expect.anything(),
         'mcpServers.github',
         10,
+        undefined,
+        undefined,
       );
     });
 
@@ -968,6 +1032,8 @@ describe('createAdminConfigHandlers', () => {
         expect.anything(),
         'mcpServers.github',
         42,
+        undefined,
+        undefined,
       );
     });
 
@@ -2415,7 +2481,41 @@ describe('createAdminConfigHandlers', () => {
       await handlers.getBaseConfig(req, res);
 
       expect(res.statusCode).toBe(200);
+      expect(getAppConfig).toHaveBeenCalledTimes(1);
       expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ baseOnly: true }));
+    });
+
+    it('previews a plaintext secret an override stored, never one librechat.yaml supplies', async () => {
+      const yaml = {
+        webSearch: {
+          serperApiKey: 'serper-yaml-literal-0001',
+          keenableApiKey: '${KEENABLE_API_KEY}',
+        },
+      };
+      const merged = {
+        webSearch: {
+          serperApiKey: 'serper-yaml-literal-0001',
+          keenableApiKey: 'kn-legacy-plain-0002',
+        },
+      };
+      const getAppConfig = jest.fn(async ({ baseOnly }: { baseOnly?: boolean }) =>
+        baseOnly ? yaml : merged,
+      );
+      const { handlers } = createHandlers({ getAppConfig });
+
+      const res = mockRes();
+      await handlers.getBaseConfig(mockReq(), res);
+      const baseOnlyRes = mockRes();
+      await handlers.getBaseConfig(mockReq({ query: { baseOnly: 'true' } }), baseOnlyRes);
+
+      expect(res.statusCode).toBe(200);
+      expect(JSON.stringify(res.body)).not.toContain('kn-legacy-plain-0002');
+      expect((res.body!.config as typeof merged).webSearch).toEqual({
+        keenableApiKeyPreview: '...0002',
+      });
+      expect((baseOnlyRes.body!.config as typeof yaml).webSearch).toEqual({
+        keenableApiKey: '${KEENABLE_API_KEY}',
+      });
     });
 
     it('forwards baseOnly=false when the query param is missing, non-"true", or an array', async () => {
@@ -2437,7 +2537,10 @@ describe('createAdminConfigHandlers', () => {
         await handlers.getBaseConfig(req, res);
 
         expect(res.statusCode).toBe(200);
-        expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ baseOnly: false }));
+        expect(getAppConfig).toHaveBeenNthCalledWith(
+          1,
+          expect.objectContaining({ baseOnly: false }),
+        );
       }
     });
   });
@@ -2459,7 +2562,13 @@ describe('createAdminConfigHandlers', () => {
       expect(res.body).toEqual({
         error: 'Invalid config override',
         code: 'CONFIG_OVERRIDE_INVALID',
-        issues: [{ path: 'registration.oauthStateTtlMs', code: 'too_small' }],
+        issues: [
+          {
+            path: 'registration.oauthStateTtlMs',
+            segments: ['registration', 'oauthStateTtlMs'],
+            code: 'too_small',
+          },
+        ],
       });
       expect(deps.upsertConfig).not.toHaveBeenCalled();
     });
@@ -2564,7 +2673,11 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(400);
       expect(res.body?.issues).toEqual([
-        { path: 'endpoints.custom', code: 'indexed_merge_key_write' },
+        {
+          path: 'endpoints.custom',
+          segments: ['endpoints', 'custom'],
+          code: 'indexed_merge_key_write',
+        },
       ]);
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });

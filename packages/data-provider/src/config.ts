@@ -2385,6 +2385,8 @@ const ttsLocalaiSchema = z.object({
 
 const ttsSchema = z.object({
   allowedAddresses: allowedAddressesSchema,
+  /** Longest text one request may synthesize; each 1,000 characters is a separate paid call. */
+  maxInputChars: z.number().int().positive().optional(),
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenlabs: ttsElevenLabsSchema.optional(),
@@ -2495,6 +2497,26 @@ export const mcpAppRateLimitSchema = z
 
 export type TMCPAppRateLimits = z.infer<typeof mcpAppRateLimitSchema>;
 
+/** Per-integration budgets, in milliseconds, for outbound calls that run inside a request.
+ *  Omitted keys use the server defaults (`DEFAULT_OUTBOUND_TIMEOUTS_MS` in `@librechat/api`). */
+/** Node clamps a timer delay above 2^31 - 1 ms to 1 ms, so larger budgets would fail at once. */
+const outboundTimeoutMs = z.number().int().positive().max(2_147_483_647).optional();
+
+export const outboundTimeoutsSchema = z.object({
+  /** RAG API queries for file search and message context. */
+  ragMs: outboundTimeoutMs,
+  /** Each OCR provider call (upload, signed URL, OCR, delete). */
+  ocrMs: outboundTimeoutMs,
+  /** Each action (OpenAPI tool) HTTP call. */
+  actionsMs: outboundTimeoutMs,
+  /** The OpenAI moderation check that runs before a chat turn. */
+  moderationMs: outboundTimeoutMs,
+  /** Fetching a stored image by URL to encode it for a provider. */
+  imageFetchMs: outboundTimeoutMs,
+});
+
+export type TOutboundTimeouts = z.infer<typeof outboundTimeoutsSchema>;
+
 export const rateLimitSchema = z.object({
   twoFactorManagement: z
     .object({
@@ -2600,6 +2622,8 @@ export const DEFAULT_COMPOSER_RECENT_FILES = 5;
 export const DEFAULT_HISTORY_CACHE_TTL_MS = 60_000;
 /** Most recently left conversations whose message history keeps that grace. */
 export const DEFAULT_HISTORY_CACHE_RECENT = 1;
+/** Estimated payload bytes retained across inactive conversation histories. */
+export const DEFAULT_HISTORY_CACHE_MAX_BYTES = 8 * 1024 * 1024;
 
 const mcpServersSchema = z
   .object({
@@ -3082,6 +3106,15 @@ export const interfaceSchema = z
     /** How many of the most recently left conversations keep that grace; older ones are
      *  released at the next conversation switch. */
     historyCacheRecent: z.number().int().min(0).max(20).default(DEFAULT_HISTORY_CACHE_RECENT),
+    /** Aggregate estimated payload budget for histories kept during the grace period.
+     *  Oversized histories reload on return; observed, running and Assistants histories stay.
+     *  Zero disables the inactive-history grace. This is not a browser heap limit. */
+    historyCacheMaxBytes: z
+      .number()
+      .int()
+      .min(0)
+      .max(Number.MAX_SAFE_INTEGER)
+      .default(DEFAULT_HISTORY_CACHE_MAX_BYTES),
   })
   .default({
     modelSelect: true,
@@ -3172,6 +3205,7 @@ export const interfaceSchema = z
     composerRecentFiles: DEFAULT_COMPOSER_RECENT_FILES,
     historyCacheTtlMs: DEFAULT_HISTORY_CACHE_TTL_MS,
     historyCacheRecent: DEFAULT_HISTORY_CACHE_RECENT,
+    historyCacheMaxBytes: DEFAULT_HISTORY_CACHE_MAX_BYTES,
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
@@ -3199,6 +3233,23 @@ export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 /** Distinguishes collector acceptance from the proxy's silent 204 authentication drop. */
 export const RUM_COLLECTOR_ACK_HEADER = 'x-librechat-rum-accepted';
 
+export const telemetrySchema = z
+  .object({
+    rum: z
+      .object({
+        enabled: z.boolean().optional(),
+        sessionReplay: z
+          .object({ enabled: z.boolean().default(false) })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type TTelemetryConfig = DeepPartial<z.infer<typeof telemetrySchema>>;
+
 export type TRumConfig = {
   provider: 'hyperdx';
   enabled: boolean;
@@ -3209,6 +3260,8 @@ export type TRumConfig = {
   tracePropagationTargets?: string[];
   consoleCapture?: boolean;
   disableReplay?: boolean;
+  /** Positive replay policy; disableReplay is retained for older browser bundles. */
+  sessionReplay?: { enabled: boolean };
   advancedNetworkCapture?: boolean;
   sampleRate?: number;
   environment?: string;
@@ -3545,6 +3598,7 @@ export const webSearchSchema = z.object({
   tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
   tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
   keenableApiKey: z.string().optional().default('${KEENABLE_API_KEY}'),
+  keenableApiKeyPreview: apiKeyPreviewSchema,
   keenableApiUrl: z.string().optional().default('${KEENABLE_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiKeyPreview: apiKeyPreviewSchema,
@@ -4066,6 +4120,7 @@ export type TToolCallPreviewsConfig = z.infer<typeof toolCallPreviewsConfigSchem
 
 export const configSchema = z.object({
   version: z.string(),
+  telemetry: telemetrySchema.optional(),
   permissions: z
     .object({
       maxWriteAttempts: permissionWriteAttemptsSchema,
@@ -4314,6 +4369,14 @@ export const configSchema = z.object({
     })
     .optional(),
   rateLimits: rateLimitSchema.optional(),
+  /** Worker threads that hash and verify passwords and auth tokens off the event loop. */
+  passwordHashing: z
+    .object({
+      /** Defaults to one less than the CPU count, at most 4. */
+      maxWorkers: z.number().int().min(1).max(32).optional(),
+    })
+    .optional(),
+  timeouts: outboundTimeoutsSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
   filters: filtersConfigSchema.optional(),
@@ -5190,7 +5253,7 @@ export enum Constants {
    */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.17',
+  CONFIG_VERSION = '1.3.18',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
@@ -5254,6 +5317,12 @@ export enum Constants {
    */
   TOOL_CALL_LIMIT_FINISH_REASON = 'tool_call_limit',
 }
+
+/**
+ * This package's own version, swapped in from `packages/data-provider/package.json` at build
+ * time like `Constants.VERSION`, so a server can report which schema package it validates with.
+ */
+export const DATA_PROVIDER_VERSION: string = '__DATA_PROVIDER_VERSION__';
 
 /**
  * Normalizes a server name into the character set tool keys are built from.

@@ -32,6 +32,15 @@ export type Config = {
   updatedAt?: Date;
 };
 
+/**
+ * A write that applies only to the document the caller read: its
+ * `configVersion` then, or `null` when the principal had no document. A write
+ * whose precondition no longer holds changes nothing and resolves to `null`.
+ */
+export type ConfigWritePrecondition = {
+  expectedVersion?: number | null;
+};
+
 export type IConfig = Config &
   Document & {
     _id: Types.ObjectId;

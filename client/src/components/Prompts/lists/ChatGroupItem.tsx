@@ -116,21 +116,21 @@ function ChatGroupItem({
       {
         label: localize('com_ui_preview'),
         onClick: () => setPreviewDialogOpen(true),
-        icon: <Eye className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
+        icon: <Eye className="icon-sm text-text-primary me-2" aria-hidden="true" />,
       },
     ];
     if (canEdit) {
       items.push({
         label: localize('com_ui_edit'),
         onClick: () => navigate(`${PROMPT_PATH}/${group._id}`),
-        icon: <SquarePen className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
+        icon: <SquarePen className="icon-sm text-text-primary me-2" aria-hidden="true" />,
       });
     }
     if (canDelete) {
       items.push({
         label: localize('com_ui_delete'),
         onClick: () => setDeleteOpen(true),
-        icon: <Trash className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
+        icon: <Trash className="icon-sm text-text-primary me-2" aria-hidden="true" />,
       });
     }
     return items;
@@ -205,7 +205,7 @@ function ChatGroupItem({
               {/* The menu shares the title's line, so only the title gives way to it.
                   The snippet below keeps the full width of the row either way. */}
               <div
-                className={cn(rowActionSlotClasses({ open: menuOpen }), 'relative z-10 ml-auto')}
+                className={cn(rowActionSlotClasses({ open: menuOpen }), 'relative z-10 ms-auto')}
               >
                 <DropdownPopup
                   portal={true}

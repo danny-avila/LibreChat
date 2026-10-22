@@ -1,5 +1,5 @@
 const express = require('express');
-const { createAdminConfigHandlers } = require('@librechat/api');
+const { createAdminConfigHandlers, rejectUnsafeConfigKeys } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
   hasCapability,
@@ -8,7 +8,11 @@ const {
   hasAnyConfigReadAccess,
   getReadableConfigSections,
 } = require('~/server/middleware/roles/capabilities');
-const { getAppConfig, invalidateConfigCaches } = require('~/server/services/Config');
+const {
+  getAppConfig,
+  overrideCacheTtl,
+  invalidateConfigCaches,
+} = require('~/server/services/Config');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
 
@@ -33,11 +37,13 @@ const handlers = createAdminConfigHandlers({
   invalidateConfigCaches,
   recordAuditEntry: db.recordAuditEntry,
   auditFailClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
+  overrideCacheTtlMs: overrideCacheTtl,
 });
 
-router.use(requireJwtAuth, requireAdminAccess);
+router.use(requireJwtAuth, requireAdminAccess, rejectUnsafeConfigKeys);
 
 router.get('/', handlers.listConfigs);
+router.get('/meta', handlers.getConfigMeta);
 router.get('/base', handlers.getBaseConfig);
 router.get('/:principalType/:principalId', handlers.getConfig);
 router.put('/:principalType/:principalId', handlers.upsertConfigOverrides);

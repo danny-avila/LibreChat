@@ -9,7 +9,8 @@ import {
   configSchema,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
-import type { AppConfig, IConfig } from '~/types';
+import type { AdminConfigMergeRules, AppConfig, IConfig, TWebSearchKeys } from '~/types';
+import { webSearchPairedFields, unbindWebSearchKeys } from './web';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { getTombstonePathsToClear } from '~/methods/config';
 import logger from '~/config/winston';
@@ -58,6 +59,31 @@ const OVERRIDE_KEY_MAP: Partial<Record<keyof TCustomConfig, keyof AppConfig>> = 
   interface: 'interfaceConfig',
   turnstile: 'turnstileConfig',
 };
+
+/** AppConfig key → the override (YAML) section merged into it, the inverse of `OVERRIDE_KEY_MAP`. */
+const OVERRIDE_SECTION_BY_APP_KEY = new Map<string, string>(
+  Object.entries(OVERRIDE_KEY_MAP).flatMap(([section, appKey]) =>
+    appKey ? [[appKey, section]] : [],
+  ),
+);
+
+function toOverridePath(appConfigPath: string): string {
+  const [first, ...rest] = appConfigPath.split('.');
+  return [OVERRIDE_SECTION_BY_APP_KEY.get(first) ?? first, ...rest].join('.');
+}
+
+/** The merge rules in override (YAML) key names, for clients that plan writes the way they merge. */
+export function getConfigMergeRules(): AdminConfigMergeRules {
+  return {
+    arrayMergeKeys: Object.fromEntries(
+      Object.entries(ARRAY_MERGE_KEYS).map(([path, key]) => [toOverridePath(path), key]),
+    ),
+    atomicMergePaths: [...ATOMIC_MERGE_PATHS].map(toOverridePath),
+    overrideKeyMap: Object.fromEntries(
+      [...OVERRIDE_SECTION_BY_APP_KEY].map(([appKey, section]) => [section, appKey]),
+    ),
+  };
+}
 
 function isSafePath(path: string): boolean {
   const segments = path.split('.');
@@ -258,8 +284,9 @@ export type ConfigOverrideIssue = {
   segments: string[];
   /**
    * A stable, machine-readable reason: a zod issue code (`invalid_type`, `custom`, ...),
-   * `missing_merge_key`, `duplicate_merge_key`, `indexed_merge_key_write`, `union_dropped_key`, or `invalid_document`. Schema messages are not carried because
-   * they can echo the submitted values.
+   * `missing_merge_key`, `duplicate_merge_key`, `indexed_merge_key_write`, `union_dropped_key`,
+   * `dotted_key`, or `invalid_document`. Schema messages are not carried because they can echo
+   * the submitted values.
    */
   code: string;
 };
@@ -425,25 +452,28 @@ function expandUnionIssues(issues: SchemaIssue[], depth = 0): SchemaIssue[] {
   });
 }
 
-/** The parts of a zod schema the stripped-key walk reads, without depending on zod. */
+/** The parts of a zod schema the shape walk reads, without depending on zod. */
 type SchemaNode = {
   _def: {
     typeName?: string;
     innerType?: SchemaNode;
     schema?: SchemaNode;
+    getter?: () => SchemaNode;
     type?: SchemaNode;
     valueType?: SchemaNode;
+    left?: SchemaNode;
+    right?: SchemaNode;
     options?: SchemaNode[] | Map<unknown, SchemaNode>;
   };
   shape?: Record<string, SchemaNode>;
   safeParse: (value: unknown) => { success: boolean };
 };
 
-/** The schema beneath optional, nullable, default and refinement wrappers. */
+/** The schema beneath optional, nullable, default, refinement and lazy wrappers. */
 function unwrapSchema(schema: SchemaNode): SchemaNode {
   let node = schema;
   for (let depth = 0; depth < MAX_MERGE_DEPTH; depth++) {
-    const inner = node._def.innerType ?? node._def.schema;
+    const inner = node._def.innerType ?? node._def.schema ?? node._def.getter?.();
     if (!inner) {
       break;
     }
@@ -453,38 +483,104 @@ function unwrapSchema(schema: SchemaNode): SchemaNode {
 }
 
 /**
- * Keys a union dropped: an object parses with the first union option that accepts it, and
- * that option strips keys it does not define, so a key another option defines (and would
- * type-check) is kept raw in the stored override but never validated. Keys no option defines
- * are unknown keys and stay accepted.
+ * The combined fixed shape of an intersection of objects (`a.and(b)`), or `undefined` when a
+ * side is not an object, so nothing is judged on a shape the walk cannot see whole.
  */
-function findUnionDroppedKeys(
+function getIntersectionShape(node: SchemaNode, depth = 0): Record<string, SchemaNode> | undefined {
+  if (depth >= MAX_MERGE_DEPTH || !node._def.left || !node._def.right) {
+    return undefined;
+  }
+  const [left, right] = [node._def.left, node._def.right].map((side) => {
+    const inner = unwrapSchema(side);
+    return inner._def.typeName === 'ZodIntersection'
+      ? getIntersectionShape(inner, depth + 1)
+      : inner.shape;
+  });
+  return left && right ? { ...left, ...right } : undefined;
+}
+
+/** Whether a schema accepts arbitrary keys at this level (a record, or a union with one). */
+function isRecordSchema(schema: SchemaNode): boolean {
+  const node = unwrapSchema(schema);
+  const { typeName, options } = node._def;
+  if (typeName === 'ZodRecord') {
+    return true;
+  }
+  return (
+    (typeName === 'ZodUnion' || typeName === 'ZodDiscriminatedUnion') &&
+    options != null &&
+    [...options.values()].some(isRecordSchema)
+  );
+}
+
+type ShapeIssue = { code: 'union_dropped_key' | 'dotted_key'; path: IssuePath };
+
+function toDottedKeyIssues(value: AnyObject, path: IssuePath): ShapeIssue[] {
+  return Object.keys(value)
+    .filter((key) => key.includes('.'))
+    .map((key): ShapeIssue => ({ code: 'dotted_key', path: [...path, key] }));
+}
+
+/**
+ * The walk of an object with a fixed shape: a key holding a dot can only be a mistaken
+ * path (`{ 'webSearch.serperApiKey': ... }`), which the schema strips as unknown and the secret
+ * registry never sees, so it is reported instead of stored as an inert literal key.
+ */
+function findObjectShapeIssues(
+  shape: Record<string, SchemaNode>,
+  value: AnyObject,
+  path: IssuePath,
+  depth: number,
+): ShapeIssue[] {
+  return Object.keys(value).flatMap((key): ShapeIssue[] => {
+    if (key.includes('.')) {
+      return [{ code: 'dotted_key', path: [...path, key] }];
+    }
+    return hasOwn(shape, key)
+      ? findShapeIssues(shape[key], value[key], [...path, key], depth + 1)
+      : [];
+  });
+}
+
+/**
+ * What a schema walk finds that parsing does not report:
+ * - `union_dropped_key`: an object parses with the first union option that accepts it, and
+ *   that option strips keys it does not define, so a key another option defines (and would
+ *   type-check) is kept raw in the stored override but never validated.
+ * - `dotted_key`: a key holding a dot where the schema has a fixed shape. Dots are only
+ *   meaningful in record keys (model names such as `gpt-4.1`, Bedrock inference profiles, MIME
+ *   types, header names), which a record keeps as one segment.
+ *
+ * Keys no schema node defines are unknown keys and stay accepted.
+ */
+function findShapeIssues(
   schema: SchemaNode,
   value: unknown,
   path: IssuePath,
   depth = 0,
-): IssuePath[] {
+): ShapeIssue[] {
   if (depth >= MAX_MERGE_DEPTH) {
     return [];
   }
   const node = unwrapSchema(schema);
   const { typeName } = node._def;
   if (typeName === 'ZodObject' && node.shape && isPlainObject(value)) {
-    const shape = node.shape;
-    return Object.keys(value)
-      .filter((key) => hasOwn(shape, key))
-      .flatMap((key) => findUnionDroppedKeys(shape[key], value[key], [...path, key], depth + 1));
+    return findObjectShapeIssues(node.shape, value, path, depth);
+  }
+  if (typeName === 'ZodIntersection' && isPlainObject(value)) {
+    const shape = getIntersectionShape(node);
+    return shape ? findObjectShapeIssues(shape, value, path, depth) : [];
   }
   if (typeName === 'ZodArray' && node._def.type && Array.isArray(value)) {
     const item = node._def.type;
     return value.flatMap((entry, index) =>
-      findUnionDroppedKeys(item, entry, [...path, index], depth + 1),
+      findShapeIssues(item, entry, [...path, index], depth + 1),
     );
   }
   if (typeName === 'ZodRecord' && node._def.valueType && isPlainObject(value)) {
     const entrySchema = node._def.valueType;
     return Object.entries(value).flatMap(([key, entry]) =>
-      findUnionDroppedKeys(entrySchema, entry, [...path, key], depth + 1),
+      findShapeIssues(entrySchema, entry, [...path, key], depth + 1),
     );
   }
   if (
@@ -497,18 +593,32 @@ function findUnionDroppedKeys(
   const options = [...node._def.options.values()];
   const accepted = options.find((option) => option.safeParse(value).success);
   if (!accepted) {
-    return [];
+    /** A strict option fails on the dotted key itself, and parsing reports it only as unrecognized. */
+    return isRecordSchema(node) ? [] : toDottedKeyIssues(value, path);
   }
   const acceptedShape = unwrapSchema(accepted).shape;
   const defined = new Set(
     options.flatMap((option) => Object.keys(unwrapSchema(option).shape ?? {})),
   );
-  const dropped = acceptedShape
+  const dropped: ShapeIssue[] = acceptedShape
     ? Object.keys(value)
         .filter((key) => !hasOwn(acceptedShape, key) && defined.has(key))
-        .map((key) => [...path, key])
+        .map((key): ShapeIssue => ({ code: 'union_dropped_key', path: [...path, key] }))
     : [];
-  return [...dropped, ...findUnionDroppedKeys(accepted, value, path, depth + 1)];
+  return [...dropped, ...findShapeIssues(accepted, value, path, depth + 1)];
+}
+
+/**
+ * Top-level override keys are section names, never paths: a dotted one would be stored as an
+ * inert literal key, outside the secret registry and every per-section rule.
+ */
+export function getDottedSectionIssues(overrides: unknown): ConfigOverrideIssue[] {
+  if (!isPlainObject(overrides)) {
+    return [];
+  }
+  return Object.keys(overrides)
+    .filter((key) => key.includes('.'))
+    .map((key) => toIssue([key], 'dotted_key'));
 }
 
 /**
@@ -517,7 +627,9 @@ function findUnionDroppedKeys(
  * to the override node that caused it. Unions, refinements, required fields and defaults
  * are therefore judged on the merged result, not on the patch alone. An issue caused only
  * by leaving something out (a required or related field another layer may supply) is not
- * reported, except inside an array the merge replaces, where nothing can supply it. Keys the schema does not define are accepted unchanged.
+ * reported, except inside an array the merge replaces, where nothing can supply it. Keys the
+ * schema does not define are accepted unchanged; a key holding a dot is a `dotted_key` issue
+ * unless it sits where the schema has a record.
  */
 export function getConfigOverrideIssues(
   overrides: unknown,
@@ -527,7 +639,7 @@ export function getConfigOverrideIssues(
     return [toIssue([], 'invalid_document')];
   }
   const merged = deepMerge(base as AnyObject, overrides);
-  const issues = getMergeKeyIssues(overrides);
+  const issues = [...getDottedSectionIssues(overrides), ...getMergeKeyIssues(overrides)];
   const seen = new Set(issues.map((issue) => issue.path));
   const shape = configSchema.shape;
   for (const section of Object.keys(overrides)) {
@@ -536,12 +648,9 @@ export function getConfigOverrideIssues(
     }
     const schema = shape[section as keyof typeof shape] as unknown as SchemaNode;
     const result = shape[section as keyof typeof shape].safeParse(merged[section]);
-    const dropped = findUnionDroppedKeys(schema, merged[section], []).map((path) => ({
-      code: 'union_dropped_key',
-      path,
-    }));
+    const shapeIssues = findShapeIssues(schema, merged[section], []);
     const schemaIssues = result.success ? [] : expandUnionIssues(result.error.issues);
-    for (const issue of [...dropped, ...schemaIssues]) {
+    for (const issue of [...shapeIssues, ...schemaIssues]) {
       if (issue.code === 'unrecognized_keys') {
         continue;
       }
@@ -758,11 +867,90 @@ function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
   return filtered;
 }
 
+/** The override document that last set or removed a paired web search field, and its merge position. */
+interface WebSearchWriter {
+  config: IConfig;
+  order: number;
+  removed: boolean;
+}
+
+type WebSearchWriters = Map<TWebSearchKeys, WebSearchWriter>;
+
+const WEB_SEARCH_TOMBSTONE_PREFIX = 'webSearch.';
+
+/** Records `writer` for each paired web search field its applied overrides set. */
+function recordWebSearchWrites(
+  writers: WebSearchWriters,
+  section: unknown,
+  writer: WebSearchWriter,
+): void {
+  if (!isPlainObject(section)) {
+    return;
+  }
+  for (const field of webSearchPairedFields) {
+    if (hasOwn(section, field)) {
+      writers.set(field, writer);
+    }
+  }
+}
+
+/** Records `writer` for each paired web search field an applied tombstone removes. */
+function recordWebSearchTombstone(
+  writers: WebSearchWriters,
+  path: string,
+  writer: WebSearchWriter,
+): void {
+  if (path === 'webSearch') {
+    for (const field of webSearchPairedFields) {
+      writers.set(field, writer);
+    }
+    return;
+  }
+  if (!path.startsWith(WEB_SEARCH_TOMBSTONE_PREFIX)) {
+    return;
+  }
+  const field = path.slice(WEB_SEARCH_TOMBSTONE_PREFIX.length) as TWebSearchKeys;
+  if (webSearchPairedFields.includes(field)) {
+    writers.set(field, writer);
+  }
+}
+
+function describeLayer(writer?: WebSearchWriter): string {
+  return writer ? `${writer.config.principalType}/${writer.config.principalId}` : 'the base config';
+}
+
+/**
+ * Withholds each stored web search key whose URL a layer other than the key's
+ * own decides (`unbindWebSearchKeys`), so a layer that overrides only a URL
+ * never sends on a key it cannot read. `writers` lists the override document
+ * behind each field; unlisted fields come from the base config.
+ */
+function bindWebSearchKeys(merged: AppConfig, writers: WebSearchWriters): AppConfig {
+  const { webSearch, unbound } = unbindWebSearchKeys(
+    merged.webSearch,
+    (field) => writers.get(field)?.order,
+  );
+  if (unbound.length === 0) {
+    return merged;
+  }
+  for (const { url, apiKey } of unbound) {
+    const urlWriter = writers.get(url);
+    logger.warn(
+      `[mergeConfigOverrides] Ignoring webSearch.${apiKey} from ${describeLayer(writers.get(apiKey))}: ` +
+        `webSearch.${url} is ${urlWriter?.removed ? 'removed' : 'set'} by ${describeLayer(urlWriter)}. ` +
+        'Store the key in the same config as the URL.',
+    );
+  }
+  return { ...merged, webSearch };
+}
+
 /**
  * Merge DB config overrides into a base AppConfig.
  *
  * Configs are sorted by priority ascending (lowest first, highest wins).
  * Each config's `overrides` is deep-merged into the base config in order.
+ * A stored web search key is dropped when a layer other than its own decides
+ * the URL it is sent to.
  */
 export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]): AppConfig {
   if (!configs || configs.length === 0) {
@@ -774,9 +962,12 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
   let merged = { ...baseConfig };
   /** The YAML-shaped config the next override lands on, for validating it in place. */
   let raw: Partial<TCustomConfig> = baseConfig.config ?? {};
-  for (const config of sorted) {
+  const webSearchWriters: WebSearchWriters = new Map();
+  for (let order = 0; order < sorted.length; order++) {
+    const config = sorted[order];
     const isBasePrincipal = config.principalId?.toString() === BASE_CONFIG_PRINCIPAL_ID;
     if (Array.isArray(config.tombstones)) {
+      const removal: WebSearchWriter = { config, order, removed: true };
       for (const path of config.tombstones) {
         if (
           typeof path === 'string' &&
@@ -785,6 +976,7 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
         ) {
           merged = deleteConfigPath(merged, remapOverridePath(path));
           raw = deletePath(raw as AnyObject, path) as Partial<TCustomConfig>;
+          recordWebSearchTombstone(webSearchWriters, path, removal);
         }
       }
     }
@@ -850,9 +1042,15 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
       }
       merged = deepMerge(merged, remapped);
       raw = deepMerge(raw as AnyObject, applied) as Partial<TCustomConfig>;
+      recordWebSearchWrites(webSearchWriters, applied.webSearch, {
+        config,
+        order,
+        removed: false,
+      });
     }
   }
 
+  merged = bindWebSearchKeys(merged, webSearchWriters);
   return preserveBaseOnlyPaths(baseConfig, preserveRuntimeStops(baseConfig, merged));
 }
 

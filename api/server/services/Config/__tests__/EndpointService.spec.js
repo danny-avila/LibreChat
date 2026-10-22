@@ -32,7 +32,10 @@ jest.mock('@librechat/api', () => ({
   isUserProvided: (value) => value === 'user_provided',
 }));
 
-jest.mock('librechat-data-provider', () => mockDataProvider);
+jest.mock('librechat-data-provider', () => ({
+  ...jest.requireActual('librechat-data-provider'),
+  ...mockDataProvider,
+}));
 
 jest.mock('~/server/utils/handleText', () => ({
   generateConfig: (key) => (key ? { userProvide: key === 'user_provided' } : false),

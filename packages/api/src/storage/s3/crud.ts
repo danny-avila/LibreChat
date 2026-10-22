@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { Readable } from 'stream';
+import { Readable, pipeline } from 'stream';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -569,9 +569,14 @@ export async function saveURLToS3WithMetadata({
 
     const contentType = response.headers.get('content-type') ?? '';
     if (response.body) {
-      const source = Readable.fromWeb(
-        response.body as unknown as Parameters<typeof Readable.fromWeb>[0],
-      ).pipe(createRemoteFileByteLimitTransform(maxBytes));
+      const source = createRemoteFileByteLimitTransform(maxBytes);
+      pipeline(
+        Readable.fromWeb(response.body as unknown as Parameters<typeof Readable.fromWeb>[0]),
+        source,
+        () => {
+          /** Pipeline forwards failures to the returned stream and closes both ends. */
+        },
+      );
       const result = await saveReadableToS3({
         userId,
         body: source,
