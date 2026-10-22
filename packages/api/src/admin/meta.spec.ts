@@ -102,12 +102,13 @@ function patch(entries: PatchEntry[], overrides: Partial<AdminConfigDeps> = {}):
   return write('patchConfigField', { body: { entries } }, overrides);
 }
 
-function storedConfig(overrides: Doc): IConfig {
+function storedConfig(overrides: Doc, tombstones?: string[]): IConfig {
   return {
     principalType: 'role',
     principalId: 'r1',
     priority: 10,
     overrides,
+    tombstones,
     isActive: true,
   } as Partial<IConfig> as IConfig;
 }
@@ -336,10 +337,7 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     ]);
     const merged = mergeConfigOverrides(
       { config: {}, paths: { uploads: '/srv/uploads' } } as Partial<AppConfig> as AppConfig,
-      [
-        storedConfig({ paths: { uploads: '/tmp' } }),
-        { ...storedConfig({}), tombstones: ['paths'] },
-      ],
+      [storedConfig({ paths: { uploads: '/tmp' } }), storedConfig({}, ['paths'])],
     );
     return (
       put.statusCode === 400 &&
