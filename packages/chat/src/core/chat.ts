@@ -97,7 +97,10 @@ export type ChatFinishResult = {
    * frame. `message` is then `undefined` rather than a guess at the list's tail.
    */
   isResponseUnknown: boolean;
-  /** The conversation the server settled the turn under, when it said. */
+  /**
+   * The conversation the turn ran under: the one the server settled it under, else the one its
+   * frames or payload named, so a turn under `new` reports the conversation the server created.
+   */
   conversationId?: string;
   /** Why a settled turn's final frame carried no messages. */
   reconcileReason?: ChatFinalFrame['reconcileReason'];
@@ -130,7 +133,11 @@ type Settled = {
   reason?: ChatFinalFrame['reconcileReason'];
 };
 
-type Outcome = { settled?: Settled } & (
+type Outcome = {
+  settled?: Settled;
+  /** The conversation the turn's frames named, reported when a settled outcome names none. */
+  conversationId?: string;
+} & (
   | { kind: 'complete' }
   | { kind: 'abort' }
   | { kind: 'error'; error: Error; disconnect: boolean }
@@ -158,6 +165,11 @@ type ActiveRequest = {
   generation: Generation;
   /** Set while attaching to a generation the server answered the start with, before it attaches. */
   attaching?: boolean;
+  /**
+   * The stream came from attaching to a running generation, whose HTTP failure ends only the
+   * attachment unless the server says the generation is gone.
+   */
+  attached?: boolean;
   /** Set once the start was handed to the transport, so the server may be running it. */
   sent?: boolean;
   /** Resolves once the request settled and released the chat. */
@@ -231,6 +243,13 @@ const getErrorMessage = (data: ChatErrorData | null | undefined): string | undef
   const reason = typeof data.error === 'string' ? data.error : undefined;
   return data.message || data.text || reason || nested;
 };
+
+/**
+ * An error frame the attachment's HTTP response raised rather than the generation: the transport
+ * sets `status` only then, and a 404 or 410 says the generation itself is gone.
+ */
+const isAttachFailure = (event: Extract<ChatEvent, { type: 'error' }>): boolean =>
+  event.status != null && event.status !== 404 && event.status !== 410;
 
 /** The server answered that no such generation runs, rather than failing to answer. */
 const isGone = (error: ChatTransportError): boolean =>
@@ -570,6 +589,7 @@ export class Chat {
         active.generation.responseUnknown = true;
         active.generation.conversationId = result.conversationId;
         active.attaching = true;
+        active.attached = true;
         this.setConnection('reconnecting');
         if (signal.aborted) {
           throw signal.reason;
@@ -624,7 +644,7 @@ export class Chat {
           if (!signal.aborted) {
             handling = event;
             this.adopt(active.generation, getFrameIdentity(event));
-            outcome = this.apply(event);
+            outcome = this.apply(event, active);
             handling = undefined;
           }
         });
@@ -654,7 +674,7 @@ export class Chat {
   }
 
   /** Applies one event; returns the turn's outcome when the event ends it. */
-  private apply(event: ChatEvent): Outcome | undefined {
+  private apply(event: ChatEvent, active: ActiveRequest): Outcome | undefined {
     const applyEvent = this.init.applyEvent ?? defaultApplyEvent;
     applyEvent(event, {
       messages: this.messages,
@@ -671,7 +691,7 @@ export class Chat {
     } else if (event.type === 'abort') {
       outcome = { kind: 'abort' };
     } else if (event.type === 'error') {
-      const disconnect = event.status === 0;
+      const disconnect = event.status === 0 || (active.attached === true && isAttachFailure(event));
       const message = getErrorMessage(event.data) ?? 'The response failed';
       outcome = { kind: 'error', error: new Error(message), disconnect };
     }
@@ -717,8 +737,9 @@ export class Chat {
      * that starts the next turn is not overwritten by this one's terminal state.
      */
     this.active = undefined;
-    const { responseId, responseUnknown, responseless } = active.generation;
-    this.publish(outcome, responseId, responseUnknown, responseless);
+    const { responseId, responseUnknown, responseless, conversationId } = active.generation;
+    const named = conversationId !== Constants.NEW_CONVO ? conversationId : undefined;
+    this.publish({ ...outcome, conversationId: named }, responseId, responseUnknown, responseless);
   }
 
   /**
@@ -772,6 +793,8 @@ export class Chat {
       message = messages[messages.length - 1];
     }
     const { settled } = outcome;
+    /** A settled outcome names its conversation; otherwise the one the turn's frames named. */
+    const reportedConversation = settled?.conversationId ?? outcome.conversationId;
     this.notify();
     if (outcome.kind === 'error') {
       this.callHost(this.init.onError, outcome.error);
@@ -784,7 +807,7 @@ export class Chat {
       isError: outcome.kind === 'error',
       isSettled: settled !== undefined,
       isResponseUnknown: responseUnknown,
-      ...(settled?.conversationId !== undefined && { conversationId: settled.conversationId }),
+      ...(reportedConversation !== undefined && { conversationId: reportedConversation }),
       ...(settled?.reason !== undefined && { reconcileReason: settled.reason }),
     });
   }

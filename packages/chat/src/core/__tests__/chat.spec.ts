@@ -867,3 +867,75 @@ describe('Chat', () => {
     });
   });
 });
+
+describe('Chat attachments and reported conversations', () => {
+  const replacing = (stream: ReturnType<typeof createStream>) =>
+    setup(
+      {},
+      {
+        sendMessages: jest.fn(async () => ({
+          status: 'replaced' as const,
+          generationProtocolVersion: 2,
+          conversationId: 'convo-1',
+          streamId: 'stream-2',
+          generationCreatedAt: 200,
+        })),
+        reconnectToStream: jest.fn(async () => stream),
+      },
+    );
+
+  it.each([
+    [500, true],
+    [401, true],
+    [404, false],
+    [410, false],
+  ])(
+    'reports an attachment that fails with HTTP %s as a disconnect: %s',
+    async (status, disconnect) => {
+      const stream = createStream({ streamId: 'stream-2', generationCreatedAt: 200 });
+      const { chat, onFinish } = replacing(stream);
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status, data: 'failed' } as ChatEvent);
+      await sent;
+
+      expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isDisconnect: disconnect }));
+    },
+  );
+
+  it('reports an error the generation itself sent on an attachment as terminal', async () => {
+    const stream = createStream({ streamId: 'stream-2', generationCreatedAt: 200 });
+    const { chat, onFinish } = replacing(stream);
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push({ type: 'error', data: 'The run failed' } as ChatEvent);
+    await sent;
+
+    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isDisconnect: false }));
+  });
+
+  it('reports the conversation a first turn was created under on its finish', async () => {
+    const { chat, stream, onFinish } = setup({
+      id: 'new',
+      prepareRequest: jest.fn(() => ({
+        payload: { ...payload, conversationId: null } as unknown as TPayload,
+        messages: [userMessage, placeholder],
+      })),
+    });
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push({
+      type: 'created',
+      data: { message: { ...userMessage, conversationId: 'convo-9' }, created: true },
+    } as ChatEvent);
+    stream.push(
+      finalEvent({
+        requestMessage: { ...userMessage, conversationId: 'convo-9' },
+        responseMessage: { ...placeholder, conversationId: 'convo-9', text: 'Hello' },
+      }),
+    );
+    await sent;
+
+    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'convo-9' }));
+  });
+});
