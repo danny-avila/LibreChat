@@ -160,7 +160,9 @@ function harness(
       id: entity_id ?? 'user',
       file_id: `remote-${candidate.file_id}`,
       storage_session_id: `storage-${entity_id ?? 'user'}`,
-      sandboxFilename,
+      executionProfile: route?.executionProfile ?? 'default',
+      executionRouteKey: routeKey,
+      sandboxFilename: sandboxFilename ?? candidate.filename,
     };
     return {
       referenceSet: { codeEnvRefs: { [routeKey]: ref } },
@@ -766,6 +768,15 @@ describe('run file execution host', () => {
     expect(before.tool_resources?.execute_code?.files?.map((entry) => entry.file_id)).toEqual([
       'input',
     ]);
+    const provisionedInput = before.tool_resources?.execute_code?.files?.find(
+      (entry) => entry.file_id === 'input',
+    );
+    expect(provisionedInput?.metadata?.codeEnvRefs?.['managed-worker']).toMatchObject({
+      file_id: 'remote-input',
+      executionProfile: 'stateful',
+      executionRouteKey: 'managed-worker',
+      sandboxFilename: 'input.csv',
+    });
     expect(before.provisionState?.codeEnvFiles.map((entry) => entry.file_id)).toEqual(['new']);
   });
 
