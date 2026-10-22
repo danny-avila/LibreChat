@@ -11,7 +11,11 @@ let getConfigSecretInputError: typeof import('./secrets').getConfigSecretInputEr
 let getConfigSecretMutationPaths: typeof import('./secrets').getConfigSecretMutationPaths;
 let getConfigSecretSections: typeof import('./secrets').getConfigSecretSections;
 let isConfigSecretAncestorPath: typeof import('./secrets').isConfigSecretAncestorPath;
+let getSecretAncestorPatterns: typeof import('./secrets').getSecretAncestorPatterns;
+let matchesSecretPattern: typeof import('./secrets').matchesSecretPattern;
+let isConfigSecretRelatedSegments: typeof import('./secrets').isConfigSecretRelatedSegments;
 let isConfigSecretDescendantPath: typeof import('./secrets').isConfigSecretDescendantPath;
+let isConfigSecretKeyRename: typeof import('./secrets').isConfigSecretKeyRename;
 let preserveConfigSecrets: typeof import('./secrets').preserveConfigSecrets;
 let redactConfigSecrets: typeof import('./secrets').redactConfigSecrets;
 let resolveConfigSecret: typeof import('./secrets').resolveConfigSecret;
@@ -30,7 +34,11 @@ beforeAll(async () => {
     getConfigSecretMutationPaths,
     getConfigSecretSections,
     isConfigSecretAncestorPath,
+    getSecretAncestorPatterns,
+    matchesSecretPattern,
+    isConfigSecretRelatedSegments,
     isConfigSecretDescendantPath,
+    isConfigSecretKeyRename,
     preserveConfigSecrets,
     redactConfigSecrets,
     resolveConfigSecret,
@@ -686,6 +694,50 @@ describe('Config secret registry fields', () => {
     expect(isConfigSecretDescendantPath('speech.tts.openai.model')).toBe(false);
   });
 
+  it('derives ancestors from array secret containers as well as scalar secrets', () => {
+    expect(isConfigSecretAncestorPath('endpoints')).toBe(true);
+    expect(isConfigSecretAncestorPath('endpoints.custom')).toBe(false);
+    expect(isConfigSecretAncestorPath('endpoints.assistants')).toBe(true);
+    expect(isConfigSecretAncestorPath('endpoints.azureOpenAI')).toBe(false);
+
+    expect(
+      getSecretAncestorPatterns(['speech.tts.openai.apiKey', 'endpoints.custom']).sort(),
+    ).toEqual(['endpoints', 'speech', 'speech.tts', 'speech.tts.openai']);
+  });
+
+  it('keeps dynamic segments in derived ancestors and matches them segment by segment', () => {
+    expect(
+      getSecretAncestorPatterns(['mcpServers.*.oauth.client_secret', 'mcpServers.*.apiKey.key']),
+    ).toEqual(['mcpServers', 'mcpServers.*', 'mcpServers.*.oauth', 'mcpServers.*.apiKey']);
+
+    expect(matchesSecretPattern('mcpServers.github.oauth', 'mcpServers.*.oauth')).toBe(true);
+    expect(matchesSecretPattern('mcpServers.github', 'mcpServers.*')).toBe(true);
+    expect(matchesSecretPattern('mcpServers.github.oauth.x', 'mcpServers.*.oauth')).toBe(false);
+    expect(matchesSecretPattern('mcpServers', 'mcpServers.*')).toBe(false);
+    expect(matchesSecretPattern('mcpSettings.github.oauth', 'mcpServers.*.oauth')).toBe(false);
+  });
+
+  it('relates a segment path to a secret it is, holds, or lies inside, comparing whole keys', () => {
+    expect(isConfigSecretRelatedSegments(['webSearch'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['webSearch', 'serperApiKey'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['webSearch', 'serperApiKeyPreview'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['webSearch', 'serperApiKey', 'x'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['langfuse', 'displaySecretKey'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['endpoints', 'custom'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['endpoints', 'custom', 'my.endpoint'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['endpoints', 'custom', '0', 'apiKey'])).toBe(true);
+
+    expect(isConfigSecretRelatedSegments(['webSearch', 'searchProvider'])).toBe(false);
+    expect(isConfigSecretRelatedSegments(['webSearch', 'serperApiKey.x'])).toBe(false);
+    expect(isConfigSecretRelatedSegments(['speech', 'tts.openai'])).toBe(false);
+    expect(isConfigSecretRelatedSegments(['endpoints', 'custom', '0', 'headers', 'X.Id'])).toBe(
+      false,
+    );
+    expect(
+      isConfigSecretRelatedSegments(['endpoints', 'bedrock', 'inferenceProfiles', 'us.a.b']),
+    ).toBe(false);
+  });
+
   it('rejects encrypted submissions at registry paths and inside ancestor objects', () => {
     expect(getConfigSecretInputError('webSearch.serperApiKey', 'v3:attacker')).toContain(
       'Encrypted config secret values',
@@ -1047,5 +1099,27 @@ describe('Custom endpoint config secrets', () => {
     expect(resolved.apiKey).toBe('sk-runtime');
     const passthrough = { name: 'B', apiKey: 'user_provided' };
     expect(resolveCustomEndpointSecrets(passthrough)).toBe(passthrough);
+  });
+});
+
+describe('isConfigSecretKeyRename', () => {
+  it('refuses a rename that would move a value onto or off a literal secret location', () => {
+    expect(isConfigSecretKeyRename(['webSearch'], 'serperApiKey', 'other')).toBe(true);
+    expect(isConfigSecretKeyRename(['webSearch'], 'other', 'serperApiKeyPreview')).toBe(true);
+    expect(isConfigSecretKeyRename(['speech', 'tts'], 'openai', 'mine')).toBe(true);
+    expect(isConfigSecretKeyRename(['langfuse'], 'displaySecretKey', 'x')).toBe(true);
+  });
+
+  it('refuses a rename inside a secret value', () => {
+    expect(isConfigSecretKeyRename(['webSearch', 'serperApiKey'], 'a', 'b')).toBe(true);
+  });
+
+  it('allows renames that never touch a registered location', () => {
+    expect(isConfigSecretKeyRename(['mcpServers'], 'a', 'b')).toBe(false);
+    expect(isConfigSecretKeyRename(['mcpServers', 'a', 'headers'], 'X-Old', 'X-New')).toBe(false);
+    expect(isConfigSecretKeyRename(['webSearch'], 'firecrawlOptions', 'other')).toBe(false);
+    expect(
+      isConfigSecretKeyRename(['endpoints', 'bedrock', 'inferenceProfiles'], 'us.a', 'eu.a'),
+    ).toBe(false);
   });
 });

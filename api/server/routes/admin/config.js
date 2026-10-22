@@ -23,8 +23,7 @@ const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const handlers = createAdminConfigHandlers({
   listAllConfigs: db.listAllConfigs,
   findConfigByPrincipal: db.findConfigByPrincipal,
-  upsertConfig: db.upsertConfig,
-  patchConfigFields: db.patchConfigFields,
+  writeConfigDocument: db.writeConfigDocument,
   tombstoneConfigField: db.tombstoneConfigField,
   unsetConfigField: db.unsetConfigField,
   deleteConfig: db.deleteConfig,
@@ -50,6 +49,7 @@ router.put('/:principalType/:principalId', handlers.upsertConfigOverrides);
 router.patch('/:principalType/:principalId/fields', handlers.patchConfigField);
 router.post('/:principalType/:principalId/fields/tombstone', handlers.tombstoneConfigField);
 router.delete('/:principalType/:principalId/fields', handlers.deleteConfigField);
+router.post('/:principalType/:principalId/changes', handlers.applyConfigChanges);
 router.delete('/:principalType/:principalId', handlers.deleteConfigOverrides);
 router.patch('/:principalType/:principalId/active', handlers.toggleConfig);
 

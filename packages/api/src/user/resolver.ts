@@ -3,6 +3,7 @@ import type { IMongoFile } from '@librechat/data-schemas';
 import type { AdminErasureContext, AdminErasureTarget } from '~/admin/users';
 import type { UserErasureDeps, MCPOAuthErasureHooks } from './erasure';
 import type { FileDeletionOutcome } from '../files/deletion';
+import type { MCPServerLookupOptions } from '~/mcp/types';
 
 type ErasureBaseDeps = Omit<
   UserErasureDeps,
@@ -29,6 +30,9 @@ export interface ErasureResolverDeps {
       getServerConfig: (
         serverName: string,
         userId: string,
+        configServers: undefined,
+        role: undefined,
+        options: MCPServerLookupOptions,
       ) => ReturnType<NonNullable<MCPOAuthErasureHooks['getServerConfig']>>;
       resolveAllowlists: (options: {
         userId: string;
@@ -116,7 +120,11 @@ export function createErasureResolver(deps: ErasureResolverDeps) {
         },
         mcpOAuth: oauth && {
           getServerConfig: (serverName) =>
-            inTargetTenant(async () => oauth.getRegistry().getServerConfig(serverName, id)),
+            inTargetTenant(async () =>
+              oauth
+                .getRegistry()
+                .getServerConfig(serverName, id, undefined, undefined, { includeHidden: true }),
+            ),
           getUserPrincipals: (candidateId) =>
             inTargetTenant(async () => oauth.getUserPrincipals({ userId: candidateId })),
           resolveAllowlists: (candidateId) =>

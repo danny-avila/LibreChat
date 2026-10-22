@@ -68,7 +68,10 @@ describe('createErasureResolver', () => {
     await erasure.mcpOAuth?.invalidateUserTools?.('other-user', 'srv');
     await erasure.mcpOAuth?.disconnectUser?.('other-user', 'srv');
 
-    expect(registry.getServerConfig).toHaveBeenCalledWith('srv', 'user-1');
+    /** Cleanup revokes credentials, so it reaches a server the account's profile hides. */
+    expect(registry.getServerConfig).toHaveBeenCalledWith('srv', 'user-1', undefined, undefined, {
+      includeHidden: true,
+    });
     expect(mcpOAuth.getUserPrincipals).toHaveBeenCalledWith({ userId: 'other-user' });
     expect(registry.resolveAllowlists).toHaveBeenCalledWith({ userId: 'other-user' });
     expect(deps.invalidateCachedTools).toHaveBeenCalledWith({
