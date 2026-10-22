@@ -389,6 +389,8 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    * generation included, before it reads the base config or the database, and is cached only if
    * no clear happened meanwhile, so a request that read just before an admin write cannot
    * re-cache the old merge, or a merge built on the old base, just after the write's clears.
+   * The check runs again once the write lands, since an async store can apply it after a
+   * clear's delete.
    */
   let globalOverrideGeneration = 0;
   const tenantOverrideGenerations = new Map<string, number>();
@@ -452,12 +454,19 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
         logger.error('[ensureBaseConfig] Failed to restore last-good config state:', result.reason);
       }
     }
+    if (generation !== baseGeneration) {
+      await cache.delete(BASE_CONFIG_KEY).catch((deleteError: unknown) => {
+        logger.error('[ensureBaseConfig] Failed to drop an overtaken restoration:', deleteError);
+      });
+    }
     return lastGood;
   }
 
   /**
    * Loads the base config and, unless a clear made `generation` stale while it loaded, publishes
    * it. A stale load still answers the reads that joined it, which started before the clear.
+   * An async store (Redis) can land the write after a clear's delete, so a write a clear
+   * overtook in flight is removed again.
    */
   async function loadAndCacheBaseConfig(
     mode: CustomConfigLoadMode,
@@ -481,6 +490,10 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
         return baseConfig;
       }
       await cache.set(BASE_CONFIG_KEY, baseConfig);
+      if (generation !== baseGeneration) {
+        await cache.delete(BASE_CONFIG_KEY);
+        return baseConfig;
+      }
       lastGoodBaseConfig = baseConfig;
       return baseConfig;
     } catch (error) {
@@ -663,6 +676,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
 
     if (cacheable && getOverrideGeneration(cacheTenantId) === generation) {
       await cache.set(cacheKey, merged, overrideCacheTtl);
+      if (getOverrideGeneration(cacheTenantId) !== generation) {
+        await cache.delete(cacheKey);
+      }
     }
     return await augment(merged);
   }
