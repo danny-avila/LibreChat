@@ -16,7 +16,7 @@ let preserveConfigSecrets: typeof import('./secrets').preserveConfigSecrets;
 let redactConfigSecrets: typeof import('./secrets').redactConfigSecrets;
 let resolveConfigSecret: typeof import('./secrets').resolveConfigSecret;
 let resolveStoredConfigSecret: typeof import('./secrets').resolveStoredConfigSecret;
-let getConfigSecretFields: typeof import('./secrets').getConfigSecretFields;
+let getConfigSecretRules: typeof import('./secrets').getConfigSecretRules;
 let resolveCustomEndpointSecrets: typeof import('./secrets').resolveCustomEndpointSecrets;
 let decryptV3: typeof import('@librechat/data-schemas').decryptV3;
 
@@ -35,7 +35,7 @@ beforeAll(async () => {
     redactConfigSecrets,
     resolveConfigSecret,
     resolveStoredConfigSecret,
-    getConfigSecretFields,
+    getConfigSecretRules,
     resolveCustomEndpointSecrets,
   } = await import('./secrets'));
   ({ decryptV3 } = await import('@librechat/data-schemas'));
@@ -647,7 +647,7 @@ describe('Config secret registry fields', () => {
   });
 
   it('registers the Keenable web search key with its preview companion', () => {
-    expect(getConfigSecretFields()).toContainEqual({
+    expect(getConfigSecretRules().secretFields).toContainEqual({
       path: 'webSearch.keenableApiKey',
       previewPath: 'webSearch.keenableApiKeyPreview',
       allowEnvPlaceholder: true,

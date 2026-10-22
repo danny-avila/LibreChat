@@ -14,7 +14,7 @@ interface ConfigSecretFieldInput {
   allowEnvPlaceholder?: boolean;
 }
 
-export interface ConfigSecretField extends ConfigSecretFieldInput {
+interface ConfigSecretField extends ConfigSecretFieldInput {
   /** Non-secret masked-preview companion, always the sibling `<field>Preview`. Written on encrypt, preserved by redaction. */
   previewPath: string;
 }
@@ -62,7 +62,7 @@ const LEGACY_PREVIEW_PATHS: ReadonlyMap<string, string> = new Map([
  * A secret stored on every item of an array config field, which dot-path
  * registry entries cannot express.
  */
-export interface ArraySecretField {
+interface ArraySecretField {
   /** Dot-path of the array container within config overrides */
   arrayPath: string;
   secretKey: string;
@@ -144,16 +144,6 @@ export function normalizeStoredPreview(preview: string): string {
 /** Top-level config sections containing registered secret fields. */
 export function getConfigSecretSections(): readonly string[] {
   return SECRET_SECTIONS;
-}
-
-/** The registered scalar secret fields, each with its preview companion path. */
-export function getConfigSecretFields(): readonly ConfigSecretField[] {
-  return CONFIG_SECRET_FIELDS;
-}
-
-/** The registered array-item secret fields. */
-export function getConfigArraySecretFields(): readonly ArraySecretField[] {
-  return ARRAY_SECRET_FIELDS;
 }
 
 /** The secret registries as plain data, for admin clients that render secret inputs. */

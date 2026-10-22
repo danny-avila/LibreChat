@@ -5,15 +5,14 @@ import { readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { loadWebSearchConfig } from '@librechat/data-schemas';
 import { RerankerTypes, SearchProviders, ScraperProviders } from 'librechat-data-provider';
-import type { AppConfig, TWebSearchKeys } from '@librechat/data-schemas';
+import type {
+  AppConfig,
+  TWebSearchKeys,
+  AdminConfigArraySecretFieldRule,
+} from '@librechat/data-schemas';
 import type { TWebSearchConfigInput } from 'librechat-data-provider';
 import type { AddressInfo } from 'node:net';
-import type { ArraySecretField } from './secrets';
-import {
-  getConfigSecretFields,
-  encryptConfigSecretFields,
-  getConfigArraySecretFields,
-} from './secrets';
+import { encryptConfigSecretFields, getConfigSecretRules } from './secrets';
 import { resolveTenantCredentials } from '~/langfuse/utils';
 import { uploadMistralOCR } from '~/files/mistral/crud';
 import { getCustomEndpointConfig } from '~/app/config';
@@ -114,9 +113,11 @@ async function sendOCRUpload(stored: string): Promise<string | undefined> {
 
 const CUSTOM_ENDPOINT_NAME = 'runtime-reader';
 
+const { secretFields, arraySecretFields } = getConfigSecretRules();
+
 /** Array-item secrets are listed as `<arrayPath>[].<secretKey>`. */
-const ARRAY_SECRET_FIELDS = new Map<string, ArraySecretField>(
-  getConfigArraySecretFields().map((field) => [`${field.arrayPath}[].${field.secretKey}`, field]),
+const ARRAY_SECRET_FIELDS = new Map<string, AdminConfigArraySecretFieldRule>(
+  arraySecretFields.map((field) => [`${field.arrayPath}[].${field.secretKey}`, field]),
 );
 
 /** The value the admin config API stores for a registered secret. */
@@ -213,10 +214,7 @@ describe('config secret registry runtime readers', () => {
     await new Promise<void>((resolve) => ocrProvider.server.close(() => resolve()));
   });
 
-  const registered = [
-    ...getConfigSecretFields().map(({ path }) => path),
-    ...ARRAY_SECRET_FIELDS.keys(),
-  ];
+  const registered = [...secretFields.map(({ path }) => path), ...ARRAY_SECRET_FIELDS.keys()];
 
   it('pairs every registered secret path with a runtime reader or a documented gap', () => {
     const listed = [...Object.keys(RUNTIME_READERS), ...Object.keys(UNREAD_SECRET_FIELDS)];
