@@ -251,6 +251,7 @@ describe('GET /api/admin/config/meta', () => {
       prunesEmptyParents: true,
       awaitedInvalidation: true,
       changesBatch: true,
+      yamlMcpHide: true,
     });
   });
 
