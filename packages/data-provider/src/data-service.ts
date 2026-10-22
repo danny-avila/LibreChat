@@ -8,6 +8,7 @@ import type {
 } from './types/traces';
 import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
 import type { ScheduleMCPConsentView, ConfirmScheduleMCPConsent } from './types/scheduleConsent';
+import type { OpenIDSessionCheckResponse } from './openid';
 import type { TFileConfig } from './file-config';
 import type * as tl from './types/tools';
 import type * as t from './types';
@@ -1870,3 +1871,8 @@ export function revokeScheduleMCPConsent(id: string, expectedRevision: string): 
     data: { expectedRevision },
   });
 }
+
+export const startOpenIDSessionCheck = (returnTo: string): Promise<OpenIDSessionCheckResponse> =>
+  request.post(endpoints.openidSessionCheck(), { returnTo });
+export const completeOpenIDSessionCheck = (receipt: string): Promise<OpenIDSessionCheckResponse> =>
+  request.post(endpoints.completeOpenidSessionCheck(), { receipt });
