@@ -109,6 +109,47 @@ describe('createUserOnce', () => {
     expect(await User.countDocuments()).toBe(0);
   });
 
+  it('refuses a new account the role its login claims excludes, creating nothing', async () => {
+    getAppConfig
+      .mockResolvedValueOnce(baseConfig)
+      .mockResolvedValueOnce(appConfigWith(['other.example']));
+    const createUserIfAbsent = jest.fn(methods.createUserIfAbsent);
+
+    const result = await firstLogin(lookupByEmail, {
+      claimedRole: 'BASIC-USER',
+      createUserIfAbsent,
+    });
+
+    expect(result).toEqual({ user: null, error: 'Email domain not allowed', created: false });
+    expect(getAppConfig).toHaveBeenNthCalledWith(1, roleConfigRead(SystemRoles.USER));
+    expect(getAppConfig).toHaveBeenNthCalledWith(2, roleConfigRead('BASIC-USER'));
+    expect(createUserIfAbsent).not.toHaveBeenCalled();
+    expect(await User.countDocuments()).toBe(0);
+  });
+
+  it('creates the account under its own role config once the claimed role admits the email', async () => {
+    const roleConfig = appConfigWith(['example.com'], startBalance);
+    getAppConfig
+      .mockResolvedValueOnce(roleConfig)
+      .mockResolvedValueOnce(appConfigWith(['example.com']));
+
+    const result = await firstLogin(lookupByEmail, { claimedRole: SystemRoles.ADMIN });
+
+    expect(result).toEqual(
+      expect.objectContaining({ created: true, error: null, appConfig: roleConfig }),
+    );
+    expect(result.user).toEqual(expect.objectContaining({ role: SystemRoles.USER }));
+    expect(await findBalanceByUser(result.user!._id.toString())).toEqual(
+      expect.objectContaining({ tokenCredits: 500 }),
+    );
+  });
+
+  it('reads one config when the claimed role is the role the account is created with', async () => {
+    await firstLogin(lookupByEmail, { claimedRole: SystemRoles.USER });
+
+    expect(getAppConfig).toHaveBeenCalledTimes(1);
+  });
+
   it("reads the config of the new account's own role", async () => {
     await firstLogin(lookupByEmail, { newUser: { ...newUser, role: SystemRoles.ADMIN } });
 

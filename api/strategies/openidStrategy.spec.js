@@ -102,6 +102,7 @@ jest.mock('~/models', () => ({
   updateUser: jest.fn(),
   findRolesByNames: jest.fn(),
   findBalanceByUser: jest.fn(),
+  recordAuditEntry: jest.fn(),
 }));
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/api'),
@@ -1299,7 +1300,7 @@ describe('setupOpenId', () => {
       const { user } = await validate(tokenset);
 
       expect(user).toBeTruthy();
-      expect(user.role).toBeUndefined();
+      expect(user.role).toBe('USER');
     });
 
     it('reuses already-resolved overage groups for admin role check (no duplicate Graph call)', async () => {
@@ -1390,7 +1391,7 @@ describe('setupOpenId', () => {
 
       // No Graph call since admin uses access token (not id)
       expect(undici.fetch).not.toHaveBeenCalled();
-      expect(user.role).toBeUndefined();
+      expect(user.role).toBe('USER');
     });
 
     it('resolves admin via Graph independently when OPENID_REQUIRED_ROLE is not configured', async () => {
@@ -1434,7 +1435,7 @@ describe('setupOpenId', () => {
 
       const { user } = await validate(tokenset);
       expect(user).toBeTruthy();
-      expect(user.role).toBeUndefined();
+      expect(user.role).toBe('USER');
     });
 
     it('denies login and logs error when OBO exchange throws', async () => {
@@ -1725,8 +1726,8 @@ describe('setupOpenId', () => {
     // Act
     const { user } = await validate(tokenset);
 
-    // Assert – verify that the user role is not defined
-    expect(user.role).toBeUndefined();
+    // Assert – the user keeps the USER role it was created with
+    expect(user.role).toBe('USER');
   });
 
   describe('OpenID role sync', () => {
@@ -1762,7 +1763,7 @@ describe('setupOpenId', () => {
 
       const { user } = await validate(tokenset);
 
-      expect(user.role).toBeUndefined();
+      expect(user.role).toBe('USER');
       expect(findRolesByNames).not.toHaveBeenCalled();
     });
 
@@ -2341,7 +2342,7 @@ describe('setupOpenId', () => {
 
       const { user } = await validate(tokenset);
 
-      expect(user.role).toBeUndefined();
+      expect(user.role).toBe('USER');
     });
 
     it('should handle array admin role value', async () => {
@@ -2375,7 +2376,7 @@ describe('setupOpenId', () => {
 
       const { user } = await validate(tokenset);
 
-      expect(user.role).toBeUndefined();
+      expect(user.role).toBe('USER');
     });
 
     it('should grant admin when admin role claim is a space-separated string containing the admin role', async () => {
@@ -2415,7 +2416,7 @@ describe('setupOpenId', () => {
       const { user } = await validate(tokenset);
 
       // Assert – admin role is not granted
-      expect(user.role).toBeUndefined();
+      expect(user.role).toBe('USER');
     });
 
     it('should handle nested path with special characters in keys', async () => {
@@ -2650,25 +2651,118 @@ describe('setupOpenId', () => {
       expect(getAppConfig).not.toHaveBeenCalledWith({ baseOnly: true });
     });
 
-    it('re-checks a new user under the role an admin claim grants it', async () => {
-      findUser.mockResolvedValue(null);
-      isEmailDomainAllowed.mockImplementation(
-        jest.requireActual('@librechat/api').isEmailDomainAllowed,
-      );
-      resolveAppConfigForUser.mockImplementation(async (_getAppConfig, user) =>
-        user.role === 'ADMIN' ? { registration: { allowedDomains: ['restricted.com'] } } : {},
-      );
+    describe('first login under the role its claims assign', () => {
+      const roleConfigRead = (role) => ({ role, skipRuntimeAugmentation: true, failClosed: true });
 
-      const { user, details } = await validate(tokenset);
+      /** Resolves configs and email domains for real over `getAppConfig`; `refusedRole`'s list excludes the email. */
+      const refuseDomainIn = (refusedRole) => {
+        const actual = jest.requireActual('@librechat/api');
+        isEmailDomainAllowed.mockImplementation(actual.isEmailDomainAllowed);
+        resolveAppConfigForUser.mockImplementation(actual.resolveAppConfigForUser);
+        getAppConfig.mockImplementation(async (options) =>
+          options?.role === refusedRole
+            ? { registration: { allowedDomains: ['restricted.com'] } }
+            : {},
+        );
+      };
 
-      expect(user).toBe(false);
-      expect(details).toEqual({ message: 'Email domain not allowed' });
-      expect(resolveAppConfigForUser).toHaveBeenCalledTimes(1);
-      expect(resolveAppConfigForUser).toHaveBeenCalledWith(
-        getAppConfig,
-        expect.objectContaining({ _id: 'newUserId', role: 'ADMIN' }),
-      );
-      expect(updateUser).not.toHaveBeenCalled();
+      const enableRoleSync = (role) => {
+        process.env.OPENID_ROLE_SYNC_ENABLED = 'true';
+        process.env.OPENID_ROLE_SYNC_SOURCE = 'id';
+        process.env.OPENID_ROLE_SYNC_CLAIM = 'roles';
+        process.env.OPENID_ROLE_SYNC_ROLE_PRIORITY = role;
+        jwtDecode.mockReturnValue({ roles: ['requiredRole', role], permissions: ['not-admin'] });
+      };
+
+      it('refuses a first login the admin-claim role excludes before creating the account', async () => {
+        refuseDomainIn('ADMIN');
+
+        const { user, details } = await validate(tokenset);
+
+        expect(user).toBe(false);
+        expect(details).toEqual({ message: 'Email domain not allowed' });
+        expect(getAppConfig).toHaveBeenCalledWith(roleConfigRead('ADMIN'));
+        expect(createUserIfAbsent).not.toHaveBeenCalled();
+        expect(updateUser).not.toHaveBeenCalled();
+      });
+
+      it('refuses a first login the role-sync role excludes before creating the account', async () => {
+        enableRoleSync('BASIC-USER');
+        refuseDomainIn('BASIC-USER');
+
+        const { user, details } = await validate(tokenset);
+
+        expect(user).toBe(false);
+        expect(details).toEqual({ message: 'Email domain not allowed' });
+        expect(getAppConfig).toHaveBeenCalledWith(roleConfigRead('BASIC-USER'));
+        expect(createUserIfAbsent).not.toHaveBeenCalled();
+        expect(updateUser).not.toHaveBeenCalled();
+      });
+
+      it('refuses a first login the USER role excludes even when the claimed role admits it', async () => {
+        refuseDomainIn('USER');
+
+        const { user, details } = await validate(tokenset);
+
+        expect(user).toBe(false);
+        expect(details).toEqual({ message: 'Email domain not allowed' });
+        expect(createUserIfAbsent).not.toHaveBeenCalled();
+      });
+
+      it('creates an admitted first login as USER, then moves it into the claimed role', async () => {
+        const { recordAuditEntry } = require('~/models');
+        enableRoleSync('BASIC-USER');
+        refuseDomainIn('NONE');
+
+        const { user } = await validate(tokenset);
+
+        expect(user.role).toBe('BASIC-USER');
+        expect(createUserIfAbsent).toHaveBeenCalledWith(
+          expect.objectContaining({ role: 'USER' }),
+          expect.anything(),
+        );
+        expect(getAppConfig).toHaveBeenCalledWith(roleConfigRead('USER'));
+        expect(getAppConfig).toHaveBeenCalledWith(roleConfigRead('BASIC-USER'));
+        expect(findRolesByNames).toHaveBeenCalledTimes(1);
+        expect(updateUser).toHaveBeenCalledWith(
+          'newUserId',
+          expect.objectContaining({ role: 'BASIC-USER' }),
+        );
+        expect(recordAuditEntry).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: { previousRole: 'USER', role: 'BASIC-USER', source: 'openid_login' },
+          }),
+        );
+      });
+
+      it('decides the claims again for the account a concurrent first login created', async () => {
+        delete process.env.OPENID_ADMIN_ROLE;
+        enableRoleSync('BASIC-USER');
+        const winner = {
+          _id: 'winnerAdminId',
+          provider: 'openid',
+          openidId: tokenset.claims().sub,
+          openidIssuer: 'https://fake-issuer.com',
+          email: tokenset.claims().email,
+          role: 'ADMIN',
+        };
+        let created = false;
+        findUser.mockImplementation(async (query) =>
+          created && query.openidId === winner.openidId ? winner : null,
+        );
+        createUserIfAbsent.mockImplementation(async () => {
+          created = true;
+          return { ok: false, error: { code: 'user_exists' } };
+        });
+
+        const { user } = await validate(tokenset);
+
+        expect(user.role).toBe('ADMIN');
+        expect(updateUser).toHaveBeenCalledWith(
+          'winnerAdminId',
+          expect.objectContaining({ role: 'ADMIN' }),
+        );
+      });
     });
 
     it('re-checks an existing user the admin claim promotes to ADMIN', async () => {

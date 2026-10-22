@@ -51,7 +51,9 @@ function hasStartBalance(balanceConfig?: BalanceConfig | null): boolean {
  * Inserts a first-login user. The account is admitted before it exists exactly as a found account
  * is: the config it is created under is its own (the overrides of the role it is created with, in
  * the request's tenant if any), and a domain that config's `registration.allowedDomains` excludes
- * fails the login without creating anything.
+ * fails the login without creating anything. `claimedRole` is the role the login moves the new
+ * account into once it exists (OpenID role claims); its config, read in parallel, must admit the
+ * email too, so a login that role would refuse creates nothing either.
  *
  * Concurrent first logins for one identity all miss the strategy's lookup, and
  * `createUserIfAbsent` reports `user_exists` for every insert but the first. A rejected request
@@ -73,6 +75,7 @@ function hasStartBalance(balanceConfig?: BalanceConfig | null): boolean {
 export async function createUserOnce({
   newUser,
   email,
+  claimedRole,
   getAppConfig,
   getBalanceConfig,
   lookup,
@@ -82,6 +85,7 @@ export async function createUserOnce({
 }: {
   newUser: NewUserData;
   email: string;
+  claimedRole?: string;
   getAppConfig: GetAppConfig;
   getBalanceConfig: GetBalanceConfig;
   lookup: () => Promise<LoginUserResolution>;
@@ -90,13 +94,21 @@ export async function createUserOnce({
   findBalanceByUser: FindBalanceByUser;
 }): Promise<FirstLoginResult> {
   const role = newUser.role ?? SystemRoles.USER;
-  const appConfig = await resolveAppConfigForUser(getAppConfig, { role });
-  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+  const roles = claimedRole && claimedRole !== role ? [role, claimedRole] : [role];
+  const configs = await Promise.all(
+    roles.map((admittedRole) => resolveAppConfigForUser(getAppConfig, { role: admittedRole })),
+  );
+  const refused = configs.findIndex(
+    (config) => !isEmailDomainAllowed(email, config?.registration?.allowedDomains),
+  );
+  if (refused !== -1) {
     logger.error(
-      `[${strategyName}] Authentication blocked - email domain not allowed for a new ${role} account`,
+      `[${strategyName}] Authentication blocked - email domain not allowed for a new account in the ${roles[refused]} role`,
     );
     return { user: null, error: EMAIL_DOMAIN_NOT_ALLOWED, created: false };
   }
+
+  const appConfig = configs[0];
 
   const created = await createUserIfAbsent(newUser, getBalanceConfig(appConfig) ?? undefined);
   if (created.ok) return { user: created.value, appConfig, created: true, error: null };

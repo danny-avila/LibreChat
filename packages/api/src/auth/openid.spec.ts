@@ -1202,6 +1202,38 @@ describe('createOpenIDUser', () => {
     expect(await User.countDocuments()).toBe(0);
   });
 
+  it('creates the account in the USER role and reports that this call created it', async () => {
+    const login = await firstLogin({ claimedRole: SystemRoles.ADMIN });
+
+    expect(login.created).toBe(true);
+    expect(login.user).toEqual(expect.objectContaining({ role: SystemRoles.USER }));
+    expect(getAppConfig).toHaveBeenCalledWith({
+      role: SystemRoles.ADMIN,
+      skipRuntimeAugmentation: true,
+      failClosed: true,
+    });
+  });
+
+  it('refuses a first login the role its claims assign excludes, creating nothing', async () => {
+    getAppConfig
+      .mockResolvedValueOnce(appConfigWith({ enabled: true, startBalance: 500 }))
+      .mockResolvedValueOnce(appConfigWith(undefined, ['other.example']));
+
+    await expect(firstLogin({ claimedRole: SystemRoles.ADMIN })).rejects.toThrow(
+      'Email domain not allowed',
+    );
+    expect(await User.countDocuments()).toBe(0);
+    expect(await mongoose.models.Balance.countDocuments()).toBe(0);
+  });
+
+  it('reports a recovered account as not created by this call', async () => {
+    await firstLogin();
+
+    const login = await firstLogin();
+
+    expect(login.created).toBe(false);
+  });
+
   it('fails the login when the email was taken by another provider in the meantime', async () => {
     await User.create({ email, provider: 'local', username: 'local-user' });
 
