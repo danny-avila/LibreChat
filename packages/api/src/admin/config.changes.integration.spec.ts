@@ -834,6 +834,200 @@ describe('POST …/changes: entries librechat.yaml owns', () => {
   });
 });
 
+describe('POST …/changes: entry names the runtime folds together', () => {
+  const CUSTOM = 'endpoints.custom';
+  const ollama = (name: string, extra: Record<string, unknown> = {}) =>
+    endpoint(name, { baseURL: 'https://ollama.example.com/v1', ...extra });
+
+  /** Stores `Ollama` with a key through the API, returning the stored entry. */
+  async function storeOllama(params: { principalType: string; principalId: string }) {
+    const created = await send(
+      {
+        ops: [
+          {
+            op: 'upsertEntry',
+            fieldPath: CUSTOM,
+            entry: ollama('Ollama', { apiKey: 'sk-ollama-secret-0001' }),
+          },
+          { op: 'upsertEntry', fieldPath: CUSTOM, entry: endpoint('foo') },
+        ],
+      },
+      params,
+    );
+    expect(created.status).toBe(200);
+    const [entry] = (await storedDocument(params.principalId))!.overrides.endpoints.custom;
+    expect(entry.apiKey.startsWith('v3:')).toBe(true);
+    expect(entry.apiKeyPreview).toBe('...0001');
+    return entry as { apiKey: string; apiKeyPreview: string };
+  }
+
+  it('upserts `ollama` onto a stored `Ollama`, keeping its key, instead of adding a duplicate', async () => {
+    const params = nextParams();
+    const stored = await storeOllama(params);
+
+    const { status, body } = await send(
+      {
+        ops: [
+          {
+            op: 'upsertEntry',
+            fieldPath: CUSTOM,
+            entry: ollama('ollama', { modelDisplayLabel: 'Local' }),
+          },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(200);
+    expect(body.applied.map((ref) => ref.key)).toEqual(['ollama']);
+    const custom = (await storedDocument(params.principalId))!.overrides.endpoints.custom;
+    expect(custom).toEqual([
+      {
+        ...ollama('ollama', { modelDisplayLabel: 'Local' }),
+        apiKey: stored.apiKey,
+        apiKeyPreview: '...0001',
+      },
+      endpoint('foo'),
+    ]);
+    expect(secrets.resolveCustomEndpointSecrets(custom[0]).apiKey).toBe('sk-ollama-secret-0001');
+  });
+
+  it('collapses a stored two-spelling entry on upsert, keeping the key the runtime used', async () => {
+    const stored = await storeOllama(nextParams());
+    const params = nextParams();
+    await seedDocument(
+      params.principalId,
+      {
+        endpoints: {
+          custom: [
+            ollama('Ollama', { apiKey: stored.apiKey, apiKeyPreview: stored.apiKeyPreview }),
+            endpoint('foo'),
+            { name: 'ollama', modelDisplayLabel: 'Old' },
+          ],
+        },
+      },
+      [],
+    );
+
+    const { status } = await send(
+      {
+        ops: [
+          {
+            op: 'upsertEntry',
+            fieldPath: CUSTOM,
+            entry: ollama('ollama', { modelDisplayLabel: 'New' }),
+          },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(200);
+    expect((await storedDocument(params.principalId))!.overrides.endpoints.custom).toEqual([
+      {
+        ...ollama('ollama', { modelDisplayLabel: 'New' }),
+        apiKey: stored.apiKey,
+        apiKeyPreview: '...0001',
+      },
+      endpoint('foo'),
+    ]);
+  });
+
+  it('removes a stored `Ollama` by removeEntry `ollama`', async () => {
+    const params = nextParams();
+    await storeOllama(params);
+
+    const { status, body } = await send(
+      { ops: [{ op: 'removeEntry', fieldPath: CUSTOM, key: 'ollama' }] },
+      params,
+    );
+
+    expect(status).toBe(200);
+    expect(body.written).toBe(true);
+    expect(body.applied.map((ref) => ref.key)).toEqual(['ollama']);
+    expect((await storedDocument(params.principalId))!.overrides).toEqual({
+      endpoints: { custom: [endpoint('foo')] },
+    });
+  });
+
+  it('refuses a rename onto another spelling of a stored entry as entry_exists', async () => {
+    const params = nextParams();
+    await storeOllama(params);
+    const before = await storedDocument(params.principalId);
+
+    const { status, body } = await send(
+      { ops: [{ op: 'rename', fieldPath: CUSTOM, from: 'foo', to: 'ollama' }] },
+      params,
+    );
+
+    expect(status).toBe(400);
+    expect(body).toMatchObject({
+      code: 'CONFIG_ENTRY_INVALID',
+      reason: 'entry_exists',
+      opIndex: 0,
+    });
+    expect(await storedDocument(params.principalId)).toEqual(before);
+  });
+
+  it('treats every spelling of a YAML entry as that entry', async () => {
+    const deps = createDeps({
+      getAppConfig: async () =>
+        ({
+          config: {
+            ...YAML,
+            endpoints: { custom: [...YAML.endpoints.custom, ollama('Ollama')] },
+          },
+        }) as unknown as AppConfig,
+    });
+    const params = nextParams();
+    const created = await send(
+      {
+        ops: [
+          {
+            op: 'upsertEntry',
+            fieldPath: CUSTOM,
+            entry: { name: 'ollama', modelDisplayLabel: 'L' },
+          },
+          { op: 'upsertEntry', fieldPath: CUSTOM, entry: endpoint('own') },
+        ],
+      },
+      params,
+      deps,
+    );
+    expect(created.status).toBe(200);
+    const before = await storedDocument(params.principalId);
+
+    for (const op of [
+      { op: 'rename', fieldPath: CUSTOM, from: 'ollama', to: 'other' },
+      { op: 'rename', fieldPath: CUSTOM, from: 'own', to: 'OLLAMA' },
+    ]) {
+      const { status, body } = await send({ ops: [op] }, params, deps);
+      expect(status).toBe(400);
+      expect(body).toMatchObject({
+        code: 'CONFIG_ENTRY_INVALID',
+        reason: 'inherited_entry',
+        opIndex: 0,
+      });
+    }
+    expect(await storedDocument(params.principalId)).toEqual(before);
+  });
+
+  it('refuses two changes of a batch that name one entry in two spellings', async () => {
+    const { status, body } = await send(
+      {
+        ops: [
+          { op: 'upsertEntry', fieldPath: CUSTOM, entry: ollama('Ollama') },
+          { op: 'removeEntry', fieldPath: CUSTOM, key: 'ollama' },
+        ],
+      },
+      nextParams(),
+    );
+
+    expect(status).toBe(400);
+    expect(body).toMatchObject({ code: 'DUPLICATE_FIELD_PATH', opIndex: 1 });
+  });
+});
+
 describe('POST …/changes: skipped, not refused (owner decision #2)', () => {
   it('stores the rest of the batch and reports each skipped change or part with its reason', async () => {
     const params = nextParams();

@@ -2363,6 +2363,35 @@ describe('getConfigChangeIssues', () => {
     ]);
   });
 
+  it('matches an existing issue of an entry under any spelling of its folded key', () => {
+    const stored = {
+      overrides: {
+        endpoints: {
+          custom: [
+            { name: 'first', baseURL: 'https://first.example.com/v1' },
+            { name: 'Ollama', baseURL: 42 },
+          ],
+        },
+      },
+    };
+    const respelled = {
+      overrides: { endpoints: { custom: [{ name: 'ollama', baseURL: 42 }] } },
+      tombstones: [],
+    };
+    const other = {
+      overrides: { endpoints: { custom: [{ name: 'Foo', baseURL: 42 }] } },
+      tombstones: [],
+    };
+    const otherStored = {
+      overrides: { endpoints: { custom: [{ name: 'foo', baseURL: 42 }] } },
+    };
+
+    expect(getConfigChangeIssues(respelled, {}, stored, [])).toEqual([]);
+    expect(paths(getConfigChangeIssues(other, {}, otherStored, []))).toEqual([
+      'endpoints.custom.0.baseURL',
+    ]);
+  });
+
   it('tells apart record keys that contain dots from the nested path their dots spell', () => {
     const stored = {
       overrides: { endpoints: { bedrock: { inferenceProfiles: { 'us.a.b': 5 } } } },

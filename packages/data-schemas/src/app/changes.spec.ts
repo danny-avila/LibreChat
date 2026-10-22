@@ -435,6 +435,120 @@ describe('applyConfigChange: rename', () => {
   });
 });
 
+describe('entry changes: keys match as the runtime merge folds them', () => {
+  const stored = (custom: unknown[]): ConfigOverrideState =>
+    deepFreeze(state({ endpoints: { custom } }));
+
+  it('upserts `ollama` onto a stored `Ollama` in place, under the submitted name', () => {
+    const before = stored([
+      endpoint('a'),
+      endpoint('Ollama', { apiKey: 'v3:cipher' }),
+      endpoint('c'),
+    ]);
+    const entry = endpoint('ollama', { apiKey: 'v3:cipher', modelDisplayLabel: 'Local' });
+
+    const next = applyConfigChange(before, { op: 'upsertEntry', segments: CUSTOM, entry });
+
+    expect(next.overrides).toEqual({
+      endpoints: { custom: [endpoint('a'), entry, endpoint('c')] },
+    });
+    expect(
+      getConfigChangeWrittenPaths({ op: 'upsertEntry', segments: CUSTOM, entry }, next),
+    ).toEqual([['endpoints', 'custom', '1']]);
+  });
+
+  it('replaces every stored spelling of the entry an upsert names, at the first one', () => {
+    const before = stored([
+      endpoint('Ollama', { apiKey: 'v3:cipher' }),
+      endpoint('a'),
+      endpoint('OLLAMA', { modelDisplayLabel: 'Old' }),
+    ]);
+    const entry = endpoint('ollama');
+
+    expect(
+      applyConfigChange(before, { op: 'upsertEntry', segments: CUSTOM, entry }).overrides,
+    ).toEqual({ endpoints: { custom: [entry, endpoint('a')] } });
+  });
+
+  it('removes every stored spelling of the entry a removeEntry names', () => {
+    const before = stored([endpoint('Ollama'), endpoint('a'), endpoint('OLLAMA')]);
+
+    expect(
+      applyConfigChange(before, { op: 'removeEntry', segments: CUSTOM, key: 'ollama' }).overrides,
+    ).toEqual({ endpoints: { custom: [endpoint('a')] } });
+    expect(
+      applyConfigChange(stored([endpoint('Ollama')]), {
+        op: 'removeEntry',
+        segments: CUSTOM,
+        key: 'ollama',
+      }).overrides,
+    ).toEqual({});
+  });
+
+  it('refuses a rename onto another spelling of a stored entry, and renames by any spelling', () => {
+    const ollama = endpoint('Ollama', { apiKey: 'v3:cipher' });
+    const before = stored([ollama, endpoint('foo')]);
+
+    const taken = errorOf(() =>
+      applyConfigChange(before, { op: 'rename', segments: CUSTOM, from: 'foo', to: 'ollama' }),
+    );
+    expect(isConfigEntryError(taken) && taken.reason).toBe('entry_exists');
+
+    expect(
+      applyConfigChange(before, { op: 'rename', segments: CUSTOM, from: 'ollama', to: 'local' })
+        .overrides,
+    ).toEqual({ endpoints: { custom: [{ ...ollama, name: 'local' }, endpoint('foo')] } });
+    expect(
+      applyConfigChange(before, { op: 'rename', segments: CUSTOM, from: 'Ollama', to: 'ollama' })
+        .overrides,
+    ).toEqual({ endpoints: { custom: [{ ...ollama, name: 'ollama' }, endpoint('foo')] } });
+  });
+
+  it('renames an entry stored in two spellings as the one entry the runtime merge combines', () => {
+    const before = stored([
+      endpoint('Ollama', { baseURL: 'https://first.example.com', apiKey: 'v3:cipher' }),
+      endpoint('foo'),
+      { name: 'ollama', modelDisplayLabel: 'Later' },
+    ]);
+
+    const next = applyConfigChange(before, {
+      op: 'rename',
+      segments: CUSTOM,
+      from: 'ollama',
+      to: 'local',
+    });
+
+    expect(next.overrides).toEqual({
+      endpoints: {
+        custom: [
+          endpoint('local', {
+            baseURL: 'https://first.example.com',
+            apiKey: 'v3:cipher',
+            modelDisplayLabel: 'Later',
+          }),
+          endpoint('foo'),
+        ],
+      },
+    });
+  });
+
+  it('keeps every other entry name exact', () => {
+    const before = stored([endpoint('Foo')]);
+
+    expect(
+      applyConfigChange(before, { op: 'upsertEntry', segments: CUSTOM, entry: endpoint('foo') })
+        .overrides,
+    ).toEqual({ endpoints: { custom: [endpoint('Foo'), endpoint('foo')] } });
+    expect(applyConfigChange(before, { op: 'removeEntry', segments: CUSTOM, key: 'foo' })).toBe(
+      before,
+    );
+    const missing = errorOf(() =>
+      applyConfigChange(before, { op: 'rename', segments: CUSTOM, from: 'foo', to: 'bar' }),
+    );
+    expect(isConfigEntryError(missing) && missing.reason).toBe('entry_not_found');
+  });
+});
+
 describe('getConfigChangeWrittenPaths', () => {
   it('names a field change by its path and an entry change by the entry it wrote, a removal by nothing', () => {
     const result = state({ endpoints: { custom: [endpoint('a'), endpoint('b')] } });

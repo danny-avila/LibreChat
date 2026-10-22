@@ -126,11 +126,40 @@ function isSafePath(path: string): boolean {
  * such as `name` for `endpoints.custom`; `undefined` for any other path.
  */
 export function getConfigArrayMergeKey(segments: readonly string[]): string | undefined {
+  const arrayPath = getMergeArrayPath(segments);
+  return arrayPath === undefined ? undefined : ARRAY_MERGE_KEYS[arrayPath];
+}
+
+/** The `ARRAY_MERGE_KEYS` path of the merged-by-key array at an override (YAML) path. */
+function getMergeArrayPath(segments: readonly string[]): string | undefined {
   if (segments.length === 0 || segments.some((segment) => segment.includes('.'))) {
     return undefined;
   }
   const appConfigPath = remapOverridePath(segments.join('.'));
-  return hasOwn(ARRAY_MERGE_KEYS, appConfigPath) ? ARRAY_MERGE_KEYS[appConfigPath] : undefined;
+  return hasOwn(ARRAY_MERGE_KEYS, appConfigPath) ? appConfigPath : undefined;
+}
+
+/**
+ * The identity entry key `key` of the merged-by-key array at an override (YAML) path has: the
+ * key as the runtime merge folds it (`foldConfigMergeKey`), so `Ollama` and `ollama` name one
+ * custom endpoint to entry changes as they do to the merge. A key at any other path is its own
+ * identity.
+ */
+export function getConfigEntryIdentity(segments: readonly string[], key: string): string {
+  const arrayPath = getMergeArrayPath(segments);
+  return arrayPath === undefined ? key : foldConfigMergeKey(arrayPath, key);
+}
+
+/**
+ * `combineFoldedConfigItems` for the merged-by-key array at an override (YAML) path: stored
+ * items naming one entry in two spellings, combined as the runtime merge combines them.
+ */
+export function combineFoldedConfigEntries(
+  segments: readonly string[],
+  items: unknown[],
+): unknown[] {
+  const arrayPath = getMergeArrayPath(segments);
+  return arrayPath === undefined ? items : combineFoldedConfigItems(arrayPath, items);
 }
 
 function remapOverridePath(path: string): string {
@@ -967,9 +996,10 @@ function hasMergeKey(item: unknown, keyField: string): boolean {
 
 /**
  * Where an issue sits in `overrides`, in a form that survives entries moving: an item of a
- * merged-by-key array is named by its key, or (without one) by its place among the keyless
- * items, rather than by its index. Removing one entry shifts the ones after it, and their
- * issues must still match the ones the stored document already had.
+ * merged-by-key array is named by its key's identity (`getConfigEntryIdentity`), or (without
+ * one) by its place among the keyless items, rather than by its index. Removing one entry
+ * shifts the ones after it, and their issues must still match the ones the stored document
+ * already had.
  */
 function getIssueLocation(segments: readonly string[], overrides: unknown): string {
   const location: Array<string | { key: unknown } | { keyless: number }> = [];
@@ -984,7 +1014,12 @@ function getIssueLocation(segments: readonly string[], overrides: unknown): stri
       const item: unknown = node[position];
       location.push(
         hasMergeKey(item, keyField)
-          ? { key: (item as AnyObject)[keyField] }
+          ? {
+              key: getConfigEntryIdentity(
+                segments.slice(0, index),
+                (item as AnyObject)[keyField] as string,
+              ),
+            }
           : {
               keyless: node.slice(0, position).filter((other) => !hasMergeKey(other, keyField))
                 .length,
