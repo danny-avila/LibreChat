@@ -131,7 +131,9 @@ describe('admin config writes against a real Config collection', () => {
       );
 
       expect(res.statusCode).toBe(400);
-      expect(res.body?.issues).toEqual([{ path: 'paths', code: 'unknown_section' }]);
+      expect(res.body?.issues).toEqual([
+        { path: 'paths', segments: ['paths'], code: 'unknown_section' },
+      ]);
       expect(await readStored('editors')).toBeNull();
     });
 

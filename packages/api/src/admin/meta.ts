@@ -21,8 +21,8 @@ import { getConfigSecretRules } from './secrets';
  */
 export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   dottedKeys: true,
-  sectionAllowlist: false,
-  readFilteredWriteResponses: false,
+  sectionAllowlist: true,
+  readFilteredWriteResponses: true,
 };
 
 /**

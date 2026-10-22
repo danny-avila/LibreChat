@@ -503,7 +503,7 @@ describe('createAdminConfigHandlers', () => {
       expect(res.body).toEqual({
         error: 'Invalid config override',
         code: 'CONFIG_OVERRIDE_INVALID',
-        issues: [{ path: 'mcpConfig', code: 'unknown_section' }],
+        issues: [{ path: 'mcpConfig', segments: ['mcpConfig'], code: 'unknown_section' }],
       });
       expect(deps.upsertConfig).not.toHaveBeenCalled();
     });
@@ -2875,7 +2875,7 @@ describe('createAdminConfigHandlers', () => {
       expect(res.body).toEqual({
         error: 'Invalid config override',
         code: 'CONFIG_OVERRIDE_INVALID',
-        issues: [{ path: key, code: 'unknown_section' }],
+        issues: [{ path: key, segments: [key], code: 'unknown_section' }],
       });
       expect(JSON.stringify(res.body)).not.toContain(MARKER);
       expect(deps.upsertConfig).not.toHaveBeenCalled();

@@ -1801,6 +1801,13 @@ describe('top-level sections an override may hold', () => {
     );
   });
 
+  it('reports a dotted top-level key once, as dotted_key rather than unknown_section', () => {
+    expect(getConfigOverrideIssues({ 'paths.uploads': '/tmp', config: {} })).toEqual([
+      { path: 'paths.uploads', segments: ['paths.uploads'], code: 'dotted_key' },
+      { path: 'config', segments: ['config'], code: 'unknown_section' },
+    ]);
+  });
+
   it('still validates the known sections written next to an unknown one', () => {
     expect(
       getConfigOverrideIssues({
