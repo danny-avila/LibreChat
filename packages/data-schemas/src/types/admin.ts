@@ -53,11 +53,17 @@ export type AdminConfigDeleteResponse = {
  * - `sectionAllowlist`: writes to a top-level key `configSchema` does not define are rejected,
  *   and stored ones are ignored at merge.
  * - `readFilteredWriteResponses`: write responses are filtered by the caller's read access.
+ * - `webSearchStoredKeys`: web search uses a key stored in config (encrypted by the admin API,
+ *   or a `librechat.yaml` literal) at runtime, not only a `${VAR}` reference, and stores
+ *   `webSearch.keenableApiKey` encrypted like the other web search keys. A stored key goes only
+ *   to a URL the same layer set; changing that URL requires entering the key again
+ *   (400 `CONFIG_SECRET_REENTRY_REQUIRED`).
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'
   | 'sectionAllowlist'
-  | 'readFilteredWriteResponses';
+  | 'readFilteredWriteResponses'
+  | 'webSearchStoredKeys';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
 
