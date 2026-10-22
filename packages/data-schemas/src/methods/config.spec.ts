@@ -854,6 +854,15 @@ describe('expectedVersion write precondition', () => {
     },
   );
 
+  it('reports a failed cleanup instead of the refusal, since the created document remains', async () => {
+    refuseVersionedWrites();
+    const collection = mongoose.models.Config.collection;
+    jest.spyOn(collection, 'deleteOne').mockRejectedValueOnce(new Error('connection reset'));
+
+    await expect(writes[0].write(null)).rejects.toThrow('connection reset');
+    expect(await mongoose.models.Config.countDocuments({ principalId: ROLE })).toBe(1);
+  });
+
   it('keeps a document another write changed before the database refused this one', async () => {
     refuseVersionedWrites(async () => {
       await mongoose.models.Config.updateOne(

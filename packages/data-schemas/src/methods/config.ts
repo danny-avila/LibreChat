@@ -5,7 +5,6 @@ import type { TCustomConfig } from 'librechat-data-provider';
 import type { IConfig, ConfigWritePrecondition } from '~/types';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { escapeRegExp } from '~/utils/string';
-import logger from '~/config/winston';
 
 /** Tombstones a field write clears: the written path and its ancestors below the section. */
 export function getTombstonePathsToClear(fieldPath: string): string[] {
@@ -229,29 +228,15 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       return await Config.findOneAndUpdate(filter, update, { new: true, ...sessionOption });
     } catch (error) {
       if (expectedVersion === null) {
-        await removeUnwrittenDocument(filter, sessionOption);
+        /**
+         * Removes the empty document created above, so a write the database refused (such as a
+         * key name the engine cannot store) stores nothing. The filter carries the created
+         * version, so a document another write has since changed stays. A failure here
+         * replaces the refusal: the caller must not report that nothing was stored.
+         */
+        await Config.deleteOne(filter, sessionOption);
       }
       throw error;
-    }
-  }
-
-  /**
-   * Removes the empty document `getPreconditionFilter` created for a write the database then
-   * refused (such as a key name the engine cannot store), so a refused write stores nothing.
-   * The filter carries the created version, so a document another write has since changed stays.
-   */
-  async function removeUnwrittenDocument(
-    filter: FilterQuery<IConfig>,
-    sessionOption: { session?: ClientSession },
-  ): Promise<void> {
-    const Config = mongoose.models.Config as Model<IConfig>;
-    try {
-      await Config.deleteOne(filter, sessionOption);
-    } catch (error) {
-      logger.warn(
-        '[updateAtVersion] Could not remove the empty config document created for a failed write',
-        error,
-      );
     }
   }
 
