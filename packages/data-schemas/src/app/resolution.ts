@@ -10,7 +10,8 @@ import {
   configSchema,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
-import type { AdminConfigMergeRules, AppConfig, IConfig } from '~/types';
+import type { AdminConfigMergeRules, AppConfig, IConfig, TWebSearchKeys } from '~/types';
+import { webSearchPairedFields, unbindWebSearchKeys } from './web';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { getTombstonePathsToClear } from '~/methods/config';
 import logger from '~/config/winston';
@@ -966,11 +967,90 @@ function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
   return filtered;
 }
 
+/** The override document that last set or removed a paired web search field, and its merge position. */
+interface WebSearchWriter {
+  config: IConfig;
+  order: number;
+  removed: boolean;
+}
+
+type WebSearchWriters = Map<TWebSearchKeys, WebSearchWriter>;
+
+const WEB_SEARCH_TOMBSTONE_PREFIX = 'webSearch.';
+
+/** Records `writer` for each paired web search field its applied overrides set. */
+function recordWebSearchWrites(
+  writers: WebSearchWriters,
+  section: unknown,
+  writer: WebSearchWriter,
+): void {
+  if (!isPlainObject(section)) {
+    return;
+  }
+  for (const field of webSearchPairedFields) {
+    if (hasOwn(section, field)) {
+      writers.set(field, writer);
+    }
+  }
+}
+
+/** Records `writer` for each paired web search field an applied tombstone removes. */
+function recordWebSearchTombstone(
+  writers: WebSearchWriters,
+  path: string,
+  writer: WebSearchWriter,
+): void {
+  if (path === 'webSearch') {
+    for (const field of webSearchPairedFields) {
+      writers.set(field, writer);
+    }
+    return;
+  }
+  if (!path.startsWith(WEB_SEARCH_TOMBSTONE_PREFIX)) {
+    return;
+  }
+  const field = path.slice(WEB_SEARCH_TOMBSTONE_PREFIX.length) as TWebSearchKeys;
+  if (webSearchPairedFields.includes(field)) {
+    writers.set(field, writer);
+  }
+}
+
+function describeLayer(writer?: WebSearchWriter): string {
+  return writer ? `${writer.config.principalType}/${writer.config.principalId}` : 'the base config';
+}
+
+/**
+ * Withholds each stored web search key whose URL a layer other than the key's
+ * own decides (`unbindWebSearchKeys`), so a layer that overrides only a URL
+ * never sends on a key it cannot read. `writers` lists the override document
+ * behind each field; unlisted fields come from the base config.
+ */
+function bindWebSearchKeys(merged: AppConfig, writers: WebSearchWriters): AppConfig {
+  const { webSearch, unbound } = unbindWebSearchKeys(
+    merged.webSearch,
+    (field) => writers.get(field)?.order,
+  );
+  if (unbound.length === 0) {
+    return merged;
+  }
+  for (const { url, apiKey } of unbound) {
+    const urlWriter = writers.get(url);
+    logger.warn(
+      `[mergeConfigOverrides] Ignoring webSearch.${apiKey} from ${describeLayer(writers.get(apiKey))}: ` +
+        `webSearch.${url} is ${urlWriter?.removed ? 'removed' : 'set'} by ${describeLayer(urlWriter)}. ` +
+        'Store the key in the same config as the URL.',
+    );
+  }
+  return { ...merged, webSearch };
+}
+
 /**
  * Merge DB config overrides into a base AppConfig.
  *
  * Configs are sorted by priority ascending (lowest first, highest wins).
  * Each config's `overrides` is deep-merged into the base config in order.
+ * A stored web search key is dropped when a layer other than its own decides
+ * the URL it is sent to.
  */
 export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]): AppConfig {
   if (!configs || configs.length === 0) {
@@ -982,9 +1062,12 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
   let merged = { ...baseConfig };
   /** The YAML-shaped config the next override lands on, for validating it in place. */
   let raw: Partial<TCustomConfig> = baseConfig.config ?? {};
-  for (const config of sorted) {
+  const webSearchWriters: WebSearchWriters = new Map();
+  for (let order = 0; order < sorted.length; order++) {
+    const config = sorted[order];
     const isBasePrincipal = config.principalId?.toString() === BASE_CONFIG_PRINCIPAL_ID;
     if (Array.isArray(config.tombstones)) {
+      const removal: WebSearchWriter = { config, order, removed: true };
       for (const path of config.tombstones) {
         if (
           typeof path === 'string' &&
@@ -993,6 +1076,7 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
         ) {
           merged = deleteConfigPath(merged, remapOverridePath(path));
           raw = deletePath(raw as AnyObject, path) as Partial<TCustomConfig>;
+          recordWebSearchTombstone(webSearchWriters, path, removal);
         }
       }
     }
@@ -1058,9 +1142,15 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
       }
       merged = deepMerge(merged, remapped);
       raw = deepMerge(raw as AnyObject, applied) as Partial<TCustomConfig>;
+      recordWebSearchWrites(webSearchWriters, applied.webSearch, {
+        config,
+        order,
+        removed: false,
+      });
     }
   }
 
+  merged = bindWebSearchKeys(merged, webSearchWriters);
   return preserveBaseOnlyPaths(baseConfig, preserveRuntimeStops(baseConfig, merged));
 }
 

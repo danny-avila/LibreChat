@@ -23,6 +23,7 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   dottedKeys: true,
   sectionAllowlist: false,
   readFilteredWriteResponses: false,
+  webSearchStoredKeys: true,
 };
 
 /**

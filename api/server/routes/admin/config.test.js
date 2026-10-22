@@ -148,6 +148,8 @@ describe('admin config routes', () => {
       expect.anything(),
       { 'endpoints.bedrock.inferenceProfiles': { [PROFILE]: ARN } },
       expect.any(Number),
+      undefined,
+      undefined,
     );
     expect(response.body.config.overrides.endpoints.bedrock.inferenceProfiles).toEqual({
       [PROFILE]: ARN,
