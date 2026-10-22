@@ -249,6 +249,46 @@ describe('createDeleteFileWithSecondaryStorage', () => {
     },
   );
 
+  it.each([false, true])(
+    'reconciles confirmed primary-vector cleanup before returning (already absent: %s)',
+    async (absent) => {
+      const { primary, clearFileEmbeddings, remove } = setup(FileSources.vectordb);
+      const retained = { ...file, metadata: { ...file.metadata, embeddedEntities: ['namespace'] } };
+      if (absent)
+        primary.mockRejectedValue(Object.assign(new Error('already gone'), { status: 404 }));
+      await remove(req, retained, client);
+      expect(primary).toHaveBeenCalledTimes(1);
+      expect(clearFileEmbeddings).toHaveBeenCalledTimes(1);
+      expect(clearFileEmbeddings).toHaveBeenCalledWith({
+        file_id: retained.file_id,
+        userId: retained.user,
+        tenantId: retained.tenantId,
+        updatedAt: undefined,
+        embeddedEntities: ['namespace'],
+      });
+      expect(primary.mock.invocationCallOrder[0]).toBeLessThan(
+        clearFileEmbeddings.mock.invocationCallOrder[0],
+      );
+      expect(retained.embedded).toBe(false);
+      expect(retained.metadata).toEqual(expect.objectContaining({ searchDestination: true }));
+      expect(retained.metadata.embeddedEntities).toBeUndefined();
+    },
+  );
+
+  it.each(['conflict', 'failure'])(
+    'reports incomplete primary-vector cleanup after reconciliation %s',
+    async (mode) => {
+      const { primary, clearFileEmbeddings, remove } = setup(FileSources.vectordb);
+      if (mode === 'conflict') clearFileEmbeddings.mockResolvedValue(false);
+      else clearFileEmbeddings.mockRejectedValue(new Error('resource not found'));
+      await expect(remove(req, file, client)).rejects.toThrow(
+        'File embedding reconciliation failed',
+      );
+      expect(primary).toHaveBeenCalledTimes(1);
+      expect(file.embedded).toBe(true);
+    },
+  );
+
   it('uses the codeEnvRefs map without changing the owner or provider references', async () => {
     const { primary, code } = setup();
     const mapped = {

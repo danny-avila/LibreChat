@@ -130,19 +130,7 @@ export function createDeleteFileWithSecondaryStorage<
       }
     };
 
-    const results = await Promise.allSettled(
-      secondaries.map((deleteSecondary) => remove(() => deleteSecondary(req, file))),
-    );
-    const vectors = results[vectorIndex];
-    if (vectorIndex >= 0 && vectors?.status === 'fulfilled') {
-      if (
-        vectors.value == null ||
-        typeof vectors.value !== 'object' ||
-        !('deleted' in vectors.value) ||
-        vectors.value.deleted !== true
-      ) {
-        throw new Error('Vector deletion was not confirmed');
-      }
+    const reconcileVectors = async (): Promise<void> => {
       try {
         if (
           !file.file_id ||
@@ -162,6 +150,21 @@ export function createDeleteFileWithSecondaryStorage<
       file.embedded = false;
       file.metadata = { ...file.metadata, searchDestination: true };
       delete file.metadata.embeddedEntities;
+    };
+    const results = await Promise.allSettled(
+      secondaries.map((deleteSecondary) => remove(() => deleteSecondary(req, file))),
+    );
+    const vectors = results[vectorIndex];
+    if (vectorIndex >= 0 && vectors?.status === 'fulfilled') {
+      if (
+        vectors.value == null ||
+        typeof vectors.value !== 'object' ||
+        !('deleted' in vectors.value) ||
+        vectors.value.deleted !== true
+      ) {
+        throw new Error('Vector deletion was not confirmed');
+      }
+      await reconcileVectors();
     }
     for (const result of results) {
       if (result.status === 'rejected') {
@@ -213,6 +216,7 @@ export function createDeleteFileWithSecondaryStorage<
     ) {
       throw new Error('Primary secondary-store deletion was not confirmed');
     }
+    if (source === FileSources.vectordb && file.embedded === true) await reconcileVectors();
     if (source === FileSources.execute_code) await confirmCleanup();
   };
 }

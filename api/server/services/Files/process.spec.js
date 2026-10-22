@@ -2777,6 +2777,29 @@ describe('processDeleteRequest', () => {
     expect(result).toEqual({ deletedFileIds: ['embedded-file'], failedFileIds: [] });
   });
 
+  it('retains truthful primary-vector state when metadata deletion subsequently fails', async () => {
+    const vectorDelete = jest.fn().mockResolvedValue({ deleted: true });
+    getStrategyFunctions.mockReturnValue({ deleteFile: vectorDelete });
+    db.deleteFiles.mockRejectedValue(new Error('mongo unavailable'));
+    const req = {
+      body: {},
+      config: { fileConfig: { retainedFileCleanup: true } },
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
+    const file = {
+      file_id: 'vector-primary',
+      source: FileSources.vectordb,
+      embedded: true,
+      metadata: { embeddedEntities: ['namespace'] },
+    };
+    await expect(processDeleteRequest({ req, files: [file] })).rejects.toThrow('mongo unavailable');
+    expect(vectorDelete).toHaveBeenCalledTimes(1);
+    expect(db.clearFileEmbeddings).toHaveBeenCalledTimes(1);
+    expect(file.embedded).toBe(false);
+    expect(file.metadata).toEqual({ searchDestination: true });
+    expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
+  });
+
   it('keeps primary storage and metadata when vector deletion fails', async () => {
     const primaryDelete = jest.fn().mockResolvedValue({ deleted: true });
     const vectorDelete = jest.fn().mockRejectedValue(new Error('rag unavailable'));
