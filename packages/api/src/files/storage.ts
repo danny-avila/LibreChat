@@ -1,6 +1,7 @@
 import { FileSources, getCodeEnvRefs } from 'librechat-data-provider';
 import type { ClearFileEmbeddingsParams, FileStorageCleanupParams } from '@librechat/data-schemas';
 import type { CodeEnvReferenceSet } from 'librechat-data-provider';
+import type { FileStorageDeletionObserver } from './dispatch';
 import type { FileDeleteStorage } from './operations';
 import { withFileDeletion, isDefinitiveFileStorageFailure } from './operations';
 import { getSafeErrorMetadata } from '../utils/errors';
@@ -27,6 +28,7 @@ type DeleteStorageFile<TRequest, TFile, TClient = never> = (
   req: TRequest,
   file: TFile,
   client?: TClient,
+  onDelete?: FileStorageDeletionObserver,
 ) => Promise<unknown>;
 
 export function isMissingStorageError(error: unknown): boolean {
@@ -126,12 +128,18 @@ export function createDeleteFileWithSecondaryStorage<
         secondaries.push(getDeleteFile(FileSources.execute_code));
       }
 
-      const remove = async (operation: () => Promise<unknown>): Promise<unknown> => {
+      let primaryStarted = false;
+      const remove = async (
+        operation: () => Promise<unknown>,
+        primary = false,
+      ): Promise<unknown> => {
         try {
           return await operation();
         } catch (error) {
           if (!isMissingStorageError(error)) {
-            if (!isDefinitiveFileStorageFailure(error)) onOutcomeUnknown();
+            if ((!primary || primaryStarted) && !isDefinitiveFileStorageFailure(error)) {
+              onOutcomeUnknown();
+            }
             throw error;
           }
           logger.warn(
@@ -217,9 +225,23 @@ export function createDeleteFileWithSecondaryStorage<
         }
       };
       if (source !== FileSources.execute_code) await confirmCleanup();
-      // Dispatch can succeed remotely even when its response never arrives.
-      primaryDeleted(false);
-      const primary = await remove(() => deleteFile(req, file, client));
+      const onDelete: FileStorageDeletionObserver = (state) => {
+        if (state === undefined) {
+          primaryStarted = true;
+          primaryDeleted(false);
+        } else if (state === 'confirmed') {
+          primaryDeleted(true);
+        }
+      };
+      const marked =
+        source === FileSources.s3 ||
+        source === FileSources.cloudfront ||
+        source === FileSources.azure_blob;
+      if (!marked) onDelete();
+      const primary = await remove(
+        () => (marked ? deleteFile(req, file, client, onDelete) : deleteFile(req, file, client)),
+        true,
+      );
       if (
         ((source === FileSources.vectordb && file.embedded === true) ||
           (source === FileSources.execute_code && hasCodeEnvRef)) &&

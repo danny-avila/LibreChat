@@ -22,6 +22,8 @@ export type FileProvisionCommit = {
   code?: { routeKey: string; ref: CodeEnvRef; legacyRef?: CodeEnvRef };
   entityId?: string;
   embedded?: boolean;
+  output?: { file: CodeFileCommitData; sourceDispatchedAt?: number };
+  releaseOnly?: boolean;
 };
 
 export type FileStorageDeleteClaim = FileStorageClaim & {

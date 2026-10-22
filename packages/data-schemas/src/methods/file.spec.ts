@@ -5,8 +5,8 @@ import { EToolResources, FileContext, FileSources } from 'librechat-data-provide
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { IChatProject, IMongoFile } from '~/types';
 import { _resetStrictCache } from '~/models/plugins/tenantIsolation';
+import { createFileMethods, FileStorageConflictError } from './file';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
-import { createFileMethods } from './file';
 import { createModels } from '~/models';
 
 let File: mongoose.Model<unknown>;
@@ -1715,6 +1715,107 @@ describe('File Methods', () => {
   });
 
   describe('claimCodeFile', () => {
+    const fencedStates = [
+      { deletionPending: true },
+      { deleting: 'deletion-owner' },
+      { provisioning: ['provision-owner'] },
+    ];
+
+    it.each(fencedStates)('rejects a fenced filename claim: %j', async (storageOperations) => {
+      await File.init();
+      const input = {
+        filename: 'fenced.csv',
+        conversationId: 'fenced-conversation',
+        file_id: 'fenced-file',
+        user: new mongoose.Types.ObjectId().toString(),
+        tenantId: 'tenant-a',
+        sourceDispatchedAt: 100,
+      };
+      await fileMethods.claimCodeFile(input);
+      await File.updateOne({ file_id: input.file_id }, { $set: { storageOperations } });
+      const before = await File.findOne({ file_id: input.file_id }).lean();
+
+      await expect(
+        fileMethods.claimCodeFile({
+          ...input,
+          file_id: 'replacement-file',
+          sourceDispatchedAt: 200,
+        }),
+      ).rejects.toMatchObject({
+        name: 'FileStorageConflictError',
+        code: 'FILE_STORAGE_CONFLICT',
+      });
+      expect(await File.findOne({ file_id: input.file_id }).lean()).toEqual(before);
+      expect(await File.countDocuments()).toBe(1);
+
+      const independent = await fileMethods.claimCodeFile({
+        ...input,
+        filename: 'independent.csv',
+        file_id: 'independent-file',
+      });
+      expect(independent.file_id).toBe('independent-file');
+    });
+
+    it.each(fencedStates)(
+      'rejects commits after a storage fence is acquired: %j',
+      async (storageOperations) => {
+        await File.init();
+        const input = {
+          filename: 'late-fence.csv',
+          conversationId: 'late-fence-conversation',
+          file_id: 'late-fence-file',
+          user: new mongoose.Types.ObjectId().toString(),
+          tenantId: 'tenant-a',
+          sourceDispatchedAt: 100,
+        };
+        await fileMethods.claimCodeFile(input);
+        await File.updateOne({ file_id: input.file_id }, { $set: { storageOperations } });
+        const before = await File.findOne({ file_id: input.file_id }).lean();
+        const output = {
+          ...input,
+          context: FileContext.execute_code,
+          filepath: '/uploads/new.csv',
+          type: 'text/csv',
+          bytes: 20,
+          source: FileSources.local,
+          metadata: { sourceDispatchedAt: 200 },
+        };
+
+        await expect(fileMethods.commitCodeFile(output)).rejects.toBeInstanceOf(
+          FileStorageConflictError,
+        );
+        expect(await fileMethods.commitCodeFile(output, 200)).toBe(false);
+        await expect(fileMethods.createFile(output, true)).rejects.toBeInstanceOf(
+          FileStorageConflictError,
+        );
+        expect(await File.findOne({ file_id: input.file_id }).lean()).toEqual(before);
+        expect(await File.countDocuments()).toBe(1);
+      },
+    );
+
+    it('reuses active rows with empty provisioning without changing their metadata', async () => {
+      const input = {
+        filename: 'active.csv',
+        conversationId: 'active-conversation',
+        file_id: 'active-file',
+        user: new mongoose.Types.ObjectId().toString(),
+        sourceDispatchedAt: 100,
+      };
+      await fileMethods.claimCodeFile(input);
+      await File.updateOne(
+        { file_id: input.file_id },
+        { $set: { storageOperations: { provisioning: [], deletionPending: false } } },
+      );
+      const before = await File.findOne({ file_id: input.file_id }).lean();
+      const claimed = await fileMethods.claimCodeFile({
+        ...input,
+        file_id: 'unused-file',
+        sourceDispatchedAt: 200,
+      });
+      expect(claimed.file_id).toBe(input.file_id);
+      expect(await File.findOne({ file_id: input.file_id }).lean()).toEqual(before);
+    });
+
     it('claims code output files independently per tenant', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
 

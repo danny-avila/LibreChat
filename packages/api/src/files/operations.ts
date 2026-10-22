@@ -3,6 +3,7 @@ import type {
   FileStorageMethods,
   FileStorageClaim,
   FileStorageScope,
+  FileStorageDeleteClaim,
   FileProvisionCommit,
 } from '@librechat/data-schemas';
 
@@ -38,7 +39,30 @@ type ProvisionRun<T> = {
   ) => Promise<FileProvisionResult<T>>;
 };
 
+type DeletionRun<T> = {
+  file: StorageIdentity & { updatedAt?: Date | string };
+  userId: string;
+  storage: FileDeleteStorage;
+  operation: (
+    primaryDeleted: (confirmed?: boolean) => void,
+    onOutcomeUnknown: () => void,
+  ) => Promise<T>;
+};
+
+type DeletionEntry = {
+  claim: FileStorageDeleteClaim;
+  phase: 'acquire' | 'operation' | 'release';
+  active: boolean;
+  retainDeletion: boolean;
+  resumed: boolean;
+  primaryConfirmed: boolean;
+  uncertain: boolean;
+  hasResult: boolean;
+  value?: unknown;
+};
+
 export interface FileProvisionRecovery {
+  delete<T>(options: DeletionRun<T>): Promise<T>;
   run<T>(options: ProvisionRun<T>): Promise<T>;
   recover(scope: FileStorageScope, storage: RawProvisionStorage): Promise<void>;
 }
@@ -143,6 +167,7 @@ function fileScope(file: StorageIdentity, userId: string): FileStorageScope {
 /** App-lifetime recovery only. Unknown claims, including those lost on restart, need manual recovery. */
 export function createFileProvisionRecovery(): FileProvisionRecovery {
   const files = new Map<string, Map<string, ProvisionEntry>>();
+  const deletions = new Map<string, DeletionEntry>();
 
   function remove(key: string, destination: string, entry: ProvisionEntry): void {
     const entries = files.get(key);
@@ -207,6 +232,7 @@ export function createFileProvisionRecovery(): FileProvisionRecovery {
     const { file, userId, storage, destination, upload } = options;
     const scope = fileScope(file, userId);
     const key = scopeKey(scope);
+    if (deletions.has(key)) throw new Error('File provisioning conflicts with deletion');
     let entries = files.get(key);
     const existing = entries?.get(destination);
     if (existing) {
@@ -274,8 +300,109 @@ export function createFileProvisionRecovery(): FileProvisionRecovery {
     return entry.attempt as Promise<T>;
   }
 
+  async function releaseDeletion(entry: DeletionEntry, storage: FileDeleteStorage): Promise<void> {
+    if (
+      !(await storage.releaseFileDeletion({
+        ...entry.claim,
+        retainDeletion: entry.retainDeletion,
+      }))
+    ) {
+      throw new Error('File deletion claim could not be released');
+    }
+  }
+
+  async function runDeletion<T>(options: DeletionRun<T>): Promise<T> {
+    const { file, userId, storage, operation } = options;
+    const scope = fileScope(file, userId);
+    const key = scopeKey(scope);
+    const existing = deletions.get(key);
+    if (existing?.active) throw new Error('File deletion conflicts with active storage work');
+    if (existing) {
+      existing.active = true;
+      try {
+        // An unacknowledged acquisition may have resumed an older deletion intent.
+        if (existing.phase === 'acquire') existing.retainDeletion = true;
+        await releaseDeletion(existing, storage);
+        if (existing.hasResult) {
+          deletions.delete(key);
+          return existing.value as T;
+        }
+      } finally {
+        existing.active = false;
+      }
+    }
+    const entry: DeletionEntry = {
+      claim: Object.freeze({ ...scope, updatedAt: file.updatedAt, token: randomUUID() }),
+      phase: 'acquire',
+      active: true,
+      retainDeletion: true,
+      resumed: false,
+      primaryConfirmed: false,
+      uncertain: false,
+      hasResult: false,
+    };
+    // Register before any adapter runs, including synchronous/reentrant adapters.
+    deletions.set(key, entry);
+    try {
+      try {
+        await storage.recovery.recover(scope, storage);
+      } catch (error) {
+        deletions.delete(key);
+        throw error;
+      }
+      const acquired = await storage.acquireFileDeletion(entry.claim);
+      if (!acquired) {
+        deletions.delete(key);
+        throw new Error('File deletion conflicts with active storage work');
+      }
+      entry.resumed = acquired.resumed;
+      entry.retainDeletion = acquired.resumed;
+      entry.phase = 'operation';
+      let value: T;
+      try {
+        value = await operation(
+          (confirmed = true) => {
+            entry.retainDeletion = true;
+            entry.primaryConfirmed = entry.primaryConfirmed || confirmed;
+          },
+          () => {
+            entry.uncertain = true;
+            entry.retainDeletion = true;
+          },
+        );
+      } catch (error) {
+        if (
+          entry.retainDeletion &&
+          !entry.resumed &&
+          !entry.primaryConfirmed &&
+          !entry.uncertain &&
+          isDefinitiveFileStorageFailure(error)
+        ) {
+          entry.retainDeletion = false;
+        }
+        entry.phase = 'release';
+        try {
+          await releaseDeletion(entry, storage);
+          deletions.delete(key);
+        } catch {
+          // Preserve the operation failure and retain the original release token.
+        }
+        throw error;
+      }
+      entry.value = value;
+      entry.hasResult = true;
+      entry.phase = 'release';
+      await releaseDeletion(entry, storage);
+      deletions.delete(key);
+      return value;
+    } finally {
+      entry.active = false;
+    }
+  }
+
   return {
     run,
+    delete: runDeletion,
     async recover(scope, storage) {
       const key = scopeKey(scope);
       const entries = files.get(key);
@@ -306,64 +433,8 @@ export function withFileProvisioning<T>({
 }
 
 /** Successful primary removal leaves deletion intent until conditional metadata finalization. */
-export async function withFileDeletion<T>({
-  file,
-  userId,
-  storage,
-  operation,
-}: {
-  file: StorageIdentity & { updatedAt?: Date | string };
-  userId: string;
-  storage: FileDeleteStorage;
-  operation: (
-    primaryDeleted: (confirmed?: boolean) => void,
-    onOutcomeUnknown: () => void,
-  ) => Promise<T>;
-}): Promise<T> {
-  const scope = fileScope(file, userId);
-  await storage.recovery.recover(scope, storage);
-  const claim = { ...scope, updatedAt: file.updatedAt, token: randomUUID() };
-  const acquired = await storage.acquireFileDeletion(claim);
-  if (!acquired) throw new Error('File deletion conflicts with active storage work');
-  let retainDeletion = acquired.resumed;
-  let primaryConfirmed = false;
-  let uncertain = false;
-  const release = async () => {
-    if (!(await storage.releaseFileDeletion({ ...claim, retainDeletion }))) {
-      throw new Error('File deletion claim could not be released');
-    }
-  };
-  let value: T;
-  try {
-    value = await operation(
-      (confirmed = true) => {
-        retainDeletion = true;
-        primaryConfirmed = primaryConfirmed || confirmed;
-      },
-      () => {
-        uncertain = true;
-        retainDeletion = true;
-      },
-    );
-  } catch (error) {
-    if (
-      retainDeletion &&
-      !acquired.resumed &&
-      !primaryConfirmed &&
-      !uncertain &&
-      isDefinitiveFileStorageFailure(error)
-    ) {
-      retainDeletion = false;
-    }
-    try {
-      await release();
-    } catch {
-      // The operation error remains primary.
-    }
-    throw error;
-  }
-  await release();
-  return value;
+export function withFileDeletion<T>(options: DeletionRun<T>): Promise<T> {
+  return options.storage.recovery.delete(options);
 }
 
 /** A missing or replaced claim cannot publish a newly uploaded copy. */

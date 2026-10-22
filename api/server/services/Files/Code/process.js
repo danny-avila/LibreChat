@@ -598,6 +598,7 @@ const processCodeOutput = (params) =>
     determineFileType,
     claimCodeFile,
     commitCodeFile,
+    fileStorage: getFileStorage(),
     finalizePreview,
     hasOfficeHtmlPath,
     sanitizeArtifactPath,

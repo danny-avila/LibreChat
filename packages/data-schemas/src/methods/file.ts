@@ -240,6 +240,30 @@ export type ExpiredFileQueryOptions = {
   now?: Date;
 };
 
+export class FileStorageConflictError extends Error {
+  readonly code: string = 'FILE_STORAGE_CONFLICT';
+
+  constructor() {
+    super('The file has a conflicting storage operation');
+    this.name = 'FileStorageConflictError';
+  }
+}
+
+function codeFileStorageFilter(): FilterQuery<IMongoFile> {
+  return {
+    'storageOperations.deletionPending': { $ne: true },
+    'storageOperations.deleting': { $exists: false },
+    'storageOperations.provisioning.0': { $exists: false },
+  };
+}
+
+function rethrowCodeFileStorageConflict(error: unknown): never {
+  if (error instanceof Error && 'code' in error && error.code === 11000) {
+    throw new FileStorageConflictError();
+  }
+  throw error;
+}
+
 function assertValidCodeEnvironmentRouteKey(routeKey: string): void {
   if (routeKey.length === 0 || routeKey.includes('.') || routeKey.startsWith('$')) {
     throw new Error(`Invalid code environment route key "${routeKey}"`);
@@ -1156,20 +1180,26 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         ? { metadata: { sourceDispatchedAt: data.sourceDispatchedAt } }
         : {}),
     };
-    const result = await File.findOneAndUpdate(
-      {
-        filename: data.filename,
-        conversationId: data.conversationId,
-        context: FileContext.execute_code,
-        ...tenantFilter,
-      },
-      { $setOnInsert: insertData },
-      /** `timestamps: false`: a claim is an id reservation, not a content
-       *  write — bumping `updatedAt` here would make the row look freshly
-       *  written to the background harvest's out-of-order guard, which
-       *  compares `updatedAt` against the harvest's start time. */
-      { upsert: true, new: true, timestamps: false },
-    ).lean<IMongoFile>();
+    let result: IMongoFile | null;
+    try {
+      result = await File.findOneAndUpdate(
+        {
+          filename: data.filename,
+          conversationId: data.conversationId,
+          context: FileContext.execute_code,
+          ...tenantFilter,
+          ...codeFileStorageFilter(),
+        },
+        { $setOnInsert: insertData },
+        /** `timestamps: false`: a claim is an id reservation, not a content
+         *  write — bumping `updatedAt` here would make the row look freshly
+         *  written to the background harvest's out-of-order guard, which
+         *  compares `updatedAt` against the harvest's start time. */
+        { upsert: true, new: true, timestamps: false },
+      ).lean<IMongoFile>();
+    } catch (error) {
+      rethrowCodeFileStorageConflict(error);
+    }
     if (!result) {
       throw new Error(
         `[claimCodeFile] Failed to claim file "${data.filename}" for conversation ${data.conversationId}`,
@@ -1198,10 +1228,26 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       delete fileData.expiresAt;
     }
 
-    return File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
-      new: true,
-      upsert: true,
-    }).lean<IMongoFile>();
+    const generatedOutput = data.context === FileContext.execute_code;
+    try {
+      return await File.findOneAndUpdate(
+        {
+          file_id: data.file_id,
+          ...(generatedOutput
+            ? {
+                ...codeFileStorageFilter(),
+                user: data.user,
+                tenantId: data.tenantId ?? null,
+              }
+            : {}),
+        },
+        fileData,
+        { new: true, upsert: true },
+      ).lean<IMongoFile>();
+    } catch (error) {
+      if (generatedOutput) rethrowCodeFileStorageConflict(error);
+      throw error;
+    }
   }
 
   /**
@@ -1254,6 +1300,9 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       return true;
     }
     const committed = await updateFile(data, {
+      ...codeFileStorageFilter(),
+      user: data.user,
+      tenantId: data.tenantId ?? null,
       $or: [
         { 'metadata.sourceDispatchedAt': { $exists: false } },
         { 'metadata.sourceDispatchedAt': { $lte: sourceDispatchedAt } },

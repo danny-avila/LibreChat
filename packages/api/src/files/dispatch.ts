@@ -14,3 +14,21 @@ export async function dispatchFileStorageOperation<T>(
     throw error;
   }
 }
+
+export type FileStorageDeletionObserver = (outcome?: 'confirmed' | 'rejected') => void;
+
+/** Mark only the mutation, after provider preflight has completed. */
+export async function dispatchFileDeletion<T>(
+  onDelete: FileStorageDeletionObserver | undefined,
+  operation: () => Promise<T>,
+): Promise<T> {
+  onDelete?.();
+  try {
+    const result = await operation();
+    onDelete?.('confirmed');
+    return result;
+  } catch (error) {
+    if (isDefinitiveFileStorageFailure(error)) onDelete?.('rejected');
+    throw error;
+  }
+}

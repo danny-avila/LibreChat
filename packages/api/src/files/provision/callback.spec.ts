@@ -787,8 +787,11 @@ describe('createProvisionFilesCallback', () => {
 
     const calls = provisionToCodeEnv.mock.calls.map(([args]) => args);
     expect(calls.filter(({ file }) => file.file_id === 'shared')).toHaveLength(1);
-    expect(calls.find(({ file }) => file.file_id === 'shared').sandboxFilename).toBe('data.csv');
-    expect(calls.find(({ file }) => file.file_id === 'own').sandboxFilename).not.toBe('data.csv');
+    const sharedUpload = calls.find(({ file }) => file.file_id === 'shared');
+    const ownUpload = calls.find(({ file }) => file.file_id === 'own');
+    if (!sharedUpload || !ownUpload) throw new Error('Expected both upload destinations');
+    expect(sharedUpload.sandboxFilename).toBe('data.csv');
+    expect(ownUpload.sandboxFilename).not.toBe('data.csv');
   });
 
   it('recovers a cleared reference under its saved route name', async () => {

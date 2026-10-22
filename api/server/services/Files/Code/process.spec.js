@@ -318,14 +318,18 @@ describe('Code Process', () => {
     mockProvisionRecovery = jest.requireActual('@librechat/api').createFileProvisionRecovery();
     mockAcquireFileProvision.mockReset().mockResolvedValue(true);
     mockReleaseFileProvision.mockReset().mockResolvedValue(true);
-    mockCommitFileProvision.mockReset().mockImplementation(async ({ claim, code }) => {
-      const result = await mockUpdateFile({
-        file_id: claim.file_id,
-        'metadata.codeEnvRef': code.legacyRef ?? code.ref,
-        [`metadata.codeEnvRefs.${code.routeKey}`]: code.ref,
+    mockCommitFileProvision
+      .mockReset()
+      .mockImplementation(async ({ claim, code, output, releaseOnly }) => {
+        if (releaseOnly) return true;
+        if (output) return mockCommitCodeFile(output.file, output.sourceDispatchedAt);
+        const result = await mockUpdateFile({
+          file_id: claim.file_id,
+          'metadata.codeEnvRef': code.legacyRef ?? code.ref,
+          [`metadata.codeEnvRefs.${code.routeKey}`]: code.ref,
+        });
+        return result !== null && result !== false;
       });
-      return result !== null && result !== false;
-    });
     fileSizeLimitConfig.value = 20 * 1024 * 1024;
     // Default mock: atomic claim returns a new file record (no existing file)
     mockClaimCodeFile.mockResolvedValue({
@@ -379,6 +383,51 @@ describe('Code Process', () => {
       expect(mockAxios).not.toHaveBeenCalled();
       expect(mockClaimCodeFile).toHaveBeenCalledTimes(1);
       expect(mockCommitCodeFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not overwrite a reused output when its storage claim is denied', async () => {
+      mockClaimCodeFile.mockResolvedValue({ file_id: 'existing-output', user: 'user-123' });
+      mockAcquireFileProvision.mockResolvedValueOnce(false);
+      const saveBuffer = jest.fn();
+      getStrategyFunctions.mockReturnValue({ saveBuffer });
+      await processCodeOutput({ ...baseParams, preparedBuffer: Buffer.from('new output') });
+      expect(saveBuffer).not.toHaveBeenCalled();
+      expect(mockCommitCodeFile).not.toHaveBeenCalled();
+      expect(mockReleaseFileProvision).not.toHaveBeenCalled();
+    });
+
+    it('holds regenerated output storage through primary write and full record commit', async () => {
+      mockClaimCodeFile.mockResolvedValue({ file_id: 'existing-output', user: 'user-123' });
+      let finishWrite;
+      const writing = new Promise((resolve) => {
+        finishWrite = resolve;
+      });
+      const saveBuffer = jest.fn(async () => {
+        expect(mockAcquireFileProvision).toHaveBeenCalledTimes(1);
+        await writing;
+        return '/uploads/existing-output.txt';
+      });
+      getStrategyFunctions.mockReturnValue({ saveBuffer });
+      const pending = processCodeOutput({
+        ...baseParams,
+        preparedBuffer: Buffer.from('new output'),
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(saveBuffer).toHaveBeenCalledTimes(1);
+      expect(mockReleaseFileProvision).not.toHaveBeenCalled();
+      finishWrite();
+      const result = await pending;
+      expect(result.file.file_id).toBe('existing-output');
+      expect(mockCommitFileProvision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          output: expect.objectContaining({
+            file: expect.objectContaining({ file_id: 'existing-output' }),
+          }),
+        }),
+      );
+      expect(mockReleaseFileProvision).toHaveBeenCalledWith(
+        mockAcquireFileProvision.mock.calls[0][0],
+      );
     });
 
     it('enforces a caller-provided aggregate inspection budget while downloading', async () => {
@@ -696,7 +745,7 @@ describe('Code Process', () => {
         file_id: 'mock-uuid-1234',
         user: 'user-123',
       });
-      mockCommitCodeFile.mockResolvedValueOnce(false);
+      mockCommitCodeFile.mockResolvedValue(false);
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
 
       const result = await processCodeOutput({

@@ -2,8 +2,10 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { FileSources } from 'librechat-data-provider';
 import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
+import type { FileStorageDeletionObserver } from './dispatch';
 import { createDeleteFileWithSecondaryStorage, isMissingStorageError } from './storage';
 import { createFileProvisionRecovery } from './operations';
+import { dispatchFileDeletion } from './dispatch';
 
 const req: {
   user: { id: string; tenantId: string };
@@ -22,7 +24,16 @@ const file = {
 };
 
 function setup(source: string = FileSources.local) {
-  const primary = jest.fn().mockResolvedValue({ deleted: true });
+  const primary = jest
+    .fn()
+    .mockImplementation(
+      async (
+        _req: typeof req,
+        _file: typeof file,
+        _client?: typeof client,
+        onDelete?: FileStorageDeletionObserver,
+      ) => dispatchFileDeletion(onDelete, async () => ({ deleted: true })),
+    );
   const vectors = jest.fn().mockResolvedValue({ deleted: true });
   const code = jest.fn().mockResolvedValue({ deleted: true });
   const getDeleteFile = jest.fn((secondary: string) =>
@@ -234,6 +245,73 @@ describe('createDeleteFileWithSecondaryStorage', () => {
     await expect(remove(req, file)).resolves.toBeUndefined();
     expect(primary).toHaveBeenCalledTimes(2);
   });
+
+  describe.each([FileSources.s3, FileSources.cloudfront, FileSources.azure_blob])(
+    '%s mutation boundary',
+    (source) => {
+      it('releases deletion intent after preflight fails following secondary cleanup', async () => {
+        const { primary, vectors, code, fileStorage, remove } = setup(source);
+        const failure = Object.assign(new Error('preflight timed out'), { code: 'ETIMEDOUT' });
+        primary.mockRejectedValue(failure);
+        await expect(remove(req, file, client)).rejects.toBe(failure);
+        expect(vectors).toHaveBeenCalledTimes(1);
+        expect(code).toHaveBeenCalledTimes(1);
+        expect(file.embedded).toBe(false);
+        expect(primary).toHaveBeenCalledWith(req, file, client, expect.any(Function));
+        expect(fileStorage.releaseFileDeletion).toHaveBeenCalledWith(
+          expect.objectContaining({ retainDeletion: false }),
+        );
+      });
+
+      it('does not clear deletion intent inherited from an earlier attempt on preflight failure', async () => {
+        const { primary, fileStorage, remove } = setup(source);
+        fileStorage.acquireFileDeletion.mockResolvedValue({ resumed: true });
+        primary.mockRejectedValue(new Error('preflight timed out'));
+        await expect(remove(req, file)).rejects.toThrow('preflight timed out');
+        expect(fileStorage.releaseFileDeletion).toHaveBeenCalledWith(
+          expect.objectContaining({ retainDeletion: true }),
+        );
+      });
+
+      it('retains deletion intent when the dispatched delete loses its response', async () => {
+        const { primary, fileStorage, remove } = setup(source);
+        primary.mockImplementation((_req, _file, _client, onDelete) =>
+          dispatchFileDeletion(onDelete, async () => {
+            throw Object.assign(new Error('delete response lost'), { code: 'ETIMEDOUT' });
+          }),
+        );
+        await expect(remove(req, file)).rejects.toThrow('delete response lost');
+        expect(fileStorage.releaseFileDeletion).toHaveBeenCalledWith(
+          expect.objectContaining({ retainDeletion: true }),
+        );
+      });
+
+      it('reopens repair after the actual delete is definitively rejected', async () => {
+        const { primary, fileStorage, remove } = setup(source);
+        primary.mockImplementation((_req, _file, _client, onDelete) =>
+          dispatchFileDeletion(onDelete, async () => {
+            throw Object.assign(new Error('delete denied'), { statusCode: 403 });
+          }),
+        );
+        await expect(remove(req, file)).rejects.toThrow('delete denied');
+        expect(fileStorage.releaseFileDeletion).toHaveBeenCalledWith(
+          expect.objectContaining({ retainDeletion: false }),
+        );
+      });
+
+      it('retains deletion intent after a confirmed delete followed by RAG rejection', async () => {
+        const { primary, fileStorage, remove } = setup(source);
+        primary.mockImplementation(async (_req, _file, _client, onDelete) => {
+          await dispatchFileDeletion(onDelete, async () => undefined);
+          throw Object.assign(new Error('RAG denied'), { statusCode: 403 });
+        });
+        await expect(remove(req, file)).rejects.toThrow('RAG denied');
+        expect(fileStorage.releaseFileDeletion).toHaveBeenCalledWith(
+          expect.objectContaining({ retainDeletion: true }),
+        );
+      });
+    },
+  );
 
   it('retains deletion intent when primary dispatch loses its response', async () => {
     const { primary, fileStorage, remove } = setup();

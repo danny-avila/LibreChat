@@ -61,7 +61,29 @@ export function createFileStorageMethods(mongoose: typeof import('mongoose')): {
 
   async function commitFileProvision(data: FileProvisionCommit): Promise<boolean> {
     const File = mongoose.models.File as Model<IMongoFile>;
+    if (data.releaseOnly) {
+      return (
+        (await File.exists({
+          ...claimFilter(data.claim),
+          'storageOperations.provisioning': data.claim.token,
+          'storageOperations.deletionPending': { $ne: true },
+          'storageOperations.deleting': { $exists: false },
+        })) != null
+      );
+    }
     const update: Record<string, unknown> = {};
+    if (data.output) {
+      const { file } = data.output;
+      if (
+        file.file_id !== data.claim.file_id ||
+        file.user !== data.claim.userId ||
+        (file.tenantId ?? null) !== (data.claim.tenantId ?? null)
+      ) {
+        throw new Error('Generated output does not match its storage claim');
+      }
+      Object.assign(update, file);
+      delete update.file_id;
+    }
     if (data.code) {
       const { routeKey, ref, legacyRef } = data.code;
       if (!routeKey || routeKey.includes('.') || routeKey.startsWith('$')) {
@@ -78,6 +100,14 @@ export function createFileStorageMethods(mongoose: typeof import('mongoose')): {
         'storageOperations.provisioning': data.claim.token,
         'storageOperations.deletionPending': { $ne: true },
         'storageOperations.deleting': { $exists: false },
+        ...(data.output?.sourceDispatchedAt != null
+          ? {
+              $or: [
+                { 'metadata.sourceDispatchedAt': { $exists: false } },
+                { 'metadata.sourceDispatchedAt': { $lte: data.output.sourceDispatchedAt } },
+              ],
+            }
+          : {}),
       },
       {
         $set: update,
@@ -129,7 +159,14 @@ export function createFileStorageMethods(mongoose: typeof import('mongoose')): {
       },
       { timestamps: false },
     );
-    return result.matchedCount === 1;
+    if (result.matchedCount === 1) return true;
+    // A lost release acknowledgement must not clear pending intent or a newer token.
+    return (
+      (await File.exists({
+        ...claimFilter(data),
+        'storageOperations.deleting': { $exists: false },
+      })) != null
+    );
   }
 
   return {

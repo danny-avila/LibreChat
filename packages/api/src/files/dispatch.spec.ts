@@ -6,7 +6,7 @@ import {
   withCodeApiUploadRecovery,
 } from '../utils/code';
 import { createFileProvisionRecovery, withFileDeletion, withFileProvisioning } from './operations';
-import { dispatchFileStorageOperation } from './dispatch';
+import { dispatchFileDeletion, dispatchFileStorageOperation } from './dispatch';
 
 function fixture() {
   const claims = new Set<string>();
@@ -101,4 +101,42 @@ it('does not clear uncertainty after a successful transport response and failed 
     }),
   ).rejects.toMatchObject({ name: 'FileProvisionOutcomeUnknownError' });
   expect(claims.size).toBe(1);
+});
+
+describe('dispatchFileDeletion', () => {
+  it('marks the mutation before dispatch and confirms its result', async () => {
+    const onDelete = jest.fn();
+    const operation = jest.fn(async () => {
+      expect(onDelete.mock.calls).toEqual([[]]);
+      return 'deleted';
+    });
+    await expect(dispatchFileDeletion(onDelete, operation)).resolves.toBe('deleted');
+    expect(onDelete.mock.calls).toEqual([[], ['confirmed']]);
+  });
+
+  it('reports a definitive mutation rejection', async () => {
+    const onDelete = jest.fn();
+    const error = Object.assign(new Error('denied'), { $metadata: { httpStatusCode: 403 } });
+    await expect(
+      dispatchFileDeletion(onDelete, async () => {
+        throw error;
+      }),
+    ).rejects.toBe(error);
+    expect(onDelete.mock.calls).toEqual([[], ['rejected']]);
+  });
+
+  it('leaves a dispatched mutation uncertain on a lost response', async () => {
+    const onDelete = jest.fn();
+    const error = Object.assign(new Error('response lost'), { code: 'ETIMEDOUT' });
+    await expect(
+      dispatchFileDeletion(onDelete, async () => {
+        throw error;
+      }),
+    ).rejects.toBe(error);
+    expect(onDelete.mock.calls).toEqual([[]]);
+  });
+
+  it('supports callers without an observer', async () => {
+    await expect(dispatchFileDeletion(undefined, async () => true)).resolves.toBe(true);
+  });
 });

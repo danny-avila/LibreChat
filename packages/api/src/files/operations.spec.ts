@@ -52,13 +52,14 @@ function setup() {
       return { resumed };
     }),
     releaseFileDeletion: jest.fn(async (claim: FileStorageClaim & { retainDeletion: boolean }) => {
+      if (!deleting.has(key(claim))) return true;
       if (claim.token !== deleting.get(key(claim))) return false;
       deleting.delete(key(claim));
       if (!claim.retainDeletion) pending.delete(key(claim));
       return true;
     }),
   } satisfies FileDeleteStorage;
-  return { storage, provisioners };
+  return { storage, provisioners, deleting, pending };
 }
 
 function provision(
@@ -842,4 +843,223 @@ it.each([
   { statusCode: 500, status: 403 },
 ])('prioritizes SDK HTTP contracts in adapter order: %j', (error) => {
   expect(isDefinitiveFileStorageFailure(error)).toBe(false);
+});
+
+describe('deletion token recovery', () => {
+  it.each([true, false])(
+    'reconciles a lost acquisition acknowledgement when applied=%s',
+    async (applied) => {
+      const { storage } = setup();
+      const acquire = storage.acquireFileDeletion.getMockImplementation()!;
+      const failure = new Error('acquisition acknowledgement lost');
+      storage.acquireFileDeletion.mockImplementationOnce(async (claim) => {
+        if (applied) await acquire(claim);
+        throw failure;
+      });
+      const stale = jest.fn();
+      await expect(
+        withFileDeletion({ file, userId: 'caller', storage, operation: stale }),
+      ).rejects.toBe(failure);
+      const original = storage.acquireFileDeletion.mock.calls[0][0];
+      expect(storage.releaseFileDeletion).not.toHaveBeenCalled();
+      const current = jest.fn(async (removed: () => void) => {
+        removed();
+        return 'current';
+      });
+      await expect(
+        withFileDeletion({ file, userId: 'caller', storage: { ...storage }, operation: current }),
+      ).resolves.toBe('current');
+      expect(stale).not.toHaveBeenCalled();
+      expect(current).toHaveBeenCalledTimes(1);
+      expect(storage.releaseFileDeletion.mock.calls[0][0]).toEqual({
+        ...original,
+        retainDeletion: true,
+      });
+      expect(storage.acquireFileDeletion.mock.calls[1][0].token).not.toBe(original.token);
+      expect(storage.releaseFileDeletion.mock.invocationCallOrder[0]).toBeLessThan(
+        storage.acquireFileDeletion.mock.invocationCallOrder[1],
+      );
+    },
+  );
+
+  it.each(['throw', 'false', 'lost-ack'] as const)(
+    'recovers %s release after success without repeating primary I/O',
+    async (failure) => {
+      const { storage } = setup();
+      const release = storage.releaseFileDeletion.getMockImplementation()!;
+      storage.releaseFileDeletion.mockImplementationOnce(async (claim) => {
+        if (failure === 'lost-ack') await release(claim);
+        if (failure === 'false') return false;
+        throw new Error('release unavailable');
+      });
+      const value = { primary: 'removed' };
+      const operation = jest.fn(async (removed: () => void) => {
+        removed();
+        return value;
+      });
+      const options = { file, userId: 'caller', storage, operation };
+      await expect(withFileDeletion(options)).rejects.toThrow();
+      const replacement = jest.fn(async () => ({ primary: 'wrong' }));
+      await expect(withFileDeletion({ ...options, operation: replacement })).resolves.toBe(value);
+      expect(operation).toHaveBeenCalledTimes(1);
+      expect(replacement).not.toHaveBeenCalled();
+      expect(storage.acquireFileDeletion).toHaveBeenCalledTimes(1);
+      expect(storage.releaseFileDeletion.mock.calls[1][0]).toEqual(
+        storage.releaseFileDeletion.mock.calls[0][0],
+      );
+      await expect(provision(storage)).rejects.toThrow('conflicts');
+    },
+  );
+
+  it.each([false, true])(
+    'preserves operation failure while release recovery is pending, progress=%s',
+    async (progress) => {
+      const { storage } = setup();
+      storage.releaseFileDeletion.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+      const failure = new Error('original failure');
+      const operation = jest.fn(async (removed: () => void) => {
+        if (progress) removed();
+        throw failure;
+      });
+      const options = { file, userId: 'caller', storage, operation };
+      await expect(withFileDeletion(options)).rejects.toBe(failure);
+      const original = storage.acquireFileDeletion.mock.calls[0][0];
+      const upload = jest.fn(async () => result());
+      await expect(provision(storage, upload)).rejects.toThrow('conflicts');
+      const current = jest.fn(async () => 'current');
+      await expect(withFileDeletion({ ...options, operation: current })).rejects.toThrow(
+        'could not be released',
+      );
+      expect(current).not.toHaveBeenCalled();
+      expect(storage.acquireFileDeletion).toHaveBeenCalledTimes(1);
+      await expect(withFileDeletion({ ...options, operation: current })).resolves.toBe('current');
+      expect(storage.releaseFileDeletion.mock.calls[2][0]).toEqual({
+        ...original,
+        retainDeletion: progress,
+      });
+      expect(operation).toHaveBeenCalledTimes(1);
+      expect(current).toHaveBeenCalledTimes(1);
+      expect(upload).not.toHaveBeenCalled();
+      if (progress) await expect(provision(storage)).rejects.toThrow('conflicts');
+      else await expect(provision(storage)).resolves.toBe('uploaded');
+    },
+  );
+
+  it('does not reopen provisioning after a preflight release applied but lost its acknowledgement', async () => {
+    const { storage } = setup();
+    const release = storage.releaseFileDeletion.getMockImplementation()!;
+    storage.releaseFileDeletion.mockImplementationOnce(async (claim) => {
+      await release(claim);
+      throw new Error('release acknowledgement lost');
+    });
+    await expect(
+      withFileDeletion({
+        file,
+        userId: 'caller',
+        storage,
+        operation: async () => {
+          throw new Error('preflight');
+        },
+      }),
+    ).rejects.toThrow('preflight');
+    const upload = jest.fn(async () => result());
+    await expect(provision(storage, upload)).rejects.toThrow('conflicts');
+    expect(upload).not.toHaveBeenCalled();
+    await withFileDeletion({ file, userId: 'caller', storage, operation: async () => undefined });
+    await expect(provision(storage)).resolves.toBe('uploaded');
+  });
+
+  it.each(['acquire', 'operation', 'release'] as const)(
+    'rejects overlap immediately during %s',
+    async (phase) => {
+      const { storage } = setup();
+      const entered = barrier();
+      const done = barrier();
+      const pause = async () => {
+        entered.release();
+        await done.wait;
+      };
+      if (phase === 'acquire') {
+        const acquire = storage.acquireFileDeletion.getMockImplementation()!;
+        storage.acquireFileDeletion.mockImplementationOnce(async (claim) => {
+          await pause();
+          return acquire(claim);
+        });
+      }
+      if (phase === 'release') {
+        const release = storage.releaseFileDeletion.getMockImplementation()!;
+        storage.releaseFileDeletion.mockImplementationOnce(async (claim) => {
+          await pause();
+          return release(claim);
+        });
+      }
+      const first = withFileDeletion({
+        file,
+        userId: 'caller',
+        storage,
+        operation: async () => {
+          if (phase === 'operation') await pause();
+        },
+      });
+      await entered.wait;
+      const replacement = jest.fn();
+      await expect(
+        withFileDeletion({ file, userId: 'caller', storage, operation: replacement }),
+      ).rejects.toThrow('conflicts');
+      expect(replacement).not.toHaveBeenCalled();
+      expect(storage.acquireFileDeletion).toHaveBeenCalledTimes(1);
+      done.release();
+      await first;
+    },
+  );
+
+  it('registers the claim before a synchronous adapter reenters deletion', async () => {
+    const { storage } = setup();
+    let reentrant: Promise<void> | undefined;
+    storage.acquireFileDeletion.mockImplementationOnce(() => {
+      reentrant = expect(
+        withFileDeletion({ file, userId: 'caller', storage, operation: jest.fn() }),
+      ).rejects.toThrow('conflicts');
+      throw new Error('synchronous acquisition failure');
+    });
+    await expect(
+      withFileDeletion({ file, userId: 'caller', storage, operation: jest.fn() }),
+    ).rejects.toThrow('synchronous acquisition failure');
+    await reentrant;
+    expect(storage.acquireFileDeletion).toHaveBeenCalledTimes(1);
+    expect(storage.releaseFileDeletion).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { ...file, file_id: 'other-file' },
+    { ...file, user: 'other-owner' },
+    { ...file, tenantId: 'other-tenant' },
+  ])('isolates deletion recovery from %j', async (other) => {
+    const { storage } = setup();
+    storage.releaseFileDeletion.mockResolvedValueOnce(false);
+    const value = {};
+    await expect(
+      withFileDeletion({ file, userId: 'caller', storage, operation: async () => value }),
+    ).rejects.toThrow();
+    await expect(
+      withFileDeletion({ file: other, userId: 'caller', storage, operation: async () => 'other' }),
+    ).resolves.toBe('other');
+    await expect(
+      withFileDeletion({ file, userId: 'caller', storage, operation: jest.fn() }),
+    ).resolves.toBe(value);
+  });
+
+  it('never releases or steals a foreign deletion token, including after restart', async () => {
+    const { storage, deleting } = setup();
+    deleting.set(key({ ...scope, token: 'foreign' }), 'foreign');
+    const operation = jest.fn();
+    for (const recovery of [storage.recovery, createFileProvisionRecovery()]) {
+      await expect(
+        withFileDeletion({ file, userId: 'caller', storage: { ...storage, recovery }, operation }),
+      ).rejects.toThrow('conflicts');
+    }
+    expect(storage.releaseFileDeletion).not.toHaveBeenCalled();
+    expect(operation).not.toHaveBeenCalled();
+    expect([...deleting.values()]).toEqual(['foreign']);
+  });
 });

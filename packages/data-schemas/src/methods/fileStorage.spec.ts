@@ -369,3 +369,41 @@ describe('file storage fence', () => {
     expect(await read()).toEqual(before);
   });
 });
+
+describe('deletion release acknowledgement recovery', () => {
+  it.each([true, false])(
+    'acknowledges repeated release without changing pending intent, retain=%s',
+    async (retainDeletion) => {
+      await seed();
+      expect(await methods.acquireFileDeletion(deletion)).toEqual({ resumed: false });
+      expect(await methods.releaseFileDeletion({ ...claim, retainDeletion })).toBe(true);
+      expect(await peer.releaseFileDeletion({ ...claim, retainDeletion: !retainDeletion })).toBe(
+        true,
+      );
+      expect((await read())?.storageOperations?.deletionPending).toBe(
+        retainDeletion ? true : undefined,
+      );
+      expect((await read())?.storageOperations?.deleting).toBeUndefined();
+    },
+  );
+
+  it('does not acknowledge a release for a missing record, another owner, or another tenant', async () => {
+    await seed();
+    for (const wrong of [
+      { ...claim, file_id: 'missing' },
+      { ...claim, userId: new mongoose.Types.ObjectId().toString() },
+      { ...claim, tenantId: 'other-tenant' },
+    ])
+      expect(await methods.releaseFileDeletion({ ...wrong, retainDeletion: false })).toBe(false);
+  });
+
+  it('never releases a newer deletion token when replaying an old release', async () => {
+    await seed();
+    expect(await methods.acquireFileDeletion(deletion)).not.toBeNull();
+    expect(await methods.releaseFileDeletion({ ...claim, retainDeletion: false })).toBe(true);
+    expect(await peer.acquireFileDeletion({ ...deletion, token: 'new-token' })).not.toBeNull();
+    expect(await methods.releaseFileDeletion({ ...claim, retainDeletion: false })).toBe(false);
+    expect((await read())?.storageOperations?.deleting).toBe('new-token');
+    expect((await read())?.storageOperations?.deletionPending).toBe(true);
+  });
+});
