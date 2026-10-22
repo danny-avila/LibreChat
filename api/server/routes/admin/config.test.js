@@ -159,6 +159,10 @@ describe('admin config routes', () => {
 
     expect(response.body.metaVersion).toBe(1);
     expect(response.body.features.dottedKeys).toBe(true);
-    expect(response.body.limits).toEqual({ maxPatchEntries: 100, overrideCacheTtlMs: 15_000 });
+    expect(response.body.limits).toEqual({
+      maxPatchEntries: 100,
+      maxChangeOps: 1000,
+      overrideCacheTtlMs: 15_000,
+    });
   });
 });

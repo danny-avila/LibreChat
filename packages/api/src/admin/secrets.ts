@@ -409,6 +409,32 @@ export function isConfigSecretRelatedSegments(segments: readonly string[]): bool
   });
 }
 
+/**
+ * Whether renaming key `from` to `to` of the record at `segments` would carry a value onto or
+ * off a registered secret location: the record lies at or inside one, or a location names
+ * `from` or `to` literally at the renamed position. A location with a wildcard there (an entry
+ * of a record of servers, say) moves with its entry and stays registered.
+ */
+export function isConfigSecretKeyRename(
+  segments: readonly string[],
+  from: string,
+  to: string,
+): boolean {
+  const matches = (location: readonly string[], length: number): boolean =>
+    segments
+      .slice(0, length)
+      .every((segment, index) => location[index] === ANY_SEGMENT || location[index] === segment);
+  return SECRET_LOCATIONS.some((location) => {
+    if (location.length <= segments.length) {
+      return matches(location, location.length);
+    }
+    const key = location[segments.length];
+    return (
+      matches(location, segments.length) && key !== ANY_SEGMENT && (key === from || key === to)
+    );
+  });
+}
+
 export function getConfigSecretInputError(fieldPath: string, value: unknown): string | null {
   if (PREVIEW_PATHS.has(fieldPath)) {
     return `Cannot write protected secret preview path: ${fieldPath}`;

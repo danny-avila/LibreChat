@@ -116,21 +116,36 @@ export function getPatchReentryIssues(
   writes: readonly ConfigFieldWrite[],
   next: StoredConfigState,
 ): SecretReentryIssue[] {
+  if (!writes.some(({ segments }) => segments[0] === WEB_SEARCH)) {
+    return [];
+  }
+  return getBatchReentryIssues(stored, writes, next);
+}
+
+/**
+ * Re-entry issues for a batch of changes, judged on the document the batch
+ * would store. Its sets, unsets and tombstones apply in order, so only the
+ * planned document says which URL a stored key ends up beside; a key the batch
+ * sets counts as entered again.
+ * @param stored - The document before the batch.
+ * @param writes - The values the batch sets, in order.
+ * @param next - The overrides and tombstones the batch would store.
+ */
+export function getBatchReentryIssues(
+  stored: StoredConfigState,
+  writes: readonly ConfigFieldWrite[],
+  next: StoredConfigState,
+): SecretReentryIssue[] {
   const written = new Set<string>();
-  let touched = false;
   for (const { segments, value } of writes) {
     if (segments[0] !== WEB_SEARCH) {
       continue;
     }
-    touched = true;
     if (segments.length === 1) {
       Object.keys(getRecord(value) ?? {}).forEach((field) => written.add(field));
     } else if (segments.length === 2) {
       written.add(segments[1]);
     }
-  }
-  if (!touched) {
-    return [];
   }
   return toReentryIssues(
     getWebSearchView(getWebSearch(stored?.overrides), stored?.tombstones),
