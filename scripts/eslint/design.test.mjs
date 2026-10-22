@@ -203,6 +203,10 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
       errors: [missing('[.foo_&]:[.bar_&]:disabled:opacity-50')],
     },
     {
+      code: "cn('hover:[&_button]:disabled:opacity-50', '[&_button]:hover:theme-disabled:opacity-100')",
+      errors: [missing('hover:[&_button]:disabled:opacity-50')],
+    },
+    {
       code: "cn('[&:disabled]:opacity-40')",
       errors: [missing('[&:disabled]:opacity-40')],
     },

@@ -172,12 +172,12 @@ function spellsRecipe(value, need) {
     if (!(need.topology === 'any' || recipe === need.topology)) return false;
     if (need.important && !match[1] && !match[2]) return false;
     const rest = variants.filter((_, i) => i !== marker);
-    const ordered = (variant) => variant.startsWith('[');
-    const arbitrary = dimEnclosing.filter(ordered);
+    if (!dimEnclosing.some((variant) => variant.startsWith('['))) {
+      return rest.every((variant) => dimEnclosing.includes(variant));
+    }
     let from = 0;
     return rest.every((variant) => {
-      if (!ordered(variant)) return dimEnclosing.includes(variant);
-      from = arbitrary.indexOf(variant, from) + 1;
+      from = dimEnclosing.indexOf(variant, from) + 1;
       return from > 0;
     });
   });
