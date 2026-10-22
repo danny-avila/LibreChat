@@ -24,14 +24,27 @@ function createBroker() {
         }),
       };
     },
-    subscriber(): ConfigInvalidationSubscriber {
+    /** `failSubscribes` rejects that many SUBSCRIBE calls first, as Redis being down would. */
+    subscriber(
+      failSubscribes = 0,
+    ): ConfigInvalidationSubscriber & { events: EventEmitter; subscribe: jest.Mock } {
       const state = { channels: new Set<string>(), events: new EventEmitter() };
       subscribers.add(state);
+      let failures = failSubscribes;
       return {
-        subscribe: async (channel) => state.channels.add(channel),
-        unsubscribe: async (channel) => state.channels.delete(channel),
-        on: (event, listener) => state.events.on(event, listener),
-        off: (event, listener) => state.events.off(event, listener),
+        events: state.events,
+        subscribe: jest.fn(async (channel: string) => {
+          if (failures > 0) {
+            failures -= 1;
+            throw new Error('Reached the max retries per request limit');
+          }
+          return state.channels.add(channel);
+        }),
+        unsubscribe: async (channel: string) => state.channels.delete(channel),
+        on: (event: string, listener: (...args: string[]) => void) =>
+          state.events.on(event, listener),
+        off: (event: string, listener: (...args: string[]) => void) =>
+          state.events.off(event, listener),
       };
     },
   };
@@ -39,19 +52,24 @@ function createBroker() {
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-function createInstance(broker: ReturnType<typeof createBroker>, instanceId: string) {
+function createInstance(
+  broker: ReturnType<typeof createBroker>,
+  instanceId: string,
+  failSubscribes = 0,
+) {
   const clearOverrides = jest.fn(async (_tenantId?: string) => undefined);
   const clearMcp = jest.fn(async () => undefined);
   const publisher = broker.publisher();
+  const subscriber = broker.subscriber(failSubscribes);
   const invalidation = createConfigCacheInvalidation({
     clears: [
       { label: 'clearOverrideCache', clear: clearOverrides },
       { label: 'clearMcpConfigCache', clear: clearMcp },
     ],
-    pubsub: { publisher, subscriber: broker.subscriber() },
+    pubsub: { publisher, subscriber },
     instanceId,
   });
-  return { invalidation, clearOverrides, clearMcp, publisher };
+  return { invalidation, clearOverrides, clearMcp, publisher, subscriber };
 }
 
 describe('createConfigCacheInvalidation', () => {
@@ -163,6 +181,45 @@ describe('createConfigCacheInvalidation', () => {
     await flush();
 
     expect(second.clearOverrides).not.toHaveBeenCalled();
+  });
+
+  it('subscribes again when the subscriber becomes ready after a failed SUBSCRIBE', async () => {
+    const error = jest.spyOn(logger, 'error').mockReturnValue(logger);
+    const broker = createBroker();
+    const first = createInstance(broker, 'first');
+    const second = createInstance(broker, 'second', 1);
+    await flush();
+
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('Subscribing to cross-instance invalidations failed'),
+      expect.anything(),
+    );
+    await first.invalidation.invalidate('tenant-a');
+    await flush();
+    expect(second.clearOverrides).not.toHaveBeenCalled();
+
+    second.subscriber.events.emit('ready');
+    await flush();
+    await first.invalidation.invalidate('tenant-a');
+    await flush();
+
+    expect(second.subscriber.subscribe).toHaveBeenCalledTimes(2);
+    expect(second.clearOverrides).toHaveBeenCalledWith('tenant-a');
+  });
+
+  it('leaves resubscribing to the client once subscribed, and stops retrying once closed', async () => {
+    const broker = createBroker();
+    const subscribed = createInstance(broker, 'subscribed');
+    const closed = createInstance(broker, 'closed', 1);
+    await flush();
+
+    subscribed.subscriber.events.emit('ready');
+    await closed.invalidation.close();
+    closed.subscriber.events.emit('ready');
+    await flush();
+
+    expect(subscribed.subscriber.subscribe).toHaveBeenCalledTimes(1);
+    expect(closed.subscriber.subscribe).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the local clear when publishing fails', async () => {

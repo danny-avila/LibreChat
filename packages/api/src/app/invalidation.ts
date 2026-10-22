@@ -12,12 +12,17 @@ export interface ConfigInvalidationPublisher {
   publish(channel: string, message: string): Promise<number>;
 }
 
-/** A dedicated subscriber connection (a client in subscribe mode cannot publish). */
+/**
+ * A dedicated subscriber connection (a client in subscribe mode cannot publish). It emits
+ * `ready` each time its connection is established, as an ioredis client does.
+ */
 export interface ConfigInvalidationSubscriber {
   subscribe(channel: string): Promise<unknown>;
   unsubscribe(channel: string): Promise<unknown>;
   on(event: 'message', listener: (channel: string, message: string) => void): unknown;
+  on(event: 'ready', listener: () => void): unknown;
   off(event: 'message', listener: (channel: string, message: string) => void): unknown;
+  off(event: 'ready', listener: () => void): unknown;
 }
 
 /** The connections and channel cross-instance invalidation runs on. */
@@ -103,14 +108,40 @@ export function createConfigCacheInvalidation(params: {
     void clearLocal(parsed.tenantId);
   };
 
+  let subscribed = false;
+  let subscribing = false;
+  let closed = false;
+
+  /**
+   * Subscribes until one SUBSCRIBE succeeds; from then on the client resubscribes by itself
+   * after a reconnect. A SUBSCRIBE that fails (Redis unreachable at startup, the client's
+   * retries spent) is sent again the next time the subscriber becomes ready, so a transient
+   * outage does not leave this instance deaf to other instances' writes until it restarts.
+   */
+  const subscribe = (): void => {
+    if (!pubsub || subscribed || subscribing || closed) {
+      return;
+    }
+    subscribing = true;
+    pubsub.subscriber.subscribe(channel).then(
+      () => {
+        subscribing = false;
+        subscribed = true;
+      },
+      (error: unknown) => {
+        subscribing = false;
+        logger.error(
+          '[invalidateConfigCaches] Subscribing to cross-instance invalidations failed; retrying when the subscriber reconnects. Until then this instance may serve cached config until it expires:',
+          getSafeErrorMetadata(error),
+        );
+      },
+    );
+  };
+
   if (pubsub) {
     pubsub.subscriber.on('message', onMessage);
-    pubsub.subscriber.subscribe(channel).catch((error: unknown) => {
-      logger.error(
-        '[invalidateConfigCaches] Subscribing to cross-instance invalidations failed; other instances may serve cached config until it expires:',
-        getSafeErrorMetadata(error),
-      );
-    });
+    pubsub.subscriber.on('ready', subscribe);
+    subscribe();
   }
 
   async function invalidate(tenantId?: string): Promise<void> {
@@ -135,6 +166,8 @@ export function createConfigCacheInvalidation(params: {
     if (!pubsub) {
       return;
     }
+    closed = true;
+    pubsub.subscriber.off('ready', subscribe);
     pubsub.subscriber.off('message', onMessage);
     await pubsub.subscriber.unsubscribe(channel);
   }

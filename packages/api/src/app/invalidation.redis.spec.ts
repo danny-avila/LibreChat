@@ -43,10 +43,14 @@ describe('createRedisConfigInvalidationPubSub', () => {
   }
 
   async function startInstance(namespace?: string) {
+    return startInstanceOn(await connect(), namespace);
+  }
+
+  async function startInstanceOn(client: Redis, namespace?: string) {
     const clearOverrides = jest.fn(async (_tenantId?: string) => undefined);
     const pubsub = createRedisConfigInvalidationPubSub({
       useRedis: true,
-      client: await connect(),
+      client,
       namespace,
     });
     if (!pubsub) {
@@ -105,6 +109,34 @@ describe('createRedisConfigInvalidationPubSub', () => {
       expect.anything(),
     );
     server = await startRespServer();
+  });
+
+  it('subscribes once Redis comes back when the first SUBSCRIBE failed during an outage', async () => {
+    const error = jest.spyOn(logger, 'error').mockReturnValue(logger);
+    const channel = 'librechat:config:invalidate:deploy-a';
+    const client = await connect();
+    const { port } = server;
+    await server.close();
+    await waitFor(() => client.status !== 'ready');
+
+    const late = await startInstanceOn(client, 'deploy-a');
+    await waitFor(
+      () =>
+        error.mock.calls.some(([message]) =>
+          String(message).includes('Subscribing to cross-instance invalidations failed'),
+        ),
+      5000,
+    );
+
+    server = await startRespServer(port);
+    await waitFor(subscribed(channel, 1), 5000);
+    const writer = await startInstance('deploy-a');
+    await waitFor(subscribed(channel, 2));
+
+    await writer.invalidation.invalidate('tenant-a');
+
+    await waitFor(() => late.clearOverrides.mock.calls.length === 1);
+    expect(late.clearOverrides).toHaveBeenCalledWith('tenant-a');
   });
 
   it('returns no pub/sub without Redis', async () => {

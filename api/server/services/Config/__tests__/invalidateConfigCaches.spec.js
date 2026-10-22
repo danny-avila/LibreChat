@@ -74,21 +74,23 @@ describe('invalidateConfigCaches', () => {
     jest.clearAllMocks();
   });
 
-  it('clears the override and MCP config caches only', async () => {
+  it('clears the YAML base config, the override caches and the MCP config caches', async () => {
     await invalidateConfigCaches();
 
     expect(invalidationOptions.clears.map(({ label }) => label)).toEqual([
+      'clearAppConfigCache',
       'clearOverrideCache',
       'clearMcpConfigCache',
     ]);
+    expect(mockClearAppConfigCache).toHaveBeenCalledTimes(1);
     expect(mockClearOverrideCache).toHaveBeenCalledTimes(1);
     expect(mockClearMcpConfigCache).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves the YAML base config and the tools derived from it alone', async () => {
+  it('leaves the global tool cache for the base reload to republish', async () => {
     await invalidateConfigCaches('tenant-a');
 
-    expect(mockClearAppConfigCache).not.toHaveBeenCalled();
+    expect(mockClearAppConfigCache).toHaveBeenCalledTimes(1);
     expect(mockInvalidateCachedTools).not.toHaveBeenCalled();
   });
 

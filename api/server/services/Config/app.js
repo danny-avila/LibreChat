@@ -48,7 +48,7 @@ const loadBaseConfig = async (mode) => {
   return AppService({ config, paths, systemTools });
 };
 
-const { getAppConfig, clearOverrideCache } = createAppConfigService({
+const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfigService({
   loadBaseConfig,
   setCachedTools,
   getCache: getLogStores,
@@ -75,13 +75,16 @@ const { getAppConfig, clearOverrideCache } = createAppConfigService({
 db.initializeMessageBudget(getAppConfig);
 
 /**
- * Admin config writes change DB overrides only, so they clear what is merged from them: the
- * per-principal override caches and the MCP config-source servers. The YAML base config and
- * the tools derived from it are untouched, so a write no longer re-reads librechat.yaml. With
- * Redis, the clear is broadcast so every instance drops its in-process merged config.
+ * Admin config writes clear the per-principal override caches, the MCP config-source servers
+ * and the YAML base config. Base-only sections such as `filters` and `messageFilter` exist only
+ * in librechat.yaml, and an admin write is how a running server picks up an edit to them: the
+ * next read reloads the YAML (keeping the last good config if it fails) and republishes the
+ * tools derived from it. With Redis, the clear is broadcast so every instance reloads its YAML
+ * and drops its in-process merged config.
  */
 const configCacheInvalidation = createConfigCacheInvalidation({
   clears: [
+    { label: 'clearAppConfigCache', clear: () => clearAppConfigCache() },
     { label: 'clearOverrideCache', clear: clearOverrideCache },
     { label: 'clearMcpConfigCache', clear: () => clearMcpConfigCache() },
   ],

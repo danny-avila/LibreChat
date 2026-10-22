@@ -42,6 +42,8 @@ import {
   replaceConfigOverrides,
   parseConfigPathSegments,
   getConfigOverrideIssues,
+  getExpectedRevision,
+  MAX_CONFIG_PATH_DEPTH,
   DEFAULT_CONFIG_PRIORITY,
   BASE_CONFIG_PRINCIPAL_ID,
   isConfigRevisionConflict,
@@ -67,7 +69,6 @@ import type {
   AdminConfigSkipReason,
   AdminConfigIgnoreReason,
   AdminConfigChangesResponse,
-  ConfigRevisionConflictError,
   AdminConfigChangeErrorResponse,
 } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
@@ -182,15 +183,20 @@ type FieldTargetRead =
 
 /**
  * Reads a target from exactly one of `fieldPath` (validated as it always was) and `segments`.
- * A segment that contains a dot is refused wherever a guard would split it: as the section,
- * inside sections whose guards read dotted paths, and on a registered secret's path.
+ * Both spellings share the {@link MAX_CONFIG_PATH_DEPTH} cap. A segment that contains a dot is
+ * refused wherever a guard would split it: as the section, inside sections whose guards read
+ * dotted paths, and on a registered secret's path.
  */
 function readFieldTarget(fieldPath: unknown, segments: unknown): FieldTargetRead {
   if (segments === undefined) {
     if (typeof fieldPath !== 'string' || !isValidFieldPath(fieldPath)) {
       return { ok: false, error: `Invalid or unsafe field path: ${String(fieldPath)}` };
     }
-    return { ok: true, target: { segments: parseFieldPath(fieldPath), fieldPath, dotFree: true } };
+    const parsed = parseFieldPath(fieldPath);
+    if (parsed.length > MAX_CONFIG_PATH_DEPTH) {
+      return { ok: false, error: 'Field path is too deep', reason: 'too_deep' };
+    }
+    return { ok: true, target: { segments: parsed, fieldPath, dotFree: true } };
   }
   if (fieldPath !== undefined) {
     return { ok: false, error: 'Provide either fieldPath or segments, not both' };
@@ -1338,24 +1344,32 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     }
   }
 
-  /** 200 for a write with nothing to apply, reporting the stored revision. */
+  /**
+   * 200 for a write with nothing to apply, reporting the stored revision. The precondition
+   * still holds: a document that is not at `expectedRevision` answers 409, as the write would.
+   */
   async function noopResponse(
     res: Response,
     message: string,
     principalType: PrincipalType,
     principalId: string,
+    expectedRevision: ConfigRevision | undefined,
   ): Promise<Response> {
     const stored = await readStoredConfig(principalType, principalId);
-    return res.status(200).json({ message, revision: stored ? getConfigRevision(stored) : null });
+    const revision = stored ? getConfigRevision(stored) : null;
+    if (expectedRevision && expectedRevision !== getExpectedRevision(stored)) {
+      return conflictResponse(res, revision, principalType, principalId);
+    }
+    return res.status(200).json({ message, revision });
   }
 
   async function conflictResponse(
     res: Response,
-    error: ConfigRevisionConflictError,
+    knownRevision: ConfigRevision | null | undefined,
     principalType: PrincipalType,
     principalId: string,
   ): Promise<Response> {
-    let currentRevision = error.currentRevision;
+    let currentRevision = knownRevision;
     if (currentRevision === undefined) {
       const stored = await readStoredConfig(principalType, principalId);
       currentRevision = stored ? getConfigRevision(stored) : null;
@@ -1375,7 +1389,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     principalId: string,
   ): Promise<Response> {
     if (isConfigRevisionConflict(error)) {
-      return conflictResponse(res, error, principalType, principalId);
+      return conflictResponse(res, error.currentRevision, principalType, principalId);
     }
     if (isConfigPathError(error)) {
       return invalidPathResponse(res, error);
@@ -1602,6 +1616,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           'No actionable override sections provided',
           principalType,
           principalId,
+          expected.value,
         );
       }
 
@@ -1803,6 +1818,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           'No actionable field entries provided',
           principalType,
           principalId,
+          expected.value,
         );
       }
 
@@ -1987,7 +2003,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const skipReason = getFieldSkipReason(fieldPath);
       if (skipReason) {
         logSkippedField('Ignoring tombstone for', fieldPath, skipReason);
-        return noopResponse(res, 'No actionable field path provided', principalType, principalId);
+        return noopResponse(
+          res,
+          'No actionable field path provided',
+          principalType,
+          principalId,
+          expected.value,
+        );
       }
 
       if (priority != null && !hasBroadManage) {
@@ -2090,7 +2112,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const skipReason = getFieldSkipReason(fieldPath);
       if (skipReason) {
         logSkippedField('Ignoring delete for', fieldPath, skipReason);
-        return noopResponse(res, 'No actionable field path provided', principalType, principalId);
+        return noopResponse(
+          res,
+          'No actionable field path provided',
+          principalType,
+          principalId,
+          expected.value,
+        );
       }
 
       let config: ConfigRecord | null;

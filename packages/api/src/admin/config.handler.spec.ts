@@ -3083,6 +3083,89 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
 
+    describe('on a write with nothing to apply', () => {
+      const noops = [
+        ['upsertConfigOverrides', 'body', { overrides: { filters: {} } }],
+        [
+          'patchConfigField',
+          'body',
+          { entries: [{ fieldPath: 'interface.prompts', value: false }] },
+        ],
+        ['tombstoneConfigField', 'body', { fieldPath: 'interface.prompts' }],
+        ['deleteConfigField', 'query', { fieldPath: 'interface.prompts' }],
+      ] as const;
+
+      it.each(noops)(
+        '%s answers 409 when the stored document is not at expectedRevision',
+        async (name, location, input) => {
+          const exists = createHandlers({
+            findConfigByPrincipal: jest.fn().mockResolvedValue(stored),
+          });
+          const createOnly = mockRes();
+          await exists.handlers[name](
+            mockReq({ params, [location]: { ...input, expectedRevision: 'absent' } }),
+            createOnly,
+          );
+          expect(createOnly.statusCode).toBe(409);
+          expect(createOnly.body).toEqual({
+            error: 'Config was modified by another request',
+            code: 'CONFIG_VERSION_CONFLICT',
+            currentRevision: storedRevision,
+          });
+
+          const stale = mockRes();
+          await exists.handlers[name](
+            mockReq({
+              params,
+              [location]: { ...input, expectedRevision: '64b000000000000000000001:3' },
+            }),
+            stale,
+          );
+          expect(stale.statusCode).toBe(409);
+          expect(stale.body?.currentRevision).toBe(storedRevision);
+
+          const missing = createHandlers();
+          const gone = mockRes();
+          await missing.handlers[name](
+            mockReq({ params, [location]: { ...input, expectedRevision: storedRevision } }),
+            gone,
+          );
+          expect(gone.statusCode).toBe(409);
+          expect(gone.body?.currentRevision).toBeNull();
+          for (const deps of [exists.deps, missing.deps]) {
+            expect(deps.writeConfigDocument).not.toHaveBeenCalled();
+            expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+            expect(deps.unsetConfigField).not.toHaveBeenCalled();
+          }
+        },
+      );
+
+      it.each(noops)(
+        '%s answers 200 with the revision when the precondition holds',
+        async (name, location, input) => {
+          const exists = createHandlers({
+            findConfigByPrincipal: jest.fn().mockResolvedValue(stored),
+          });
+          const matched = mockRes();
+          await exists.handlers[name](
+            mockReq({ params, [location]: { ...input, expectedRevision: storedRevision } }),
+            matched,
+          );
+          expect(matched.statusCode).toBe(200);
+          expect(matched.body?.revision).toBe(storedRevision);
+
+          const missing = createHandlers();
+          const absent = mockRes();
+          await missing.handlers[name](
+            mockReq({ params, [location]: { ...input, expectedRevision: 'absent' } }),
+            absent,
+          );
+          expect(absent.statusCode).toBe(200);
+          expect(absent.body?.revision).toBeNull();
+        },
+      );
+    });
+
     it('returns revisions on reads', async () => {
       const { handlers } = createHandlers({
         listAllConfigs: jest.fn().mockResolvedValue([stored]),
