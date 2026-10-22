@@ -20,7 +20,25 @@ if (REDIS_KEY_PREFIX_VAR && REDIS_KEY_PREFIX) {
 const REDIS_CHANNEL_PREFIX = process.env.REDIS_CHANNEL_PREFIX || '';
 
 const USE_REDIS = isEnabled(process.env.USE_REDIS);
-if (USE_REDIS && !process.env.REDIS_URI) {
+
+// ─── Sentinel configuration (opt-in) ───────────────────────────
+// When REDIS_SENTINEL_ENABLED is true, LibreChat connects via Redis Sentinel
+// for automatic master discovery and failover. When false (or unset), the
+// existing REDIS_URI single-host connection is used unchanged.
+const REDIS_SENTINEL_ENABLED = isEnabled(process.env.REDIS_SENTINEL_ENABLED ?? 'false');
+if (REDIS_SENTINEL_ENABLED) {
+  if (!process.env.REDIS_SENTINEL_HOSTS || process.env.REDIS_SENTINEL_HOSTS.trim() === '') {
+    throw new Error('REDIS_SENTINEL_ENABLED is true but REDIS_SENTINEL_HOSTS is not set.');
+  }
+  if (
+    !process.env.REDIS_SENTINEL_MASTER_NAME ||
+    process.env.REDIS_SENTINEL_MASTER_NAME.trim() === ''
+  ) {
+    throw new Error('REDIS_SENTINEL_ENABLED is true but REDIS_SENTINEL_MASTER_NAME is not set.');
+  }
+}
+
+if (USE_REDIS && !REDIS_SENTINEL_ENABLED && !process.env.REDIS_URI) {
   throw new Error('USE_REDIS is enabled but REDIS_URI is not set.');
 }
 
@@ -140,6 +158,16 @@ const cacheConfig: {
   REDIS_USE_ALTERNATIVE_DNS_LOOKUP: boolean;
   /** Enable redis cluster without the need of multiple URIs */
   USE_REDIS_CLUSTER: boolean;
+  /** Opt-in: connect via Redis Sentinel for automatic master discovery and failover */
+  REDIS_SENTINEL_ENABLED: boolean;
+  /** Comma-separated Sentinel node addresses (host:port) */
+  REDIS_SENTINEL_HOSTS: string | undefined;
+  /** Sentinel master group name (e.g. 'mymaster') */
+  REDIS_SENTINEL_MASTER_NAME: string | undefined;
+  /** Password for Sentinel auth (if Sentinel requires auth) */
+  REDIS_SENTINEL_PASSWORD: string | undefined;
+  /** TLS for Sentinel connections */
+  REDIS_SENTINEL_TLS_ENABLED: boolean;
   /**
    * Force cluster-safe (key-by-key) deletion even when connecting as a single-node Redis instance.
    * Needed for managed services like ElastiCache Serverless that present a single endpoint
@@ -220,6 +248,16 @@ const cacheConfig: {
   REDIS_USE_ALTERNATIVE_DNS_LOOKUP: isEnabled(process.env.REDIS_USE_ALTERNATIVE_DNS_LOOKUP),
   /** Enable redis cluster without the need of multiple URIs */
   USE_REDIS_CLUSTER: isEnabled(process.env.USE_REDIS_CLUSTER ?? 'false'),
+  /** Opt-in: connect via Redis Sentinel for automatic master discovery and failover */
+  REDIS_SENTINEL_ENABLED,
+  /** Comma-separated Sentinel node addresses (host:port) */
+  REDIS_SENTINEL_HOSTS: process.env.REDIS_SENTINEL_HOSTS,
+  /** Sentinel master group name (e.g. 'mymaster') */
+  REDIS_SENTINEL_MASTER_NAME: process.env.REDIS_SENTINEL_MASTER_NAME,
+  /** Password for Sentinel auth (if Sentinel requires auth) */
+  REDIS_SENTINEL_PASSWORD: process.env.REDIS_SENTINEL_PASSWORD,
+  /** TLS for Sentinel connections */
+  REDIS_SENTINEL_TLS_ENABLED: isEnabled(process.env.REDIS_SENTINEL_TLS_ENABLED ?? 'false'),
   /**
    * Force cluster-safe (key-by-key) deletion even when connecting as a single-node Redis instance.
    * Needed for managed services like ElastiCache Serverless that present a single endpoint
