@@ -1782,7 +1782,7 @@ export class Chat {
       (isExpired(event.data) || this.resumed.has(event.data.actionId) || older);
     if (!stale) {
       const applyEvent = this.init.applyEvent ?? defaultApplyEvent;
-      applyEvent(event, {
+      applyEvent(this.withoutStalePause(event), {
         messages: this.messages,
         write: (messages) => this.write(messages),
       });
@@ -2075,6 +2075,28 @@ export class Chat {
     if (held?.actionId === expired.actionId || superseded) {
       this.clearAction();
     }
+  }
+
+  /**
+   * The event the host reducer folds in: a sync snapshot drops a pause that is stale (expired,
+   * already resumed, or older than one seen), as a standalone `pending_action` frame of it would be
+   * skipped, so no card is drawn for a pause the chat does not hold.
+   */
+  private withoutStalePause(event: ChatEvent): ChatEvent {
+    const snapshot = event.type === 'sync' ? event.data.resumeState?.pendingAction : undefined;
+    if (event.type !== 'sync' || !snapshot) {
+      return event;
+    }
+    const generation = this.generationCreatedAt;
+    const stale =
+      isExpired(snapshot) ||
+      this.resumed.has(snapshot.actionId) ||
+      (generation != null && this.isOlderPause(snapshot, generation));
+    if (!stale) {
+      return event;
+    }
+    const resumeState = { ...event.data.resumeState, pendingAction: undefined };
+    return { ...event, data: { ...event.data, resumeState } } as ChatEvent;
   }
 
   /** Whether `action` came before a pause this chat already saw in the same generation. */

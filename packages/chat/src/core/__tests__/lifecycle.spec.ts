@@ -2597,3 +2597,32 @@ describe('Chat reattachments that fail over HTTP', () => {
     );
   });
 });
+
+describe('Chat snapshots the host reducer folds in', () => {
+  it.each([
+    ['an expired pause', { ...askAction, expiresAt: 1 }],
+    ['a pause older than the one held', { ...askAction, actionId: 'action-old', createdAt: 0 }],
+  ])('(2) a sync snapshot reaches the host reducer without %s', async (_label, pause) => {
+    const seen: ChatEvent[] = [];
+    const h = createHarness({ applyEvent: (event) => seen.push(event) });
+    h.chat.restorePendingAction({ ...askAction, createdAt: 1 }, 500);
+    const stream = createStream({ streamId: 'convo-1', generationCreatedAt: 500 });
+    h.transport.reconnectToStream.mockResolvedValueOnce(stream);
+    h.chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 500 }).then(
+      () => undefined,
+      () => undefined,
+    );
+    await flush();
+    stream.push({
+      type: 'sync',
+      data: { sync: true, resumeState: { runSteps: [], pendingAction: pause } },
+    } as ChatEvent);
+    await flush();
+
+    const sync = seen.find((event) => event.type === 'sync') as Extract<
+      ChatEvent,
+      { type: 'sync' }
+    >;
+    expect(sync.data.resumeState?.pendingAction).toBeUndefined();
+  });
+});
