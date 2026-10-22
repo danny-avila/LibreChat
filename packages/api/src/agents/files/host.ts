@@ -113,6 +113,7 @@ export function resolveRunFileCodeExecutionContext(
 
 export function createRunFileHost<TContext extends RunFileToolContext>({
   req,
+  policy,
   contexts,
   createdAt,
   inputFileIds,
@@ -129,6 +130,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
   provisioning,
 }: {
   req: ServerRequest;
+  policy: NonNullable<RunFileSessionDeps['policy']>;
   contexts: Map<string, TContext>;
   createdAt: number;
   inputFileIds: ReadonlySet<string>;
@@ -341,7 +343,16 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
   }
 
   const session = createRunFileSession({
-    policy: req.config?.endpoints?.agents?.fileSharing,
+    policy,
+    canPublishProjectFiles: (agentId) => {
+      const context = contexts.get(agentId);
+      return (
+        req.config?.projects?.codeExecution === true &&
+        req.chatProjectContext != null &&
+        context?.codeEnvAvailable === true &&
+        context.codeExecutionContext?.environmentType !== 'attached'
+      );
+    },
     userId: user.id,
     tenantId: user.tenantId,
     createdAt,
@@ -747,7 +758,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
     agentId: string,
     executionContext?: SubagentExecutionContext,
   ): TContext | undefined {
-    if (!session.isActive()) return contexts.get(agentId);
+    if (!session.isActive(executionContext, agentId)) return contexts.get(agentId);
     return executionContexts.get(JSON.stringify(session.actorFor(agentId, executionContext)));
   }
 
@@ -757,7 +768,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
     signal: AbortSignal,
     executionContext?: SubagentExecutionContext,
   ) {
-    if (!session.isActive()) return undefined;
+    if (!session.isActive(executionContext, agentId)) return undefined;
     await session.prepareTools(agentId, executionContext, signal);
     return provisionPrepared(toolNames, agentId, signal, executionContext);
   }
@@ -962,13 +973,14 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
     metadata: ToolEndCallbackMetadata,
   ): Promise<void> => {
     const executionContext = metadata.executionContext as SubagentExecutionContext | undefined;
-    if (!session.isActive() || executionContext == null) return callback(data, metadata);
+    if (!session.isActive(executionContext)) return callback(data, metadata);
     if (!isCodeArtifactToolOutput(data.output) && !isCodeFileToolName(data.output.name)) {
       return callback(data, metadata);
     }
     const agentId = metadata.executingAgentId ?? metadata.agentId ?? metadata.agent_id;
     if (typeof agentId !== 'string')
       throw new Error('The shared-file producer has no agent identity.');
+    if (executionContext == null && !session.capturesRoot(agentId)) return callback(data, metadata);
     const context = getContext(agentId, executionContext);
     if (!context) throw new Error('The shared-file producer has no execution context.');
     if (data.output.artifact == null || typeof data.output.artifact !== 'object') return;

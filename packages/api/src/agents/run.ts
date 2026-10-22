@@ -103,6 +103,12 @@ import {
   isSteerTerminalContinuationSupported,
 } from '~/agents/steering/runtime';
 import {
+  PUBLISH_ARTIFACT_TOOL,
+  createRunFileTools,
+  eventOnlyRunFileTools,
+  isRunFileSharingSupported,
+} from './files/runtime';
+import {
   reserveProjectCodeSessions,
   freezeProjectCodeSessions,
   prepareQueuedCodeFileContext,
@@ -111,11 +117,6 @@ import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
-import {
-  createRunFileTools,
-  eventOnlyRunFileTools,
-  isRunFileSharingSupported,
-} from './files/runtime';
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
@@ -1944,8 +1945,14 @@ function buildSubagentConfigs(
      */
     const hasBackground = detachedTasksEnabled || (agent.backgroundToolNames?.length ?? 0) > 0;
     const hasInjectedIntent = (agent.intentToolNames?.length ?? 0) > 0;
+    const hasRunFileTools = agentInput.graphTools?.some(
+      (tool) => tool.name === PUBLISH_ARTIFACT_TOOL,
+    );
+    const selfInput = hasRunFileTools
+      ? (prebuiltGraphInputs?.get(agent.id) ?? buildIsolatedAgentInputs(agent, toInput))
+      : agentInput;
     const sanitizedToolRegistry = stripIntentFromToolRegistry(
-      stripBackgroundFromToolRegistry(agentInput.toolRegistry, agent.backgroundToolNames),
+      stripBackgroundFromToolRegistry(selfInput.toolRegistry, agent.backgroundToolNames),
       agent.intentToolNames,
     );
     configs.push({
@@ -1955,13 +1962,13 @@ function buildSubagentConfigs(
       description: `Spawn ${selfName} in an isolated context to handle a focused subtask. Verbose tool output stays in the child's context; only a summary returns.`,
       /** Self-spawn reuses the parent's config, so mirror the parent's recursion limit. */
       maxTurns: resolveSubagentMaxTurns(agentsEConfig, agent),
-      ...(hasBackground || hasInjectedIntent
+      ...(hasBackground || hasInjectedIntent || hasRunFileTools
         ? {
             agentInputs: {
-              ...agentInput,
+              ...selfInput,
               toolDefinitions: stripIntentFromToolDefinitions(
                 stripBackgroundFromToolDefinitions(
-                  agentInput.toolDefinitions,
+                  selfInput.toolDefinitions,
                   agent.backgroundToolNames,
                 ),
                 agent.intentToolNames,
@@ -2340,6 +2347,7 @@ export async function createRun({
       agents.map((agent) => agent.id),
       signal,
     ) === true;
+  const subagentFileSharing = runFiles?.isSharing() === true;
   if (
     appConfig?.endpoints?.agents?.fileSharing?.enabled === true &&
     agents[0]?.subagents?.enabled === true &&
@@ -2355,7 +2363,7 @@ export async function createRun({
   // input snapshot or publication routing. Shared children stay foreground.
   // Detached completion turns cannot yet restore enrolled schedule authority.
   const activeSubagentTasks =
-    runFilesActive || scheduledMCPExecution?.enrolled === true ? undefined : subagentTasks;
+    subagentFileSharing || scheduledMCPExecution?.enrolled === true ? undefined : subagentTasks;
   /**
    * Only extract discovered tools if:
    * 1. We have message history to parse
@@ -2414,7 +2422,7 @@ export async function createRun({
       preparedCodeFileAgents.add(agent);
     }
     const isSubagent = opts.isSubagent === true;
-    if (runFilesActive) {
+    if (subagentFileSharing) {
       for (const { memberConfigs } of agent.subagentGraphConfigs ?? []) {
         const deliveryTargets = new Set(
           memberConfigs.map((member) =>
@@ -2605,7 +2613,7 @@ export async function createRun({
       }
     }
 
-    if (runFilesActive) {
+    if (subagentFileSharing || (!isSubagent && runFiles?.capturesRoot(agent.id))) {
       tools = eventOnlyRunFileTools(tools, toolDefinitions);
     }
 
@@ -2655,8 +2663,21 @@ export async function createRun({
       initialSessions: buildAgentInitialToolSessions(agent, initialSessions),
       codeSessionKey: agent.codeSessionKey,
     };
-    if (runFilesActive && runFiles != null && (isSubagent || agent.subagents?.enabled === true)) {
+    if (
+      runFilesActive &&
+      runFiles != null &&
+      ((!isSubagent && runFiles.capturesRoot(agent.id)) ||
+        (subagentFileSharing && (isSubagent || agent.subagents?.enabled === true)))
+    ) {
       graphTools = [...(graphTools ?? []), ...createRunFileTools(runFiles, agent.id, signal)];
+      if (!isSubagent && runFiles.capturesRoot(agent.id)) {
+        agentInput.instructions = [
+          agentInput.instructions,
+          'Run Code working files are private to this turn. Use list_run_files and publish_artifact to return finished deliverables; published files are automatically added to the project. Do not publish temporary scripts or intermediate files unless the user asks for them. Unpublished files are discarded when the turn ends; regenerate them after an interrupted turn.',
+        ]
+          .filter(Boolean)
+          .join('\n\n');
+      }
     }
     if (graphTools) {
       /**
@@ -3063,7 +3084,7 @@ export async function createRun({
     indexTokenCountMap,
     subagentUsageSink,
     subagentTasks: activeSubagentTasks,
-    ...(runFilesActive &&
+    ...(subagentFileSharing &&
       runFiles != null && {
         subagentContext: { prepare: runFiles.prepare, complete: runFiles.complete },
       }),

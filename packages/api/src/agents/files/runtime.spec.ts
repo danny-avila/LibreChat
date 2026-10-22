@@ -18,6 +18,7 @@ type RunAgent = Parameters<typeof createRun>[0]['agents'][number];
 
 interface BuiltAgentInput {
   agentId: string;
+  instructions?: string;
   graphTools?: StructuredToolInterface[];
   tools?: StructuredToolInterface[];
   toolDefinitions?: Array<{ name: string }>;
@@ -27,10 +28,12 @@ interface BuiltAgentInput {
   }>;
 }
 
-function makeSession(active = true) {
+function makeSession(active = true, project = false) {
   return {
     activate: jest.fn(() => active),
     isActive: () => active,
+    isSharing: () => active && !project,
+    capturesRoot: () => active && project,
     prepare: jest.fn(async () => ({})),
     complete: jest.fn(
       async (_input: Parameters<RunFileSession['complete']>[0], result: { content: string }) =>
@@ -198,6 +201,49 @@ describe('run file SDK bridge', () => {
     expect(parent.graphTools).toBeUndefined();
     expect(parent.subagentConfigs?.[0].agentInputs?.graphTools).toBeUndefined();
   });
+
+  it('gives project roots publication tools without enabling subagent sharing', async () => {
+    const session = makeSession(true, true);
+    const subagentTasks = { scopeId: 'owner:conversation', store: new InMemorySubagentTaskStore() };
+    const config = await create(
+      session,
+      [
+        agent('parent', {
+          subagents: { enabled: true, allowSelf: true, shareFiles: false },
+          subagentAgentConfigs: [agent('parent')],
+        }),
+        agent('handoff'),
+      ],
+      { subagentTasks },
+    );
+    expect(config.subagentContext).toBeUndefined();
+    expect(config.subagentTasks).toBe(subagentTasks);
+    for (const input of config.graphConfig.agents) {
+      expect(input.graphTools?.map((tool) => tool.name)).toEqual([
+        'list_run_files',
+        'publish_artifact',
+      ]);
+      expect(input.instructions).toContain('Do not publish temporary scripts');
+    }
+    expect(
+      config.graphConfig.agents[0].subagentConfigs?.[0].agentInputs?.graphTools,
+    ).toBeUndefined();
+  });
+
+  it.each([false, true])(
+    'keeps self-delegation publication tools scoped to sharing (project=%s)',
+    async (project) => {
+      const config = await create(makeSession(true, project), [
+        agent('parent', { subagents: { enabled: true, allowSelf: true, shareFiles: !project } }),
+      ]);
+      const child = config.graphConfig.agents[0].subagentConfigs?.[0].agentInputs;
+      expect(child).toBeDefined();
+      expect(child!.graphTools?.map((tool) => tool.name)).toEqual(
+        project ? undefined : ['list_run_files', 'publish_artifact'],
+      );
+      expect(child!.instructions).not.toContain('Run Code working files are private to this turn');
+    },
+  );
 
   it.each(['direct', 'handoff'] as const)(
     'distinguishes a nondelegating root %s member from its subagent instance',

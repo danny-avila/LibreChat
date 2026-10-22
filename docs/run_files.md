@@ -38,6 +38,10 @@ does not add them to other agents.
 
 With `projects.codeExecution: true`, project files also reach Run Code. Use the catalog's `code_path`
 and `list_run_files` to find the current execution's paths, including newly published files.
+In project chats, Run Code working files stay private until the producing agent calls
+`publish_artifact`; only published deliverables are added to the project automatically. Temporary
+scripts and intermediate files do not consume the project's file limit. This uses the same run
+limits and cleanup below without enabling **Share files with subagents**.
 
 Generated sandbox outputs stay private while a child reads, inspects, and refines them. The child can
 create `analysis.csv`, inspect it in another tool call, and rewrite that filename without losing

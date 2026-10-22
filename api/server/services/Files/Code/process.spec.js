@@ -223,6 +223,7 @@ jest.mock('~/models', () => ({
   updateFile: mockUpdateFile,
   claimCodeFile: (...args) => mockClaimCodeFile(...args),
   commitCodeFile: mockCommitCodeFile,
+  addGeneratedProjectFile: jest.fn(),
 }));
 
 // Mock permissions (must be before process.js import)
@@ -464,6 +465,40 @@ describe('Code Process', () => {
       expect(mockCommitCodeFile).not.toHaveBeenCalled();
       expect(discard).not.toHaveBeenCalled();
     });
+
+    it.each([false, true])(
+      'adds only explicitly published outputs to a project (published=%s)',
+      async (published) => {
+        const project = { projectId: 'project', file_ids: [], resources: [], contextRevision: 0 };
+        const add = require('~/models').addGeneratedProjectFile;
+        add.mockResolvedValue({ ok: false, error: { code: 'file_limit' } });
+        const result = await processCodeOutput({
+          ...baseParams,
+          req: {
+            ...mockReq,
+            config: { ...mockReq.config, projects: { codeExecution: true } },
+            chatProjectContext: project,
+          },
+          preparedBuffer: Buffer.from('report data'),
+          ...(published
+            ? {
+                publication: {
+                  scope,
+                  provenance,
+                  publish: async ({ file }) => ({ ...file, file_id: 'published-id' }),
+                  find: jest.fn(),
+                  discard: jest.fn(),
+                },
+              }
+            : {}),
+        });
+        expect(result.file).toBeTruthy();
+        expect(add).toHaveBeenCalledTimes(published ? 1 : 0);
+        expect(result.file.projectFile).toEqual(
+          published ? { projectId: 'project', status: 'failed', code: 'file_limit' } : undefined,
+        );
+      },
+    );
 
     it('finalizes office previews against the canonical published file identity', async () => {
       mockHasOfficeHtmlPath.mockReturnValueOnce(true);

@@ -238,12 +238,24 @@ async function handleExec(req, res) {
     const name = `e2e-run-files-${runFileLabel}.csv`;
     const content = Buffer.from('source,count\npdf,1\n');
     generated.set(`${sessionId}/${fileId}`, { name, content });
-    sessions.set(sessionId, [{ fileId, filename: name }]);
+    const files = [{ id: fileId, name }];
+    if (body.code.includes('E2E_PROJECT_SCRATCH')) {
+      for (let index = 1; index <= 20; index++) {
+        const id = `${fileId}-helper-${index}`;
+        const name = `helper-${index}.py`;
+        generated.set(`${sessionId}/${id}`, { name, content: Buffer.from('# temporary script\n') });
+        files.push({ id, name });
+      }
+    }
+    sessions.set(
+      sessionId,
+      files.map(({ id: fileId, name: filename }) => ({ fileId, filename })),
+    );
     sendJson(res, 200, {
       session_id: sessionId,
       stdout: `Created ${name}\n`,
       stderr: '',
-      files: [{ id: fileId, name }],
+      files,
     });
     return;
   }

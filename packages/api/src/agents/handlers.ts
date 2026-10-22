@@ -5778,7 +5778,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             }
             const toolNames = [...new Set(allowedToolCalls.map((tc) => tc.name))];
 
-            const runFileSharingActive = runFiles?.isActive() === true;
+            const runFileSharingActive = runFiles?.isActive(executionContext, agentId) === true;
             if (runFileSharingActive) {
               if (!agentId) throw new Error('Shared-file tools require an executing agent.');
               await runFiles!.prepareTools(

@@ -269,7 +269,8 @@ export async function processCodeOutput(
         return false;
       }
       const projectFile =
-        !isUpdate || req.chatProjectContext?.file_ids.includes(file.file_id)
+        publication != null &&
+        (!isUpdate || req.chatProjectContext?.file_ids.includes(file.file_id))
           ? await saveProjectOutput?.(req, file)
           : undefined;
       if (projectFile != null) {

@@ -52,7 +52,7 @@ export function createRunFileTools(
         'Use this to discover files published by other authorized agents during this run. ' +
         'Private output versions remain available across sandbox calls during this run. ' +
         'The same filename may have multiple artifact IDs, listed in creation order; publish the version you want to return when ready. ' +
-        "When delegating a task that returns files, ask the producing subagent to publish its outputs before returning. A parent cannot publish a child's private artifact IDs.",
+        "When file sharing with subagents is enabled, ask a subagent returning files to publish its outputs before returning. A parent cannot publish a child's private artifact IDs.",
       schema: z.object({}).strict(),
     },
   );
@@ -73,7 +73,8 @@ export function createRunFileTools(
       description:
         "Publish one of this execution's own output artifacts from list_run_files as a durable downloadable file for " +
         'the parent and user when ready. Each artifact ID selects an immutable output version, even after the working file changes. ' +
-        'Outputs stay private until this succeeds. Optional sibling agent ' +
+        'Outputs stay private until this succeeds. With project Run Code enabled, published files are automatically added to the current project. ' +
+        'Publish finished deliverables, not temporary scripts or intermediate files, unless the user asks for them. Optional sibling agent ' +
         'recipients must be authorized by the run sharing policy.',
       schema: z
         .object({

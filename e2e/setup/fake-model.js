@@ -3415,7 +3415,7 @@ function provisioningToolResponses({ text, toolNames }) {
   if (projectCollision) {
     const [, label, origin, sanitized] = projectCollision;
     const filename = sanitized ? 'my results.csv' : 'results.csv';
-    return codeExecResponses(
+    return projectOutputResponses(
       {
         filename,
         toolCallId: `call_e2e_project_collision_${label}_${origin}`,
@@ -3425,9 +3425,21 @@ function provisioningToolResponses({ text, toolNames }) {
       toolNames,
     );
   }
+  const projectPrivateLabel = getMarkerValue(text, 'E2E_PROJECT_PRIVATE:');
+  if (projectPrivateLabel) {
+    return codeExecResponses(
+      {
+        filename: `e2e-run-files-${projectPrivateLabel}.csv`,
+        toolCallId: `call_e2e_project_private_${projectPrivateLabel}`,
+        finalText: 'E2E project private output complete',
+        code: `printf 'source,count\\npdf,1\\n' > /mnt/data/e2e-run-files-${projectPrivateLabel}.csv\nfor i in $(seq 1 20); do printf '# temporary script\\n' > /mnt/data/helper-$i.py; done\n# E2E_RUN_FILE_ARTIFACT:${projectPrivateLabel}\n# E2E_PROJECT_SCRATCH`,
+      },
+      toolNames,
+    );
+  }
   const projectOutputLabel = getMarkerValue(text, 'E2E_PROJECT_OUTPUT:');
   if (projectOutputLabel) {
-    return codeExecResponses(
+    return projectOutputResponses(
       {
         filename: `e2e-run-files-${projectOutputLabel}.csv`,
         toolCallId: `call_e2e_project_output_${projectOutputLabel}`,
@@ -3499,6 +3511,46 @@ function codeExecResponses({ filename, toolCallId, finalText, code }, toolNames)
         type: 'tool_call',
       },
     ],
+  };
+}
+
+function projectOutputResponses(input, toolNames) {
+  const scenario = codeExecResponses(input, toolNames);
+  if (!scenario.toolCalls) return scenario;
+  return {
+    responses: [''],
+    resolveInvocation: (messages) => {
+      if (!findLastToolMessage(messages, input.toolCallId)) {
+        return { response: '', toolCalls: scenario.toolCalls };
+      }
+      const catalogId = `${input.toolCallId}_catalog`;
+      const catalog = findLastToolMessage(messages, catalogId);
+      if (!catalog) {
+        return {
+          response: '',
+          toolCalls: [{ id: catalogId, name: 'list_run_files', args: {}, type: 'tool_call' }],
+        };
+      }
+      const artifact = findRunFile(parseRunFileResult(catalog)?.artifacts, input.filename);
+      if (!artifact)
+        return { response: `E2E project output failed: ${input.filename} was not staged` };
+      const publishId = `${input.toolCallId}_publish`;
+      const published = findLastToolMessage(messages, publishId);
+      if (!published) {
+        return {
+          response: '',
+          toolCalls: [
+            {
+              id: publishId,
+              name: 'publish_artifact',
+              args: { artifact_id: artifact.id },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      return { response: `${input.finalText}: ${input.filename}` };
+    },
   };
 }
 

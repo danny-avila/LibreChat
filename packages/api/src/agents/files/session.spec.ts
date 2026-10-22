@@ -16,6 +16,7 @@ function setup(
     signal?: AbortSignal;
     ttlMs?: number;
     inputs?: TFile[];
+    project?: boolean;
     validateMessages?: RunFileSessionDeps['validateMessages'];
     encodeMessages?: RunFileSessionDeps['encodeMessages'];
     getCodeFileContext?: RunFileSessionDeps['getCodeFileContext'];
@@ -53,13 +54,14 @@ function setup(
     userId: 'user',
     createdAt: Date.now(),
     policy: {
-      enabled: true,
+      enabled: options.project !== true,
       allowSiblingSharing: false,
       maxFiles: 20,
       maxPrivateBytes: 268_435_456,
       ttlMs: options.ttlMs ?? 60_000,
     },
     snapshots,
+    canPublishProjectFiles: options.project ? (id) => id === 'parent' : undefined,
     getInputs: () => options.inputs ?? [],
     inputFileIds: new Set(options.inputs?.map((file) => file.file_id)),
     getAgent: (id) => {
@@ -164,6 +166,44 @@ function setup(
     },
   };
 }
+
+it('keeps project working files private and publishes selected versions without subagent sharing', async () => {
+  const h = setup(false, { project: true });
+  try {
+    expect(h.session.isActive()).toBe(true);
+    expect(h.session.isSharing()).toBe(false);
+    expect(h.session.isActive(h.context)).toBe(false);
+    expect(await h.session.prepare(h.preparation)).toEqual({});
+    h.setWorkingBytes('scratch script');
+    await h.session.capture('parent', undefined, 'scratch', {
+      session_id: 'root-sandbox',
+      files: [{ id: 'scratch', name: 'helper.py' }],
+    });
+    h.setWorkingBytes('finished report');
+    await h.session.capture('parent', undefined, 'report', {
+      session_id: 'root-sandbox',
+      files: [{ id: 'report', name: 'results.csv' }],
+    });
+    const { artifacts } = await h.session.list('parent');
+    expect(artifacts.map((file) => file.filename)).toEqual(['helper.py', 'results.csv']);
+    expect(h.saved).toEqual([]);
+    h.failNextPublication(new Error('Storage unavailable'));
+    await expect(h.session.publish('parent', undefined, artifacts[1].artifact_id)).rejects.toThrow(
+      'Storage unavailable',
+    );
+    h.setWorkingBytes('later edits');
+    const file = await h.session.publish('parent', undefined, artifacts[1].artifact_id);
+    expect(await h.session.publish('parent', undefined, artifacts[1].artifact_id)).toEqual(file);
+    expect(h.publishedBytes.map((bytes) => bytes.toString())).toEqual(['finished report']);
+    expect(h.saved.map((file) => file.filename)).toEqual(['results.csv']);
+    expect(h.emit).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'parent' }));
+    expect((await h.session.list('parent')).artifacts).toEqual([artifacts[0]]);
+  } finally {
+    await h.session.close();
+  }
+  expect(h.snapshots.close).toHaveBeenCalledTimes(1);
+  await expect(h.session.list('parent')).rejects.toThrow('expired');
+});
 
 it('returns publications from every graph member without granting sibling access', async () => {
   const { session, context, preparation } = setup();

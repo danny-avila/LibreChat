@@ -76,6 +76,7 @@ function describeCodePaths(
 
 export interface RunFileSessionDeps {
   policy?: TAgentsEndpoint['fileSharing'];
+  canPublishProjectFiles?: (agentId: string) => boolean;
   userId: string;
   tenantId?: string;
   createdAt: number;
@@ -173,14 +174,17 @@ export interface RunFileSession {
   ) => Promise<void>;
   actorFor: (agentId: string, context?: SubagentExecutionContext) => RunFileActor;
   close: () => Promise<void>;
-  isActive: () => boolean;
+  isActive: (context?: SubagentExecutionContext, agentId?: string) => boolean;
+  isSharing: () => boolean;
+  capturesRoot: (agentId: string) => boolean;
 }
 
 /** Coordinates the SDK's execution identities with file grants and host-owned tool contexts. */
 export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
   let manifest: RunFileManifest<SharedRunArtifact> | undefined;
   let scope: RunFileScope | undefined;
-  let rootAgentId: string | undefined;
+  let sharing = false;
+  const projectPublishers = new Set<string>();
   const contexts = new Map<string, SubagentExecutionContext>();
   const members = new Map<string, readonly string[]>();
   const staged = new Map<string, Map<string, SharedRunArtifact>>();
@@ -192,6 +196,13 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
   const codeSignals = new Map<string, AbortSignal>();
   const preparations = new Map<string, number>();
   const resumedExecutions = new Set<string>();
+
+  function isActive(context?: SubagentExecutionContext, agentId?: string): boolean {
+    return (
+      manifest != null &&
+      (context != null ? sharing : sharing || agentId == null || projectPublishers.has(agentId))
+    );
+  }
 
   function nextPreparation(actor: RunFileActor): number {
     const key = JSON.stringify(actor);
@@ -220,26 +231,25 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
     agentIds: string[],
     signal?: AbortSignal,
   ): boolean {
-    const root = deps.getAgent(agentIds[0]);
-    if (
-      deps.policy?.enabled !== true ||
-      root?.subagents?.enabled !== true ||
-      root.subagents.shareFiles !== true
-    )
-      return false;
     if (scope != null) {
       if (scope.runId !== runId || scope.conversationId !== conversationId) {
         throw new Error('A shared-file session cannot be reused by another run.');
       }
       return true;
     }
+    const root = deps.getAgent(agentIds[0]);
+    if (!deps.policy) return false;
+    sharing = root != null && isRunFileSharingRequested({ policy: deps.policy, agent: root });
+    for (const agentId of agentIds) {
+      if (deps.canPublishProjectFiles?.(agentId)) projectPublishers.add(agentId);
+    }
+    if (!sharing && projectPublishers.size === 0) return false;
     scope = { userId: deps.userId, tenantId: deps.tenantId, conversationId, runId };
-    rootAgentId = agentIds[0];
     members.set(runId, [...agentIds]);
     manifest = createRunFileManifest({
       scope,
       policy: deps.policy,
-      root: { id: runId, agentIds, allowedAgentIds: allowedAgentIds(agentIds) },
+      root: { id: runId, agentIds, allowedAgentIds: sharing ? allowedAgentIds(agentIds) : [] },
       inputFiles: deps.getInputs(),
       inputFileIds: deps.inputFileIds,
       createdAt: deps.createdAt,
@@ -293,7 +303,7 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
   }
 
   async function prepare(input: RunFilePreparation) {
-    if (!manifest || !scope) return {};
+    if (!manifest || !scope || !sharing) return {};
     const { executionContext: context, memberAgentIds, signal } = input;
     const leaf = context.ancestry[context.ancestry.length - 1];
     if (context.rootRunId !== scope.runId || !leaf || context.depth !== context.ancestry.length) {
@@ -419,7 +429,7 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
     artifact: CapturedRunArtifact,
     codeExecutionContext?: RunArtifactDescriptor['codeExecutionContext'],
   ): Promise<boolean> {
-    if (!manifest || !context) return false;
+    if (!manifest || (context ? !sharing : !projectPublishers.has(agentId))) return false;
     const actor = actorFor(agentId, context);
     const key = JSON.stringify(actor);
     const incomingFiles = (artifact.files ?? []).filter((file) => file.inherited !== true);
@@ -473,7 +483,7 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
     signal: AbortSignal,
     execute: () => Promise<T>,
   ): Promise<T> {
-    if (!manifest) return execute();
+    if (!isActive(context, agentId)) return execute();
     const key = JSON.stringify(actorFor(agentId, context));
     const previous = codeOperations.get(key) ?? Promise.resolve();
     const operation = previous.then(async () => {
@@ -531,7 +541,7 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
       ...file,
       messageId: scope!.runId,
       toolCallId: rootDispatch?.parentToolCallId,
-      agentId: rootDispatch?.parentAgentId ?? rootAgentId!,
+      agentId: rootDispatch?.parentAgentId ?? agentId,
     });
     return file;
   }
@@ -565,12 +575,12 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
     signal: AbortSignal,
     mode: RunFileReadMode = 'refresh',
   ) {
-    if (!manifest) return;
+    if (!isActive(context, agentId)) return;
     const actor = actorFor(agentId, context);
     const revision = nextPreparation(actor);
     await deps.prepareAgent({
       actor,
-      files: await manifest.getFiles(actor, signal, mode),
+      files: await manifest!.getFiles(actor, signal, mode),
       sessionKey: sessionKey(actor),
       revision,
       signal,
@@ -612,6 +622,8 @@ export function createRunFileSession(deps: RunFileSessionDeps): RunFileSession {
     prepareTools,
     actorFor,
     close,
-    isActive: () => manifest != null,
+    isActive,
+    isSharing: () => manifest != null && sharing,
+    capturesRoot: (agentId) => manifest != null && projectPublishers.has(agentId),
   };
 }

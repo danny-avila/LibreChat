@@ -149,6 +149,12 @@ test('project CSV and generated output are shared across chats, without indexing
   expect((await sandboxFiles(page)).some((files) => files.includes(inputName))).toBe(true);
   expect(await getRagEmbedded(page)).toEqual([]);
 
+  await sendMessageAndWaitForCompletion(page, `E2E_PROJECT_PRIVATE:${label}`);
+  expect(
+    (await fetchJson<TChatProjectFile[]>(page, `/api/projects/${projectId}/files`, token)).map(
+      (file) => file.filename,
+    ),
+  ).toEqual([inputName]);
   await sendMessageAndWaitForCompletion(page, `E2E_PROJECT_OUTPUT:${label}`);
   await expect(
     page.getByText(`${outputName} was added to the project.`, { exact: true }),
@@ -194,7 +200,7 @@ test('project CSV and generated output are shared across chats, without indexing
     page.getByRole('button', { name: `Remove ${outputName} from project`, exact: true }),
   ).toHaveCount(0);
   await page.goto(`/c/${conversationIds[0]}`);
-  await sendMessageAndWaitForCompletion(page, `E2E_PROJECT_OUTPUT:${label}`);
+  await sendMessageAndWaitForCompletion(page, `E2E_PROJECT_PRIVATE:${label}`);
   expect(
     await fetchJson<TChatProjectFile[]>(page, `/api/projects/${projectId}/files`, token),
   ).toEqual([]);

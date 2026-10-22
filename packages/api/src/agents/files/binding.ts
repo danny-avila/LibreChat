@@ -127,6 +127,7 @@ export function createChatRunFileBindings({
   const messageEncoder = createRunFileMessageEncoder({ ...encoder, req, getStrategyFunctions });
   const host = createRunFileHost({
     req,
+    policy,
     contexts,
     createdAt,
     audit,
@@ -167,7 +168,9 @@ export function createChatRunFileBindings({
   return {
     ...host,
     getCodeExecutionContext: (agentId: string, context?: Parameters<typeof host.getContext>[1]) =>
-      host.session.isActive() ? host.getContext(agentId, context)?.codeExecutionContext : undefined,
+      host.session.isActive(context, agentId)
+        ? host.getContext(agentId, context)?.codeExecutionContext
+        : undefined,
     wrapProvision:
       (fallback: ProvisionCallback) =>
       async (
@@ -176,7 +179,8 @@ export function createChatRunFileBindings({
         signal?: AbortSignal,
         context?: Parameters<typeof host.getContext>[1],
       ) => {
-        if (!host.session.isActive()) return fallback(names, agentId, signal, context);
+        if (!host.session.isActive(context, agentId))
+          return fallback(names, agentId, signal, context);
         if (!agentId || !signal)
           throw new Error('Shared-file provisioning requires an execution identity.');
         return host.provisionPrepared(names, agentId, signal, context);

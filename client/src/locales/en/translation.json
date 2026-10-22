@@ -2526,7 +2526,7 @@
   "com_ui_project_files": "Files",
   "com_ui_project_files_error": "Could not load project files",
   "com_ui_project_files_help": "When File Search is enabled, chats can use relevant excerpts rather than whole files.",
-  "com_ui_project_files_tools_help": "Project files are available to Run Code and, when indexed, File Search in every chat with those tools enabled. Files created by Run Code in a project chat are added automatically.",
+  "com_ui_project_files_tools_help": "Project files are available to Run Code and, when indexed, File Search in every chat with those tools enabled. Files the agent publishes are added to the project automatically; temporary working files stay private.",
   "com_ui_project_output_added": "{{filename}} was added to the project.",
   "com_ui_project_output_limit": "{{filename}} was saved to this chat. The project has reached its file limit; remove a project file, then add it through Choose from your files.",
   "com_ui_project_output_changed": "{{filename}} was saved to this chat. The project changed while code was running; check its Files panel and add the file through Choose from your files if it is missing.",

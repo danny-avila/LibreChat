@@ -85,6 +85,7 @@ function harness(
     adoptLegacySearchEmbeddings?: jest.Mock;
     getCodeFileInfo?: NonNullable<ProvisionCallbackDeps['getCodeFileInfo']>;
     publicationBytes?: number;
+    project?: boolean;
   } = {},
 ) {
   const input = options.inputs ?? [file('input')];
@@ -94,13 +95,19 @@ function harness(
     endpoints: {
       agents: {
         capabilities: [AgentCapabilities.context],
-        fileSharing: { enabled: true },
+        fileSharing: { enabled: options.project !== true },
       },
     },
   });
   const req = {
     user: { id: 'user', tenantId: 'tenant', role: 'USER' },
-    config: { endpoints: { agents: parsed.endpoints?.agents } },
+    config: {
+      endpoints: { agents: parsed.endpoints?.agents },
+      projects: { codeExecution: options.project === true },
+    },
+    chatProjectContext: options.project
+      ? { projectId: 'project', file_ids: [], resources: [] }
+      : null,
   } as ServerRequest;
   const agent = (id: string): Agent =>
     ({
@@ -236,6 +243,7 @@ function harness(
   const spy = jest.spyOn(sessionModule, 'createRunFileSession');
   const host = createRunFileHost({
     req,
+    policy: parsed.endpoints!.agents!.fileSharing!,
     contexts,
     createdAt: Date.now(),
     inputFileIds: new Set(input.map((entry) => entry.file_id)),
@@ -1278,11 +1286,18 @@ describe('run file execution host', () => {
     expect((await h.host.session.list('worker', identity())).artifacts).toEqual([]);
   });
 
-  it.each(['execute_code', 'bash_tool', 'create_file'])(
-    'keeps %s outputs private until publication',
-    async (name) => {
-      const h = harness();
-      await h.prepare();
+  it.each(
+    ['execute_code', 'bash_tool', 'create_file'].flatMap((name) =>
+      [false, true].map((project) => ({ name, project })),
+    ),
+  )(
+    'keeps $name outputs private until publication (project=$project)',
+    async ({ name, project }) => {
+      const h = harness({ project });
+      const agentId = project ? 'parent' : 'worker';
+      const executionContext = project ? undefined : identity();
+      if (project) await h.host.session.prepareTools(agentId, executionContext, h.signal);
+      else await h.prepare();
       const callback = jest.fn(async () => undefined);
       await h.host.deliverToolEnd(
         callback,
@@ -1297,16 +1312,16 @@ describe('run file execution host', () => {
             },
           },
         },
-        { executingAgentId: 'worker', executionContext: identity() },
+        { executingAgentId: agentId, executionContext },
       );
 
       expect(callback).not.toHaveBeenCalled();
       expect(h.emit).not.toHaveBeenCalled();
-      expect((await h.host.session.list('worker', identity())).artifacts).toEqual([
+      expect((await h.host.session.list(agentId, executionContext)).artifacts).toEqual([
         { artifact_id: expect.any(String), filename: 'chart.png' },
       ]);
-      const [artifact] = (await h.host.session.list('worker', identity())).artifacts;
-      await h.host.session.publish('worker', identity(), artifact.artifact_id, [], h.signal);
+      const [artifact] = (await h.host.session.list(agentId, executionContext)).artifacts;
+      await h.host.session.publish(agentId, executionContext, artifact.artifact_id, [], h.signal);
       expect(h.emit).toHaveBeenCalledTimes(1);
     },
   );
