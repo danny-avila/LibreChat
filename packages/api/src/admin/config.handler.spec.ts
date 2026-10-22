@@ -2586,7 +2586,11 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(400);
       expect(res.body?.issues).toEqual([
-        { path: 'endpoints.custom.0', code: 'duplicate_merge_key' },
+        {
+          path: 'endpoints.custom.0',
+          segments: ['endpoints', 'custom', '0'],
+          code: 'duplicate_merge_key',
+        },
       ]);
       expect(deps.upsertConfig).not.toHaveBeenCalled();
     });
