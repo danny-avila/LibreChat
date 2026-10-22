@@ -2622,6 +2622,8 @@ export const DEFAULT_COMPOSER_RECENT_FILES = 5;
 export const DEFAULT_HISTORY_CACHE_TTL_MS = 60_000;
 /** Most recently left conversations whose message history keeps that grace. */
 export const DEFAULT_HISTORY_CACHE_RECENT = 1;
+/** Estimated payload bytes retained across inactive conversation histories. */
+export const DEFAULT_HISTORY_CACHE_MAX_BYTES = 8 * 1024 * 1024;
 
 const mcpServersSchema = z
   .object({
@@ -3104,6 +3106,15 @@ export const interfaceSchema = z
     /** How many of the most recently left conversations keep that grace; older ones are
      *  released at the next conversation switch. */
     historyCacheRecent: z.number().int().min(0).max(20).default(DEFAULT_HISTORY_CACHE_RECENT),
+    /** Aggregate estimated payload budget for histories kept during the grace period.
+     *  Oversized histories reload on return; observed, running and Assistants histories stay.
+     *  Zero disables the inactive-history grace. This is not a browser heap limit. */
+    historyCacheMaxBytes: z
+      .number()
+      .int()
+      .min(0)
+      .max(Number.MAX_SAFE_INTEGER)
+      .default(DEFAULT_HISTORY_CACHE_MAX_BYTES),
   })
   .default({
     modelSelect: true,
@@ -3194,6 +3205,7 @@ export const interfaceSchema = z
     composerRecentFiles: DEFAULT_COMPOSER_RECENT_FILES,
     historyCacheTtlMs: DEFAULT_HISTORY_CACHE_TTL_MS,
     historyCacheRecent: DEFAULT_HISTORY_CACHE_RECENT,
+    historyCacheMaxBytes: DEFAULT_HISTORY_CACHE_MAX_BYTES,
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
@@ -5304,6 +5316,12 @@ export enum Constants {
    */
   TOOL_CALL_LIMIT_FINISH_REASON = 'tool_call_limit',
 }
+
+/**
+ * This package's own version, swapped in from `packages/data-provider/package.json` at build
+ * time like `Constants.VERSION`, so a server can report which schema package it validates with.
+ */
+export const DATA_PROVIDER_VERSION: string = '__DATA_PROVIDER_VERSION__';
 
 /**
  * Normalizes a server name into the character set tool keys are built from.

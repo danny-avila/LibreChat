@@ -378,7 +378,14 @@ const ProxyUrlSchema = z
     },
   );
 
-const PROCESS_MCP_SERVER_FIELDS = new Set(['command', 'args', 'env', 'cwd', 'stderr']);
+/** Fields that make an MCP server process-backed (spawned by the server); only `librechat.yaml` may set them. */
+export const PROCESS_MCP_SERVER_FIELDS: ReadonlySet<string> = new Set([
+  'command',
+  'args',
+  'env',
+  'cwd',
+  'stderr',
+]);
 
 export function isProcessMCPServerField(field: string): boolean {
   return PROCESS_MCP_SERVER_FIELDS.has(field);
