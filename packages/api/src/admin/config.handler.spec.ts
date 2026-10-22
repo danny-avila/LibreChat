@@ -1810,6 +1810,13 @@ describe('createAdminConfigHandlers', () => {
         body: { isActive: false },
       },
     },
+    {
+      name: 'applyConfigChanges',
+      reqOverrides: {
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { ops: [{ op: 'set', fieldPath: 'interface.modelSelect', value: false }] },
+      },
+    },
   ];
 
   describe('upsertConfigOverrides: scope-lifecycle auth (ASSIGN_CONFIGS)', () => {
@@ -3243,6 +3250,82 @@ describe('createAdminConfigHandlers', () => {
       expect(writeConfigDocument).toHaveBeenCalledTimes(1);
     });
 
+    it('/changes: resolves read access with the base config read, then filters the reply', async () => {
+      let releaseBase: (appConfig: { config: object }) => void = () => undefined;
+      const getAppConfig = jest.fn(
+        () => new Promise<{ config: object }>((resolve) => (releaseBase = resolve)),
+      );
+      const getReadableConfigSections = jest
+        .fn()
+        .mockResolvedValue({ broad: false, sections: new Set(['webSearch']) });
+      const writeConfigDocument = jest.fn().mockResolvedValue(writtenDoc());
+      const { handlers } = createHandlers({
+        hasConfigCapability: scopedCapability(['manage:endpoints']),
+        getAppConfig,
+        getReadableConfigSections,
+        writeConfigDocument,
+      });
+      const res = mockRes();
+
+      const pending = handlers.applyConfigChanges(
+        mockReq({
+          params,
+          body: { ops: [{ op: 'set', fieldPath: 'endpoints.agents.disableBuilder', value: true }] },
+        }),
+        res,
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(getAppConfig).toHaveBeenCalledTimes(1);
+      expect(getReadableConfigSections).toHaveBeenCalledTimes(1);
+      expect([...getReadableConfigSections.mock.calls[0][1]].sort()).toEqual(
+        Object.keys(configSchema.shape).sort(),
+      );
+      expect(writeConfigDocument).not.toHaveBeenCalled();
+      releaseBase({ config: {} });
+      await pending;
+
+      expect(res.statusCode).toBe(200);
+      expect(writeConfigDocument).toHaveBeenCalledTimes(1);
+      expect(getReadableConfigSections).toHaveBeenCalledTimes(1);
+      expect(res.body).toMatchObject({ written: true, revision: 'c1:2' });
+      const body = res.body!.config as WrittenBody & { revision: string };
+      expect(Object.keys(body.overrides).sort()).toEqual(['endpoints', 'webSearch']);
+      expect(body.overrides.webSearch).toEqual({
+        searchProvider: 'serper',
+        serperApiKeyPreview: '...wxyz',
+      });
+      expect(body.tombstones).toEqual(['endpoints.bedrock', 'webSearch.jinaApiUrl']);
+      expect(body.revision).toBe('c1:2');
+      expect(JSON.stringify(res.body)).not.toMatch(/charLimit|cipher/);
+    });
+
+    it('/changes: a dry run returns no document and resolves no read access', async () => {
+      const getReadableConfigSections = jest.fn();
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: scopedCapability(['manage:endpoints']),
+        getReadableConfigSections,
+      });
+      const res = mockRes();
+
+      await handlers.applyConfigChanges(
+        mockReq({
+          params,
+          body: {
+            ops: [{ op: 'set', fieldPath: 'endpoints.agents.disableBuilder', value: true }],
+            dryRun: true,
+          },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toMatchObject({ written: false, dryRun: true });
+      expect(res.body).not.toHaveProperty('config');
+      expect(getReadableConfigSections).not.toHaveBeenCalled();
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
+    });
+
     it.each([
       [
         'PATCH',
@@ -3270,6 +3353,20 @@ describe('createAdminConfigHandlers', () => {
         'unsetConfigField',
         (h: ReturnType<typeof createHandlers>['handlers'], res: Response) =>
           h.deleteConfigField(mockReq({ params, query: { fieldPath: 'endpoints.bedrock' } }), res),
+      ],
+      [
+        '/changes',
+        'writeConfigDocument',
+        (h: ReturnType<typeof createHandlers>['handlers'], res: Response) =>
+          h.applyConfigChanges(
+            mockReq({
+              params,
+              body: {
+                ops: [{ op: 'set', fieldPath: 'endpoints.agents.disableBuilder', value: true }],
+              },
+            }),
+            res,
+          ),
       ],
     ] as const)(
       '%s: a failed read lookup fails the request before anything is written',

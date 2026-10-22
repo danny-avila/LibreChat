@@ -15,6 +15,7 @@ let getSecretAncestorPatterns: typeof import('./secrets').getSecretAncestorPatte
 let matchesSecretPattern: typeof import('./secrets').matchesSecretPattern;
 let isConfigSecretRelatedSegments: typeof import('./secrets').isConfigSecretRelatedSegments;
 let isConfigSecretDescendantPath: typeof import('./secrets').isConfigSecretDescendantPath;
+let isConfigSecretKeyRename: typeof import('./secrets').isConfigSecretKeyRename;
 let preserveConfigSecrets: typeof import('./secrets').preserveConfigSecrets;
 let redactConfigSecrets: typeof import('./secrets').redactConfigSecrets;
 let redactResolvedConfigSecrets: typeof import('./secrets').redactResolvedConfigSecrets;
@@ -38,6 +39,7 @@ beforeAll(async () => {
     matchesSecretPattern,
     isConfigSecretRelatedSegments,
     isConfigSecretDescendantPath,
+    isConfigSecretKeyRename,
     preserveConfigSecrets,
     redactConfigSecrets,
     redactResolvedConfigSecrets,
@@ -1202,5 +1204,27 @@ describe('Resolved config secrets (Azure groups and the Vertex service key)', ()
     expect(redactResolvedConfigSecrets(structuredClone(config))).toEqual(config);
     expect(redactResolvedConfigSecrets(null)).toBeNull();
     expect(redactResolvedConfigSecrets('text')).toBe('text');
+  });
+});
+
+describe('isConfigSecretKeyRename', () => {
+  it('refuses a rename that would move a value onto or off a literal secret location', () => {
+    expect(isConfigSecretKeyRename(['webSearch'], 'serperApiKey', 'other')).toBe(true);
+    expect(isConfigSecretKeyRename(['webSearch'], 'other', 'serperApiKeyPreview')).toBe(true);
+    expect(isConfigSecretKeyRename(['speech', 'tts'], 'openai', 'mine')).toBe(true);
+    expect(isConfigSecretKeyRename(['langfuse'], 'displaySecretKey', 'x')).toBe(true);
+  });
+
+  it('refuses a rename inside a secret value', () => {
+    expect(isConfigSecretKeyRename(['webSearch', 'serperApiKey'], 'a', 'b')).toBe(true);
+  });
+
+  it('allows renames that never touch a registered location', () => {
+    expect(isConfigSecretKeyRename(['mcpServers'], 'a', 'b')).toBe(false);
+    expect(isConfigSecretKeyRename(['mcpServers', 'a', 'headers'], 'X-Old', 'X-New')).toBe(false);
+    expect(isConfigSecretKeyRename(['webSearch'], 'firecrawlOptions', 'other')).toBe(false);
+    expect(
+      isConfigSecretKeyRename(['endpoints', 'bedrock', 'inferenceProfiles'], 'us.a', 'eu.a'),
+    ).toBe(false);
   });
 });
