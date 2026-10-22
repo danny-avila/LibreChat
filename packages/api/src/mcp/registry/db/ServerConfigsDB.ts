@@ -12,11 +12,11 @@ import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import type { ResolvedPrincipal } from '~/types/principal';
 import {
   getUserApiKeyVariable,
-  requireApiKeyReentryForRebinding,
   preserveOmittedOAuthBindingFields,
   getChangedOAuthSecretBindingFields,
 } from '~/mcp/registry/binding';
 import { MCPCommittedWriteError, MCPOAuthSecretReentryRequiredError } from '~/mcp/errors';
+import { requireApiKeyReentryForRebinding } from '~/mcp/registry/reentry';
 import { normalizeLegacyHeaderMaps } from '~/mcp/registry/compat';
 import { AccessControlService } from '~/acl/accessControlService';
 import { isGeneratedUserApiKeyVariable } from '~/mcp/headers';

@@ -1,7 +1,6 @@
 import { createHash } from 'crypto';
-import type { MCPOptions } from '~/mcp/types';
+import type { MCPOptions } from 'librechat-data-provider';
 import { isGeneratedUserApiKeyVariable } from '~/mcp/headers';
-import { MCPApiKeyReentryRequiredError } from '~/mcp/errors';
 
 /**
  * The parts of a server config that decide where its credentials are sent. Structural, so the
@@ -206,15 +205,4 @@ export function getUserApiKeyVariable(config: MCPOptions, existingConfig?: MCPOp
     }
   }
   return `MCP_API_KEY_${createHash('sha256').update(binding).digest('hex')}`;
-}
-
-/** Requires a replacement key before a stored admin credential can cross request boundaries. */
-export function requireApiKeyReentryForRebinding(
-  existingConfig: MCPOptions,
-  updatedConfig: MCPOptions,
-): void {
-  const changedFields = getChangedApiKeyBindingFields(existingConfig, updatedConfig);
-  if (changedFields.length > 0) {
-    throw new MCPApiKeyReentryRequiredError(changedFields);
-  }
 }
