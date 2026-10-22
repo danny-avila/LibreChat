@@ -810,7 +810,7 @@ describe('initializeAgent: ChatProject context', () => {
           runtime,
           agent,
           loadTools,
-          requestFiles: current as IMongoFile[],
+          requestFiles: current.map(({ file_id }) => ({ file_id }) as IMongoFile),
           conversationId: deferred.length > 0 ? 'repair-conversation' : undefined,
           allowedProviders: new Set([Providers.OPENAI]),
           useChatProjectContext: true,
@@ -878,6 +878,34 @@ describe('initializeAgent: ChatProject context', () => {
         expect(getProjectFiles).not.toHaveBeenCalled();
       },
     );
+
+    it.each([false, true])(
+      'rejects an over-budget Project repair that overlaps current files (deferred: %s)',
+      async (deferred) => {
+        const oversized = repairFile({ bytes: 2 * MB });
+        const { result } = await initializeRepairs({
+          projectFiles: [oversized],
+          current: [oversized],
+          deferred: deferred ? [oversized] : [],
+          fileConfig: { endpoints: { [EModelEndpoint.openAI]: { totalSizeLimit: 1 } } },
+        });
+        expect(result.provisionState?.vectorDBFiles ?? []).toEqual([]);
+        expect(result.tool_resources?.[EToolResources.file_search]?.files ?? []).toEqual([]);
+      },
+    );
+
+    it('does not charge duplicate current files twice before admitting other project repairs', async () => {
+      const shared = repairFile({ file_id: 'shared-current', bytes: MB / 2 });
+      const other = repairFile({ file_id: 'other-project', bytes: MB / 2 });
+      const { result } = await initializeRepairs({
+        projectFiles: [shared, other],
+        current: [shared, shared],
+        deferred: [shared, shared],
+        fileConfig: { endpoints: { [EModelEndpoint.openAI]: { totalSizeLimit: 1 } } },
+      });
+      const ids = result.provisionState?.vectorDBFiles.map((file) => file.file_id) ?? [];
+      expect(ids).toEqual(['shared-current', 'other-project']);
+    });
 
     it('shares one allowance with current, deferred and persistent files, counting overlaps once', async () => {
       const shared = repairFile({ file_id: 'shared', bytes: MB / 4 });

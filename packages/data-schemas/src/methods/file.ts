@@ -1259,15 +1259,28 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       return (await File.exists(query)) != null;
     }
 
-    /* BSON object equality depends on field order; compare every snapshot field without it. */
-    const matchesRef = (path: string, ref: CodeEnvRef) => ({
-      $setEquals: [
-        { $objectToArray: { $ifNull: [`$${path}`, {}] } },
-        { $objectToArray: { $literal: ref } },
-      ],
-    });
-    const matchesByPath = new Map<string, ReturnType<typeof matchesRef>[]>();
-    const addMatch = (path: string, ref: CodeEnvRef) => {
+    /* Compare contract fields individually: BSON object equality depends on field order. */
+    const matchesRef = (path: string, ref: CodeEnvRef): FilterQuery<IMongoFile> => {
+      const fields = {
+        kind: ref.kind,
+        id: ref.id,
+        storage_session_id: ref.storage_session_id,
+        file_id: ref.file_id,
+        executionProfile: ref.executionProfile,
+        executionRouteKey: ref.executionRouteKey,
+        provisionedAt: ref.provisionedAt,
+        sandboxFilename: ref.sandboxFilename,
+        version: 'version' in ref ? ref.version : undefined,
+      };
+      const match: FilterQuery<IMongoFile> = {};
+      for (const [field, value] of Object.entries(fields)) {
+        match[`${path}.${field}`] =
+          value === undefined ? { $exists: false } : { $eq: value, $exists: true };
+      }
+      return match;
+    };
+    const matchesByPath = new Map<string, FilterQuery<IMongoFile>[]>();
+    const addMatch = (path: string, ref: CodeEnvRef): void => {
       const matches = matchesByPath.get(path) ?? [];
       matches.push(matchesRef(path, ref));
       matchesByPath.set(path, matches);
@@ -1279,30 +1292,23 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         addMatch('metadata.codeEnvRef', ref);
       }
     }
-    const result = await File.updateOne(
-      query,
-      [
-        {
-          $set: {
-            ...Object.fromEntries(
-              [...matchesByPath].map(([path, matches]) => [
-                path,
-                { $cond: [{ $or: matches }, '$$REMOVE', `$${path}`] },
-              ]),
-            ),
-            'metadata.codeDestination': {
-              $cond: [
-                { $or: [...matchesByPath.values()].flat() },
-                true,
-                '$metadata.codeDestination',
-              ],
-            },
-          },
-        },
-      ],
-      { timestamps: false },
+    const results = await Promise.allSettled(
+      [...matchesByPath].map(async ([path, matches]) =>
+        File.updateOne(
+          { ...query, $or: matches },
+          { $unset: { [path]: '' }, $set: { 'metadata.codeDestination': true } },
+          { timestamps: false },
+        ),
+      ),
     );
-    return result.matchedCount === 1;
+    let matched = false;
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        throw result.reason;
+      }
+      matched = matched || result.value.matchedCount > 0;
+    }
+    return matched || (await File.exists(query)) != null;
   }
 
   /** Clears only the embedding snapshot whose vector deletion was confirmed. */

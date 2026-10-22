@@ -138,6 +138,7 @@ import { hasActiveFilePolicy } from '../protection/files';
 import { resolveAgentCodeExecution } from '~/code/agent';
 import { hasActiveFileFieldPolicy } from '~/protection';
 import { applyBackgroundToolCalls } from './background';
+import { admitCurrentFileBudget } from './files/budget';
 import { applyTurnDelivery } from './files/delivery';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
@@ -172,7 +173,12 @@ export function partitionCommittedFiles<T extends { file_id?: string }>(
   );
   const alreadyCommitted: T[] = [];
   const pending: T[] = [];
+  const seen = new Set<string>();
   for (const file of files) {
+    if (file.file_id != null) {
+      if (seen.has(file.file_id)) continue;
+      seen.add(file.file_id);
+    }
     if (file.file_id != null && ids.has(file.file_id)) {
       alreadyCommitted.push(file);
       continue;
@@ -1935,10 +1941,16 @@ export async function initializeAgent(
       endpointType,
     });
 
+    currentFiles = admitCurrentFileBudget(
+      currentFiles,
+      deliveryRouting.endpointConfig.totalSizeLimit,
+    );
+
     /* The same endpoint configuration governs both paths. A file this endpoint refuses
      * by size, MIME type, or a files-disabled setting must not reach the Code API or
      * RAG through provisioning just because it left the delivery set. */
     if (deferredProvisionFiles.length > 0) {
+      deferredProvisionFiles = partitionCommittedFiles(deferredProvisionFiles, []).pending;
       /* One request, one total-size allowance. Filtering each set from zero would let a
        * delivery attachment and a provisioning candidate that each fit alone exceed the
        * limit together once withDeferredCandidates merges them.

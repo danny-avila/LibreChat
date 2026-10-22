@@ -116,16 +116,29 @@ describe('File Methods', () => {
       const before = await read();
       const update = jest.spyOn(mongoose.models.File, 'updateOne');
       expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
-      expect(update).toHaveBeenCalledTimes(1);
-      expect(update).toHaveBeenLastCalledWith(
-        {
+      expect(update).toHaveBeenCalledTimes(2);
+      const clearedPaths: string[] = [];
+      for (const [filter, operation, options] of update.mock.calls) {
+        expect(filter).toEqual({
           file_id: snapshot.file_id,
           user: snapshot.userId,
           $and: [{ tenantId: snapshot.tenantId }],
-        },
-        expect.any(Array),
-        { timestamps: false },
-      );
+          $or: [expect.any(Object)],
+        });
+        expect(Array.isArray(operation)).toBe(false);
+        if (operation == null || Array.isArray(operation)) {
+          throw new Error('Expected a classic update');
+        }
+        const paths = Object.keys(operation.$unset ?? {});
+        clearedPaths.push(...paths);
+        expect(operation).toEqual({
+          $unset: { [paths[0]]: '' },
+          $set: { 'metadata.codeDestination': true },
+        });
+        expect(options).toEqual({ timestamps: false });
+        expect(JSON.stringify([filter, operation])).not.toMatch(/\$expr|\$\$REMOVE/);
+      }
+      expect(clearedPaths).toEqual(['metadata.codeEnvRefs.default', 'metadata.codeEnvRef']);
       const after = await read();
       const { codeEnvRef: _alias, codeEnvRefs: _routes, ...intent } = metadata;
       expect(after).toEqual({
@@ -199,6 +212,55 @@ describe('File Methods', () => {
       expect(await read()).toEqual(before);
     });
 
+    it.each([
+      'executionProfile',
+      'executionRouteKey',
+      'provisionedAt',
+      'sandboxFilename',
+      'version',
+    ])('distinguishes null from absent optional snapshot fields: %s', async (field) => {
+      const absent = { ...defaultRef };
+      Reflect.deleteProperty(absent, field);
+      const explicitNull = { ...absent, [field]: null };
+      await seed({
+        metadata: { codeEnvRef: explicitNull, codeEnvRefs: { default: explicitNull } },
+      });
+      const before = await read();
+      expect(
+        await fileMethods.clearFileCodeEnvRefs({
+          ...snapshot,
+          refs: [{ routeKey: 'default', ref: absent }],
+        }),
+      ).toBe(true);
+      expect(await read()).toEqual(before);
+      await File.collection.updateOne(
+        { file_id: snapshot.file_id },
+        { $set: { metadata: { codeEnvRef: absent, codeEnvRefs: { default: absent } } } },
+      );
+      const withoutField = await read();
+      expect(
+        await fileMethods.clearFileCodeEnvRefs({
+          ...snapshot,
+          refs: [{ routeKey: 'default', ref: explicitNull }],
+        }),
+      ).toBe(true);
+      expect(await read()).toEqual(withoutField);
+      await File.collection.updateOne(
+        { file_id: snapshot.file_id },
+        {
+          $set: { metadata: { codeEnvRef: explicitNull, codeEnvRefs: { default: explicitNull } } },
+        },
+      );
+      expect(
+        await fileMethods.clearFileCodeEnvRefs({
+          ...snapshot,
+          refs: [{ routeKey: 'default', ref: explicitNull }],
+        }),
+      ).toBe(true);
+      expect((await read())?.metadata?.codeEnvRefs?.default).toBeUndefined();
+      expect((await read())?.metadata?.codeEnvRef).toBeUndefined();
+    });
+
     it('matches every field regardless of BSON property order', async () => {
       await seed();
       const { file_id, ...rest } = defaultRef;
@@ -244,6 +306,65 @@ describe('File Methods', () => {
       },
     );
 
+    it('preserves routes and aliases replaced between the independent conditional writes', async () => {
+      await seed();
+      const replacement = { ...defaultRef, provisionedAt: 124 };
+      const sibling = { ...statefulRef, provisionedAt: 125 };
+      const updateOne = File.collection.updateOne.bind(File.collection);
+      jest.spyOn(File.collection, 'updateOne').mockImplementation(async (...args) => {
+        const operation = args[1];
+        if (
+          operation != null &&
+          !Array.isArray(operation) &&
+          operation.$unset?.['metadata.codeEnvRef'] !== undefined
+        ) {
+          await updateOne(
+            { file_id: snapshot.file_id },
+            {
+              $set: {
+                'metadata.codeEnvRef': replacement,
+                'metadata.codeEnvRefs.stateful:a': sibling,
+              },
+            },
+          );
+        }
+        return updateOne(...args);
+      });
+      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+      const stored = await read();
+      expect(stored?.metadata?.codeEnvRef).toEqual(replacement);
+      expect(stored?.metadata?.codeEnvRefs).toEqual({ 'stateful:a': sibling });
+      expect(stored?.updatedAt).toEqual(updatedAt);
+    });
+
+    it.each(['metadata.codeEnvRefs.default', 'metadata.codeEnvRef'])(
+      'skips the existence read when only %s matches',
+      async (path) => {
+        await seed({ metadata: {} });
+        await File.collection.updateOne(
+          { file_id: snapshot.file_id },
+          { $set: { [path]: defaultRef } },
+        );
+        const exists = jest.spyOn(mongoose.models.File, 'exists');
+        expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+        expect(exists).not.toHaveBeenCalled();
+        expect((await read())?.metadata?.codeDestination).toBe(true);
+      },
+    );
+
+    it('checks owned existence only when every conditional write misses', async () => {
+      await seed({ metadata: {} });
+      const exists = jest.spyOn(mongoose.models.File, 'exists');
+      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+      expect(exists).toHaveBeenCalledTimes(1);
+      expect(exists).toHaveBeenCalledWith({
+        file_id: snapshot.file_id,
+        user: snapshot.userId,
+        $and: [{ tenantId: snapshot.tenantId }],
+      });
+      expect((await read())?.metadata).toEqual({});
+    });
+
     it.each([false, true])(
       'keeps generated files hydratable with legacy-only refs: %s',
       async (legacyOnly) => {
@@ -257,7 +378,7 @@ describe('File Methods', () => {
         expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
         const stored = await read();
         expect(stored?.metadata?.codeEnvRef).toBeUndefined();
-        expect(stored?.metadata?.codeEnvRefs).toEqual({});
+        expect(stored?.metadata?.codeEnvRefs).toEqual(legacyOnly ? undefined : {});
         const generated = await fileMethods.getCodeGeneratedFiles(
           'conversation-a',
           [snapshot.file_id],
@@ -450,10 +571,50 @@ describe('File Methods', () => {
       },
     );
 
+    it('settles sibling writes before propagating a persistence failure', async () => {
+      await seed();
+      let finishWrite: () => void = () => undefined;
+      const pendingWrite = new Promise<void>((resolve) => {
+        finishWrite = resolve;
+      });
+      const failure = new Error('mongo unavailable');
+      const updateOne = File.collection.updateOne.bind(File.collection);
+      jest.spyOn(File.collection, 'updateOne').mockImplementation(async (...args) => {
+        const operation = args[1];
+        if (
+          operation != null &&
+          !Array.isArray(operation) &&
+          operation.$unset?.['metadata.codeEnvRefs.default'] !== undefined
+        ) {
+          throw failure;
+        }
+        await pendingWrite;
+        return updateOne(...args);
+      });
+      const exists = jest.spyOn(mongoose.models.File, 'exists');
+      let returned = false;
+      const clearing = fileMethods.clearFileCodeEnvRefs(snapshot).catch((error: Error) => {
+        returned = true;
+        return error;
+      });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      try {
+        expect(returned).toBe(false);
+      } finally {
+        finishWrite();
+      }
+      expect(await clearing).toBe(failure);
+      expect(exists).not.toHaveBeenCalled();
+      const stored = await read();
+      expect(stored?.metadata?.codeEnvRef).toBeUndefined();
+      expect(stored?.metadata?.codeEnvRefs?.default).toEqual(defaultRef);
+      expect(stored?.metadata?.codeDestination).toBe(true);
+    });
+
     it('propagates persistence failures', async () => {
       await seed();
       const before = await read();
-      jest.spyOn(mongoose.models.File, 'updateOne').mockImplementationOnce(() => {
+      jest.spyOn(mongoose.models.File, 'updateOne').mockImplementation(() => {
         throw new Error('mongo unavailable');
       });
       await expect(fileMethods.clearFileCodeEnvRefs(snapshot)).rejects.toThrow('mongo unavailable');
