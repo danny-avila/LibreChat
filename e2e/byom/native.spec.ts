@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, open, readFile, readdir } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import type { ChildProcess } from 'node:child_process';
+import { initializeBrowser } from './browser.mjs';
 import { readGenerationStatus } from './status.mjs';
 import {
   getAccessToken,
@@ -43,6 +44,7 @@ async function stop(child: ChildProcess) {
 test('native BYOM saves, persists, isolates workers, and fails closed', async ({
   page,
 }, testInfo) => {
+  await page.context().addInitScript(initializeBrowser);
   const runDir = process.env.BYOM_ACCEPTANCE_DIR!;
   const cli = process.env.BYOM_CODE_CLI!;
   const workspaceTransitions = process.env.BYOM_WORKSPACE_TRANSITIONS === 'true';
