@@ -591,44 +591,58 @@ describe('renameConfigPrincipal', () => {
   });
 });
 
-describe('renameConfigPrincipal in the caller tenant partition', () => {
-  const inTenant = <T>(tenantId: string, run: () => Promise<T>): Promise<T> =>
-    tenantStorage.run({ tenantId }, run);
-  const seedTenant = (tenantId: string, principalId: string, overrides: Record<string, unknown>) =>
-    inTenant(tenantId, () =>
-      methods.patchConfigFields(PrincipalType.ROLE, principalId, PrincipalModel.ROLE, overrides),
-    );
-  /**
-   * A platform-level document, inserted directly: a write through the unpartitioned methods
-   * without a tenant would address a tenant's document for the same id when it finds one.
-   */
-  const seedPlatform = (
-    principalId: string,
-    overrides: Record<string, unknown>,
-    tenant: { tenantId?: string | null } = {},
-  ) =>
-    raw().insertOne({
-      principalType: PrincipalType.ROLE,
-      principalId,
-      principalModel: PrincipalModel.ROLE,
-      priority: 10,
-      overrides,
-      tombstones: [],
-      isActive: true,
-      configVersion: 1,
-      ...tenant,
-    });
-  /** Every stored role document as `tenant/principalId`, platform-level ones as `-/…`. */
-  const layout = async () =>
-    (
-      await raw()
-        .find({ principalType: PrincipalType.ROLE })
-        .project<{ principalId: string; tenantId?: string | null }>({ principalId: 1, tenantId: 1 })
-        .toArray()
-    )
-      .map((document) => `${document.tenantId || '-'}/${document.principalId}`)
-      .sort();
+const inTenant = <T>(tenantId: string, run: () => Promise<T>): Promise<T> =>
+  tenantStorage.run({ tenantId }, run);
+const seedTenant = (tenantId: string, principalId: string, overrides: Record<string, unknown>) =>
+  inTenant(tenantId, () =>
+    methods.patchConfigFields(PrincipalType.ROLE, principalId, PrincipalModel.ROLE, overrides),
+  );
+/**
+ * A platform-level document, inserted directly: a write through the unpartitioned methods
+ * without a tenant would address a tenant's document for the same id when it finds one.
+ */
+const seedPlatform = (
+  principalId: string,
+  overrides: Record<string, unknown>,
+  tenant: { tenantId?: string | null } = {},
+) =>
+  raw().insertOne({
+    principalType: PrincipalType.ROLE,
+    principalId,
+    principalModel: PrincipalModel.ROLE,
+    priority: 10,
+    overrides,
+    tombstones: [],
+    isActive: true,
+    configVersion: 1,
+    ...tenant,
+  });
+/** Every stored role document as `tenant/principalId`, platform-level ones as `-/…`. */
+const layout = async () =>
+  (
+    await raw()
+      .find({ principalType: PrincipalType.ROLE })
+      .project<{ principalId: string; tenantId?: string | null }>({ principalId: 1, tenantId: 1 })
+      .toArray()
+  )
+    .map((document) => `${document.tenantId || '-'}/${document.principalId}`)
+    .sort();
+/** Every stored role document as `tenant/principalId:priority`, platform-level ones as `-/…`. */
+const priorities = async () =>
+  (
+    await raw()
+      .find({ principalType: PrincipalType.ROLE })
+      .project<{ principalId: string; priority: number; tenantId?: string | null }>({
+        principalId: 1,
+        priority: 1,
+        tenantId: 1,
+      })
+      .toArray()
+  )
+    .map((document) => `${document.tenantId || '-'}/${document.principalId}:${document.priority}`)
+    .sort();
 
+describe('renameConfigPrincipal in the caller tenant partition', () => {
   it('moves only the platform-level profile for a caller without a tenant', async () => {
     await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
     await seedPlatform('editor', { x: 'platform' });
@@ -706,6 +720,48 @@ describe('renameConfigPrincipal in the caller tenant partition', () => {
 
     expect(partitioned).toBeNull();
     expect(tenantRead!.overrides).toEqual({ x: 'tenant-a' });
+  });
+});
+
+describe('setConfigPriority in the caller tenant partition', () => {
+  it('changes only the platform-level profile for a caller without a tenant', async () => {
+    await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
+    await seedPlatform('editor', { x: 'platform' });
+    await seedPlatform('author', { x: 'unclaimed' }, { tenantId: '' });
+
+    const result = await methods.setConfigPriority(PrincipalType.ROLE, 'editor', 40);
+    const unclaimed = await methods.setConfigPriority(PrincipalType.ROLE, 'author', 30);
+
+    expect(result).toMatchObject({ changed: true, config: { priority: 40 } });
+    expect(result!.config.overrides).toEqual({ x: 'platform' });
+    expect(result!.config.tenantId).toBeUndefined();
+    expect(unclaimed).toMatchObject({ changed: true, config: { overrides: { x: 'unclaimed' } } });
+    expect(await priorities()).toEqual(['-/author:30', '-/editor:40', 'tenant-a/editor:10']);
+  });
+
+  it("never changes or returns a tenant's profile when the platform role has none", async () => {
+    const tenantProfile = await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
+
+    expect(await methods.setConfigPriority(PrincipalType.ROLE, 'editor', 40)).toBeNull();
+    await expect(
+      methods.setConfigPriority(PrincipalType.ROLE, 'editor', 40, {
+        expectedRevision: `${tenantProfile!._id}:${tenantProfile!.configVersion}`,
+      }),
+    ).rejects.toMatchObject({ code: 'CONFIG_VERSION_CONFLICT', currentRevision: null });
+    expect(await priorities()).toEqual(['tenant-a/editor:10']);
+  });
+
+  it("changes only the active tenant's profile inside a tenant", async () => {
+    await seedPlatform('editor', { x: 'platform' });
+    await seedTenant('tenant-b', 'editor', { x: 'tenant-b' });
+    await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
+
+    const result = await inTenant('tenant-a', () =>
+      methods.setConfigPriority(PrincipalType.ROLE, 'editor', 40),
+    );
+
+    expect(result!.config).toMatchObject({ tenantId: 'tenant-a', overrides: { x: 'tenant-a' } });
+    expect(await priorities()).toEqual(['-/editor:10', 'tenant-a/editor:40', 'tenant-b/editor:10']);
   });
 });
 

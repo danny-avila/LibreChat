@@ -579,8 +579,10 @@ export interface AdminConfigDeps {
     options?: ConfigLifecycleOptions,
   ) => Promise<{ config: ConfigRecord; changed: boolean } | null>;
   /**
-   * Sets only the document's priority; resolves to it and whether this write changed it, or
-   * `null` when the principal has none. Without it the priority route answers 501.
+   * Sets only the document's priority in the caller's tenant partition (platform-level without
+   * a tenant, never a tenant's document for the same principal); resolves to it and whether
+   * this write changed it, or `null` when the principal has none there. Without it the priority
+   * route answers 501.
    */
   setConfigPriority?: (
     principalType: PrincipalType,
@@ -3018,7 +3020,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    *
    * Overrides, tombstones and `isActive` stay as stored, so a priority change never re-sends
    * (and so never risks clobbering) a profile's contents. Broad `manage:configs` only, like
-   * every other priority change. An unchanged priority is not written or audited.
+   * every other priority change. An unchanged priority is not written or audited. Only the
+   * caller's tenant partition is addressed, so a caller without a tenant reorders a
+   * platform-level profile and gets 404 for one that only a tenant holds.
    */
   async function updateConfigPriority(req: ServerRequest, res: Response): Promise<Response> {
     try {

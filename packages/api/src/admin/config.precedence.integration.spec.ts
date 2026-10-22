@@ -446,6 +446,58 @@ describe('profile lifecycle (W2-16)', () => {
     }
   });
 
+  it("changes the priority only in the caller's tenant partition", async () => {
+    const handlers = createHandlers();
+    const inTenant = <T>(tenantId: string, run: () => Promise<T>) =>
+      dataSchemas.tenantStorage.run({ tenantId }, run);
+    const params = roleParams('editor');
+    const reorder = (priority: number) =>
+      call(handlers.updateConfigPriority, { params, body: { priority } });
+    /** Every stored `editor` profile as `tenant:priority`, the platform-level one as `-:…`. */
+    const priorities = async () =>
+      (
+        await mongoose.models.Config.collection
+          .find({ principalType: 'role', principalId: 'editor' })
+          .project<{ priority: number; tenantId?: string }>({ priority: 1, tenantId: 1 })
+          .toArray()
+      )
+        .map((document) => `${document.tenantId ?? '-'}:${document.priority}`)
+        .sort();
+    await inTenant('tenant-a', async () => {
+      await createRole('editor');
+      const created = await call(handlers.patchConfigField, {
+        params,
+        body: { entries: [{ fieldPath: 'interface.customWelcome', value: 'tenant-a' }] },
+      });
+      expect(created.statusCode).toBe(200);
+    });
+
+    const onlyTenant = await reorder(40);
+    expect(onlyTenant.statusCode).toBe(404);
+    expect(onlyTenant.body?.code).toBe('CONFIG_NOT_FOUND');
+    expect(await priorities()).toEqual(['tenant-a:10']);
+
+    await mongoose.models.Config.collection.insertOne({
+      principalType: 'role',
+      principalId: 'editor',
+      principalModel: 'Role',
+      priority: 10,
+      overrides: { interface: { customWelcome: 'platform' } },
+      tombstones: [],
+      isActive: true,
+      configVersion: 1,
+    });
+    const platform = await reorder(40);
+    expect(platform.statusCode).toBe(200);
+    expect(configOf(platform).overrides).toEqual({ interface: { customWelcome: 'platform' } });
+    expect(await priorities()).toEqual(['-:40', 'tenant-a:10']);
+
+    const tenant = await inTenant('tenant-a', () => reorder(30));
+    expect(tenant.statusCode).toBe(200);
+    expect(configOf(tenant).overrides).toEqual({ interface: { customWelcome: 'tenant-a' } });
+    expect(await priorities()).toEqual(['-:40', 'tenant-a:30']);
+  });
+
   it('refuses to create a profile for a role, group or user that does not exist', async () => {
     const handlers = createHandlers();
     const missingObjectId = new Types.ObjectId().toString();

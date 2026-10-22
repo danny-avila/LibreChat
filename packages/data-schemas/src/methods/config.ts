@@ -352,7 +352,10 @@ function toPrincipal(
 export function createConfigMethods(mongoose: typeof import('mongoose')) {
   const store = createConfigStore(mongoose);
   const operations = createConfigOperations(store);
-  /** For lookups and moves that must stay in the caller's tenant partition (a role rename). */
+  /**
+   * For lookups and writes that must stay in the caller's tenant partition: a role rename and a
+   * priority change.
+   */
   const partitioned = createConfigOperations(createConfigStore(mongoose, { partitioned: true }));
 
   return {
@@ -502,6 +505,10 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     /**
      * Sets only the priority; overrides, tombstones and `isActive` stay. Resolves to the
      * document and whether this write changed it, or `null` when the principal has none.
+     *
+     * Only the caller's tenant partition is read and written: outside a tenant only a
+     * platform-level document changes, and a tenant's document for the same principal is
+     * neither changed nor returned.
      */
     setConfigPriority: (
       principalType: PrincipalType,
@@ -509,7 +516,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
       priority: number,
       options?: ConfigWriteOptions,
     ): Promise<ConfigWriteOutcome | null> =>
-      operations.setPriority(toPrincipal(principalType, principalId), priority, options),
+      partitioned.setPriority(toPrincipal(principalType, principalId), priority, options),
 
     /**
      * Moves a principal's document to another id of the same type (a role rename) and
