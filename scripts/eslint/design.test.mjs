@@ -115,9 +115,7 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
     "cn('disabled:opacity-50', ...[disabledFillClasses])",
     "const faded = 'opacity-50'; cn(busy && faded, busy && disabledFillClasses)",
     "const faded = 'opacity-50'; cn(faded)",
-    "cn('[&:disabled:hover]:opacity-50', disabledFillClasses)",
     "cn('[&:is(:disabled)]:opacity-50 [&:where(:disabled)]:opacity-40', disabledFillClasses)",
-    "cn('[&:hover:disabled]:opacity-50', disabledFillClasses)",
     "cn((a || b) && 'opacity-50', (a || b) && disabledFillClasses)",
     "const faded = 'opacity-50'; <button disabled={busy} className={faded} />",
     "const faded = 'opacity-50'; <button disabled={busy} className={cn(busy ? faded : '', disabledFillClasses)} />",
@@ -199,6 +197,10 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
     {
       code: "cn('data-[state=disabled]:opacity-50')",
       errors: [missing('data-[state=disabled]:opacity-50')],
+    },
+    {
+      code: "cn('[.foo_&]:[.bar_&]:disabled:opacity-50', '[.bar_&]:[.foo_&]:theme-disabled:opacity-100')",
+      errors: [missing('[.foo_&]:[.bar_&]:disabled:opacity-50')],
     },
     {
       code: "cn('[&:disabled]:opacity-40')",

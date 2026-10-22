@@ -74,11 +74,10 @@ const WITHIN_MARKERS = /^(?:has-\[:disabled\]|has-disabled|\[&:has\(:disabled\)\
 const isDescendantModifier = (variant) => /^\[&[\s_>~+]/.test(variant) || /^\*{1,2}$/.test(variant);
 
 /** The disabled markers `theme-disabled` matches (`:disabled`, `[data-disabled]`,
- *  `[aria-disabled='true']`, and a selector that implies one, such as `[&:disabled:hover]` or
- *  `[&:is(:disabled)]`); a self variant spelled with another marker, such as
- *  `data-[state=disabled]`, is one no recipe restores. */
+ *  `[aria-disabled='true']`, and `[&:is(:disabled)]`, which implies one); a self variant spelled
+ *  with another marker, such as `data-[state=disabled]`, is one no recipe restores. */
 const SELF_MARKERS = new RegExp(
-  String.raw`^(?:disabled|aria-disabled|data-disabled|data-\[disabled(?:=["']?true["']?)?\]|aria-\[disabled=["']?true["']?\]|\[&:(?:(?:hover|focus|focus-visible|active):)*(?:disabled|(?:is|where)\(:disabled\))(?::(?:hover|focus|focus-visible|active))*\]|\[&\[data-disabled\]\]|\[&\[aria-disabled=["']?true["']?\]\])$`,
+  String.raw`^(?:disabled|aria-disabled|data-disabled|data-\[disabled(?:=["']?true["']?)?\]|aria-\[disabled=["']?true["']?\]|\[&:(?:disabled|(?:is|where)\(:disabled\))\]|\[&\[data-disabled\]\]|\[&\[aria-disabled=["']?true["']?\]\])$`,
 );
 
 const TOPOLOGY_ORDER = ['group', 'peer', 'within', 'self'];
@@ -172,9 +171,15 @@ function spellsRecipe(value, need) {
     const recipe = RECIPE_VARIANTS.get(variants[marker]);
     if (!(need.topology === 'any' || recipe === need.topology)) return false;
     if (need.important && !match[1] && !match[2]) return false;
-    return variants
-      .filter((_, i) => i !== marker)
-      .every((variant) => dimEnclosing.includes(variant));
+    const rest = variants.filter((_, i) => i !== marker);
+    const ordered = (variant) => variant.startsWith('[');
+    const arbitrary = dimEnclosing.filter(ordered);
+    let from = 0;
+    return rest.every((variant) => {
+      if (!ordered(variant)) return dimEnclosing.includes(variant);
+      from = arbitrary.indexOf(variant, from) + 1;
+      return from > 0;
+    });
   });
 }
 
