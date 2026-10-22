@@ -7,12 +7,14 @@ import {
   PERMISSION_SUB_KEYS,
   isProcessMCPServerConfig,
   normalizeEndpointName,
+  EModelEndpoint,
   configSchema,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AdminConfigMergeRules, AppConfig, Config, TWebSearchKeys } from '~/types';
 import type { ConfigFieldWrite } from './mutations';
 import { isBaseConfigPrincipal, sortByConfigPrecedence } from './precedence';
+import { AZURE_RESOLVED_GROUP_FIELDS, resolveAzureGroups } from './azure';
 import { setConfigFields, toConfigOverrideState } from './mutations';
 import { webSearchPairedFields, unbindWebSearchKeys } from './web';
 import { parseFieldPath, isDotFreePath } from './paths';
@@ -1248,8 +1250,9 @@ export interface ConfigMergeStep {
   /** The merged config with this layer applied. */
   merged: AppConfig;
   /**
-   * The base config with only this layer applied (its tombstones, then its overrides), as if no
-   * other layer were below it. Computed on first call.
+   * The base config with only this layer applied (its tombstones, then its overrides; its Azure
+   * `groups` replacing what librechat.yaml's resolved to), as if no other layer were below it.
+   * Computed on first call.
    */
   alone: () => AppConfig;
 }
@@ -1283,7 +1286,10 @@ interface FoldStep<T> {
   /** What the layer's overrides contributed, under AppConfig section names. */
   applied: AnyObject;
   merged: T;
-  /** The layer's tombstones that applied, as AppConfig paths. */
+  /**
+   * What the layer removed before its overrides landed, as AppConfig paths: its tombstones that
+   * applied, and the resolved Azure fields its `groups` replace.
+   */
   removed: readonly string[];
 }
 
@@ -1376,6 +1382,10 @@ function bindWebSearchKeys(
   return { ...merged, webSearch };
 }
 
+function describePrincipal(config: ConfigOverrideLayer): string {
+  return `${config.principalType}/${config.principalId}`;
+}
+
 /**
  * The document with only what the merge may apply: override keys and tombstones under a
  * top-level section `configSchema` defines. Anything else was stored before writes were
@@ -1414,16 +1424,62 @@ function withAcceptedSections(config: ConfigOverrideLayer): ConfigOverrideLayer 
     return config;
   }
   logger.warn(
-    `[mergeConfigOverrides] Ignoring unknown config sections ${[...ignored].join(', ')} for ${config.principalType}/${config.principalId}`,
+    `[mergeConfigOverrides] Ignoring unknown config sections ${[...ignored].join(', ')} for ${describePrincipal(config)}`,
   );
   return { ...config, overrides, tombstones };
+}
+
+/** Where the resolved Azure config sits in an AppConfig. */
+const AZURE_CONFIG_PATH = `endpoints.${EModelEndpoint.azureOpenAI}`;
+
+/** The resolved Azure fields a layer's `groups` replace, as AppConfig paths. */
+const AZURE_RESOLVED_PATHS: readonly string[] = AZURE_RESOLVED_GROUP_FIELDS.map(
+  (field) => `${AZURE_CONFIG_PATH}.${field}`,
+);
+
+/**
+ * A layer's `endpoints` override with its Azure `groups` resolved as AppService resolves
+ * librechat.yaml's (`resolveAzureGroups`): the Azure clients read `groupMap`, `modelGroupMap` and
+ * the model lists resolved with them, never `groups`. The layer's groups replace the groups below
+ * whole, as its `groups` array does in the YAML-shaped config, so what they resolve to replaces
+ * what those resolved to (the caller removes that first); a resolved field the same layer also
+ * writes directly merges over its own groups' (objects) or replaces it. `null` when the layer
+ * writes no groups, or groups that do not resolve, which then stay unread, with a warning.
+ */
+function resolveLayerAzureGroups(
+  endpoints: unknown,
+  config: ConfigOverrideLayer,
+): AnyObject | null {
+  if (!isPlainObject(endpoints)) {
+    return null;
+  }
+  const azure = endpoints[EModelEndpoint.azureOpenAI];
+  if (!isPlainObject(azure) || !Array.isArray(azure.groups)) {
+    return null;
+  }
+  const resolved = resolveAzureGroups(azure.groups);
+  if (!resolved.isValid) {
+    logger.warn(
+      `[mergeConfigOverrides] Ignoring ${AZURE_CONFIG_PATH}.groups for ${describePrincipal(config)}: ${resolved.errors.join('; ')}`,
+    );
+    return null;
+  }
+  const next: AnyObject = { ...azure };
+  for (const field of AZURE_RESOLVED_GROUP_FIELDS) {
+    const own = azure[field];
+    const derived: unknown = resolved[field];
+    next[field] =
+      isPlainObject(own) && isPlainObject(derived) ? deepMerge(derived, own) : (own ?? derived);
+  }
+  return { ...endpoints, [EModelEndpoint.azureOpenAI]: next };
 }
 
 /**
  * Folds override layers, in merge precedence order (`compareConfigPrecedence`), into
  * `merged`, the served config, and `raw`, the YAML-shaped config each layer is validated on
  * before it lands (`stripInvalidOverrides`). `merged` starts as any object whose `mcpConfig`
- * is the MCP servers config of `raw`, because the process-MCP filter reads it.
+ * is the MCP servers config of `raw`, because the process-MCP filter reads it. A layer's Azure
+ * `groups` resolve into the fields the Azure clients read (`resolveLayerAzureGroups`).
  * `webSearchWriters` names the layer behind each paired web search field, by its position in
  * that order. `afterLayer` runs after each layer lands, and the next layer folds onto what it
  * returns.
@@ -1464,6 +1520,7 @@ function foldConfigLayers<T extends AnyObject>(
     if (config.overrides && typeof config.overrides === 'object') {
       const remapped: AnyObject = {};
       const applied: AnyObject = {};
+      let replacesAzureGroups = false;
       for (const [key, value] of Object.entries(stripInvalidOverrides(config, raw))) {
         if (
           BASE_ONLY_OVERRIDE_SECTIONS.has(key) ||
@@ -1513,8 +1570,18 @@ function foldConfigLayers<T extends AnyObject>(
           if (Object.keys(filtered).length > 0) {
             remapped[mappedKey] = filtered;
           }
+        } else if (key === 'endpoints') {
+          const resolved = resolveLayerAzureGroups(value, config);
+          remapped[mappedKey] = resolved ?? value;
+          replacesAzureGroups = resolved != null;
         } else {
           remapped[mappedKey] = value;
+        }
+      }
+      if (replacesAzureGroups) {
+        for (const path of AZURE_RESOLVED_PATHS) {
+          merged = deletePath(merged, path);
+          removed.push(path);
         }
       }
       merged = deepMerge(merged, remapped);

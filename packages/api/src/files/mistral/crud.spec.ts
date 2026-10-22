@@ -1552,6 +1552,34 @@ describe('MistralOCR Service', () => {
         expect(sentAuthorizations()[0]).toBe('Bearer deployment-ocr-key');
       });
 
+      it('never fills an empty key from OCR_API_KEY for a base URL in another variable', async () => {
+        mockOCRFlow();
+        mockLoadAuthValues.mockResolvedValue({
+          OCR_API_KEY: 'deployment-ocr-key',
+          OPENAI_REVERSE_PROXY: 'https://proxy.elsewhere.example/v1',
+        });
+
+        await upload({ apiKey: '', baseURL: '${OPENAI_REVERSE_PROXY}' });
+
+        expect(mockLoadAuthValues).toHaveBeenCalledWith(
+          expect.objectContaining({ authFields: ['OPENAI_REVERSE_PROXY'] }),
+        );
+        expect(mockAxios.post!.mock.calls[0][0]).toBe('https://proxy.elsewhere.example/v1/files');
+        expect(sentAuthorizations().join(' ')).not.toContain('deployment-ocr-key');
+      });
+
+      it('fills an empty key from OCR_API_KEY with the default base URL variable', async () => {
+        mockOCRFlow();
+
+        await upload({ apiKey: '', baseURL: '${OCR_BASEURL}' });
+
+        expect(mockLoadAuthValues).toHaveBeenCalledWith(
+          expect.objectContaining({ authFields: ['OCR_BASEURL', 'OCR_API_KEY'] }),
+        );
+        expect(mockAxios.post!.mock.calls[0][0]).toBe('https://ocr.deployment.example/v1/files');
+        expect(sentAuthorizations()[0]).toBe('Bearer deployment-ocr-key');
+      });
+
       it('resolves an explicit key reference with a configured base URL', async () => {
         mockOCRFlow();
 

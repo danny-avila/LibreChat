@@ -28,6 +28,7 @@ import {
   BASE_ONLY_CONFIG_SECTIONS,
   PROCESS_MCP_SERVER_FIELDS,
   INTERFACE_PERMISSION_FIELDS,
+  mapModelToAzureConfig,
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   RUNTIME_CONFIG_INTERFACE_FIELDS,
 } from 'librechat-data-provider';
@@ -1306,6 +1307,8 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     const group = (apiKey?: string): Doc => ({
       group: 'east',
       instanceName: 'east-instance',
+      version: '2024-10-21',
+      deploymentName: 'gpt-4o',
       ...(apiKey != null && { apiKey }),
       models: { 'gpt-4o': true },
     });
@@ -1313,11 +1316,39 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
       'endpoints.azureOpenAI.groups': [group('azure-admin-secret-key')],
     })['endpoints.azureOpenAI.groups'] as Doc[];
     const encrypted = String(stored.apiKey).startsWith('v3:');
-    const runtime = resolveRuntimeConfigSecrets({
-      endpoints: { azureOpenAI: { groups: [stored] } },
-    });
+    /** The Azure client is built with the key a profile's group holds, decrypted. */
+    const runtime = resolveRuntimeConfigSecrets(
+      mergeOverrideLayers(
+        { config: {} } as AppConfig,
+        [storedConfig({ endpoints: { azureOpenAI: { groups: [stored] } } })],
+        { envPolicy: createEnvReferencePolicy({ config: {} }) },
+      ),
+    );
+    const azure = runtime.endpoints?.azureOpenAI;
     const decrypted =
-      getIn(runtime, 'endpoints.azureOpenAI.groups.0.apiKey') === 'azure-admin-secret-key';
+      azure?.groupMap != null &&
+      azure.modelGroupMap != null &&
+      mapModelToAzureConfig({
+        modelName: 'gpt-4o',
+        groupMap: azure.groupMap,
+        modelGroupMap: azure.modelGroupMap,
+      }).azureOptions.azureOpenAIApiKey === 'azure-admin-secret-key';
+    /** Moving the group the key is stored for needs the key entered again. */
+    const moved = await patch(
+      [
+        {
+          fieldPath: 'endpoints.azureOpenAI.groups',
+          value: [{ ...group(), instanceName: 'attacker-instance' }],
+        },
+      ],
+      {
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue(storedConfig({ endpoints: { azureOpenAI: { groups: [stored] } } })),
+      },
+    );
+    const reentry =
+      moved.statusCode === 400 && moved.body?.code === 'CONFIG_SECRET_REENTRY_REQUIRED';
 
     const writeConfigDocument = jest.fn(
       async (_type: string, _id: string, draft: ConfigDraft): Promise<ConfigRecord> =>
@@ -1367,6 +1398,7 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     return (
       encrypted &&
       decrypted &&
+      reentry &&
       res.statusCode === 200 &&
       kept &&
       getIn(read, 'endpoints.azureOpenAI.groups.0.apiKey') === undefined &&

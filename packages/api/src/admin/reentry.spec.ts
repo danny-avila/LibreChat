@@ -1,7 +1,7 @@
 import { encryptV3, setConfigFields, toConfigOverrideState } from '@librechat/data-schemas';
 import type { ConfigFieldWrite } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
-import { findSecretReentry } from './reentry';
+import { findSecretReentry, getAzureGroupReentryIssues } from './reentry';
 
 /** Encryption reads `CREDS_KEY` when data-schemas loads, before any spec code runs. */
 jest.mock('@librechat/data-schemas', () => {
@@ -278,5 +278,110 @@ describe('findSecretReentry', () => {
         judge(document({ probe: server(GOOD, legacy) }), { renamed: server(GOOD, carried) }),
       ).toBeNull();
     });
+  });
+});
+
+describe('getAzureGroupReentryIssues', () => {
+  const yamlGroupMap = {
+    east: { apiKey: 'yaml-literal-key', instanceName: 'east', version: '2024-10-21', models: {} },
+  };
+  const group = (overrides: Record<string, unknown> = {}) => ({
+    group: 'west',
+    apiKey: STORED_KEY,
+    instanceName: 'west',
+    version: '2024-10-21',
+    deploymentName: 'gpt-5',
+    models: { 'gpt-5': true },
+    ...overrides,
+  });
+  const storedGroups: StoredDocument = {
+    overrides: { endpoints: { azureOpenAI: { groups: [group()] } } },
+    tombstones: [],
+  };
+
+  function judge(writes: ConfigFieldWrite[], document: StoredDocument = storedGroups) {
+    return getAzureGroupReentryIssues({
+      stored: document,
+      candidate: setConfigFields(toConfigOverrideState(document), writes),
+      baseGroupMap: yamlGroupMap,
+      entered: new Set([ENTERED_KEY]),
+    });
+  }
+
+  const groupsWrite = (...groups: Record<string, unknown>[]): ConfigFieldWrite[] => [
+    { segments: ['endpoints', 'azureOpenAI', 'groups'], value: groups },
+  ];
+
+  it('refuses a kept key under a moved instance, and accepts it entered again', () => {
+    expect(judge(groupsWrite(group({ instanceName: 'attacker' })))).toEqual([
+      {
+        path: 'endpoints.azureOpenAI.groups.0.instanceName',
+        segments: ['endpoints', 'azureOpenAI', 'groups', '0', 'instanceName'],
+        code: 'secret_reentry_required',
+        secretPath: 'endpoints.azureOpenAI.groups.0.apiKey',
+      },
+    ]);
+    expect(judge(groupsWrite(group({ instanceName: 'attacker', apiKey: ENTERED_KEY })))).toEqual(
+      [],
+    );
+    expect(judge(groupsWrite(group({ version: '2025-01-01' })))).toEqual([]);
+  });
+
+  it('judges a group that does not resolve yet, so a later write cannot put the move to use', () => {
+    const unresolved = group({ instanceName: 'attacker', deploymentName: undefined });
+
+    expect(judge(groupsWrite(unresolved)).map(({ path }) => path)).toEqual([
+      'endpoints.azureOpenAI.groups.0.instanceName',
+    ]);
+  });
+
+  it('judges a groupMap key over the group librechat.yaml resolves, under the tombstones', () => {
+    const mapped: StoredDocument = {
+      overrides: { endpoints: { azureOpenAI: { groupMap: { east: { apiKey: STORED_KEY } } } } },
+      tombstones: [],
+    };
+    const tombstoned = getAzureGroupReentryIssues({
+      stored: mapped,
+      candidate: {
+        ...toConfigOverrideState(mapped),
+        tombstones: ['endpoints.azureOpenAI.groupMap.east.instanceName'],
+      },
+      baseGroupMap: yamlGroupMap,
+      entered: new Set(),
+    });
+
+    expect(
+      judge(
+        [
+          {
+            segments: ['endpoints', 'azureOpenAI', 'groupMap', 'east', 'instanceName'],
+            value: 'east',
+          },
+        ],
+        mapped,
+      ),
+    ).toEqual([]);
+    expect(tombstoned.map(({ path, secretPath }) => [path, secretPath])).toEqual([
+      [
+        'endpoints.azureOpenAI.groupMap.east.instanceName',
+        'endpoints.azureOpenAI.groupMap.east.apiKey',
+      ],
+    ]);
+  });
+
+  it("leaves librechat.yaml's own keys to the merge", () => {
+    const empty: StoredDocument = { overrides: {}, tombstones: [] };
+
+    expect(
+      judge(
+        [
+          {
+            segments: ['endpoints', 'azureOpenAI', 'groupMap', 'east', 'instanceName'],
+            value: 'x',
+          },
+        ],
+        empty,
+      ),
+    ).toEqual([]);
   });
 });

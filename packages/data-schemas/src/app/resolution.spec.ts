@@ -2582,6 +2582,103 @@ describe('mergeConfigOverrides: afterLayer', () => {
   });
 });
 
+describe('mergeConfigOverrides: Azure groups an override writes', () => {
+  const yamlGroup = {
+    group: 'east',
+    apiKey: '${AZURE_EAST_KEY}',
+    instanceName: 'east',
+    version: '2024-10-21',
+    deploymentName: 'gpt-4o',
+    models: { 'gpt-4o': true },
+  };
+  const base = {
+    config: { endpoints: { azureOpenAI: { groups: [yamlGroup] } } },
+    endpoints: {
+      azureOpenAI: {
+        titleModel: 'gpt-4o',
+        groupMap: { east: { ...yamlGroup } },
+        modelGroupMap: { 'gpt-4o': { group: 'east' } },
+        modelNames: ['gpt-4o'],
+        assistantModels: [],
+        assistantGroups: [],
+      },
+    },
+  } as unknown as AppConfig;
+  const west = {
+    group: 'west',
+    apiKey: 'v3:stored-west-key',
+    instanceName: 'west',
+    version: '2024-10-21',
+    deploymentName: 'gpt-5',
+    assistants: true,
+    models: { 'gpt-5': true, 'o3-mini': { deploymentName: 'o3' } },
+  };
+
+  it('resolves them into the fields the Azure clients read, replacing what lay below', () => {
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 10),
+    ]);
+
+    const azure = merged.endpoints?.azureOpenAI;
+    expect(azure?.groupMap).toEqual({
+      west: expect.objectContaining({ apiKey: 'v3:stored-west-key', instanceName: 'west' }),
+    });
+    expect(azure?.modelGroupMap).toEqual({
+      'gpt-5': { group: 'west' },
+      'o3-mini': { group: 'west' },
+    });
+    expect(azure?.modelNames).toEqual(['gpt-5', 'o3-mini']);
+    expect(azure?.assistantModels).toEqual(['gpt-5', 'o3-mini']);
+    expect(azure?.assistantGroups).toEqual(['west']);
+    expect(azure?.titleModel).toBe('gpt-4o');
+    expect(base.endpoints?.azureOpenAI?.modelNames).toEqual(['gpt-4o']);
+  });
+
+  it("merges a groupMap the same layer writes over its own groups', and a later layer's over them", () => {
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig(
+        { endpoints: { azureOpenAI: { groups: [west], groupMap: { west: { version: 'v2' } } } } },
+        10,
+      ),
+      fakeConfig({ endpoints: { azureOpenAI: { groupMap: { west: { baseURL: 'b' } } } } }, 20),
+    ]);
+
+    expect(merged.endpoints?.azureOpenAI?.groupMap?.west).toMatchObject({
+      apiKey: 'v3:stored-west-key',
+      version: 'v2',
+      baseURL: 'b',
+    });
+  });
+
+  it("shows the layer alone with its groups in place of librechat.yaml's", () => {
+    let aloneGroups: unknown;
+    mergeConfigOverrides(
+      base,
+      [fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 10)],
+      {
+        afterLayer: (step) => {
+          aloneGroups = Object.keys(step.alone().endpoints?.azureOpenAI?.groupMap ?? {});
+          return step.merged;
+        },
+      },
+    );
+
+    expect(aloneGroups).toEqual(['west']);
+  });
+
+  it('leaves groups that do not resolve unread, with a warning', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig({ endpoints: { azureOpenAI: { groups: [west, { ...west, group: 'w2' }] } } }, 10),
+    ]);
+
+    expect(merged.endpoints?.azureOpenAI?.groupMap).toEqual(base.endpoints?.azureOpenAI?.groupMap);
+    expect(merged.endpoints?.azureOpenAI?.modelNames).toEqual(['gpt-4o']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('endpoints.azureOpenAI.groups'));
+    warn.mockRestore();
+  });
+});
+
 describe('merge precedence', () => {
   function layer(
     principalType: 'role' | 'group' | 'user',

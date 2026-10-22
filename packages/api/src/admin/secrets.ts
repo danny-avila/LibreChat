@@ -82,7 +82,7 @@ interface ArraySecretField {
 }
 
 /** `user_provided` and `${ENV_VAR}`: values that name where a credential comes from, not the credential. */
-function isCredentialReference(value: string): boolean {
+export function isCredentialReference(value: string): boolean {
   return isUserProvided(value) || envVarRegex.test(value);
 }
 

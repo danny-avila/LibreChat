@@ -1,14 +1,22 @@
-import { getAtPath, isPlainRecord, applyConfigTombstones } from '@librechat/data-schemas';
+import {
+  getAtPath,
+  isPlainRecord,
+  resolveAzureGroups,
+  applyConfigTombstones,
+} from '@librechat/data-schemas';
 import type { ConfigOverrideState } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { CredentialBindingConfig } from '~/mcp/registry/binding';
+import type { SecretReentryIssue } from './binding';
 import {
   diffApiKeyBinding,
   preserveOmittedOAuthBindingFields,
   getChangedOAuthSecretBindingFields,
 } from '~/mcp/registry/binding';
 import { MCPApiKeyReentryRequiredError, MCPOAuthSecretReentryRequiredError } from '~/mcp/errors';
-import { isSameStoredSecret, isMCPCredentialReference } from './secrets';
+import { isSameStoredSecret, isCredentialReference, isMCPCredentialReference } from './secrets';
+import { diffAzureGroupBinding } from '~/app/rebinding';
+import { SECRET_REENTRY_REQUIRED } from './binding';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -217,4 +225,151 @@ export function findSecretReentry(params: {
     }
   }
   return null;
+}
+
+/** Where Azure groups sit, in an override document and in the resolved config alike. */
+const AZURE_SEGMENTS = ['endpoints', 'azureOpenAI'] as const;
+
+/** Whether an Azure group key is one a read hides: set, and not `${VAR}` or `user_provided`. */
+function isHiddenGroupKey(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const trimmed = value.trim();
+  return trimmed !== '' && !isCredentialReference(trimmed);
+}
+
+function getAzureSection(overrides: unknown): JsonRecord {
+  const azure = getAtPath(overrides, AZURE_SEGMENTS);
+  return isPlainRecord(azure) ? azure : {};
+}
+
+function getGroupItems(azure: JsonRecord): JsonRecord[] {
+  return Array.isArray(azure.groups) ? azure.groups.filter(isPlainRecord) : [];
+}
+
+function getGroupMap(azure: JsonRecord): JsonRecord {
+  return isPlainRecord(azure.groupMap) ? azure.groupMap : {};
+}
+
+/**
+ * The Azure groups a document resolves to on its own over librechat.yaml, by name, as the merge
+ * resolves one layer: its `groups` replace librechat.yaml's whole when they resolve
+ * (`resolveAzureGroups`), else librechat.yaml's resolved groups (`baseGroupMap`) stay under its
+ * tombstones; its `groupMap` entries merge over either.
+ */
+function getEffectiveAzureGroups(
+  document: StoredDocument | null | undefined,
+  baseGroupMap: unknown,
+): Map<string, JsonRecord> {
+  const azure = getAzureSection(document?.overrides);
+  const resolved = Array.isArray(azure.groups) ? resolveAzureGroups(azure.groups) : undefined;
+  const below = resolved?.isValid
+    ? resolved.groupMap
+    : getAtPath(
+        applyConfigTombstones(
+          { endpoints: { azureOpenAI: { groupMap: baseGroupMap } } } as Partial<TCustomConfig>,
+          document?.tombstones,
+        ),
+        [...AZURE_SEGMENTS, 'groupMap'],
+      );
+  const merged = mergeLayer(below, getGroupMap(azure));
+  return new Map(
+    Object.entries(isPlainRecord(merged) ? merged : {}).flatMap(([name, group]) =>
+      isPlainRecord(group) ? [[name, group]] : [],
+    ),
+  );
+}
+
+/** Every hidden group key a document stores, in `groups` and in `groupMap`. */
+function getStoredGroupKeys(azure: JsonRecord): string[] {
+  return [...getGroupItems(azure), ...Object.values(getGroupMap(azure))].flatMap((group) => {
+    const value = isPlainRecord(group) ? group.apiKey : undefined;
+    return isHiddenGroupKey(value) ? [value] : [];
+  });
+}
+
+/**
+ * Where a document writes the group a key belongs to, in librechat.yaml keys: its `groupMap`
+ * entry when that holds the field (or the key), else its `groups` item of that name.
+ */
+function locateGroupField(azure: JsonRecord, name: string, field: string): string[] {
+  const mapped = getGroupMap(azure)[name];
+  if (isPlainRecord(mapped) && field in mapped) {
+    return [...AZURE_SEGMENTS, 'groupMap', name, field];
+  }
+  const index = getGroupItems(azure).findIndex((group) => group.group === name);
+  if (index >= 0) {
+    return [...AZURE_SEGMENTS, 'groups', String(index), field];
+  }
+  return [...AZURE_SEGMENTS, 'groupMap', name, field];
+}
+
+/**
+ * The Azure form of the re-entry rule web search and MCP keys follow: a write that keeps a
+ * stored group key (in `groups` or `groupMap`) while changing where the group sends it must enter
+ * the key again. Groups are compared as the document resolves them on its own over
+ * librechat.yaml ({@link getEffectiveAzureGroups}), and each `groups` item also as written, so
+ * groups that do not resolve yet cannot carry a key to a new destination for a later write to
+ * put to use; destinations are compared by `diffAzureGroupBinding`. A
+ * key counts as entered again only when the planned document holds a value the request entered;
+ * a kept one is compared with every stored group that held the same value, so the write is
+ * refused unless one of them sent it where the candidate does. Only keys the stored document
+ * holds are judged: librechat.yaml's own are the merge's to bind (`app/rebinding.ts`).
+ */
+export function getAzureGroupReentryIssues(params: {
+  stored: StoredDocument | null | undefined;
+  candidate: ConfigOverrideState;
+  /** librechat.yaml's resolved Azure groups (`endpoints.azureOpenAI.groupMap` of the base config). */
+  baseGroupMap: unknown;
+  /** The secret values the request itself entered, encrypted. */
+  entered: ReadonlySet<string>;
+}): SecretReentryIssue[] {
+  const { stored, candidate, baseGroupMap, entered } = params;
+  const storedAzure = getAzureSection(stored?.overrides);
+  const held = getStoredGroupKeys(storedAzure);
+  if (held.length === 0) {
+    return [];
+  }
+  const candidateAzure = getAzureSection(candidate.overrides);
+  /** As the document resolves, and each `groups` item as written, which may not resolve yet. */
+  const candidates: Array<[string, JsonRecord]> = [
+    ...getEffectiveAzureGroups(candidate, baseGroupMap),
+    ...getGroupItems(candidateAzure).flatMap(
+      (item): Array<[string, JsonRecord]> =>
+        typeof item.group === 'string' ? [[item.group, item]] : [],
+    ),
+  ];
+  let origins: JsonRecord[] | undefined;
+  const issues = new Map<string, SecretReentryIssue>();
+  for (const [name, group] of candidates) {
+    const value = group.apiKey;
+    if (
+      !isHiddenGroupKey(value) ||
+      entered.has(value) ||
+      !held.some((stored) => isSameStoredSecret(stored, value))
+    ) {
+      continue;
+    }
+    /** Every stored definition of a group: as it resolved, and each complete `groups` item. */
+    origins ??= [
+      ...getEffectiveAzureGroups(stored, baseGroupMap).values(),
+      ...getGroupItems(storedAzure),
+    ];
+    const changes = origins
+      .filter((origin) => isSameStoredSecret(origin.apiKey, value))
+      .map((origin) => diffAzureGroupBinding(origin, group));
+    if (changes.length === 0 || changes.some((fields) => fields.length === 0)) {
+      continue;
+    }
+    const segments = locateGroupField(candidateAzure, name, changes[0][0]);
+    const path = segments.join('.');
+    issues.set(path, {
+      path,
+      segments,
+      code: SECRET_REENTRY_REQUIRED,
+      secretPath: locateGroupField(candidateAzure, name, 'apiKey').join('.'),
+    });
+  }
+  return [...issues.values()];
 }

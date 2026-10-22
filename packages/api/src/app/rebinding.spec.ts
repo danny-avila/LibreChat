@@ -962,6 +962,155 @@ describe('createSecretRebindingGuard', () => {
     });
   });
 
+  describe('Azure groups an override writes, which resolve to what the Azure clients read', () => {
+    const yamlGroup = {
+      group: 'east',
+      apiKey: 'yaml-literal-east-key',
+      instanceName: 'east',
+      version: '2024-10-21',
+      deploymentName: 'gpt-4o',
+      models: { 'gpt-4o': true },
+    };
+
+    function azureBase(): AppConfig {
+      return {
+        config: { endpoints: { azureOpenAI: { groups: [yamlGroup] } } },
+        endpoints: {
+          azureOpenAI: {
+            groupMap: { east: { ...yamlGroup } },
+            modelGroupMap: { 'gpt-4o': { group: 'east' } },
+            modelNames: ['gpt-4o'],
+            assistantModels: [],
+            assistantGroups: [],
+          },
+        },
+      } as unknown as AppConfig;
+    }
+
+    const ownGroup = {
+      group: 'west',
+      apiKey: 'v3:west-admin-key',
+      instanceName: 'west',
+      version: '2024-10-21',
+      deploymentName: 'gpt-5',
+      models: { 'gpt-5': true },
+    };
+
+    it("replaces librechat.yaml's groups with the layer's, each with the key it entered", () => {
+      const { merged, rebindings } = merge(
+        [layer({ endpoints: { azureOpenAI: { groups: [ownGroup] } } }, '__base__', 0)],
+        azureBase(),
+      );
+
+      const azure = merged.endpoints?.azureOpenAI;
+      expect(Object.keys(azure?.groupMap ?? {})).toEqual(['west']);
+      expect(azure?.groupMap?.west).toMatchObject({
+        apiKey: 'v3:west-admin-key',
+        instanceName: 'west',
+      });
+      expect(azure?.modelGroupMap).toEqual({ 'gpt-5': { group: 'west' } });
+      expect(azure?.modelNames).toEqual(['gpt-5']);
+      expect(rebindings).toEqual([]);
+    });
+
+    it('keeps the key a layer enters for a librechat.yaml group it points elsewhere', () => {
+      const { merged, rebindings } = merge(
+        [
+          layer({
+            endpoints: {
+              azureOpenAI: {
+                groups: [{ ...yamlGroup, apiKey: 'v3:east-admin-key', instanceName: 'east-2' }],
+              },
+            },
+          }),
+        ],
+        azureBase(),
+      );
+
+      expect(merged.endpoints?.azureOpenAI?.groupMap?.east).toMatchObject({
+        apiKey: 'v3:east-admin-key',
+        instanceName: 'east-2',
+      });
+      expect(rebindings).toEqual([]);
+    });
+
+    it('drops the key of a group a layer resolved once a later layer points it elsewhere', () => {
+      const { merged, ignored } = merge(
+        [
+          layer({ endpoints: { azureOpenAI: { groups: [ownGroup] } } }, '__base__', 0),
+          layer({ endpoints: { azureOpenAI: { groupMap: { west: { instanceName: 'evil' } } } } }),
+        ],
+        azureBase(),
+      );
+
+      expect(merged.endpoints?.azureOpenAI?.groupMap?.west).toMatchObject({
+        apiKey: '',
+        instanceName: 'evil',
+      });
+      expect(ignored.map(({ path }) => path)).toEqual([
+        'endpoints.azureOpenAI.groupMap.west.apiKey',
+      ]);
+    });
+
+    it('binds the deployment names of a base URL that takes its host from them', () => {
+      const hostTemplate = {
+        ...ownGroup,
+        baseURL: 'https://${DEPLOYMENT_NAME}.inference.example.com/v1',
+      };
+      const pathTemplate = {
+        ...ownGroup,
+        baseURL: 'https://west.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}',
+      };
+      const renamed = (group: Record<string, unknown>) =>
+        merge(
+          [
+            layer({ endpoints: { azureOpenAI: { groups: [group] } } }, '__base__', 0),
+            layer({
+              endpoints: {
+                azureOpenAI: {
+                  groupMap: { west: { models: { 'gpt-5': { deploymentName: 'evil' } } } },
+                },
+              },
+            }),
+          ],
+          azureBase(),
+        );
+
+      expect(renamed(hostTemplate).merged.endpoints?.azureOpenAI?.groupMap?.west?.apiKey).toBe('');
+      expect(renamed(pathTemplate).merged.endpoints?.azureOpenAI?.groupMap?.west?.apiKey).toBe(
+        'v3:west-admin-key',
+      );
+    });
+
+    it('binds the destination options its addParams reach the client with', () => {
+      const moved = (addParams: Record<string, unknown>) =>
+        merge(
+          [
+            layer({ endpoints: { azureOpenAI: { groups: [ownGroup] } } }, '__base__', 0),
+            layer({ endpoints: { azureOpenAI: { groupMap: { west: { addParams } } } } }),
+          ],
+          azureBase(),
+        ).merged.endpoints?.azureOpenAI?.groupMap?.west?.apiKey;
+
+      expect(moved({ configuration: { baseURL: 'https://evil.example/v1' } })).toBe('');
+      expect(moved({ reasoning_effort: 'high' })).toBe('v3:west-admin-key');
+    });
+
+    it('leaves groups that do not resolve unread, and what lies below in place', () => {
+      const { merged } = merge(
+        [
+          layer({
+            endpoints: { azureOpenAI: { groups: [ownGroup, { ...ownGroup, group: 'w2' }] } },
+          }),
+        ],
+        azureBase(),
+      );
+
+      expect(Object.keys(merged.endpoints?.azureOpenAI?.groupMap ?? {})).toEqual(['east']);
+      expect(merged.endpoints?.azureOpenAI?.modelNames).toEqual(['gpt-4o']);
+    });
+  });
+
   describe('custom endpoints: every setting that picks the destination, under any spelling', () => {
     const claude = {
       name: 'Claude',
@@ -1139,6 +1288,102 @@ describe('createSecretRebindingGuard', () => {
         'endpoints.custom["Ollama"].apiKey',
         'endpoints.custom["ollama"].apiKey',
       ]);
+    });
+  });
+
+  describe('web search URLs a layer points at another variable', () => {
+    const proxy = '${OPENAI_REVERSE_PROXY}';
+
+    it('sets the URL back when the layer enters no key for it', () => {
+      for (const firecrawlApiKey of [undefined, '', '  ']) {
+        const { merged, rebindings } = merge([
+          layer({ webSearch: { firecrawlApiUrl: proxy, firecrawlApiKey } }),
+        ]);
+
+        expect(merged.webSearch?.firecrawlApiUrl).toBe('https://api.firecrawl.dev');
+        expect(rebindings.map(({ kind, path }) => [kind, path])).toEqual([
+          ['destination', 'webSearch.firecrawlApiUrl'],
+        ]);
+      }
+    });
+
+    it("keeps the URL with a key the layer enters, a literal URL, or librechat.yaml's own", () => {
+      const restated = merge([
+        layer({ webSearch: { firecrawlApiUrl: proxy, firecrawlApiKey: '${FIRECRAWL_API_KEY}' } }),
+      ]);
+      expect(restated.merged.webSearch?.firecrawlApiUrl).toBe(proxy);
+      expect(restated.rebindings).toEqual([]);
+
+      const literal = merge([layer({ webSearch: { firecrawlApiUrl: 'https://other.example' } })]);
+      expect(literal.merged.webSearch?.firecrawlApiUrl).toBe('https://other.example');
+
+      const base = baseConfig();
+      const yamlReference = {
+        ...base,
+        webSearch: { ...base.webSearch, firecrawlApiUrl: '${FIRECRAWL_API_URL}' },
+      } as unknown as AppConfig;
+      const back = merge(
+        [
+          layer({ webSearch: { firecrawlApiUrl: 'https://lower.example' } }, 'lower', 5),
+          layer({ webSearch: { firecrawlApiUrl: '${FIRECRAWL_API_URL}' } }),
+        ],
+        yamlReference,
+      );
+      expect(back.merged.webSearch?.firecrawlApiUrl).toBe('${FIRECRAWL_API_URL}');
+    });
+  });
+
+  describe('custom endpoints a layer changes without naming them in its overrides', () => {
+    function step(merged: AppConfig, layerOverrides: Record<string, unknown> = {}) {
+      const base = baseConfig();
+      return {
+        layer: layer(layerOverrides),
+        base,
+        below: base,
+        applied: layerOverrides,
+        merged,
+        alone: () => base,
+      };
+    }
+
+    it('drops the inherited key of an entry whose destination changed some other way', () => {
+      const rebindings: SecretRebinding[] = [];
+      const guard = createSecretRebindingGuard((rebinding) => rebindings.push(rebinding));
+      const moved = {
+        ...baseConfig(),
+        endpoints: {
+          custom: [{ name: 'Gateway', apiKey: '${GATEWAY_KEY}', models: customEndpoint.models }],
+        },
+      } as unknown as AppConfig;
+
+      const result = guard(step(moved));
+
+      expect(result.endpoints?.custom?.[0]?.apiKey).toBe('');
+      expect(rebindings.map(({ path }) => path)).toEqual(['endpoints.custom["Gateway"].apiKey']);
+    });
+
+    it('keeps the key of an entry a layer left as it was below', () => {
+      const guard = createSecretRebindingGuard();
+      const copied = {
+        ...baseConfig(),
+        endpoints: { custom: [{ ...customEndpoint }] },
+      } as unknown as AppConfig;
+
+      expect(guard(step(copied)).endpoints?.custom?.[0]?.apiKey).toBe('${GATEWAY_KEY}');
+    });
+
+    it('leaves an endpoint as it was under a tombstone inside the list, which the merge never applies', () => {
+      const tombstoned = {
+        ...layer({}),
+        tombstones: ['endpoints.custom.0.baseURL', 'endpoints.custom.0.addParams'],
+      } as ConfigOverrideLayer;
+      const { merged, rebindings } = merge([tombstoned]);
+
+      expect(merged.endpoints?.custom?.[0]).toMatchObject({
+        apiKey: '${GATEWAY_KEY}',
+        baseURL: customEndpoint.baseURL,
+      });
+      expect(rebindings).toEqual([]);
     });
   });
 

@@ -1,5 +1,5 @@
-import { EModelEndpoint } from 'librechat-data-provider';
-import { foldConfigMergeKey } from '@librechat/data-schemas';
+import { EModelEndpoint, envVarRegex } from 'librechat-data-provider';
+import { foldConfigMergeKey, webSearchUrlApiKeys } from '@librechat/data-schemas';
 import type {
   AppConfig,
   ConfigMergeStep,
@@ -398,6 +398,19 @@ function getCustomEndpointBinding(entry: JsonRecord | null): Map<string, unknown
     [JSON.stringify(['baseURL']), normalizeBindingValue(entry?.baseURL)],
     [JSON.stringify(['provider']), entry?.provider],
   ]);
+  return collectClientOptionBinding(entry, binding);
+}
+
+/**
+ * The destination options of an entry whose `addParams` and `dropParams` reach its client's
+ * options (a custom endpoint, an Azure group), added to `binding` by location: each option in
+ * `addParams` named like a destination, at any depth, and each name in `dropParams` that removes
+ * such an option or the client options holding one ({@link CLIENT_OPTION_GROUPS}).
+ */
+function collectClientOptionBinding(
+  entry: JsonRecord | null,
+  binding: Map<string, unknown>,
+): Map<string, unknown> {
   collectDestinationOptions(entry?.addParams, ['addParams'], binding);
   const dropped = entry?.dropParams;
   if (!Array.isArray(dropped)) {
@@ -411,9 +424,8 @@ function getCustomEndpointBinding(entry: JsonRecord | null): Map<string, unknown
   return binding;
 }
 
-function customEndpointBindingChanged(reference: JsonRecord | null, merged: JsonRecord): boolean {
-  const expected = getCustomEndpointBinding(reference);
-  const actual = getCustomEndpointBinding(merged);
+/** Whether two bindings ({@link getCustomEndpointBinding}) differ in any location. */
+function bindingsDiffer(expected: Map<string, unknown>, actual: Map<string, unknown>): boolean {
   if (expected.size !== actual.size) {
     return true;
   }
@@ -425,22 +437,28 @@ function customEndpointBindingChanged(reference: JsonRecord | null, merged: Json
   return false;
 }
 
+function customEndpointBindingChanged(reference: JsonRecord | null, merged: JsonRecord): boolean {
+  return bindingsDiffer(getCustomEndpointBinding(reference), getCustomEndpointBinding(merged));
+}
+
 /**
  * Custom endpoints merge by name, folded as the merge folds it; each one's `apiKey` is bound to
  * the settings {@link getCustomEndpointBinding} lists. A merged entry is judged against the
  * entry of the layer that supplied it (the last of its identity, as the merge applies them) and
  * the entry it was merged onto: the merge keeps one merged entry per entry below, in order, so
- * the n-th merged entry of an identity comes from the n-th one below. A drop names the entry by
- * the spelling the merge keeps, the lower layer's.
+ * the n-th merged entry of an identity comes from the n-th one below. An entry the layer's
+ * overrides do not name is judged too, as inherited: whatever else changed it (a tombstone, say)
+ * changed it without entering its key. A drop names the entry by the spelling the merge keeps,
+ * the lower layer's.
  */
 function findCustomEndpointDrops(step: ConfigMergeStep): Drop[] {
   const merged = getAt(step.merged, CUSTOM_ENDPOINTS);
-  const applied = getAt(step.applied, CUSTOM_ENDPOINTS);
-  if (!Array.isArray(merged) || !Array.isArray(applied)) {
+  const below = getAt(step.below, CUSTOM_ENDPOINTS);
+  if (!Array.isArray(merged) || merged === below) {
     return [];
   }
-  const appliedGroups = groupByIdentity(applied);
-  const belowGroups = groupByIdentity(getAt(step.below, CUSTOM_ENDPOINTS));
+  const appliedGroups = groupByIdentity(getAt(step.applied, CUSTOM_ENDPOINTS));
+  const belowGroups = groupByIdentity(below);
   const occurrences = new Map<string, number>();
   let aloneGroups: Map<string, JsonRecord[]> | undefined;
   const drops: Drop[] = [];
@@ -455,11 +473,11 @@ function findCustomEndpointDrops(step: ConfigMergeStep): Drop[] {
     occurrences.set(identity, occurrence + 1);
     const appliedGroup = appliedGroups.get(identity);
     const appliedEntry = appliedGroup?.[appliedGroup.length - 1];
-    if (appliedEntry == null) {
+    const belowEntry = belowGroups.get(identity)?.[occurrence] ?? null;
+    if (appliedEntry == null && entry === belowEntry) {
       return;
     }
-    const belowEntry = belowGroups.get(identity)?.[occurrence] ?? null;
-    const reference = getBindingReference(belowEntry?.apiKey, entry.apiKey, appliedEntry.apiKey);
+    const reference = getBindingReference(belowEntry?.apiKey, entry.apiKey, appliedEntry?.apiKey);
     if (reference == null) {
       return;
     }
@@ -500,6 +518,62 @@ interface RecordBinding {
 /** Where an Azure group's key is sent: its own base URL, or its instance's Azure host. */
 const AZURE_GROUP_BINDING_KEYS = ['baseURL', 'instanceName'];
 
+/** The Azure client's base URL template a deployment name fills (`constructAzureURL`). */
+const DEPLOYMENT_NAME_TEMPLATE = '${DEPLOYMENT_NAME}';
+
+/** Whether a base URL's host, rather than its path, is filled from a deployment name. */
+function isHostFromDeployment(baseURL: unknown): boolean {
+  if (typeof baseURL !== 'string') {
+    return false;
+  }
+  const authority = baseURL.replace(/^[a-z][a-z\d+.-]*:\/\//i, '').split(/[/?#]/, 1)[0];
+  return authority.includes(DEPLOYMENT_NAME_TEMPLATE);
+}
+
+/**
+ * An Azure group's destination setting as the client reads it: blank is unset (resolved groups
+ * spell an unset base URL and instance as `''`).
+ */
+function toAzureDestination(value: unknown): unknown {
+  return typeof value === 'string' && value.trim() === ''
+    ? undefined
+    : normalizeBindingValue(value);
+}
+
+/** Every deployment name a group's requests are built with: the group's and each model's. */
+function getDeploymentNames(group: JsonRecord): string {
+  const models = asRecord(group.models) ?? {};
+  return JSON.stringify([
+    group.deploymentName,
+    ...Object.keys(models)
+      .sort()
+      .map((model) => asRecord(models[model])?.deploymentName),
+  ]);
+}
+
+/**
+ * The settings of a resolved Azure group (a `groupMap` entry, or a `groups` item) that differ
+ * between two definitions of it and decide where its `apiKey` is sent: `baseURL`, `instanceName`
+ * (the Azure host, and the `${INSTANCE_NAME}` a base URL template holds), the deployment names
+ * when a base URL takes its host from `${DEPLOYMENT_NAME}`, and the destination options of its
+ * `addParams` and `dropParams`, which reach the client's options as a custom endpoint's do.
+ */
+export function diffAzureGroupBinding(reference: JsonRecord, merged: JsonRecord): string[] {
+  const changed = AZURE_GROUP_BINDING_KEYS.filter(
+    (key) => toAzureDestination(reference[key]) !== toAzureDestination(merged[key]),
+  );
+  const deploymentPicksHost =
+    isHostFromDeployment(reference.baseURL) || isHostFromDeployment(merged.baseURL);
+  if (deploymentPicksHost && getDeploymentNames(reference) !== getDeploymentNames(merged)) {
+    changed.push('deploymentName');
+  }
+  const options = (group: JsonRecord) => collectClientOptionBinding(group, new Map());
+  if (bindingsDiffer(options(reference), options(merged))) {
+    changed.push('addParams');
+  }
+  return changed;
+}
+
 const RECORD_BINDINGS: readonly RecordBinding[] = [
   /**
    * MCP servers merge by name. `apiKey.key` and `oauth.client_secret` are bound by the same rules
@@ -528,19 +602,14 @@ const RECORD_BINDINGS: readonly RecordBinding[] = [
     ],
   },
   /**
-   * `groupMap` is what librechat.yaml's Azure `groups` resolve to and what runtime readers use; an
-   * override can write it directly, so each group's key is bound to its own destination.
+   * `groupMap` is what Azure `groups` resolve to (librechat.yaml's, or a layer's, which the merge
+   * resolves the same way) and what runtime readers use; an override can also write it directly,
+   * so each group's key is bound to its own destination.
    */
   {
     path: ['endpoints', 'azureOpenAI', 'groupMap'],
     reportPath: ['endpoints', 'azureOpenAI', 'groupMap'],
-    secrets: [
-      {
-        segments: ['apiKey'],
-        changedFields: (reference, merged) =>
-          AZURE_GROUP_BINDING_KEYS.filter((key) => bindingChanged(reference, merged, [key])),
-      },
-    ],
+    secrets: [{ segments: ['apiKey'], changedFields: diffAzureGroupBinding }],
   },
 ];
 
@@ -717,6 +786,66 @@ function findDestinationRestores(step: ConfigMergeStep): Restore[] {
   });
 }
 
+/** A web search URL a layer pointed elsewhere, and the one it is set back to. */
+interface WebSearchRestore {
+  url: string;
+  value: unknown;
+}
+
+/** A whole `${VAR}` reference, which web search's runtime treats as the deployment's own. */
+function isEnvReference(value: unknown): value is string {
+  return typeof value === 'string' && envVarRegex.test(value.trim());
+}
+
+function sameReference(a: unknown, b: unknown): boolean {
+  return (typeof a === 'string' ? a.trim() : a) === (typeof b === 'string' ? b.trim() : b);
+}
+
+/**
+ * Web search URLs a layer points at a `${VAR}` reference other than librechat.yaml's without
+ * entering the key sent there. Web search's runtime counts every `${VAR}` URL as the
+ * deployment's own: it sends the deployment's key there, and when the config holds no key (an
+ * unset one, or one the merge withholds, `unbindWebSearchKeys`) the search client falls back to
+ * its own environment default, so dropping a key cannot keep that URL from receiving one. The URL
+ * is set back to the one below instead. A literal URL is left to that runtime, which never sends
+ * an environment key to a URL stored in config.
+ */
+function findWebSearchRestores(step: ConfigMergeStep): WebSearchRestore[] {
+  const applied = asRecord(step.applied.webSearch);
+  if (applied == null) {
+    return [];
+  }
+  const merged = asRecord(step.merged.webSearch) ?? {};
+  const below = asRecord(step.below.webSearch) ?? {};
+  const base = asRecord(step.base.webSearch) ?? {};
+  const restores: WebSearchRestore[] = [];
+  for (const [url, apiKey] of webSearchUrlApiKeys) {
+    if (
+      applied[url] === undefined ||
+      isKeyString(applied[apiKey]) ||
+      !isEnvReference(merged[url]) ||
+      sameReference(merged[url], below[url]) ||
+      sameReference(merged[url], base[url])
+    ) {
+      continue;
+    }
+    restores.push({ url, value: below[url] });
+  }
+  return restores;
+}
+
+function withWebSearchRestores(config: unknown, restores: readonly WebSearchRestore[]): unknown {
+  const webSearch = { ...asRecord(asRecord(config)?.webSearch) };
+  for (const { url, value } of restores) {
+    if (value === undefined) {
+      delete webSearch[url];
+    } else {
+      webSearch[url] = value;
+    }
+  }
+  return { ...asRecord(config), webSearch };
+}
+
 /**
  * The merge's `afterLayer` policy for credentials bound to a destination. A credential stays
  * only where it was entered:
@@ -733,11 +862,13 @@ function findDestinationRestores(step: ConfigMergeStep): Restore[] {
  * Those are all the places a destination in the config meets a credential, apart from web
  * search: MCP servers (URL, transport, proxy, auth header, OAuth endpoints), custom endpoints
  * (base URL, `provider`, and the destination options of `addParams` and `dropParams`, matched by
- * the name the merge folds), OCR, speech, summarization parameters, and the resolved Azure groups
- * (`groupMap`) and Vertex AI settings (`vertexConfig`) an override can write directly. Web
+ * the name the merge folds), OCR, speech, summarization parameters, the resolved Azure groups
+ * (`groupMap`, which a layer's `groups` resolve to, or which it writes directly) and the Vertex AI
+ * settings (`vertexConfig`) an override can write directly. Web
  * search keys follow the merge's own rule (`unbindWebSearchKeys`, which keeps a key over an
  * inherited `${VAR}` or default URL), and its drops are reported like these
- * (`mergeOverrideLayers`). The built-in endpoints, assistants and the memory agent take their
+ * (`mergeOverrideLayers`); a web search URL a layer points at another `${VAR}` without entering
+ * its key is set back ({@link findWebSearchRestores}). The built-in endpoints, assistants and the memory agent take their
  * URLs from the environment, and Langfuse only reaches destinations the deployment configures.
  * Header maps are not covered: their values are not registered secrets.
  *
@@ -762,10 +893,23 @@ export function createSecretRebindingGuard(
       ...RECORD_BINDINGS.flatMap((binding) => findRecordDrops(step, binding)),
     ];
     const restores = findDestinationRestores(step);
+    const webSearchRestores = findWebSearchRestores(step);
     let result: unknown = step.merged;
     for (const { at, segments, path } of drops) {
       result = setAt(result, at, '');
       onRebinding?.({ layer: step.layer, kind: 'secret', segments, path });
+    }
+    if (webSearchRestores.length > 0) {
+      result = withWebSearchRestores(result, webSearchRestores);
+      for (const { url } of webSearchRestores) {
+        const segments = ['webSearch', url];
+        onRebinding?.({
+          layer: step.layer,
+          kind: 'destination',
+          segments,
+          path: segments.join('.'),
+        });
+      }
     }
     for (const { path, record, keys, droppedSecret } of restores) {
       result = setAt(result, path, record);

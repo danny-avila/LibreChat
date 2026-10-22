@@ -294,12 +294,28 @@ describe('mergeOverrideLayers and web search keys', () => {
   it('keeps a key stored over a ${VAR} URL a lower layer set, as webSearchStoredKeys states', async () => {
     const stored = dataSchemas.encryptV3('sx-editors-key');
     const { webSearch, rebindings } = await mergeWebSearch([
-      layerAt('__base__', 0, { searxngInstanceUrl: '${SEARXNG_URL}' }),
+      layerAt('__base__', 0, {
+        searxngInstanceUrl: '${SEARXNG_URL}',
+        searxngApiKey: dataSchemas.encryptV3('sx-base-key'),
+      }),
       layerAt('editors', 10, { searxngApiKey: stored }),
     ]);
 
     expect(webSearch?.searxngInstanceUrl).toBe('${SEARXNG_URL}');
     expect(webSearch?.searxngApiKey).toBe(stored);
     expect(rebindings).toEqual([]);
+  });
+
+  it('sets back a ${VAR} URL a layer sets without entering the key the client would send it', async () => {
+    const { webSearch, rebindings } = await mergeWebSearch([
+      layerAt('__base__', 0, { searxngInstanceUrl: '${SEARXNG_URL}' }),
+    ]);
+
+    expect(webSearch?.searxngInstanceUrl).toBe(SEARX.searxngInstanceUrl);
+    expect(rebindings).toContainEqual({
+      principalId: '__base__',
+      kind: 'destination',
+      path: 'webSearch.searxngInstanceUrl',
+    });
   });
 });

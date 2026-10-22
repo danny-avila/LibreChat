@@ -1,5 +1,8 @@
+import isPlainObject from 'lodash/isPlainObject';
+import { loadOCRConfig } from '@librechat/data-schemas';
 import { EModelEndpoint, isSensitiveEnvVar } from 'librechat-data-provider';
 import type { ConfigOverrideIssue } from '@librechat/data-schemas';
+import type { TCustomConfig } from 'librechat-data-provider';
 import { decryptConfigSecret, isEncryptedSecretPayload } from '~/admin/secrets';
 
 /** A `${NAME}` reference, in the grammar `extractEnvVariable` expands inside any string. */
@@ -193,15 +196,30 @@ export function collectEnvReferenceNames(value: unknown): Set<string> {
 }
 
 /**
- * The allowlist: names librechat.yaml references (`config` is the raw YAML config), the
- * built-in endpoints' credential names, and the operator's extra names. Infrastructure secrets
- * `extractEnvVariable` never expands (`CREDS_KEY`, `JWT_SECRET`, ...) stay out whatever lists them.
+ * librechat.yaml with the references loading it spells out for what a section it configures
+ * leaves unset: OCR without a key uses `${OCR_API_KEY}` (`loadOCRConfig`). The resolved config
+ * carries that reference, so config reads return it and a client that writes back what it read
+ * restates it; it is a name librechat.yaml uses as much as one it spells out.
+ */
+function withLoadedReferences(config: unknown): unknown {
+  if (!isPlainObject(config)) {
+    return config;
+  }
+  const yaml = config as Partial<TCustomConfig>;
+  return yaml.ocr == null ? yaml : { ...yaml, ocr: loadOCRConfig(yaml.ocr) };
+}
+
+/**
+ * The allowlist: names librechat.yaml references (`config` is the raw YAML config, with the
+ * references loading it fills in, {@link withLoadedReferences}), the built-in endpoints'
+ * credential names, and the operator's extra names. Infrastructure secrets `extractEnvVariable`
+ * never expands (`CREDS_KEY`, `JWT_SECRET`, ...) stay out whatever lists them.
  */
 export function createEnvReferencePolicy(options: {
   config?: unknown;
   allowlist?: readonly string[];
 }): EnvReferencePolicy {
-  const names = collectEnvReferenceNames(options.config);
+  const names = collectEnvReferenceNames(withLoadedReferences(options.config));
   for (const name of [...ENDPOINT_CREDENTIAL_ENV_NAMES, ...(options.allowlist ?? [])]) {
     names.add(name);
   }

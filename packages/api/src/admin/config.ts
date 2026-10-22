@@ -11,6 +11,7 @@ import {
   hasProcessMCPServerConfig,
   isProcessMCPServerConfig,
   isProcessMCPServerField,
+  EModelEndpoint,
 } from 'librechat-data-provider';
 import {
   logger,
@@ -119,9 +120,9 @@ import {
   getEnvReferenceIssues,
   parseEnvAllowlist,
 } from '~/app/allowlist';
+import { MCP_SERVER_SECTIONS, findSecretReentry, getAzureGroupReentryIssues } from './reentry';
 import { REBINDING_SECTIONS, toIgnoredSecretOverride } from '~/app/rebinding';
 import { getWebSearchReentryIssues, isWebSearchBindingPath } from './binding';
-import { MCP_SERVER_SECTIONS, findSecretReentry } from './reentry';
 import { createAdminAuditEmitter, configTarget } from './audit';
 import { DEFAULT_OVERRIDE_CACHE_TTL } from '~/app/service';
 import { getSafeErrorMetadata } from '~/utils/errors';
@@ -1155,15 +1156,48 @@ const MCP_SECTIONS = new Set<string>(MCP_SERVER_SECTIONS);
 /** A removal enters no secret: whatever credential it leaves in place was kept. */
 const NO_ENTERED_SECRETS: ReadonlySet<string> = new Set();
 
+/** Whether a path holds Azure groups or anything in them: `endpoints`, and all of its Azure section. */
+function isAzureGroupPath(segments: readonly string[]): boolean {
+  return (
+    segments[0] === 'endpoints' &&
+    (segments.length === 1 || segments[1] === EModelEndpoint.azureOpenAI)
+  );
+}
+
 /**
  * Whether removing or tombstoning `target` can change where a stored credential is sent: a web
- * search URL (or the whole section) beside a stored key, or any field of an MCP server.
+ * search URL (or the whole section) beside a stored key, any field of an MCP server, or anything
+ * an Azure group's key and destination sit in.
  */
 function isBoundRemoval(target: FieldTarget): boolean {
   return (
     (target.dotFree && isWebSearchBindingPath(target.fieldPath)) ||
-    MCP_SECTIONS.has(target.segments[0])
+    MCP_SECTIONS.has(target.segments[0]) ||
+    isAzureGroupPath(target.segments)
   );
+}
+
+/**
+ * The stored keys a planned document keeps beside a destination it changes, which the request
+ * must enter again: web search keys, and Azure group keys (compared over librechat.yaml's
+ * resolved groups, from `baseConfig`). MCP credentials answer with their own error
+ * (`findSecretReentry`).
+ */
+function getKeptKeyReentryIssues(
+  stored: ConfigRecord | null | undefined,
+  candidate: ConfigOverrideState,
+  entered: ReadonlySet<string>,
+  baseConfig: AppConfig | undefined,
+): SecretReentryIssue[] {
+  return [
+    ...getWebSearchReentryIssues(stored, candidate, entered),
+    ...getAzureGroupReentryIssues({
+      stored,
+      candidate,
+      entered,
+      baseGroupMap: baseConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.groupMap,
+    }),
+  ];
 }
 
 // ── Change batches ───────────────────────────────────────────────────
@@ -1893,8 +1927,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    * planned from the document it replaces, so each check judges exactly the revision the write
    * lands on: a tombstone that creates the principal's first document needs the principal
    * (`canCreateFor`), and a removal that changes where a stored credential is sent needs it
-   * entered again, as a write would: a web search URL beside a stored key, or a field of an MCP
-   * server that keeps a stored credential (judged over librechat.yaml, as on every write). A
+   * entered again, as a write would: a web search URL beside a stored key, an Azure group's
+   * destination beside its stored key, or a field of an MCP server that keeps a stored credential
+   * (judged over librechat.yaml, as on every write). A
    * write that lands in between is re-read and re-checked, or answers 409 under
    * `expectedRevision`. An unset stops when there is no document.
    */
@@ -1907,7 +1942,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     tenantId: string | undefined,
   ): Promise<ConfigMutationOutcome<RemovalStop>> {
     const paths = getRemovalPaths(target);
-    const base = MCP_SECTIONS.has(target.segments[0]) ? await getBaseYamlConfig(tenantId) : {};
+    const baseConfig =
+      MCP_SECTIONS.has(target.segments[0]) || isAzureGroupPath(target.segments)
+        ? await getBaseAppConfig(tenantId)
+        : undefined;
+    const base: Partial<TCustomConfig> = baseConfig?.config ?? {};
     return runConfigMutation<RemovalStop>(
       {
         read: () => readStoredConfig(principalType, principalId),
@@ -1925,7 +1964,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         const state = removal.tombstone
           ? tombstoneConfigPaths(current, paths)
           : unsetConfigPaths(current, paths);
-        const reentry = getWebSearchReentryIssues(stored, state, NO_ENTERED_SECRETS);
+        const reentry = getKeptKeyReentryIssues(stored, state, NO_ENTERED_SECRETS, baseConfig);
         if (reentry.length > 0) {
           return { draft: null, result: { status: 400, reentry } };
         }
@@ -1953,11 +1992,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       },
       { expectedRevision },
     );
-  }
-
-  /** The deployment's `librechat.yaml` config, which overrides are validated on top of. */
-  async function getBaseYamlConfig(tenantId?: string): Promise<Partial<TCustomConfig>> {
-    return (await getBaseAppConfig(tenantId))?.config ?? {};
   }
 
   /**
@@ -2530,7 +2564,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             }
             /** A changed URL beside a stored key that stays needs that key entered again. */
             const candidate = replaceConfigOverrides(toConfigOverrideState(stored), preserved);
-            const reentry = getWebSearchReentryIssues(stored, candidate, entered);
+            const reentry = getKeptKeyReentryIssues(stored, candidate, entered, baseConfig);
             if (reentry.length > 0) {
               return { draft: null, result: { status: 400, reentry } };
             }
@@ -2823,7 +2857,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             }
             const state = setConfigFields(toConfigOverrideState(stored), writes);
             /** A changed URL beside a stored key that stays needs that key entered again. */
-            const reentry = getWebSearchReentryIssues(stored, state, entered);
+            const reentry = getKeptKeyReentryIssues(stored, state, entered, baseConfig);
             if (reentry.length > 0) {
               return { draft: null, result: { status: 400, reentry } };
             }
@@ -3430,7 +3464,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           /** Judged on the values the batch ends up storing: a credential a change kept,
            *  carried or renamed from the stored document was not entered again. */
           const entered = getEnteredChangeSecrets(report.appliedChanges);
-          const reentry = getWebSearchReentryIssues(stored, state, entered);
+          const reentry = getKeptKeyReentryIssues(stored, state, entered, baseConfig);
           if (reentry.length > 0) {
             return { draft: null, result: { stop: { kind: 'reentry', issues: reentry } } };
           }

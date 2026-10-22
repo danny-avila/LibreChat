@@ -17,6 +17,7 @@ let mongoServer: MongoMemoryServer;
 let handlers: AdminConfigHandlers;
 let basePrincipalId: string;
 let decryptV3: DataSchemas['decryptV3'];
+let loadOCRConfig: DataSchemas['loadOCRConfig'];
 let patchConfigFields: ConfigMethods['patchConfigFields'];
 let getSecretPreview: typeof import('./secrets').getSecretPreview;
 let encryptConfigSecretFields: typeof import('./secrets').encryptConfigSecretFields;
@@ -255,7 +256,7 @@ function nextPrincipalId(): string {
 beforeAll(async () => {
   jest.resetModules();
   const dataSchemas = await import('@librechat/data-schemas');
-  ({ decryptV3, BASE_CONFIG_PRINCIPAL_ID: basePrincipalId } = dataSchemas);
+  ({ decryptV3, loadOCRConfig, BASE_CONFIG_PRINCIPAL_ID: basePrincipalId } = dataSchemas);
   jest.spyOn(dataSchemas.logger, 'error').mockReturnValue(dataSchemas.logger);
   jest.spyOn(dataSchemas.logger, 'warn').mockReturnValue(dataSchemas.logger);
   jest.spyOn(dataSchemas.logger, 'info').mockReturnValue(dataSchemas.logger);
@@ -2076,6 +2077,38 @@ describe('env reference allowlist on admin writes', () => {
     expect(res.statusCode).toBe(200);
   });
 
+  it('accepts the OCR key reference GET /base returns when librechat.yaml sets no OCR key', async () => {
+    const yamlOCR = { baseURL: 'https://ocr.yaml.example/v1', mistralModel: 'mistral-ocr-latest' };
+    const yamlHandlers = createRealHandlers({
+      overrideEnvAllowlist: '',
+      getAppConfig: async () =>
+        ({ config: { ocr: yamlOCR }, ocr: loadOCRConfig(yamlOCR) }) as never,
+    });
+    const base = await send(yamlHandlers.getBaseConfig, {});
+    const ocr = (base.body!.config as { ocr: Record<string, unknown> }).ocr;
+    expect(ocr.apiKey).toBe('${OCR_API_KEY}');
+
+    const principalId = nextPrincipalId();
+    const res = await patch(principalId, [{ fieldPath: 'ocr', value: ocr }], {}, yamlHandlers);
+    expect(res.statusCode).toBe(200);
+    expect(getAtPath(await readRawOverrides(principalId), 'ocr.apiKey')).toBe('${OCR_API_KEY}');
+
+    const unconfigured = createRealHandlers({
+      overrideEnvAllowlist: '',
+      getAppConfig: async () => ({ config: {} }) as never,
+    });
+    const refused = await patch(
+      nextPrincipalId(),
+      [{ fieldPath: 'ocr', value: ocr }],
+      {},
+      unconfigured,
+    );
+    expect(refused.statusCode).toBe(400);
+    expect(refused.body).toMatchObject({
+      issues: [{ path: 'ocr.apiKey', code: 'env_reference_not_allowed' }],
+    });
+  });
+
   it('accepts the Azure base URL templates in a group, on PATCH and change batches', async () => {
     const principalId = nextPrincipalId();
     const baseURL =
@@ -2237,6 +2270,118 @@ describe('Azure OpenAI group keys — real handlers against a real Config collec
     expect(after![0].apiKey).toBe(stored![0].apiKey);
   });
 
+  describe('a stored group key kept beside a destination the write changes', () => {
+    const KEY = 'azure-east-admin-key-00009876';
+    /** A group the merge resolves: each model has a deployment and a version. */
+    const servable = (apiKey?: string) => ({ ...group(apiKey), deploymentName: 'gpt-4o' });
+    const reentryIssue = (field: string, secret = 'endpoints.azureOpenAI.groups.0.apiKey') => ({
+      code: 'CONFIG_SECRET_REENTRY_REQUIRED',
+      issues: [
+        {
+          path: `endpoints.azureOpenAI.groups.0.${field}`,
+          segments: ['endpoints', 'azureOpenAI', 'groups', '0', field],
+          code: 'secret_reentry_required',
+          secretPath: secret,
+        },
+      ],
+    });
+
+    async function storeGroup(): Promise<{ principalId: string; stored: unknown }> {
+      const principalId = nextPrincipalId();
+      const written = await patch(principalId, [
+        { fieldPath: 'endpoints.azureOpenAI.groups', value: [servable(KEY)] },
+      ]);
+      expect(written.statusCode).toBe(200);
+      return { principalId, stored: await readRawOverrides(principalId) };
+    }
+
+    it('must be entered again on PATCH, PUT and change batches (dry runs included)', async () => {
+      const { principalId, stored } = await storeGroup();
+      const moved = [{ ...servable(), instanceName: 'attacker-instance' }];
+      const params = { principalType: 'role', principalId };
+
+      const patched = await patch(principalId, [
+        { fieldPath: 'endpoints.azureOpenAI.groups', value: moved },
+      ]);
+      const replaced = await send(handlers.upsertConfigOverrides, {
+        params,
+        body: { overrides: { endpoints: { azureOpenAI: { groups: moved } } } },
+      });
+      const batch = (dryRun: boolean) =>
+        send(handlers.applyConfigChanges, {
+          params,
+          body: {
+            dryRun,
+            ops: [{ op: 'set', fieldPath: 'endpoints.azureOpenAI.groups', value: moved }],
+          },
+        });
+      for (const res of [patched, replaced, await batch(true), await batch(false)]) {
+        expect(res.statusCode).toBe(400);
+        expect(res.body).toMatchObject(reentryIssue('instanceName'));
+      }
+      expect(await readRawOverrides(principalId)).toEqual(stored);
+
+      const entered = await patch(principalId, [
+        {
+          fieldPath: 'endpoints.azureOpenAI.groups',
+          value: [{ ...servable('azure-new-instance-key-0001'), instanceName: 'new-instance' }],
+        },
+      ]);
+      expect(entered.statusCode).toBe(200);
+    });
+
+    it('stays with edits that leave its destination alone', async () => {
+      const { principalId } = await storeGroup();
+
+      const res = await patch(principalId, [
+        {
+          fieldPath: 'endpoints.azureOpenAI.groups',
+          value: [{ ...servable(), version: '2025-01-01', models: { 'gpt-4o': true, o3: true } }],
+        },
+      ]);
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('must be entered again when a groupMap entry, a field delete or a tombstone moves it', async () => {
+      const { principalId, stored } = await storeGroup();
+      const groupMapBaseURL = 'endpoints.azureOpenAI.groupMap.east.baseURL';
+
+      const mapped = await patch(principalId, [
+        { fieldPath: groupMapBaseURL, value: 'https://attacker.example/openai' },
+      ]);
+      expect(mapped.statusCode).toBe(400);
+      expect(mapped.body).toMatchObject({
+        code: 'CONFIG_SECRET_REENTRY_REQUIRED',
+        issues: [{ path: groupMapBaseURL, secretPath: 'endpoints.azureOpenAI.groups.0.apiKey' }],
+      });
+      expect(await readRawOverrides(principalId)).toEqual(stored);
+
+      const mapPrincipalId = nextPrincipalId();
+      const withMap = await patch(mapPrincipalId, [
+        {
+          fieldPath: 'endpoints.azureOpenAI.groupMap.east',
+          value: { apiKey: KEY, instanceName: 'east-instance', baseURL: 'https://own.example' },
+        },
+      ]);
+      expect(withMap.statusCode).toBe(200);
+      const mapStored = await readRawOverrides(mapPrincipalId);
+      const mapParams = { principalType: 'role', principalId: mapPrincipalId };
+      const removed = await send(handlers.deleteConfigField, {
+        params: mapParams,
+        query: { fieldPath: 'endpoints.azureOpenAI.groupMap.east.baseURL' },
+      });
+      const tombstoned = await send(handlers.tombstoneConfigField, {
+        params: mapParams,
+        body: { fieldPath: 'endpoints.azureOpenAI.groupMap.east.instanceName' },
+      });
+      for (const res of [removed, tombstoned]) {
+        expect(res.statusCode).toBe(400);
+        expect(res.body).toMatchObject({ code: 'CONFIG_SECRET_REENTRY_REQUIRED' });
+      }
+      expect(await readRawOverrides(mapPrincipalId)).toEqual(mapStored);
+    });
+  });
+
   it('encrypts a groupMap key, which the Azure clients read, and never returns it', async () => {
     const principalId = nextPrincipalId();
     const key = 'azure-groupmap-plaintext-key-5678';
@@ -2269,15 +2414,34 @@ describe('Azure OpenAI group keys — real handlers against a real Config collec
     const kept = await patch(principalId, [
       { fieldPath: 'endpoints.azureOpenAI.groupMap.g1', value: { instanceName: 'g1-instance' } },
     ]);
-    const replaced = await send(handlers.upsertConfigOverrides, {
-      params,
-      body: { overrides: { endpoints: { azureOpenAI: { groupMap: { g1: { version: 'v' } } } } } },
-    });
+    const replace = (g1: Record<string, string>) =>
+      send(handlers.upsertConfigOverrides, {
+        params,
+        body: { overrides: { endpoints: { azureOpenAI: { groupMap: { g1 } } } } },
+      });
+    /** A replace that leaves the instance out sends the kept key to another host. */
+    const moved = await replace({ version: 'v' });
+    const replaced = await replace({ instanceName: 'g1-instance', version: 'v' });
     expect(kept.statusCode).toBe(200);
+    expect(moved.statusCode).toBe(400);
+    expect(moved.body).toMatchObject({
+      code: 'CONFIG_SECRET_REENTRY_REQUIRED',
+      issues: [
+        {
+          path: 'endpoints.azureOpenAI.groupMap.g1.instanceName',
+          secretPath: 'endpoints.azureOpenAI.groupMap.g1.apiKey',
+        },
+      ],
+    });
     expect(replaced.statusCode).toBe(200);
     expect(
       getAtPath(await readRawOverrides(principalId), 'endpoints.azureOpenAI.groupMap.g1'),
-    ).toEqual({ apiKey: stored.apiKey, apiKeyPreview: '...5678', version: 'v' });
+    ).toEqual({
+      apiKey: stored.apiKey,
+      apiKeyPreview: '...5678',
+      instanceName: 'g1-instance',
+      version: 'v',
+    });
   });
 });
 

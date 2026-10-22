@@ -276,7 +276,9 @@ export type AdminConfigChangeErrorResponse = {
  *   or a `librechat.yaml` literal) at runtime, not only a `${VAR}` reference, and stores
  *   `webSearch.keenableApiKey` encrypted like the other web search keys. A stored key reaches a
  *   URL stored in config only when the same layer set both; it is kept over an inherited
- *   `${VAR}` or default URL. A later layer that changes, blanks or removes the paired URL drops
+ *   `${VAR}` or default URL (a layer that points a URL at a `${VAR}` other than librechat.yaml's
+ *   without a key of its own is set back, `secretRebinding`). A later layer that changes, blanks
+ *   or removes the paired URL drops
  *   the key, and a write that changes or removes the URL beside a stored key must enter the key
  *   again (400 `CONFIG_SECRET_REENTRY_REQUIRED`); the key counts as entered only when the written
  *   document holds the value the request entered.
@@ -345,26 +347,36 @@ export type AdminConfigChangeErrorResponse = {
  *   written document holds the value the request entered, whatever order its writes came in;
  *   one a rename, a copy or a chain of renames carried is compared with the server it came from,
  *   so a name swap that moves each key with its own server is accepted. The rule covers MCP
- *   credentials and web search keys (`webSearchStoredKeys`) only: a custom endpoint, Azure group,
- *   OCR or speech key a document stores stays with that document when the same document changes
- *   its destination; only the merge's cross-layer rule (`secretRebinding`) applies to those.
+ *   credentials, web search keys (`webSearchStoredKeys`) and Azure group keys
+ *   (`azureGroupSecrets`) only: a custom endpoint, OCR or speech key a document stores stays with
+ *   that document when the same document changes its destination; only the merge's cross-layer
+ *   rule (`secretRebinding`) applies to those.
  * - `azureGroupSecrets`: `endpoints.azureOpenAI.groups[].apiKey` is stored encrypted with
  *   `apiKeyPreview`, matched across writes by `group` (omit it to keep it), left out of reads
- *   and decrypted in the resolved config. The Azure clients read `groupMap`, which the groups
- *   librechat.yaml defines resolve to, until overrides are re-derived after the merge. An
- *   override that writes `endpoints.azureOpenAI.groupMap.<group>.apiKey` directly (a record
- *   secret, `rules.recordSecretFields`) gets the same treatment: encrypted with `apiKeyPreview`,
- *   kept when a write of its group omits it, left out of every read (GET `/base` included, where
- *   a librechat.yaml literal shows the fixed mask) and decrypted for the Azure clients. A write
- *   that keeps a group's key while changing its `instanceName` or `baseURL`, in `groups` or in
- *   `groupMap`, is not refused: only the merge's cross-layer rule (`secretRebinding`) binds it.
+ *   and decrypted for the Azure clients, which use it: the merge resolves a profile's `groups`
+ *   as AppService resolves librechat.yaml's, into the `groupMap`, `modelGroupMap`, model list
+ *   and assistant models the clients read. A profile's `groups` replace the groups below whole,
+ *   as its array does; groups that do not resolve (a duplicate group or model, a model without a
+ *   deployment or version) stay unread, with a warning. An override that writes
+ *   `endpoints.azureOpenAI.groupMap.<group>.apiKey` directly (a record secret,
+ *   `rules.recordSecretFields`) gets the same treatment: encrypted with `apiKeyPreview`, kept
+ *   when a write of its group omits it, left out of every read (GET `/base` included, where a
+ *   librechat.yaml literal shows the fixed mask) and decrypted for the Azure clients; a `groupMap`
+ *   entry merges over the resolved group of its name. A write that keeps a stored group key
+ *   (in `groups` or `groupMap`) while changing where the group sends it (`baseURL`,
+ *   `instanceName`, a deployment name its base URL takes its host from, a destination option in
+ *   `addParams` or `dropParams`), judged as the document resolves over librechat.yaml, answers
+ *   400 `CONFIG_SECRET_REENTRY_REQUIRED` with `issues` naming the changed field and `secretPath`:
+ *   on PUT, PATCH, field deletes, tombstones and change batches.
  * - `yamlSecretPreview`: a read of a secret with no stored preview (a librechat.yaml literal,
  *   or ciphertext stored without one) shows the fixed mask `********` in its preview field
  *   instead of nothing, so it reads as set; nothing about the value is revealed. A `${VAR}`
  *   reference, where the field allows one, stays readable.
  * - `envAllowlist`: a `${NAME}` reference in a value written through the admin config API is
- *   refused unless `NAME` is referenced in librechat.yaml, is a built-in endpoint credential
- *   (`OPENAI_API_KEY`, ...) or is listed in `CONFIG_OVERRIDE_ENV_ALLOWLIST`: 400
+ *   refused unless `NAME` is referenced in librechat.yaml (including the `${OCR_API_KEY}`
+ *   loading fills in for an `ocr` section without a key, which GET `/base` returns), is a
+ *   built-in endpoint credential (`OPENAI_API_KEY`, ...) or is listed in
+ *   `CONFIG_OVERRIDE_ENV_ALLOWLIST`: 400
  *   `CONFIG_OVERRIDE_INVALID` with issue `env_reference_not_allowed`, on PUT, PATCH and change
  *   batches (an issue is named where the batch leaves the value: an upserted entry by its index
  *   in the collection the batch leaves, a value under a renamed key by its new name). Text no
@@ -377,8 +389,13 @@ export type AdminConfigChangeErrorResponse = {
  * - `secretRebinding`: the merge drops a credential a layer would send somewhere it was not
  *   entered for: an inherited one whose destination the layer changes without entering it again,
  *   or the layer's own one whose destination a layer below changed (MCP servers, custom
- *   endpoints, OCR, speech, web search, Azure `groupMap`); for summarization and Vertex AI,
- *   which fall back to a deployment credential, it sets the destination back instead. A custom
+ *   endpoints, OCR, speech, web search, Azure `groupMap`, including the groups a profile's
+ *   `groups` resolve to); for summarization and Vertex AI, which fall back to a deployment
+ *   credential, it sets the destination back instead, and so for a web search URL a layer points
+ *   at a `${VAR}` reference other than librechat.yaml's without entering the key sent there
+ *   (web search sends the deployment's key to any `${VAR}` URL). The OCR client fills an empty
+ *   key from `OCR_API_KEY` only for its default destination (no base URL, or `${OCR_BASEURL}`),
+ *   so a dropped OCR key is not replaced by the deployment's. A custom
  *   endpoint's destination is its `baseURL`, its `provider` (the client that reads the rest) and
  *   the options in `addParams` and `dropParams` named like a destination, such as the
  *   `anthropicApiUrl` the native Anthropic client sends to; an entry is matched under any

@@ -66,6 +66,20 @@ describe('createEnvReferencePolicy', () => {
     expect(policy.allows('HOME')).toBe(false);
   });
 
+  it('allows the OCR key reference loading fills in when librechat.yaml configures OCR', () => {
+    const configured = createEnvReferencePolicy({
+      config: { ocr: { baseURL: 'https://ocr.internal.example/v1' } },
+    });
+    const keyed = createEnvReferencePolicy({
+      config: { ocr: { apiKey: '${OCR_GATEWAY_KEY}', baseURL: 'https://ocr.internal.example' } },
+    });
+
+    expect(configured.allows('OCR_API_KEY')).toBe(true);
+    expect(keyed.allows('OCR_GATEWAY_KEY')).toBe(true);
+    expect(keyed.allows('OCR_API_KEY')).toBe(false);
+    expect(createEnvReferencePolicy({ config: yaml }).allows('OCR_API_KEY')).toBe(false);
+  });
+
   it('never allows an infrastructure secret, even when YAML or the extra list names it', () => {
     const policy = createEnvReferencePolicy({
       config: { ocr: { apiKey: '${CREDS_KEY}' } },

@@ -216,6 +216,48 @@ const azureGroupMapReader: RuntimeReader = {
   },
 };
 
+/**
+ * Merges a role profile that stores an Azure group in `groups`, as the admin config API stores it,
+ * through the same override pipeline `getAppConfig` runs, and returns the key the Azure client
+ * options are built with: the merge resolves the profile's groups into the `groupMap` it reads.
+ */
+const azureGroupsReader: RuntimeReader = {
+  module: 'packages/api/src/app/service.ts',
+  probe: async (stored) => {
+    const model = 'gpt-4o';
+    const layer = {
+      principalType: PrincipalType.ROLE,
+      principalId: 'runtime-reader',
+      priority: 10,
+      overrides: {
+        endpoints: {
+          azureOpenAI: {
+            groups: [
+              {
+                group: CUSTOM_ENDPOINT_NAME,
+                apiKey: stored,
+                instanceName: 'runtime-reader',
+                version: '2024-10-21',
+                models: { [model]: { deploymentName: model } },
+              },
+            ],
+          },
+        },
+      },
+    } as ConfigOverrideLayer;
+    const resolved = resolveConfigOverrides({} as AppConfig, [layer], {
+      envPolicy: createEnvReferencePolicy({}),
+    });
+    const azure = resolved.endpoints?.azureOpenAI;
+    if (!azure?.groupMap || !azure.modelGroupMap) {
+      return undefined;
+    }
+    const { groupMap, modelGroupMap } = azure;
+    return mapModelToAzureConfig({ modelName: model, modelGroupMap, groupMap }).azureOptions
+      .azureOpenAIApiKey;
+  },
+};
+
 /** The runtime reader of each record a record secret is registered on. */
 const RECORD_READERS: Readonly<Record<string, (secretPath: string) => RuntimeReader>> = {
   mcpServers: mcpServerReader,
@@ -284,6 +326,7 @@ const RUNTIME_READERS: Readonly<Record<string, RuntimeReader>> = {
   'webSearch.cohereApiKey': webSearchReader('cohereApiKey', {
     rerankerType: RerankerTypes.COHERE,
   }),
+  'endpoints.azureOpenAI.groups[].apiKey': azureGroupsReader,
   'endpoints.custom[].apiKey': {
     module: 'packages/api/src/app/config.ts',
     probe: async (stored) => {
@@ -317,8 +360,6 @@ const UNREAD_SECRET_FIELDS: Readonly<Record<string, string>> = {
     'Assistants initialize from ASSISTANTS_API_KEY; the endpoint config apiKey is never read.',
   'endpoints.azureAssistants.apiKey':
     'Azure Assistants initialize from AZURE_ASSISTANTS_API_KEY or azureOpenAI groups; the endpoint config apiKey is never read.',
-  'endpoints.azureOpenAI.groups[].apiKey':
-    'Azure readers use groupMap (a record secret of its own), which librechat.yaml groups resolve to at startup; the merge decrypts override groups (resolveRuntimeConfigSecrets), but nothing reads them until groupMap is derived from the merged groups.',
 };
 
 describe('config secret registry runtime readers', () => {
