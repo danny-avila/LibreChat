@@ -724,7 +724,9 @@ describe('createAdminRolesHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Role not found' });
       expect(deps.updateUsersByRole).toHaveBeenCalledTimes(1);
       expect(deps.updateUsersByRole).toHaveBeenCalledWith('editor', 'new-name');
-      expect(deps.updateUsersRoleByIds).toHaveBeenCalledWith(ids, 'editor');
+      expect(deps.updateUsersRoleByIds).toHaveBeenCalledWith(ids, 'editor', {
+        fromRole: 'new-name',
+      });
     });
 
     it('rolls back user migration when rename throws', async () => {
@@ -745,7 +747,9 @@ describe('createAdminRolesHandlers', () => {
       expect(status).toHaveBeenCalledWith(500);
       expect(deps.updateUsersByRole).toHaveBeenCalledTimes(1);
       expect(deps.updateUsersByRole).toHaveBeenCalledWith('editor', 'new-name');
-      expect(deps.updateUsersRoleByIds).toHaveBeenCalledWith(ids, 'editor');
+      expect(deps.updateUsersRoleByIds).toHaveBeenCalledWith(ids, 'editor', {
+        fromRole: 'new-name',
+      });
     });
 
     it('logs rollback failure and still returns 500', async () => {

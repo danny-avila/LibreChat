@@ -59,6 +59,7 @@ import {
   BASE_CONFIG_PRINCIPAL_ID,
   isConfigRevisionConflict,
   isConfigOverrideStateEmpty,
+  toConfigDraft,
 } from '@librechat/data-schemas';
 import type {
   AppConfig,
@@ -83,6 +84,7 @@ import type {
   AdminConfigChangesResponse,
   AdminConfigChangeErrorResponse,
   ConfigMutationOutcome,
+  ConfigMutationPlan,
 } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Response } from 'express';
@@ -530,6 +532,11 @@ interface ConfigWriteOptions {
 interface ConfigLifecycleOptions extends ConfigWriteOptions {
   /** Act only on a document that holds nothing; otherwise resolve to `null`. */
   expectEmpty?: boolean;
+}
+
+/** The documents a read addresses: with `partitioned`, only the caller's tenant partition. */
+interface ConfigReadScope {
+  partitioned?: boolean;
 }
 
 export interface AdminConfigDeps {
@@ -1522,11 +1529,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     overrideCacheTtlMs,
   });
 
+  /** With `partitioned`, only the caller's tenant partition is read, as the priority route writes. */
   function readStoredConfig(
     principalType: PrincipalType,
     principalId: string,
+    scope?: ConfigReadScope,
   ): Promise<ConfigRecord | null> {
-    return findConfigByPrincipal(principalType, principalId, { includeInactive: true });
+    return findConfigByPrincipal(
+      principalType,
+      principalId,
+      scope?.partitioned ? { includeInactive: true, partitioned: true } : { includeInactive: true },
+    );
   }
 
   /**
@@ -1568,10 +1581,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     knownRevision: ConfigRevision | null | undefined,
     principalType: PrincipalType,
     principalId: string,
+    scope?: ConfigReadScope,
   ): Promise<Response> {
     let currentRevision = knownRevision;
     if (currentRevision === undefined) {
-      const stored = await readStoredConfig(principalType, principalId);
+      const stored = await readStoredConfig(principalType, principalId, scope);
       currentRevision = stored ? getConfigRevision(stored) : null;
     }
     return res.status(409).json({
@@ -1581,15 +1595,20 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     });
   }
 
-  /** Maps the expected failures of a write to their responses; anything else is rethrown. */
+  /**
+   * Maps the expected failures of a write to their responses; anything else is rethrown. A
+   * conflict that does not carry the current revision rereads it in `scope`, the partition the
+   * write addressed.
+   */
   async function writeFailureResponse(
     res: Response,
     error: unknown,
     principalType: PrincipalType,
     principalId: string,
+    scope?: ConfigReadScope,
   ): Promise<Response> {
     if (isConfigRevisionConflict(error)) {
-      return conflictResponse(res, error.currentRevision, principalType, principalId);
+      return conflictResponse(res, error.currentRevision, principalType, principalId, scope);
     }
     if (isConfigPathError(error)) {
       return invalidPathResponse(res, error);
@@ -1660,38 +1679,125 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     return appConfig?.config ?? {};
   }
 
-  /**
-   * The config a principal's overrides land on, before its own tombstones: `librechat.yaml`
-   * with the active Base document resolved over it, exactly as the merge layers Base under
-   * every profile (Base always merges first). Base itself lands on `librechat.yaml` alone. The
-   * principal's other profiles vary per user and are left to the merge. Base is read from the
-   * caller's tenant partition, so a caller without a tenant validates on the platform-level
-   * Base and never on a tenant's.
-   */
-  async function getValidationFloor(
-    tenantId: string | undefined,
-    principalType: PrincipalType,
-    principalId: string,
-  ): Promise<Partial<TCustomConfig>> {
-    return (await getValidationBases(tenantId, principalType, principalId)).floor;
+  /** The active Base document, from the caller's tenant partition (platform-level without one). */
+  function readActiveBase(): Promise<ConfigRecord | null> {
+    return findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, {
+      partitioned: true,
+    });
   }
 
-  /** The validation floor, read beside the raw `librechat.yaml` that judges YAML authority. */
-  async function getValidationBases(
-    tenantId: string | undefined,
+  /**
+   * Takes back a write this request made, only while the document is still at the revision the
+   * write produced: the document it replaced is written back, or the one it created removed. A
+   * write that landed since throws a revision conflict, and is left as it is.
+   */
+  async function withdrawWrite(
     principalType: PrincipalType,
     principalId: string,
-  ): Promise<{ yaml: Partial<TCustomConfig>; floor: Partial<TCustomConfig> }> {
-    const isBase = isBaseConfigPrincipal({ principalType, principalId });
-    const [yaml, baseDocument] = await Promise.all([
-      getBaseYamlConfig(tenantId),
-      isBase
-        ? null
-        : findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, {
-            partitioned: true,
-          }),
-    ]);
-    return { yaml, floor: baseDocument ? resolveRawConfig(yaml, [baseDocument]) : yaml };
+    written: ConfigRecord,
+    previous: ConfigRecord | null,
+  ): Promise<ConfigRecord | null> {
+    const revision = getConfigRevision(written);
+    if (previous) {
+      return writeConfigDocument(principalType, principalId, toConfigDraft(previous), revision);
+    }
+    await deleteConfig(principalType, principalId, undefined, { expectedRevision: revision });
+    return null;
+  }
+
+  /**
+   * Reads Base again after a profile write committed and, when it is no longer `read` (the Base
+   * the write was planned on), judges the request on it. `null` when Base did not move, or when
+   * that cannot be told: the committed write then stands, as it would had Base moved just after
+   * it, and is never turned into a failure.
+   */
+  async function judgeOnLandedBase<T>(
+    read: ConfigRecord | null,
+    judge: (landed: ConfigRecord | null) => Promise<ConfigMutationPlan<T>>,
+  ): Promise<ConfigMutationPlan<T> | null> {
+    try {
+      const landed = await readActiveBase();
+      if ((landed && getConfigRevision(landed)) === (read && getConfigRevision(read))) {
+        return null;
+      }
+      return await judge(landed);
+    } catch (error) {
+      logger.warn(
+        '[adminConfig] A profile write could not be checked on the Base it landed over; it stands',
+        getSafeErrorMetadata(error),
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Runs a write that validates on the config the principal's overrides land on, before its own
+   * tombstones (the floor): `librechat.yaml` with the active Base document resolved over it,
+   * exactly as the merge layers Base under every profile (Base always merges first), or
+   * `librechat.yaml` alone for Base itself. The principal's other profiles vary per user and
+   * are left to the merge. Base is read from the caller's tenant partition, so a caller without
+   * a tenant validates on the platform-level Base and never on a tenant's. With `yaml` `null`
+   * the write does not validate on the floor, and `plan` gets an empty one.
+   *
+   * Base is its own document, which the profile's compare-and-swap does not cover. So each
+   * attempt reads Base beside the profile (a retry never reuses a Base a concurrent write has
+   * replaced), and once the write commits Base is read again. When it moved meanwhile, the
+   * request is judged once more, `plan` on the document the write replaced, on the Base the
+   * write landed over (`judgeOnLandedBase`): a write still valid there stands, and one that is
+   * not is withdrawn (`withdrawWrite`) and answered with that judgement.
+   */
+  async function runOnValidationFloor<T>(
+    principalType: PrincipalType,
+    principalId: string,
+    tenantId: string | undefined,
+    yaml: Partial<TCustomConfig> | null,
+    plan: (
+      stored: ConfigRecord | null,
+      floor: Partial<TCustomConfig>,
+    ) => Promise<ConfigMutationPlan<T>>,
+    expectedRevision: ConfigRevision | undefined,
+  ): Promise<ConfigMutationOutcome<T>> {
+    const readsBase = yaml != null && !isBaseConfigPrincipal({ principalType, principalId });
+    const attempt: { base: ConfigRecord | null } = { base: null };
+    const floorOver = (base: ConfigRecord | null): Partial<TCustomConfig> => {
+      if (yaml == null) {
+        return {};
+      }
+      return base ? resolveRawConfig(yaml, [base]) : yaml;
+    };
+    const outcome = await runConfigMutation<T>(
+      {
+        read: async () => {
+          const [stored, base] = await Promise.all([
+            readStoredConfig(principalType, principalId),
+            readsBase ? readActiveBase() : null,
+          ]);
+          attempt.base = base;
+          return stored;
+        },
+        write: (draft, revision) =>
+          writeConfigDocument(principalType, principalId, draft, revision),
+      },
+      (stored) => plan(stored, floorOver(attempt.base)),
+      { expectedRevision },
+    );
+    if (!outcome.written || !readsBase) {
+      return outcome;
+    }
+    const judged = await judgeOnLandedBase(attempt.base, (landed) =>
+      plan(outcome.previous, floorOver(landed)),
+    );
+    if (judged == null || judged.draft != null) {
+      return outcome;
+    }
+    const current = await withdrawWrite(
+      principalType,
+      principalId,
+      outcome.record,
+      outcome.previous,
+    );
+    await invalidateCaches(tenantId, 'withdrawn write');
+    return { written: false, current, result: judged.result };
   }
 
   /**
@@ -1999,10 +2105,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const encryptedOverrides = encryptConfigSecrets(filteredOverrides);
-      const floor =
-        overrideSections.length > 0
-          ? await getValidationFloor(user.tenantId, principalType, principalId)
-          : {};
+      const yaml = overrideSections.length > 0 ? await getBaseYamlConfig(user.tenantId) : null;
 
       type PutStop =
         | { status: 403 }
@@ -2011,13 +2114,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         | { status: 400; reentry: SecretReentryIssue[] };
       let outcome;
       try {
-        outcome = await runConfigMutation<PutStop>(
-          {
-            read: () => readStoredConfig(principalType, principalId),
-            write: (draft, revision) =>
-              writeConfigDocument(principalType, principalId, draft, revision),
-          },
-          async (stored) => {
+        outcome = await runOnValidationFloor<PutStop>(
+          principalType,
+          principalId,
+          user.tenantId,
+          yaml,
+          async (stored, floor) => {
             if (!stored && !(await canCreateFor(principalType, principalId))) {
               return { draft: null, result: { status: 404 } };
             }
@@ -2074,7 +2176,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
               },
             };
           },
-          { expectedRevision: expected.value },
+          expected.value,
         );
       } catch (error) {
         return await writeFailureResponse(res, error, principalType, principalId);
@@ -2260,8 +2362,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
 
-      const [floor, access] = await Promise.all([
-        getValidationFloor(user.tenantId, principalType, principalId),
+      const [yaml, access] = await Promise.all([
+        getBaseYamlConfig(user.tenantId),
         resolveWriteReadAccess(user, hasBroadManage, writtenSections),
       ]);
       const encryptedFields = encryptConfigSecretFields(fields);
@@ -2276,13 +2378,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         | { status: 400; reentry: SecretReentryIssue[] };
       let outcome;
       try {
-        outcome = await runConfigMutation<PatchStop>(
-          {
-            read: () => readStoredConfig(principalType, principalId),
-            write: (draft, revision) =>
-              writeConfigDocument(principalType, principalId, draft, revision),
-          },
-          async (stored) => {
+        outcome = await runOnValidationFloor<PatchStop>(
+          principalType,
+          principalId,
+          user.tenantId,
+          yaml,
+          async (stored, floor) => {
             if (!stored && !(await canCreateFor(principalType, principalId))) {
               return { draft: null, result: { status: 404 } };
             }
@@ -2314,7 +2415,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
               },
             };
           },
-          { expectedRevision: expected.value },
+          expected.value,
         );
       } catch (error) {
         return await writeFailureResponse(res, error, principalType, principalId);
@@ -2725,8 +2826,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const requestedPriority = hasBroadManage ? (priority as number | undefined) : undefined;
 
       /** A dry run returns no document, so it has no read access to resolve. */
-      const [{ yaml: baseYaml, floor }, access] = await Promise.all([
-        getValidationBases(user.tenantId, principalType, principalId),
+      const [baseYaml, access] = await Promise.all([
+        getBaseYamlConfig(user.tenantId),
         dryRun ? NO_READ_ACCESS : resolveWriteReadAccess(user, hasBroadManage, managedSections),
       ]);
       for (const change of changes) {
@@ -2761,7 +2862,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const plan = async (
         stored: ConfigRecord | null,
-      ): Promise<{ draft: ConfigDraft | null; result: ChangesResult }> => {
+        floor: Partial<TCustomConfig>,
+      ): Promise<ConfigMutationPlan<ChangesResult>> => {
         if (!stored && !(await canCreateFor(principalType, principalId))) {
           return { draft: null, result: { stop: { kind: 'principal' } } };
         }
@@ -2877,14 +2979,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       let outcome;
       try {
-        outcome = await runConfigMutation<ChangesResult>(
-          {
-            read: () => readStoredConfig(principalType, principalId),
-            write: (draft, revision) =>
-              writeConfigDocument(principalType, principalId, draft, revision),
-          },
+        outcome = await runOnValidationFloor<ChangesResult>(
+          principalType,
+          principalId,
+          user.tenantId,
+          baseYaml,
           plan,
-          { expectedRevision: expected.value },
+          expected.value,
         );
       } catch (error) {
         return await writeFailureResponse(res, error, principalType, principalId);
@@ -3069,7 +3170,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           expectedRevision: expected.value,
         });
       } catch (error) {
-        return await writeFailureResponse(res, error, principalType, principalId);
+        return await writeFailureResponse(res, error, principalType, principalId, {
+          partitioned: true,
+        });
       }
       if (!updated) {
         return res.status(404).json({ error: 'Config not found', code: 'CONFIG_NOT_FOUND' });

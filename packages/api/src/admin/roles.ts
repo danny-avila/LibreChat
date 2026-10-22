@@ -13,6 +13,8 @@ import type {
   AdminMember,
   ISystemGrant,
   AuditSeverity,
+  SystemGrantMove,
+  ConfigMoveOptions,
 } from '@librechat/data-schemas';
 import type { FilterQuery, Types } from 'mongoose';
 import type { Response } from 'express';
@@ -143,7 +145,12 @@ export interface AdminRolesDeps {
   ) => Promise<IUser | null>;
   updateUsersByRole: (oldRole: string, newRole: string) => Promise<void>;
   findUserIdsByRole: (roleName: string) => Promise<string[]>;
-  updateUsersRoleByIds: (userIds: string[], newRole: string) => Promise<void>;
+  /** With `fromRole`, only users whose role is still that one change. */
+  updateUsersRoleByIds: (
+    userIds: string[],
+    newRole: string,
+    options?: { fromRole?: string },
+  ) => Promise<void>;
   listUsersByRole: (
     roleName: string,
     options?: { limit?: number; offset?: number },
@@ -197,26 +204,28 @@ export interface AdminRolesDeps {
    * Moves the config profile within the caller's tenant partition (platform-level without a
    * tenant, never a tenant's role of the same name); `null` when there is none. Throws
    * `ConfigMoveRefusedError`, changing nothing, when the new name already has one in that
-   * partition (`CONFIG_PRINCIPAL_EXISTS`) or either name is the Base principal id.
+   * partition (`CONFIG_PRINCIPAL_EXISTS`) or either name is the Base principal id. With
+   * `identity`, moves only that document, and resolves to `null` when the source holds another.
    */
   renameConfigPrincipal?: (
     principalType: PrincipalType,
     fromPrincipalId: string,
     toPrincipalId: string,
+    options?: ConfigMoveOptions,
   ) => Promise<ConfigRecord | null>;
-  /** Moves the system grants of exactly `tenantId`, or platform-level ones without it; returns them as they were. */
+  /** Moves the system grants of exactly `tenantId`, or platform-level ones without it; returns what it changed. */
   moveGrantsToPrincipal?: (
     principalType: PrincipalType,
     fromPrincipalId: string,
     toPrincipalId: string,
     options?: { tenantId?: string },
-  ) => Promise<ISystemGrant[]>;
-  /** Undoes `moveGrantsToPrincipal` from the grants it returned. */
+  ) => Promise<SystemGrantMove>;
+  /** Undoes exactly what `moveGrantsToPrincipal` returned it changed; a grant revoked since stays revoked. */
   restoreMovedGrants?: (
     principalType: PrincipalType,
     fromPrincipalId: string,
     toPrincipalId: string,
-    grants: readonly ISystemGrant[],
+    move: SystemGrantMove,
   ) => Promise<void>;
   /** Moves the ACL entries of the request's tenant (platform-level ones without a tenant) and
    * returns their ids; with `ids`, moves only those (the undo). */
@@ -252,6 +261,7 @@ function roleTarget(name: string) {
 interface RoleDependentsMoved {
   /** The profile as the new name now holds it; `null` when the role had none. */
   config: ConfigRecord | null;
+  /** The grants that now apply under the new name: re-keyed, or already held there. */
   grants: ISystemGrant[];
   aclEntries: number;
 }
@@ -438,7 +448,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       return;
     }
     try {
-      await updateUsersRoleByIds(migratedIds, currentName);
+      await updateUsersRoleByIds(migratedIds, currentName, { fromRole: newName });
     } catch (rollbackError) {
       logger.error(
         `[adminRoles] CRITICAL: rename rollback failed — ${migratedIds.length} users have dangling role "${newName}": [${migratedIds.join(', ')}]`,
@@ -449,8 +459,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
 
   /**
    * Puts the role document back under its old name (and description) after a failed rename.
-   * A role stored without a description gets the schema default (`''`) back: the update only
-   * sets fields, and an undefined one would be dropped, keeping the new description.
+   * The description goes back only while it is still the one this rename set, so an edit made
+   * meanwhile is kept. A role stored without a description gets the schema default (`''`)
+   * back: the update only sets fields, and an undefined one would be dropped, keeping the new
+   * description.
    */
   async function revertRoleUpdate(
     existing: IRole,
@@ -460,7 +472,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
   ): Promise<void> {
     const revert: Partial<IRole> = { name: currentName };
     if (extraUpdates?.description !== undefined) {
-      revert.description = existing.description ?? '';
+      const renamed = await getRoleByName(newName).catch(() => null);
+      if (renamed?.description === extraUpdates.description) {
+        revert.description = existing.description ?? '';
+      }
     }
     try {
       await updateRoleByName(newName, revert);
@@ -501,8 +516,17 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
             }
           },
           async (moved: ConfigRecord | null) => {
-            if (moved) {
-              await renameConfigPrincipal(PrincipalType.ROLE, newName, currentName);
+            if (!moved) {
+              return;
+            }
+            /** Only the profile this rename moved goes back, with any edit made to it since. */
+            const restored = await renameConfigPrincipal(PrincipalType.ROLE, newName, currentName, {
+              identity: moved._id,
+            });
+            if (!restored) {
+              logger.warn(
+                `[adminRoles] rename rollback left role "${newName}"'s profile in place: it is no longer the one the rename moved`,
+              );
             }
           },
         ),
@@ -514,8 +538,8 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
           'grants',
           () => moveGrantsToPrincipal(PrincipalType.ROLE, currentName, newName, { tenantId }),
           restoreMovedGrants
-            ? (grants: ISystemGrant[]) =>
-                restoreMovedGrants(PrincipalType.ROLE, currentName, newName, grants)
+            ? (move: SystemGrantMove) =>
+                restoreMovedGrants(PrincipalType.ROLE, currentName, newName, move)
             : undefined,
         ),
       );
@@ -541,12 +565,16 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     }
     const { config, grants, acl } = cascade.removed as {
       config?: ConfigRecord | null;
-      grants?: ISystemGrant[];
+      grants?: SystemGrantMove;
       acl?: string[];
     };
     return {
       ok: true,
-      moved: { config: config ?? null, grants: grants ?? [], aclEntries: acl?.length ?? 0 },
+      moved: {
+        config: config ?? null,
+        grants: grants ? [...grants.moved, ...grants.superseded] : [],
+        aclEntries: acl?.length ?? 0,
+      },
     };
   }
 

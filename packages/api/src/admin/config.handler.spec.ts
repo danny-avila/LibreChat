@@ -1600,10 +1600,10 @@ describe('createAdminConfigHandlers', () => {
       expect(priorityArg).toBe(999);
       /**
        * The target is read once, to validate the write on top of its stored fields (not for its
-       * priority); Base is read once more, in the caller's partition, as the floor the write
-       * lands on.
+       * priority); Base is read beside it, in the caller's partition, as the floor the write
+       * lands on, and once more after the write, to see that the floor did not move.
        */
-      expect(deps.findConfigByPrincipal).toHaveBeenCalledTimes(2);
+      expect(deps.findConfigByPrincipal).toHaveBeenCalledTimes(3);
       expect(deps.findConfigByPrincipal).toHaveBeenCalledWith('role', 'admin', {
         includeInactive: true,
       });
@@ -3778,7 +3778,10 @@ describe('createAdminConfigHandlers', () => {
     it('re-reads and re-validates when a write without a precondition loses a race', async () => {
       const rotated = { ...stored, configVersion: 5, overrides: { interface: { a: 1 } } };
       const reads = [stored, rotated];
-      /** Base (the validation floor) has no document; the target is read once per attempt. */
+      /**
+       * Base (the validation floor) has no document. Each attempt reads it beside the target,
+       * and the committed write reads it once more.
+       */
       const findConfigByPrincipal = jest.fn(async (_type: string, principalId: string) =>
         principalId === '__base__' ? null : reads.shift(),
       );
@@ -3801,12 +3804,40 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       expect(reads).toHaveLength(0);
-      expect(findConfigByPrincipal).toHaveBeenCalledTimes(3);
+      expect(findConfigByPrincipal).toHaveBeenCalledTimes(5);
       expect(writeConfigDocument).toHaveBeenCalledTimes(2);
       expect(writeConfigDocument.mock.calls[1][2].overrides).toEqual({
         interface: { a: 1, customWelcome: 'x' },
       });
       expect(writeConfigDocument.mock.calls[1][3]).toBe('64b000000000000000000001:5');
+    });
+
+    it('keeps a committed write when Base cannot be read again to check it', async () => {
+      let baseReads = 0;
+      const findConfigByPrincipal = jest.fn(async (_type: string, principalId: string) => {
+        if (principalId !== '__base__') {
+          return stored;
+        }
+        baseReads += 1;
+        if (baseReads > 1) {
+          throw new Error('connection reset');
+        }
+        return null;
+      });
+      const { handlers, deps } = createHandlers({ findConfigByPrincipal });
+      const res = mockRes();
+
+      await handlers.patchConfigField(
+        mockReq({
+          params,
+          body: { entries: [{ fieldPath: 'interface.customWelcome', value: 'kept' }] },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(baseReads).toBe(2);
+      expect(deps.writeConfigDocument).toHaveBeenCalledTimes(1);
     });
 
     it('answers 409 once the retry budget is spent', async () => {

@@ -721,6 +721,52 @@ describe('renameConfigPrincipal in the caller tenant partition', () => {
     expect(partitioned).toBeNull();
     expect(tenantRead!.overrides).toEqual({ x: 'tenant-a' });
   });
+
+  /**
+   * The driver applies the next insert and reports a dropped connection instead of its reply;
+   * with `unsettled`, the lookup that would settle it fails as well.
+   */
+  function loseNextCreateAcknowledgement(options: { unsettled?: boolean } = {}): Error {
+    const collection = mongoose.models.Config.collection;
+    const findOneAndUpdate = collection.findOneAndUpdate.bind(collection);
+    const lost = new mongoose.mongo.MongoNetworkError('connection reset after the write applied');
+    jest.spyOn(collection, 'findOneAndUpdate').mockImplementationOnce((async (
+      ...args: Parameters<typeof findOneAndUpdate>
+    ) => {
+      await findOneAndUpdate(...args);
+      if (options.unsettled) {
+        jest
+          .spyOn(collection, 'findOne')
+          .mockRejectedValueOnce(new mongoose.mongo.MongoNetworkError('still disconnected'));
+      }
+      throw lost;
+    }) as unknown as typeof collection.findOneAndUpdate);
+    return lost;
+  }
+
+  it("settles a copy whose acknowledgement was lost and finishes the move in the caller's tenant", async () => {
+    await seedTenant('tenant-b', 'writer', { x: 'tenant-b' });
+    await seedTenant('tenant-a', 'editor', { x: 'tenant-a' });
+    loseNextCreateAcknowledgement();
+
+    const moved = await inTenant('tenant-a', () =>
+      methods.renameConfigPrincipal(PrincipalType.ROLE, 'editor', 'writer'),
+    );
+
+    expect(moved!.overrides).toEqual({ x: 'tenant-a' });
+    expect(moved!.tenantId).toBe('tenant-a');
+    expect(await layout()).toEqual(['tenant-a/writer', 'tenant-b/writer']);
+  });
+
+  it('keeps both documents and rethrows when a lost acknowledgement cannot be settled', async () => {
+    await seedPlatform('editor', { x: 'platform' });
+    const lost = loseNextCreateAcknowledgement({ unsettled: true });
+
+    await expect(
+      methods.renameConfigPrincipal(PrincipalType.ROLE, 'editor', 'writer'),
+    ).rejects.toBe(lost);
+    expect(await layout()).toEqual(['-/editor', '-/writer']);
+  });
 });
 
 describe('setConfigPriority in the caller tenant partition', () => {

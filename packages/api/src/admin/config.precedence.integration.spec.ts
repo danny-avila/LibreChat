@@ -336,6 +336,177 @@ describe('validation on the Base floor (W2-3)', () => {
   });
 });
 
+describe('validation on the Base the write lands over (W2-3)', () => {
+  const providerYaml = {
+    memory: { agent: { provider: 'openAI', model: 'gpt-4o' } },
+  } as Partial<TCustomConfig>;
+  const editor = roleParams('editor');
+  const setModel = { entries: [{ fieldPath: 'memory.agent.model', value: 'gpt-4.1' }] };
+  const setWelcome = (value: string) => ({
+    entries: [{ fieldPath: 'interface.customWelcome', value }],
+  });
+
+  /** Base drops the YAML provider and model and names an agent, so a profile's model is invalid. */
+  async function switchBaseToAgentId(handlers: AdminConfigHandlers): Promise<void> {
+    const changed = await call(handlers.applyConfigChanges, {
+      params: BASE,
+      body: {
+        ops: [
+          { op: 'tombstone', fieldPath: 'memory.agent.provider' },
+          { op: 'tombstone', fieldPath: 'memory.agent.model' },
+          { op: 'set', fieldPath: 'memory.agent.id', value: 'agent_9' },
+        ],
+      },
+    });
+    expect(changed.statusCode).toBe(200);
+  }
+
+  /**
+   * Handlers whose first write to `editor` runs `before` just before it reaches the store and
+   * `after` once it has committed: what concurrent requests do in between.
+   */
+  function racingHandlers(
+    hooks: { before?: () => Promise<void>; after?: () => Promise<void> },
+    overrides: Partial<AdminConfigDeps> = {},
+  ): AdminConfigHandlers {
+    let raced = false;
+    return createHandlers(providerYaml, {
+      ...overrides,
+      writeConfigDocument: async (principalType, principalId, draft, expected) => {
+        const first = !raced && principalId === 'editor';
+        raced ||= first;
+        if (first) {
+          await hooks.before?.();
+        }
+        const written = await methods.writeConfigDocument(
+          principalType,
+          principalId,
+          draft,
+          expected,
+        );
+        if (first) {
+          await hooks.after?.();
+        }
+        return written;
+      },
+    });
+  }
+
+  it('judges a write that retries after losing a race on the Base it reads again', async () => {
+    const handlers = createHandlers(providerYaml);
+    await createRole('editor');
+    await call(handlers.patchConfigField, { params: editor, body: setWelcome('first') });
+    const racing = racingHandlers({
+      before: async () => {
+        await switchBaseToAgentId(handlers);
+        await call(handlers.patchConfigField, { params: editor, body: setWelcome('concurrent') });
+      },
+    });
+
+    const patched = await call(racing.patchConfigField, { params: editor, body: setModel });
+
+    expect(patched.statusCode).toBe(400);
+    expect(patched.body?.issues).toEqual([expect.objectContaining({ code: 'union_dropped_key' })]);
+    /** Refused before its retry wrote anything: no write landed to be withdrawn again. */
+    expect(await stored('role', 'editor')).toMatchObject({
+      overrides: { interface: { customWelcome: 'concurrent' } },
+      configVersion: 2,
+    });
+  });
+
+  it('withdraws a write Base changed under before it committed, and answers as Base now judges it', async () => {
+    const handlers = createHandlers(providerYaml);
+    await createRole('editor');
+    await call(handlers.patchConfigField, { params: editor, body: setWelcome('first') });
+    const invalidateConfigCaches = jest.fn().mockResolvedValue(undefined);
+    const racing = racingHandlers(
+      { before: () => switchBaseToAgentId(handlers) },
+      { invalidateConfigCaches },
+    );
+
+    const patched = await call(racing.patchConfigField, { params: editor, body: setModel });
+
+    expect(patched.statusCode).toBe(400);
+    expect(patched.body?.issues).toEqual([expect.objectContaining({ code: 'union_dropped_key' })]);
+    expect((await stored('role', 'editor'))?.overrides).toEqual({
+      interface: { customWelcome: 'first' },
+    });
+    expect(invalidateConfigCaches).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    {
+      route: 'POST /changes',
+      send: (handlers: AdminConfigHandlers) =>
+        call(handlers.applyConfigChanges, {
+          params: editor,
+          body: { ops: [{ op: 'set', fieldPath: 'memory.agent.model', value: 'gpt-4.1' }] },
+        }),
+    },
+    {
+      route: 'PUT',
+      send: (handlers: AdminConfigHandlers) =>
+        call(handlers.upsertConfigOverrides, {
+          params: editor,
+          body: { overrides: { memory: { agent: { model: 'gpt-4.1' } } } },
+        }),
+    },
+  ])('$route removes the profile it created on a Base that changed under it', async ({ send }) => {
+    const handlers = createHandlers(providerYaml);
+    await createRole('editor');
+
+    const res = await send(racingHandlers({ before: () => switchBaseToAgentId(handlers) }));
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.code).toBe('CONFIG_OVERRIDE_INVALID');
+    expect(await stored('role', 'editor')).toBeNull();
+  });
+
+  it('keeps a write that is still valid on the Base that changed under it', async () => {
+    const handlers = createHandlers(providerYaml);
+    await createRole('editor');
+    const racing = racingHandlers({
+      before: async () => {
+        const based = await call(handlers.patchConfigField, {
+          params: BASE,
+          body: setWelcome('all'),
+        });
+        expect(based.statusCode).toBe(200);
+      },
+    });
+
+    const patched = await call(racing.patchConfigField, { params: editor, body: setModel });
+
+    expect(patched.statusCode).toBe(200);
+    expect((await stored('role', 'editor'))?.overrides).toEqual({
+      memory: { agent: { model: 'gpt-4.1' } },
+    });
+  });
+
+  it('answers 409 and leaves the profile when a later write landed before the withdrawal', async () => {
+    const handlers = createHandlers(providerYaml);
+    await createRole('editor');
+    await call(handlers.patchConfigField, { params: editor, body: setWelcome('first') });
+    const racing = racingHandlers({
+      before: () => switchBaseToAgentId(handlers),
+      after: async () => {
+        await call(handlers.patchConfigField, { params: editor, body: setWelcome('later') });
+      },
+    });
+
+    const patched = await call(racing.patchConfigField, { params: editor, body: setModel });
+
+    const current = await stored('role', 'editor');
+    expect(patched.statusCode).toBe(409);
+    expect(patched.body?.code).toBe('CONFIG_VERSION_CONFLICT');
+    expect(patched.body?.currentRevision).toBe(`${current?._id}:${current?.configVersion}`);
+    expect(current?.overrides).toEqual({
+      interface: { customWelcome: 'later' },
+      memory: { agent: { model: 'gpt-4.1' } },
+    });
+  });
+});
+
 describe('profile lifecycle (W2-16)', () => {
   it('creates a profile only when none exists: one of two concurrent creates wins', async () => {
     const handlers = createHandlers();
@@ -496,6 +667,50 @@ describe('profile lifecycle (W2-16)', () => {
     expect(tenant.statusCode).toBe(200);
     expect(configOf(tenant).overrides).toEqual({ interface: { customWelcome: 'tenant-a' } });
     expect(await priorities()).toEqual(['-:40', 'tenant-a:30']);
+  });
+
+  it("answers a priority write that loses a race with the revision in the caller's partition", async () => {
+    const handlers = createHandlers();
+    const params = roleParams('editor');
+    await dataSchemas.tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+      await createRole('editor');
+      const created = await call(handlers.patchConfigField, {
+        params,
+        body: { entries: [{ fieldPath: 'interface.customWelcome', value: 'tenant-a' }] },
+      });
+      expect(created.statusCode).toBe(200);
+    });
+    const collection = mongoose.models.Config.collection;
+    const { insertedId } = await collection.insertOne({
+      principalType: 'role',
+      principalId: 'editor',
+      principalModel: 'Role',
+      priority: 10,
+      overrides: { interface: { customWelcome: 'platform' } },
+      tombstones: [],
+      isActive: true,
+      configVersion: 1,
+    });
+    const findOneAndUpdate = collection.findOneAndUpdate.bind(collection);
+    /** Another platform admin deletes the profile between this request's read and its write. */
+    jest.spyOn(collection, 'findOneAndUpdate').mockImplementationOnce((async (
+      ...args: Parameters<typeof findOneAndUpdate>
+    ) => {
+      await collection.deleteOne({ _id: insertedId });
+      return findOneAndUpdate(...args);
+    }) as unknown as typeof collection.findOneAndUpdate);
+
+    const lost = await call(handlers.updateConfigPriority, {
+      params,
+      body: { priority: 40, expectedRevision: `${insertedId}:1` },
+    });
+
+    expect(lost.statusCode).toBe(409);
+    expect(lost.body).toEqual({
+      error: 'Config was modified by another request',
+      code: 'CONFIG_VERSION_CONFLICT',
+      currentRevision: null,
+    });
   });
 
   it('refuses to create a profile for a role, group or user that does not exist', async () => {

@@ -407,6 +407,142 @@ describe('role rename moves what is keyed by the role name', () => {
   });
 });
 
+describe('a rename that rolls back undoes only what it changed', () => {
+  /** The ACL move fails; every other move still finishes before the rollback starts. */
+  const failingAclMove = async (): Promise<string[]> => {
+    throw new Error('acl write failed');
+  };
+  const failAcl = (meanwhile: () => Promise<unknown>) =>
+    createHandlers({
+      moveAclEntriesToPrincipal: async () => {
+        await meanwhile();
+        return failingAclMove();
+      },
+    });
+
+  it('never re-creates a moved grant that another admin revoked before the rollback', async () => {
+    await seedRole('editor');
+    await methods.grantCapability({
+      principalType: PrincipalType.ROLE,
+      principalId: 'editor',
+      capability: dataSchemas.SystemCapabilities.READ_CONFIGS,
+    });
+    /** The grants move, then another admin revokes one of them from the role's new name. */
+    const handlers = createHandlers({
+      moveGrantsToPrincipal: async (...args) => {
+        const move = await methods.moveGrantsToPrincipal(...args);
+        await methods.revokeCapability({
+          principalType: PrincipalType.ROLE,
+          principalId: 'writer',
+          capability: dataSchemas.SystemCapabilities.READ_USERS,
+        });
+        return move;
+      },
+      moveAclEntriesToPrincipal: failingAclMove,
+    });
+
+    const res = await rename(handlers, 'editor', { name: 'writer' });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body?.code).toBe('ROLE_RENAME_FAILED');
+    expect(await grantLayout()).toEqual([
+      `-/editor: ${dataSchemas.SystemCapabilities.READ_CONFIGS}`,
+    ]);
+  });
+
+  it('moves back only the profile it moved, never one another admin put at the new name', async () => {
+    await seedRole('editor');
+    /** Another admin removes the moved profile and writes one of their own for the new name. */
+    const handlers = createHandlers({
+      renameConfigPrincipal: async (principalType, from, to, options) => {
+        const moved = await methods.renameConfigPrincipal(principalType, from, to, options);
+        if (!options) {
+          await methods.deleteConfig(principalType, to);
+          await setWelcome(to, 'theirs');
+        }
+        return moved;
+      },
+      moveAclEntriesToPrincipal: failingAclMove,
+    });
+
+    const res = await rename(handlers, 'editor', { name: 'writer' });
+
+    expect(res.statusCode).toBe(500);
+    expect((await keyedBy('editor')).role?.name).toBe('editor');
+    expect(await profileLayout()).toEqual(['-/writer: theirs']);
+  });
+
+  it('brings the moved profile back with an edit made to it meanwhile', async () => {
+    await seedRole('editor');
+    const handlers = createHandlers({
+      renameConfigPrincipal: async (principalType, from, to, options) => {
+        const moved = await methods.renameConfigPrincipal(principalType, from, to, options);
+        if (!options) {
+          await setWelcome(to, 'edited');
+        }
+        return moved;
+      },
+      moveAclEntriesToPrincipal: failingAclMove,
+    });
+
+    const res = await rename(handlers, 'editor', { name: 'writer' });
+
+    expect(res.statusCode).toBe(500);
+    expect(await profileLayout()).toEqual(['-/editor: edited']);
+    expect((await keyedBy('editor')).profile?.priority).toBe(15);
+  });
+
+  it('leaves a member another admin reassigned during the rename on their new role', async () => {
+    const { userId } = await seedRole('editor');
+    const otherId = await methods.createUser(
+      { email: 'second@example.com', name: 'second', provider: 'local', role: 'editor' },
+      undefined,
+      true,
+    );
+    const handlers = failAcl(() => methods.updateUser(userId, { role: 'REVIEWER' }));
+
+    const res = await rename(handlers, 'editor', { name: 'writer' });
+
+    expect(res.statusCode).toBe(500);
+    expect((await keyedBy('editor')).members).toEqual([otherId.toString()]);
+    expect(await methods.findUserIdsByRole('REVIEWER')).toEqual([userId]);
+    expect(await methods.findUserIdsByRole('writer')).toEqual([]);
+  });
+
+  it('keeps a description another admin set during the rename', async () => {
+    await seedRole('editor');
+    const handlers = failAcl(() =>
+      methods.updateRoleByName('writer', { description: 'Edited meanwhile' }),
+    );
+
+    const res = await rename(handlers, 'editor', { name: 'writer', description: 'Renamed' });
+
+    expect(res.statusCode).toBe(500);
+    expect((await keyedBy('editor')).role).toEqual({
+      name: 'editor',
+      description: 'Edited meanwhile',
+    });
+  });
+
+  it('finishes the rename when the profile copy committed but its acknowledgement was lost', async () => {
+    await seedRole('editor');
+    const collection = mongoose.models.Config.collection;
+    const findOneAndUpdate = collection.findOneAndUpdate.bind(collection);
+    jest.spyOn(collection, 'findOneAndUpdate').mockImplementationOnce((async (
+      ...args: Parameters<typeof findOneAndUpdate>
+    ) => {
+      await findOneAndUpdate(...args);
+      throw new mongoose.mongo.MongoNetworkError('connection reset after the write applied');
+    }) as unknown as typeof collection.findOneAndUpdate);
+
+    const res = await rename(createHandlers(), 'editor', { name: 'writer' });
+
+    expect(res.statusCode).toBe(200);
+    expect(await profileLayout()).toEqual(['-/writer: hello editor']);
+    expect((await keyedBy('writer')).profile?.priority).toBe(15);
+  });
+});
+
 describe('role names never reach the Base config document', () => {
   const BASE = '__base__';
 

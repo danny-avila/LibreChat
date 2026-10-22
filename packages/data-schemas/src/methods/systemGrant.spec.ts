@@ -810,11 +810,12 @@ describe('systemGrant methods', () => {
       const { grant: readUsers } = await grant('editor', SystemCapabilities.READ_USERS);
       await grant('editor', SystemCapabilities.READ_CONFIGS);
 
-      const moved = await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+      const move = await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
 
-      expect(moved.map((g) => g.capability).sort()).toEqual(
+      expect(move.moved.map((g) => g.capability).sort()).toEqual(
         [SystemCapabilities.READ_CONFIGS, SystemCapabilities.READ_USERS].sort(),
       );
+      expect(move.superseded).toEqual([]);
       expect(await held('editor')).toEqual([]);
       expect(await held('writer')).toEqual(
         [`-:${SystemCapabilities.READ_CONFIGS}`, `-:${SystemCapabilities.READ_USERS}`].sort(),
@@ -847,9 +848,9 @@ describe('systemGrant methods', () => {
       await grant('editor', SystemCapabilities.READ_CONFIGS);
       await grant('writer', SystemCapabilities.READ_USERS, 'tenant-a');
 
-      const moved = await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+      const move = await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
 
-      expect(moved.map((g) => g.capability)).toEqual([SystemCapabilities.READ_CONFIGS]);
+      expect(move.moved.map((g) => g.capability)).toEqual([SystemCapabilities.READ_CONFIGS]);
       expect(await held('editor')).toEqual([`tenant-a:${SystemCapabilities.READ_USERS}`]);
       expect(await held('writer')).toEqual(
         [
@@ -864,8 +865,10 @@ describe('systemGrant methods', () => {
       await grant('editor', SystemCapabilities.READ_CONFIGS);
       await grant('writer', SystemCapabilities.READ_USERS);
 
-      await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+      const move = await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
 
+      expect(move.moved.map((g) => g.capability)).toEqual([SystemCapabilities.READ_CONFIGS]);
+      expect(move.superseded.map((g) => g.capability)).toEqual([SystemCapabilities.READ_USERS]);
       expect(await held('editor')).toEqual([]);
       expect(await held('writer')).toEqual(
         [`-:${SystemCapabilities.READ_CONFIGS}`, `-:${SystemCapabilities.READ_USERS}`].sort(),
@@ -875,7 +878,10 @@ describe('systemGrant methods', () => {
     it('returns nothing and writes nothing for a principal without grants', async () => {
       await grant('writer', SystemCapabilities.READ_USERS);
 
-      expect(await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'none', 'writer')).toEqual([]);
+      expect(await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'none', 'writer')).toEqual({
+        moved: [],
+        superseded: [],
+      });
       expect(await held('writer')).toEqual([`-:${SystemCapabilities.READ_USERS}`]);
     });
 
@@ -884,8 +890,8 @@ describe('systemGrant methods', () => {
       const { grant: readConfigs } = await grant('editor', SystemCapabilities.READ_CONFIGS);
       await grant('writer', SystemCapabilities.READ_USERS);
 
-      const moved = await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
-      await methods.restoreMovedGrants(PrincipalType.ROLE, 'editor', 'writer', moved);
+      const move = await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+      await methods.restoreMovedGrants(PrincipalType.ROLE, 'editor', 'writer', move);
 
       expect(await held('editor')).toEqual(
         [`-:${SystemCapabilities.READ_CONFIGS}`, `-:${SystemCapabilities.READ_USERS}`].sort(),
@@ -895,6 +901,74 @@ describe('systemGrant methods', () => {
       expect(restored.map((g) => g._id.toString()).sort()).toEqual(
         [readUsers?._id.toString(), readConfigs?._id.toString()].sort(),
       );
+    });
+
+    it('never re-creates a moved grant that was revoked before the undo', async () => {
+      await grant('editor', SystemCapabilities.READ_USERS);
+      await grant('editor', SystemCapabilities.READ_CONFIGS);
+
+      const move = await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+      await methods.revokeCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: 'writer',
+        capability: SystemCapabilities.READ_USERS,
+      });
+      await methods.restoreMovedGrants(PrincipalType.ROLE, 'editor', 'writer', move);
+
+      expect(await held('editor')).toEqual([`-:${SystemCapabilities.READ_CONFIGS}`]);
+      expect(await held('writer')).toEqual([]);
+    });
+
+    it('never reports or re-creates a grant revoked between its snapshot and the move', async () => {
+      await grant('editor', SystemCapabilities.READ_USERS);
+      await grant('editor', SystemCapabilities.READ_CONFIGS);
+      await grant('writer', SystemCapabilities.READ_USERS);
+      const findOneAndDelete = SystemGrant.findOneAndDelete.bind(SystemGrant);
+      /** Another admin revokes the superseded grant after the move read it, before it is removed. */
+      jest.spyOn(SystemGrant, 'findOneAndDelete').mockImplementationOnce(((
+        ...args: Parameters<typeof SystemGrant.findOneAndDelete>
+      ) => ({
+        lean: () => ({
+          exec: () =>
+            methods
+              .revokeCapability({
+                principalType: PrincipalType.ROLE,
+                principalId: 'editor',
+                capability: SystemCapabilities.READ_USERS,
+              })
+              .then(() =>
+                findOneAndDelete(...args)
+                  .lean()
+                  .exec(),
+              ),
+        }),
+      })) as never);
+
+      const move = await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+      await methods.restoreMovedGrants(PrincipalType.ROLE, 'editor', 'writer', move);
+
+      expect(move.superseded).toEqual([]);
+      expect(await held('editor')).toEqual([`-:${SystemCapabilities.READ_CONFIGS}`]);
+      expect(await held('writer')).toEqual([`-:${SystemCapabilities.READ_USERS}`]);
+    });
+
+    it('re-creates a superseded grant only while the new name still holds the one that superseded it', async () => {
+      await grant('editor', SystemCapabilities.READ_USERS);
+      await grant('editor', SystemCapabilities.READ_CONFIGS);
+      await grant('writer', SystemCapabilities.READ_USERS);
+      await grant('writer', SystemCapabilities.READ_CONFIGS);
+
+      const move = await methods.moveGrantsToPrincipal(PrincipalType.ROLE, 'editor', 'writer');
+      await methods.revokeCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: 'writer',
+        capability: SystemCapabilities.READ_USERS,
+      });
+      await methods.restoreMovedGrants(PrincipalType.ROLE, 'editor', 'writer', move);
+
+      expect(move.superseded).toHaveLength(2);
+      expect(await held('editor')).toEqual([`-:${SystemCapabilities.READ_CONFIGS}`]);
+      expect(await held('writer')).toEqual([`-:${SystemCapabilities.READ_CONFIGS}`]);
     });
 
     it('undoes a move that fails part-way before rethrowing', async () => {

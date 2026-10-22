@@ -16,7 +16,9 @@ import {
   getDefaultConfigPriority,
 } from './precedence';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
+import { getSafeErrorFields } from '~/utils/errors';
 import { parseFieldPath } from './paths';
+import logger from '~/config/winston';
 
 /**
  * The portable admin-config store contract.
@@ -94,6 +96,12 @@ export interface ConfigStore {
    * Writes the whole document when the stored one is at `expected` (or, for
    * {@link ABSENT_CONFIG_REVISION}, when none exists), incrementing `configVersion`. Any other
    * state throws {@link ConfigRevisionConflictError} and changes nothing.
+   *
+   * A create that committed returns the document it created even when the engine's first
+   * acknowledgement of it was lost: the engine chooses the new identity before it writes and
+   * settles a lost acknowledgement by looking that identity up. Any other error means the
+   * create did not commit, or that the engine could not tell; a caller then never removes a
+   * document it finds, since it cannot confirm the document is its own.
    */
   write(
     principal: ConfigPrincipal,
@@ -335,7 +343,7 @@ function toDraft(
 }
 
 /** Everything a stored document carries over to another principal or into a rewrite. */
-function toRecordDraft(record: ConfigRecord): ConfigDraft {
+export function toConfigDraft(record: ConfigRecord): ConfigDraft {
   return {
     principalModel: record.principalModel,
     priority: record.priority,
@@ -426,7 +434,19 @@ export interface ConfigOperations {
     priority: number,
     options?: ConfigWriteOptions,
   ): Promise<ConfigWriteOutcome | null>;
-  movePrincipal(from: ConfigPrincipal, to: ConfigPrincipal): Promise<ConfigRecord | null>;
+  movePrincipal(
+    from: ConfigPrincipal,
+    to: ConfigPrincipal,
+    options?: ConfigMoveOptions,
+  ): Promise<ConfigRecord | null>;
+}
+
+export interface ConfigMoveOptions {
+  /**
+   * Move `from`'s document only while it is this one (by `_id`, at any version): how a caller
+   * undoes its own move without taking a document someone else put there since.
+   */
+  identity?: string;
 }
 
 /**
@@ -652,7 +672,7 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
         if (current.isActive === isActive) {
           return { draft: null, result: { config: current, changed: false } };
         }
-        return { draft: { ...toRecordDraft(current), isActive } };
+        return { draft: { ...toConfigDraft(current), isActive } };
       },
       options,
     );
@@ -677,17 +697,22 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
         if (current.priority === priority) {
           return { draft: null, result: { config: current, changed: false } };
         }
-        return { draft: { ...toRecordDraft(current), priority } };
+        return { draft: { ...toConfigDraft(current), priority } };
       },
       options,
     );
     return outcome.written ? { config: outcome.record, changed: true } : outcome.result;
   }
 
-  /** The create-only copy a move starts with; a document already at `to` refuses the move. */
+  /**
+   * The create-only copy a move starts with; a document already at `to` refuses the move. A
+   * copy that committed is returned even when its acknowledgement was lost (see
+   * {@link ConfigStore.write}), so any other failure leaves nothing this move can confirm it
+   * created, and nothing is removed.
+   */
   async function copyTo(to: ConfigPrincipal, source: ConfigRecord): Promise<ConfigRecord> {
     try {
-      return await store.write(to, toRecordDraft(source), ABSENT_CONFIG_REVISION);
+      return await store.write(to, toConfigDraft(source), ABSENT_CONFIG_REVISION);
     } catch (error) {
       throw isConfigRevisionConflict(error)
         ? new ConfigMoveRefusedError('CONFIG_PRINCIPAL_EXISTS')
@@ -708,18 +733,21 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
    * retried. Once the retries run out, or when the copy was edited meanwhile and so is kept,
    * the revision conflict is rethrown. When a failed removal cannot be confirmed by reading
    * `from` back, the copy is kept, as it may be the only one left, and the removal's failure
-   * is rethrown.
+   * is rethrown. A copy that cannot be withdrawn is logged with its revision, so an operator can
+   * remove it. With `identity`, a `from` that holds another document (or none) moves nothing
+   * and resolves to `null`.
    */
   async function movePrincipal(
     from: ConfigPrincipal,
     to: ConfigPrincipal,
+    options?: ConfigMoveOptions,
   ): Promise<ConfigRecord | null> {
     if (isBaseConfigPrincipal(from) || isBaseConfigPrincipal(to)) {
       throw new ConfigMoveRefusedError('CONFIG_PRINCIPAL_RESERVED');
     }
     for (let attempt = 1; ; attempt++) {
       const current = await store.read(from);
-      if (!current) {
+      if (!current || (options?.identity != null && current._id !== options.identity)) {
         return null;
       }
       const moved = await copyTo(to, current);
@@ -740,7 +768,15 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
       if (remaining == null) {
         return moved;
       }
-      await store.remove(to, getConfigRevision(moved));
+      await store.remove(to, getConfigRevision(moved)).catch((withdrawal: unknown) => {
+        logger.error('[configStore] A moved config document could not be withdrawn from its copy', {
+          principalType: to.principalType,
+          principalId: to.principalId,
+          revision: getConfigRevision(moved),
+          ...getSafeErrorFields(withdrawal),
+        });
+        throw withdrawal;
+      });
       if (!isConfigRevisionConflict(failure) || attempt >= CONFIG_WRITE_ATTEMPTS) {
         throw failure;
       }

@@ -30,6 +30,7 @@ import {
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { toConfigOverrideState } from './mutations';
 import { applyConfigChanges } from './changes';
+import logger from '~/config/winston';
 
 export interface ConfigStoreHarness {
   readonly name: string;
@@ -38,6 +39,12 @@ export interface ConfigStoreHarness {
   teardown(): Promise<void>;
   /** Removes every document. */
   reset(): Promise<void>;
+  /**
+   * Makes the engine's next create commit and then lose its acknowledgement, as a connection
+   * that drops after the database applied the write would. The engine must still return the
+   * document it created (`ConfigStore.write`).
+   */
+  loseNextCreateAcknowledgement(): void;
 }
 
 const role = (principalId: string): ConfigPrincipal => ({
@@ -337,6 +344,23 @@ export function describeConfigStoreConformance(harness: ConfigStoreHarness): voi
 
         expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
         expect((await store.list()).length).toBe(1);
+      });
+
+      it('returns the document a create made even when its acknowledgement is lost', async () => {
+        harness.loseNextCreateAcknowledgement();
+
+        const created = await store.write(
+          role('unacknowledged'),
+          draft({ 'a.b': 1 }),
+          ABSENT_CONFIG_REVISION,
+        );
+
+        expect(created).toMatchObject({
+          principalId: 'unacknowledged',
+          configVersion: 1,
+          overrides: { 'a.b': 1 },
+        });
+        expect(await store.read(role('unacknowledged'))).toEqual(created);
       });
 
       it('rejects a malformed revision as a conflict without writing', async () => {
@@ -823,6 +847,68 @@ export function describeConfigStoreConformance(harness: ConfigStoreHarness): voi
         expect((await store.read(role('shelter')))?.overrides).toEqual({ kept: true });
       });
 
+      it('finishes a move whose copy committed though its acknowledgement was lost', async () => {
+        const operations = createConfigOperations(store);
+        await operations.setFields(role('sender'), PrincipalModel.ROLE, { kept: true }, 12);
+        harness.loseNextCreateAcknowledgement();
+
+        const moved = await operations.movePrincipal(role('sender'), role('receiver'));
+
+        expect(moved).toMatchObject({ overrides: { kept: true }, priority: 12 });
+        expect(await store.read(role('receiver'))).toEqual(moved);
+        expect(await store.read(role('sender'))).toBeNull();
+      });
+
+      it('never removes a copy it cannot confirm it created, and reports the failure', async () => {
+        const unconfirmed = new Error('connection reset; the create could not be confirmed');
+        const unsure: ConfigStore = {
+          ...store,
+          write: async (principal, next, expected) => {
+            const written = await store.write(principal, next, expected);
+            if (principal.principalId === 'unsure-copy') {
+              throw unconfirmed;
+            }
+            return written;
+          },
+        };
+        const operations = createConfigOperations(unsure);
+        await operations.setFields(role('unsure'), PrincipalModel.ROLE, { kept: true });
+
+        const error = await conflictOf(
+          operations.movePrincipal(role('unsure'), role('unsure-copy')),
+        );
+
+        expect(error).toBe(unconfirmed);
+        expect((await store.read(role('unsure')))?.overrides).toEqual({ kept: true });
+        expect((await store.read(role('unsure-copy')))?.overrides).toEqual({ kept: true });
+      });
+
+      it('moves back only the document it moved, edits included, never one put there since', async () => {
+        const operations = createConfigOperations(store);
+        await operations.setFields(role('home'), PrincipalModel.ROLE, { mine: true });
+        const moved = await operations.movePrincipal(role('home'), role('away'));
+        await operations.setFields(role('away'), PrincipalModel.ROLE, { edited: true });
+
+        const back = await operations.movePrincipal(role('away'), role('home'), {
+          identity: moved?._id,
+        });
+
+        expect(back?.overrides).toEqual({ mine: true, edited: true });
+        expect(await store.read(role('away'))).toBeNull();
+
+        const again = await operations.movePrincipal(role('home'), role('away'));
+        await operations.deleteConfig(role('away'));
+        const replacement = await operations.setFields(role('away'), PrincipalModel.ROLE, {
+          theirs: true,
+        });
+
+        expect(
+          await operations.movePrincipal(role('away'), role('home'), { identity: again?._id }),
+        ).toBeNull();
+        expect(await store.read(role('away'))).toEqual(replacement);
+        expect(await store.read(role('home'))).toBeNull();
+      });
+
       it('gives up with a revision conflict, leaving the source in place, when it keeps changing', async () => {
         let edits = 0;
         const busy = withRemoveHook(async (principal) => {
@@ -873,6 +959,44 @@ export function describeConfigStoreConformance(harness: ConfigStoreHarness): voi
           source: 1,
           copy: 'edited',
         });
+      });
+
+      it('names a copy it could not withdraw in the log, so it can be removed', async () => {
+        const unreachable = new Error('connection refused');
+        let down = false;
+        const failing: ConfigStore = {
+          ...store,
+          remove: async (principal, expected) => {
+            if (down) {
+              throw unreachable;
+            }
+            if (principal.principalId === 'cut') {
+              down = true;
+              throw unreachable;
+            }
+            return store.remove(principal, expected);
+          },
+        };
+        const operations = createConfigOperations(failing);
+        await operations.setFields(role('cut'), PrincipalModel.ROLE, { kept: true });
+        const errorLog = jest.spyOn(logger, 'error');
+
+        const error = await conflictOf(operations.movePrincipal(role('cut'), role('stranded')));
+
+        const copy = await store.read(role('stranded'));
+        expect(error).toBe(unreachable);
+        expect((await store.read(role('cut')))?.overrides).toEqual({ kept: true });
+        expect(copy?.overrides).toEqual({ kept: true });
+        expect(errorLog).toHaveBeenCalledWith(
+          '[configStore] A moved config document could not be withdrawn from its copy',
+          {
+            principalType: PrincipalType.ROLE,
+            principalId: 'stranded',
+            revision: copy && getConfigRevision(copy),
+            errName: 'Error',
+            errCode: null,
+          },
+        );
       });
 
       it('absorbs concurrent writes without a revision so none is lost', async () => {

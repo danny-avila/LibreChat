@@ -285,7 +285,8 @@ export type AdminConfigChangeErrorResponse = {
  *   a document without `priority` gives it its principal type's default (role 10, group 20,
  *   user 100; Base 0), and a write that omits `priority` keeps the stored one, so a PUT no
  *   longer resets it. A profile write validates on `librechat.yaml` with the active Base
- *   document resolved over it, as the merge applies it.
+ *   document resolved over it, as the merge applies it; when Base changes before the write
+ *   commits, the write is judged on that Base, and taken back (400) when it fails there.
  * - `priorityRoute`: PATCH `/:principalType/:principalId/priority` `{ priority,
  *   expectedRevision? }` sets only the priority (overrides, tombstones and `isActive` stay),
  *   for broad `manage:configs` only. No document answers 404 `CONFIG_NOT_FOUND`, an invalid
@@ -298,7 +299,8 @@ export type AdminConfigChangeErrorResponse = {
  *   overrides: 201, or 409 `CONFIG_VERSION_CONFLICT` when one exists.
  * - `roleRenameMovesProfile`: renaming a role (PATCH `/api/admin/roles/:name`) moves its
  *   config profile, system grants and ACL entries to the new name in the caller's tenant, or
- *   undoes every step and answers 500 `ROLE_RENAME_FAILED`. A profile already held by the new
+ *   undoes every step and answers 500 `ROLE_RENAME_FAILED`; the undo takes back only what the
+ *   rename changed, so a grant revoked or a member reassigned meanwhile stays that way. A profile already held by the new
  *   name answers 409 `ROLE_CONFIG_CONFLICT`, and the Base principal id is a reserved role name
  *   (400 `ROLE_NAME_RESERVED`).
  */

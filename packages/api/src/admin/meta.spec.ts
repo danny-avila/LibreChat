@@ -976,7 +976,7 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     await operations.setFields(role('taken'), PrincipalModel.ROLE, {
       'interface.customWelcome': 'kept',
     });
-    const moveGrantsToPrincipal = jest.fn().mockResolvedValue([]);
+    const moveGrantsToPrincipal = jest.fn().mockResolvedValue({ moved: [], superseded: [] });
     const moveAclEntriesToPrincipal = jest.fn().mockResolvedValue([]);
     const deps: Partial<AdminRolesDeps> = {
       getRoleByName: jest.fn(async (name: string) =>

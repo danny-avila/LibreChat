@@ -4,6 +4,7 @@ import type { Model } from 'mongoose';
 import type {
   ConfigDraft,
   ConfigStore,
+  ConfigMoveOptions,
   ConfigWriteOutcome,
   ConfigRecord,
   ConfigRevision,
@@ -22,6 +23,7 @@ import {
   createConfigOperations,
   getConfigRevision,
   parseConfigRevision,
+  isConfigRevisionConflict,
 } from '~/app/store';
 import {
   toStoredKeys,
@@ -206,6 +208,12 @@ export function createConfigStore(
    * engines, such as DocumentDB elastic clusters, do not enforce); the index still turns two
    * racing inserts into a duplicate-key conflict. Timestamps are set here because Mongoose would
    * otherwise `$set` `updatedAt` on the document it found.
+   *
+   * The `_id` is chosen here, so an insert whose acknowledgement is lost (the connection drops
+   * after the server applied it, where the driver cannot retry the write) is settled by looking
+   * that `_id` up: found at version 1, the insert committed and its document is returned, as
+   * the contract requires. Otherwise, or when the lookup fails too, the write's own error is
+   * rethrown.
    */
   async function create(
     principal: ConfigPrincipal,
@@ -234,6 +242,16 @@ export function createConfigStore(
     } catch (error) {
       if (isDuplicateKeyError(error)) {
         throw new ConfigRevisionConflictError();
+      }
+      if (isConfigRevisionConflict(error) || isFieldNameRejection(error)) {
+        throw error;
+      }
+      const created = await model()
+        .findOne({ ...principalFilter(principal), _id, configVersion: 1 })
+        .lean<StoredConfig>()
+        .catch(() => null);
+      if (created) {
+        return toRecord(created);
       }
       throw error;
     }
@@ -526,16 +544,19 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
      *
      * Both sides are in the caller's tenant partition: outside a tenant only a platform-level
      * document moves, and only a platform-level one at the target refuses the move, so a
-     * tenant's role of the same name keeps its profile.
+     * tenant's role of the same name keeps its profile. With `identity` (how a rename undoes
+     * its move), only that document moves, and `null` means the source holds another or none.
      */
     renameConfigPrincipal: (
       principalType: PrincipalType,
       fromPrincipalId: ConfigPrincipalId,
       toPrincipalId: ConfigPrincipalId,
+      options?: ConfigMoveOptions,
     ): Promise<ConfigRecord | null> =>
       partitioned.movePrincipal(
         toPrincipal(principalType, fromPrincipalId),
         toPrincipal(principalType, toPrincipalId),
+        options,
       ),
 
     /**
