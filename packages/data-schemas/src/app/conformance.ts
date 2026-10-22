@@ -792,6 +792,37 @@ export function describeConfigStoreConformance(harness: ConfigStoreHarness): voi
         expect(await store.read(role('flaky'))).toBeNull();
       });
 
+      it('keeps the copy and reports the failure when a failed removal cannot be read back', async () => {
+        const removalFailure = new Error('connection reset after the delete');
+        let disconnected = false;
+        const blind: ConfigStore = {
+          ...store,
+          read: async (principal) => {
+            if (disconnected && principal.principalId === 'blind') {
+              throw new Error('connection still down');
+            }
+            return store.read(principal);
+          },
+          remove: async (principal, expected) => {
+            const removed = await store.remove(principal, expected);
+            if (!disconnected && principal.principalId === 'blind') {
+              disconnected = true;
+              throw removalFailure;
+            }
+            return removed;
+          },
+        };
+        const operations = createConfigOperations(blind);
+        await operations.setFields(role('blind'), PrincipalModel.ROLE, { kept: true });
+
+        const error = await conflictOf(operations.movePrincipal(role('blind'), role('shelter')));
+
+        expect(disconnected).toBe(true);
+        expect(error).toBe(removalFailure);
+        expect(await store.read(role('blind'))).toBeNull();
+        expect((await store.read(role('shelter')))?.overrides).toEqual({ kept: true });
+      });
+
       it('gives up with a revision conflict, leaving the source in place, when it keeps changing', async () => {
         let edits = 0;
         const busy = withRemoveHook(async (principal) => {

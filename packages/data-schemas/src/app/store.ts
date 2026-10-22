@@ -706,7 +706,9 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
    * when either side is Base, which is tenant-wide and never one principal's document. When
    * `from` changes between the copy and the removal, the copy is withdrawn and the move
    * retried. Once the retries run out, or when the copy was edited meanwhile and so is kept,
-   * the revision conflict is rethrown.
+   * the revision conflict is rethrown. When a failed removal cannot be confirmed by reading
+   * `from` back, the copy is kept, as it may be the only one left, and the removal's failure
+   * is rethrown.
    */
   async function movePrincipal(
     from: ConfigPrincipal,
@@ -728,8 +730,14 @@ export function createConfigOperations(store: ConfigStore): ConfigOperations {
       } catch (error) {
         failure = error;
       }
-      /** A removal can fail after it committed; the copy is then the only one, so it stays. */
-      if ((await store.read(from).catch(() => current)) == null) {
+      /**
+       * A removal can fail after it committed; the copy is then the only one, so it stays. A
+       * source that cannot be read back may be gone as well, so the copy stays then too.
+       */
+      const remaining = await store.read(from).catch(() => {
+        throw failure;
+      });
+      if (remaining == null) {
         return moved;
       }
       await store.remove(to, getConfigRevision(moved));

@@ -447,7 +447,11 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     }
   }
 
-  /** Puts the role document back under its old name (and description) after a failed rename. */
+  /**
+   * Puts the role document back under its old name (and description) after a failed rename.
+   * A role stored without a description gets the schema default (`''`) back: the update only
+   * sets fields, and an undefined one would be dropped, keeping the new description.
+   */
   async function revertRoleUpdate(
     existing: IRole,
     currentName: string,
@@ -456,7 +460,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
   ): Promise<void> {
     const revert: Partial<IRole> = { name: currentName };
     if (extraUpdates?.description !== undefined) {
-      revert.description = existing.description;
+      revert.description = existing.description ?? '';
     }
     try {
       await updateRoleByName(newName, revert);

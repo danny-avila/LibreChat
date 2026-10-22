@@ -534,10 +534,12 @@ interface ConfigLifecycleOptions extends ConfigWriteOptions {
 
 export interface AdminConfigDeps {
   listAllConfigs: (filter?: { isActive?: boolean }, session?: NoSession) => Promise<ConfigRecord[]>;
+  /** With `partitioned`, reads only the caller's tenant partition (platform-level without a
+   * tenant), never another tenant's document for the same principal. */
   findConfigByPrincipal: (
     principalType: PrincipalType,
     principalId: string,
-    options?: { includeInactive?: boolean },
+    options?: { includeInactive?: boolean; partitioned?: boolean },
     session?: NoSession,
   ) => Promise<ConfigRecord | null>;
   /**
@@ -1660,7 +1662,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    * The config a principal's overrides land on, before its own tombstones: `librechat.yaml`
    * with the active Base document resolved over it, exactly as the merge layers Base under
    * every profile (Base always merges first). Base itself lands on `librechat.yaml` alone. The
-   * principal's other profiles vary per user and are left to the merge.
+   * principal's other profiles vary per user and are left to the merge. Base is read from the
+   * caller's tenant partition, so a caller without a tenant validates on the platform-level
+   * Base and never on a tenant's.
    */
   async function getValidationFloor(
     tenantId: string | undefined,
@@ -1679,7 +1683,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     const isBase = isBaseConfigPrincipal({ principalType, principalId });
     const [yaml, baseDocument] = await Promise.all([
       getBaseYamlConfig(tenantId),
-      isBase ? null : findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID),
+      isBase
+        ? null
+        : findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, {
+            partitioned: true,
+          }),
     ]);
     return { yaml, floor: baseDocument ? resolveRawConfig(yaml, [baseDocument]) : yaml };
   }

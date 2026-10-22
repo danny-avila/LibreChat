@@ -1600,13 +1600,16 @@ describe('createAdminConfigHandlers', () => {
       expect(priorityArg).toBe(999);
       /**
        * The target is read once, to validate the write on top of its stored fields (not for its
-       * priority); Base is read once more, as the floor the write lands on.
+       * priority); Base is read once more, in the caller's partition, as the floor the write
+       * lands on.
        */
       expect(deps.findConfigByPrincipal).toHaveBeenCalledTimes(2);
       expect(deps.findConfigByPrincipal).toHaveBeenCalledWith('role', 'admin', {
         includeInactive: true,
       });
-      expect(deps.findConfigByPrincipal).toHaveBeenCalledWith('role', '__base__');
+      expect(deps.findConfigByPrincipal).toHaveBeenCalledWith('role', '__base__', {
+        partitioned: true,
+      });
     });
 
     it('preserves priority 0 when broad caller supplies it', async () => {

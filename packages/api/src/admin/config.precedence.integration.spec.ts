@@ -280,6 +280,24 @@ describe('validation on the Base floor (W2-3)', () => {
     expect(await stored('role', 'editor')).toBeNull();
   });
 
+  it("validates a caller without a tenant on the platform Base, never on a tenant's Base", async () => {
+    const handlers = createHandlers(providerYaml);
+    await createRole('editor');
+    await dataSchemas.tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+      switchBaseToAgentId(handlers),
+    );
+
+    const patched = await call(handlers.patchConfigField, {
+      params: roleParams('editor'),
+      body: { entries: [{ fieldPath: 'memory.agent.model', value: 'gpt-4.1' }] },
+    });
+
+    expect(patched.statusCode).toBe(200);
+    expect((await stored('role', 'editor'))?.overrides).toEqual({
+      memory: { agent: { model: 'gpt-4.1' } },
+    });
+  });
+
   it('ignores an inactive Base, which the merge skips too', async () => {
     const handlers = createHandlers(providerYaml);
     await createRole('editor');

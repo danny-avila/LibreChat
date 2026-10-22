@@ -388,6 +388,23 @@ describe('role rename moves what is keyed by the role name', () => {
     expect(await keyedBy('writer')).toEqual(nothing);
     expect(invalidateConfigCaches).toHaveBeenCalledTimes(1);
   });
+
+  it('takes back the new description of a role stored without one when the rename rolls back', async () => {
+    await mongoose.models.Role.collection.insertOne({ name: 'legacy', permissions: {} });
+    expect((await keyedBy('legacy')).role).toEqual({ name: 'legacy', description: undefined });
+    const handlers = createHandlers({
+      moveAclEntriesToPrincipal: async () => {
+        throw new Error('acl write failed');
+      },
+    });
+
+    const res = await rename(handlers, 'legacy', { name: 'modern', description: 'Renamed' });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body?.code).toBe('ROLE_RENAME_FAILED');
+    expect((await keyedBy('legacy')).role).toEqual({ name: 'legacy', description: '' });
+    expect((await keyedBy('modern')).role).toBeNull();
+  });
 });
 
 describe('role names never reach the Base config document', () => {
