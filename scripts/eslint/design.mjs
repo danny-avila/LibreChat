@@ -167,11 +167,14 @@ function spellsRecipe(value, need) {
   return value.split(/\s+/).some((token) => {
     const { variants, base } = splitVariants(token);
     const match = /^(!?)opacity-100(!?)$/.exec(base);
-    const recipe = RECIPE_VARIANTS.get(variants[variants.length - 1]);
-    if (!match || recipe === undefined) return false;
+    const marker = variants.findIndex((variant) => RECIPE_VARIANTS.has(variant));
+    if (!match || marker === -1) return false;
+    const recipe = RECIPE_VARIANTS.get(variants[marker]);
     if (!(need.topology === 'any' || recipe === need.topology)) return false;
     if (need.important && !match[1] && !match[2]) return false;
-    return variants.slice(0, -1).every((variant) => dimEnclosing.includes(variant));
+    return variants
+      .filter((_, i) => i !== marker)
+      .every((variant) => dimEnclosing.includes(variant));
   });
 }
 
@@ -511,13 +514,19 @@ function recipeReader(context) {
   };
 
   /** A class-map entry that is always on and names a covering recipe. */
-  const mapEntryAlways = (property, topology) =>
-    property.type === 'Property' &&
-    property.value.type === 'Literal' &&
-    property.value.value === true &&
-    (property.computed
-      ? always(property.key, topology)
-      : stringCovers(property.key.value, topology));
+  const mapEntryAlways = (property, topology) => {
+    if (property.type === 'SpreadElement') {
+      return property.argument.type === 'ObjectExpression' && always(property.argument, topology);
+    }
+    return (
+      property.type === 'Property' &&
+      property.value.type === 'Literal' &&
+      property.value.value === true &&
+      (property.computed
+        ? always(property.key, topology)
+        : stringCovers(property.key.value, topology))
+    );
+  };
 
   /** A sibling that always emits a covering recipe, or one guarded by the same condition as the
    *  dim's own entry, on the same side: `cn(disabled && 'opacity-50', disabled && recipe)` or
@@ -752,7 +761,10 @@ const disabledRecipe = {
       if (element) bareTopology = control ? 'self' : 'within';
       const picked = known.get(STATIC) === true || chosenByDisabled(node, source, known);
       const chosen = picked ? bareDims(value, bareTopology) : [];
-      const dims = [...(bareOnly ? [] : variantDims(value)), ...chosen];
+      const spelled = (need) => bareOnly && spellsRecipe(value, need);
+      const dims = [...(bareOnly ? [] : variantDims(value)), ...chosen].filter(
+        (need) => !spelled(need),
+      );
       if (dims.length === 0) return;
       /** A primitive's own recipe restores a plain fade of the control itself; an important one,
        *  or one on another element, still needs the caller's recipe. */

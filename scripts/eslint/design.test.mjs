@@ -34,6 +34,9 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
     "import { clsx } from 'clsx'; clsx('disabled:opacity-50', disabledFillClasses)",
     "<input disabled={busy} className={cn('disabled:opacity-50', busy && disabledFillClasses)} />",
     "const faded = 'opacity-50 theme-disabled:opacity-100'; <button disabled className={faded} />",
+    "const faded = 'opacity-50 theme-disabled:opacity-100'; <button className={cn(disabled && faded)} disabled={disabled} />",
+    "cn('disabled:hover:opacity-50', 'theme-disabled:hover:opacity-100')",
+    "cn('disabled:opacity-50', { ...{ [disabledFillClasses]: true } })",
     {
       code: 'import Button from \'./Button\'; <Button className="disabled:opacity-80" />',
       filename: '/repo/packages/client/src/components/Dialog.tsx',
