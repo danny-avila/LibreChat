@@ -4,7 +4,13 @@ import { FileSources } from 'librechat-data-provider';
 import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { createDeleteFileWithSecondaryStorage, isMissingStorageError } from './storage';
 
-const req = { user: { id: 'owner', tenantId: 'tenant-a' } };
+const req: {
+  user: { id: string; tenantId: string };
+  config: { fileConfig: { retainedFileCleanup?: boolean } };
+} = {
+  user: { id: 'owner', tenantId: 'tenant-a' },
+  config: { fileConfig: { retainedFileCleanup: true } },
+};
 const client = { provider: 'openai' };
 const file = {
   file_id: 'attachment',
@@ -15,9 +21,9 @@ const file = {
 };
 
 function setup(source: string = FileSources.local) {
-  const primary = jest.fn().mockResolvedValue(undefined);
-  const vectors = jest.fn().mockResolvedValue(undefined);
-  const code = jest.fn().mockResolvedValue(undefined);
+  const primary = jest.fn().mockResolvedValue({ deleted: true });
+  const vectors = jest.fn().mockResolvedValue({ deleted: true });
+  const code = jest.fn().mockResolvedValue({ deleted: true });
   const getDeleteFile = jest.fn((secondary: string) =>
     secondary === FileSources.vectordb ? vectors : code,
   );
@@ -41,8 +47,8 @@ describe('createDeleteFileWithSecondaryStorage', () => {
   it('waits for both secondaries before deleting the primary with its provider client', async () => {
     const { primary, vectors, code, remove } = setup(FileSources.openai);
     let finishCode: () => void = () => {};
-    const pendingCode = new Promise<void>((resolve) => {
-      finishCode = resolve;
+    const pendingCode = new Promise<{ deleted: true }>((resolve) => {
+      finishCode = () => resolve({ deleted: true });
     });
     code.mockReturnValue(pendingCode);
 
@@ -84,13 +90,13 @@ describe('createDeleteFileWithSecondaryStorage', () => {
       code: 'ERR_BAD_REQUEST',
       response: { status: 404 },
     });
-    vectors.mockResolvedValueOnce(undefined).mockRejectedValueOnce(absent);
-    code.mockRejectedValueOnce(failure).mockResolvedValueOnce(undefined);
+    vectors.mockResolvedValueOnce({ deleted: true }).mockRejectedValueOnce(absent);
+    code.mockRejectedValueOnce(failure).mockResolvedValueOnce({ deleted: true });
 
     await expect(remove(req, file)).rejects.toBe(failure);
     expect(primary).not.toHaveBeenCalled();
     await expect(remove(req, file)).resolves.toBeUndefined();
-    expect(vectors).toHaveBeenCalledTimes(2);
+    expect(vectors).toHaveBeenCalledTimes(1);
     expect(code).toHaveBeenCalledTimes(2);
     expect(primary).toHaveBeenCalledTimes(1);
   });
@@ -110,8 +116,8 @@ describe('createDeleteFileWithSecondaryStorage', () => {
     const failure = new Error('vector unavailable');
     vectors.mockRejectedValue(failure);
     let finishCode: () => void = () => {};
-    const pendingCode = new Promise<void>((resolve) => {
-      finishCode = resolve;
+    const pendingCode = new Promise<{ deleted: true }>((resolve) => {
+      finishCode = () => resolve({ deleted: true });
     });
     code.mockReturnValue(pendingCode);
     let settled = false;
@@ -131,8 +137,8 @@ describe('createDeleteFileWithSecondaryStorage', () => {
     const failure = new Error('primary permission denied');
     primary.mockRejectedValueOnce(failure).mockResolvedValueOnce(undefined);
     const absent = Object.assign(new Error('absent'), { code: 'NotFound' });
-    vectors.mockResolvedValueOnce(undefined).mockRejectedValueOnce(absent);
-    code.mockResolvedValueOnce(undefined).mockRejectedValueOnce(absent);
+    vectors.mockResolvedValueOnce({ deleted: true }).mockRejectedValueOnce(absent);
+    code.mockResolvedValueOnce({ deleted: true }).mockRejectedValueOnce(absent);
 
     await expect(remove(req, file)).rejects.toBe(failure);
     await expect(remove(req, file)).resolves.toBeUndefined();
@@ -221,14 +227,45 @@ describe('createDeleteFileWithSecondaryStorage', () => {
     if (failing === 'code') expect(primary).not.toHaveBeenCalled();
   });
 
-  it('does not reconcile skipped or failed vector requests', async () => {
+  it('fails closed on skipped vector requests before primary deletion', async () => {
     const { primary, vectors, clearFileEmbeddings, remove } = setup();
     vectors.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('rag down'));
-    primary.mockRejectedValue(new Error('unlink denied'));
-    await expect(remove(req, file)).rejects.toThrow('unlink denied');
+    await expect(remove(req, file)).rejects.toThrow('Vector deletion was not confirmed');
     await expect(remove(req, file)).rejects.toThrow('rag down');
+    expect(primary).not.toHaveBeenCalled();
     expect(clearFileEmbeddings).not.toHaveBeenCalled();
     expect(file.embedded).toBe(true);
+  });
+
+  it.each([undefined, false])(
+    'stages embedded cleanup before reader rollout (%s)',
+    async (enabled) => {
+      const { primary, vectors, code, remove } = setup();
+      const staged = { ...req, config: { fileConfig: { retainedFileCleanup: enabled } } };
+      await expect(remove(staged, file)).rejects.toThrow('requires upgraded readers');
+      expect(primary).not.toHaveBeenCalled();
+      expect(vectors).not.toHaveBeenCalled();
+      expect(code).not.toHaveBeenCalled();
+      expect(file.embedded).toBe(true);
+    },
+  );
+
+  it('stages code-reference invalidation before marker-aware readers are deployed', async () => {
+    const { primary, code, vectors, remove } = setup();
+    const codeOnly = { ...file, embedded: false };
+    await expect(remove({ ...req, config: { fileConfig: {} } }, codeOnly)).rejects.toThrow(
+      'requires upgraded readers',
+    );
+    expect(primary).not.toHaveBeenCalled();
+    expect(code).not.toHaveBeenCalled();
+    expect(vectors).not.toHaveBeenCalled();
+  });
+
+  it('retains primary when code cleanup was skipped', async () => {
+    const { primary, code, remove } = setup();
+    code.mockResolvedValue(undefined);
+    await expect(remove(req, file)).rejects.toThrow('Code storage deletion was not confirmed');
+    expect(primary).not.toHaveBeenCalled();
   });
 
   it('keeps every retry reference when both secondaries fail', async () => {
@@ -253,6 +290,24 @@ describe('createDeleteFileWithSecondaryStorage', () => {
     expect(primary).not.toHaveBeenCalled();
     expect(file.embedded).toBe(true);
     expect(file.metadata.codeEnvRef.file_id).toBe('code-copy');
+  });
+
+  it('retries primary deletion without probing an empty reconciled code map', async () => {
+    const { primary, getDeleteFile } = setup();
+    const remove = createDeleteFileWithSecondaryStorage({
+      source: FileSources.local,
+      deleteFile: primary,
+      getDeleteFile,
+      clearFileEmbeddings: jest.fn().mockResolvedValue(true),
+      logger: { warn: jest.fn() },
+    });
+    await remove(req, {
+      ...file,
+      embedded: false,
+      metadata: { codeEnvRefs: {}, codeDestination: true },
+    });
+    expect(primary).toHaveBeenCalledTimes(1);
+    expect(getDeleteFile).not.toHaveBeenCalled();
   });
 
   it('only deletes primary storage for a file without secondary references', async () => {

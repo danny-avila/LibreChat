@@ -11,6 +11,7 @@ import type {
   CodeFileCommitData,
   RunArtifactRunScope,
   PublishRunArtifactInput,
+  ClearFileCodeEnvRefsParams,
 } from '~/types/file';
 import type { IChatProjectDocument } from '~/types';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
@@ -378,6 +379,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     ref: CodeEnvRef;
     legacyRef?: CodeEnvRef;
   }) => Promise<IMongoFile | null>;
+  clearFileCodeEnvRefs: (data: ClearFileCodeEnvRefsParams) => Promise<boolean>;
   clearFileEmbeddings: (data: ClearFileEmbeddingsParams) => Promise<boolean>;
   addFileEmbeddedEntity: (data: {
     file_id: string;
@@ -890,6 +892,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
           $or: [
             { 'metadata.codeEnvRef': { $exists: true } },
             { 'metadata.codeEnvRefs': { $exists: true } },
+            { 'metadata.codeDestination': true },
           ],
         },
         ownerScope,
@@ -1060,6 +1063,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
           $or: [
             { 'metadata.codeEnvRef': { $exists: true } },
             { 'metadata.codeEnvRefs': { $exists: true } },
+            { 'metadata.codeDestination': true },
           ],
         },
         ownerScope,
@@ -1240,6 +1244,65 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       { $set: update, $unset: { expiresAt: '' } },
       { new: true },
     ).lean<IMongoFile>();
+  }
+
+  /** Reconciles deleted snapshots; replaced or already-cleared pointers are successful no-ops. */
+  async function clearFileCodeEnvRefs(data: ClearFileCodeEnvRefsParams): Promise<boolean> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    /* Tenant middleware adds its own predicate; it must not replace the snapshot scope. */
+    const query: FilterQuery<IMongoFile> = {
+      file_id: data.file_id,
+      user: data.userId,
+      $and: [{ tenantId: data.tenantId ?? null }],
+    };
+    if (data.refs.length === 0) {
+      return (await File.exists(query)) != null;
+    }
+
+    /* BSON object equality depends on field order; compare every snapshot field without it. */
+    const matchesRef = (path: string, ref: CodeEnvRef) => ({
+      $setEquals: [
+        { $objectToArray: { $ifNull: [`$${path}`, {}] } },
+        { $objectToArray: { $literal: ref } },
+      ],
+    });
+    const matchesByPath = new Map<string, ReturnType<typeof matchesRef>[]>();
+    const addMatch = (path: string, ref: CodeEnvRef) => {
+      const matches = matchesByPath.get(path) ?? [];
+      matches.push(matchesRef(path, ref));
+      matchesByPath.set(path, matches);
+    };
+    for (const { routeKey, ref } of data.refs) {
+      assertValidCodeEnvironmentRouteKey(routeKey);
+      addMatch(`metadata.codeEnvRefs.${routeKey}`, ref);
+      if ((ref.executionRouteKey ?? ref.executionProfile ?? 'default') === routeKey) {
+        addMatch('metadata.codeEnvRef', ref);
+      }
+    }
+    const result = await File.updateOne(
+      query,
+      [
+        {
+          $set: {
+            ...Object.fromEntries(
+              [...matchesByPath].map(([path, matches]) => [
+                path,
+                { $cond: [{ $or: matches }, '$$REMOVE', `$${path}`] },
+              ]),
+            ),
+            'metadata.codeDestination': {
+              $cond: [
+                { $or: [...matchesByPath.values()].flat() },
+                true,
+                '$metadata.codeDestination',
+              ],
+            },
+          },
+        },
+      ],
+      { timestamps: false },
+    );
+    return result.matchedCount === 1;
   }
 
   /** Clears only the embedding snapshot whose vector deletion was confirmed. */
@@ -1685,6 +1748,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     createFile,
     updateFile,
     updateFileCodeEnvRef,
+    clearFileCodeEnvRefs,
     addFileEmbeddedEntity,
     clearFileEmbeddings,
     adoptLegacySearchEmbeddings,

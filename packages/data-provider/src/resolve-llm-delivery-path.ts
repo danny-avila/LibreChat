@@ -376,6 +376,7 @@ export function hasToolResourceProvisioning(file: TurnDeliveryFile, toolResource
 export function hasToolResourceDestination(file: TurnDeliveryFile, toolResource: string): boolean {
   return (
     (toolResource === EToolResources.file_search && file.metadata?.searchDestination === true) ||
+    (toolResource === EToolResources.execute_code && file.metadata?.codeDestination === true) ||
     hasToolResourceProvisioning(file, toolResource)
   );
 }
@@ -434,6 +435,8 @@ export interface TurnDeliveryFile {
         embeddedEntities?: string[];
         /** Chosen search destination, including while its vectors await repair. */
         searchDestination?: boolean;
+        /** Chosen code destination while its remote copy awaits repair. */
+        codeDestination?: boolean;
       } & CodeEnvReferenceSet)
     | null;
 }

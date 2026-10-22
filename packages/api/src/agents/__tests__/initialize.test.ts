@@ -467,8 +467,20 @@ describe('initializeAgent — execution context', () => {
 });
 
 describe('initializeAgent: ChatProject context', () => {
+  const filterMock = jest.requireMock('~/files') as {
+    filterFilesByEndpointRuntimeConfig: jest.Mock;
+  };
+  const realFilters = jest.requireActual<typeof import('~/files/filter')>('~/files/filter');
+
   beforeEach(() => {
     jest.clearAllMocks();
+    filterMock.filterFilesByEndpointRuntimeConfig
+      .mockReset()
+      .mockImplementation(realFilters.filterFilesByEndpointRuntimeConfig);
+  });
+
+  afterEach(() => {
+    filterMock.filterFilesByEndpointRuntimeConfig.mockReset().mockReturnValue([]);
   });
 
   const projectFile: TFile = {
@@ -730,6 +742,211 @@ describe('initializeAgent: ChatProject context', () => {
     expect(agent.tools).toEqual([Tools.file_search]);
     expect(db.getFiles).not.toHaveBeenCalled();
     expect(db.getProjectFiles).not.toHaveBeenCalled();
+  });
+
+  describe('retained Project repair endpoint policy', () => {
+    const MB = 1024 * 1024;
+    const realResources = jest.requireActual<typeof import('../resources')>('../resources');
+
+    beforeEach(() => {
+      jest.mocked(primeResources).mockImplementationOnce(realResources.primeResources);
+    });
+
+    function repairFile(
+      overrides: Partial<ProjectFileRecord & TFile> = {},
+    ): ProjectFileRecord & TFile {
+      return {
+        ...canonicalFile,
+        embedded: false,
+        source: FileSources.s3,
+        storageKey: 'uploads/project.txt',
+        storageRegion: 'us-east-1',
+        tenantId: 'tenant-1',
+        context: FileContext.message_attachment,
+        bytes: MB / 2,
+        metadata: { searchDestination: true },
+        ...overrides,
+      };
+    }
+
+    async function initializeRepairs({
+      projectFiles = [repairFile()],
+      current = [],
+      deferred = [],
+      persistent = [],
+      fileConfig,
+      filters,
+    }: {
+      projectFiles?: ProjectFileRecord[];
+      current?: TFile[];
+      deferred?: TFile[];
+      persistent?: TFile[];
+      fileConfig?: NonNullable<ServerRequest['config']>['fileConfig'];
+      filters?: FiltersConfig;
+    } = {}) {
+      const { agent, loadTools, db } = createMocks();
+      agent.tools = [Tools.file_search];
+      agent.endpoint = EModelEndpoint.openAI;
+      agent.tool_resources = {
+        [EToolResources.file_search]: { file_ids: persistent.map((file) => file.file_id) },
+      };
+      const runtime = projectRuntime();
+      runtime.user = { ...runtime.user!, tenantId: 'tenant-1' };
+      runtime.appConfig.fileConfig = fileConfig;
+      runtime.appConfig.filters = filters;
+      runtime.chatProjectContext = {
+        ...projectContext,
+        file_ids: projectFiles.map((file) => file.file_id),
+        resources: projectFiles.map(toCanonicalProjectResource),
+      };
+      const getFiles = jest.fn().mockResolvedValue(persistent);
+      if (current.length > 0 || deferred.length > 0) {
+        getFiles.mockResolvedValueOnce([...current, ...deferred]);
+      }
+      const getProjectFiles = jest.fn().mockResolvedValue(projectFiles);
+      const getDeferredProvisionFiles = jest.fn().mockResolvedValue(deferred);
+      const result = await initializeAgent(
+        {
+          runtime,
+          agent,
+          loadTools,
+          requestFiles: current,
+          conversationId: deferred.length > 0 ? 'repair-conversation' : undefined,
+          allowedProviders: new Set([Providers.OPENAI]),
+          useChatProjectContext: true,
+          fileSearchAvailable: true,
+        },
+        {
+          ...db,
+          getFiles,
+          getProjectFiles,
+          getDeferredProvisionFiles,
+          getConvoFiles: jest.fn().mockResolvedValue(deferred.map((file) => file.file_id)),
+        },
+      );
+      return { result, runtime, getFiles, getProjectFiles, getDeferredProvisionFiles };
+    }
+
+    it.each([
+      { policy: 'disabled files', config: { disabled: true } },
+      { policy: 'MIME allowlist', config: { supportedMimeTypes: ['application/pdf'] } },
+      { policy: 'per-file size', config: { fileSizeLimit: 0.25 } },
+      { policy: 'total size', config: { totalSizeLimit: 0.25 } },
+    ])('does not append or queue a repair rejected by $policy', async ({ config }) => {
+      const { result, getFiles, getProjectFiles } = await initializeRepairs({
+        fileConfig: { endpoints: { [EModelEndpoint.openAI]: config } },
+      });
+      expect(result.tool_resources?.[EToolResources.file_search]?.files ?? []).toEqual([]);
+      expect(result.provisionState?.vectorDBFiles ?? []).toEqual([]);
+      expect(getFiles).not.toHaveBeenCalled();
+      expect(getProjectFiles).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, false, true])(
+      'queues an admitted repair without rereading it when retainedFileCleanup is %p',
+      async (retainedFileCleanup) => {
+        const { result, runtime, getFiles, getProjectFiles } = await initializeRepairs({
+          fileConfig: {
+            ...(retainedFileCleanup === undefined ? {} : { retainedFileCleanup }),
+            endpoints: {
+              [EModelEndpoint.openAI]: {
+                supportedMimeTypes: ['text/plain'],
+                fileSizeLimit: 0.5,
+                totalSizeLimit: 0.5,
+              },
+            },
+          },
+        });
+        const admitted = runtime.chatProjectContext.resources[0];
+        if (admitted.availability !== 'ready') {
+          throw new Error('Expected a ready Project fixture');
+        }
+        expect(result.provisionState?.vectorDBFiles).toEqual([admitted.file]);
+        expect(result.provisionState?.vectorDBFiles[0]).toBe(admitted.file);
+        expect(result.tool_resources?.[EToolResources.file_search]?.files).toEqual([admitted.file]);
+        expect(admitted.file).toMatchObject({
+          embedded: false,
+          user: 'user-1',
+          tenantId: 'tenant-1',
+          source: FileSources.s3,
+          storageKey: 'uploads/project.txt',
+          storageRegion: 'us-east-1',
+          metadata: { searchDestination: true },
+        });
+        expect(result.provisionState?.agentScopedFileIds.size).toBe(0);
+        expect(getFiles).not.toHaveBeenCalled();
+        expect(getProjectFiles).not.toHaveBeenCalled();
+      },
+    );
+
+    it('shares one allowance with current, deferred and persistent files, counting overlaps once', async () => {
+      const shared = repairFile({ file_id: 'shared', bytes: MB / 4 });
+      const currentOnly = repairFile({ file_id: 'current', bytes: MB / 8 });
+      const deferredOnly = repairFile({ file_id: 'deferred', bytes: MB / 8 });
+      const persistentOnly = repairFile({ file_id: 'persistent', bytes: MB / 4 });
+      const fits = repairFile({ file_id: 'fits', bytes: MB / 4 });
+      const overflow = repairFile({ file_id: 'overflow', bytes: MB / 8 });
+      const { result, getFiles, getProjectFiles, getDeferredProvisionFiles } =
+        await initializeRepairs({
+          projectFiles: [shared, persistentOnly, fits, overflow],
+          current: [shared, currentOnly],
+          deferred: [shared, deferredOnly],
+          persistent: [shared, persistentOnly],
+          fileConfig: { endpoints: { [EModelEndpoint.openAI]: { totalSizeLimit: 1 } } },
+        });
+      const queuedIds = result.provisionState?.vectorDBFiles.map((file) => file.file_id) ?? [];
+      expect(queuedIds).toEqual(
+        expect.arrayContaining(['shared', 'current', 'deferred', 'persistent', 'fits']),
+      );
+      expect(queuedIds).not.toContain('overflow');
+      expect(new Set(queuedIds).size).toBe(queuedIds.length);
+      expect(result.tool_resources?.[EToolResources.file_search]?.files).toEqual(
+        expect.arrayContaining([expect.objectContaining({ file_id: 'fits' })]),
+      );
+      expect(result.tool_resources?.[EToolResources.file_search]?.files).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ file_id: 'overflow' })]),
+      );
+      expect(filterMock.filterFilesByEndpointRuntimeConfig).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          consumedBytes: (MB * 3) / 4,
+          files: [
+            expect.objectContaining({ file_id: 'fits' }),
+            expect.objectContaining({ file_id: 'overflow' }),
+          ],
+        }),
+      );
+      expect(getFiles).toHaveBeenCalledTimes(2);
+      expect(getProjectFiles).not.toHaveBeenCalled();
+      expect(getDeferredProvisionFiles).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['endpoint', 'content'])(
+      'does not charge persistent files rejected by %s policy',
+      async (policy) => {
+        const persistent = repairFile({
+          file_id: 'rejected-persistent',
+          bytes: (MB * 3) / 4,
+          ...(policy === 'endpoint' ? { type: 'application/pdf' } : { text: 'BLOCKED' }),
+        });
+        const { result } = await initializeRepairs({
+          persistent: [persistent],
+          filters: policy === 'content' ? projectFilePolicy : undefined,
+          fileConfig: {
+            endpoints: {
+              [EModelEndpoint.openAI]: { supportedMimeTypes: ['text/plain'], totalSizeLimit: 1 },
+            },
+          },
+        });
+        expect(result.provisionState?.vectorDBFiles.map((file) => file.file_id)).toEqual([
+          projectFile.file_id,
+        ]);
+        expect(filterMock.filterFilesByEndpointRuntimeConfig).toHaveBeenLastCalledWith(
+          expect.anything(),
+          expect.objectContaining({ consumedBytes: 0 }),
+        );
+      },
+    );
   });
 
   it('adds Project files for file_search supplied by a manual Skill', async () => {
@@ -2932,6 +3149,12 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     expect(definedNames).not.toContain('mcp__broken__tool');
   });
   it('removes skill-added Project resources before retrying without denied tools', async () => {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      (_config: unknown, { files }: { files: TFile[] }) => files,
+    );
     const { agent, req, loadTools, db } = createMocks();
     const { Types } = await import('mongoose');
     const skillId = new Types.ObjectId();

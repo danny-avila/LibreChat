@@ -2059,6 +2059,7 @@ export async function initializeAgent(
     runtimeToolResources = { ...runtimeToolResources };
     delete runtimeToolResources[EToolResources.execute_code];
   }
+  let admittedPersistentFiles: TFile[] = [];
   const {
     attachments: primedAttachments,
     requestAttachments: primedRequestAttachments,
@@ -2106,7 +2107,7 @@ export async function initializeAgent(
       /* Dropped rather than fatal, matching the deferred candidates: these were not
        * attached by this request, so refusing the conversation over a historical record
        * would be harsher than leaving it out. */
-      return committed.concat(withinPolicy).filter((file) => {
+      admittedPersistentFiles = committed.concat(withinPolicy).filter((file) => {
         try {
           assertModelBoundContent({
             filters: appConfig?.filters,
@@ -2121,8 +2122,27 @@ export async function initializeAgent(
           return false;
         }
       });
+      return admittedPersistentFiles;
     },
   });
+  if (projectRuntimeFiles.length > 0) {
+    /* Project repairs join after priming, but spend the same allowance as the files
+     * already admitted above. Reuse their snapshots without charging overlaps twice. */
+    const committedFiles = [
+      ...(currentFiles ?? []),
+      ...deferredProvisionFiles,
+      ...admittedPersistentFiles,
+    ];
+    const { committed, pending } = partitionCommittedFiles(projectRuntimeFiles, committedFiles);
+    projectRuntimeFiles = committed.concat(
+      filterFilesByEndpointRuntimeConfig(appConfig, {
+        files: pending,
+        endpoint: agent.endpoint ?? '',
+        endpointType: endpointFileType,
+        consumedBytes: sumUniqueBytes(committedFiles),
+      }),
+    );
+  }
   const projectResources = addProjectFilesToFileSearch(
     tool_resources,
     projectRuntimeFiles,

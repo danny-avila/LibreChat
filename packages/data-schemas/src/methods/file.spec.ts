@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EToolResources, FileContext } from 'librechat-data-provider';
+import type { CodeEnvRef } from 'librechat-data-provider';
 import type { IChatProject, IMongoFile } from '~/types';
 import { _resetStrictCache } from '~/models/plugins/tenantIsolation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
@@ -45,6 +46,419 @@ describe('File Methods', () => {
 
   beforeEach(async () => {
     await File.deleteMany({});
+  });
+
+  describe('clearFileCodeEnvRefs', () => {
+    const user = new mongoose.Types.ObjectId();
+    const updatedAt = new Date('2026-10-20T00:00:00Z');
+    const defaultRef: CodeEnvRef = {
+      kind: 'user',
+      id: user.toString(),
+      storage_session_id: 'default-session',
+      file_id: 'remote-default',
+      executionProfile: 'default',
+      executionRouteKey: 'default',
+      provisionedAt: 123,
+      sandboxFilename: '$notes.csv',
+    };
+    const statefulRef: CodeEnvRef = {
+      ...defaultRef,
+      storage_session_id: 'stateful-session',
+      file_id: 'remote-stateful',
+      executionProfile: 'stateful',
+      executionRouteKey: 'stateful:a',
+    };
+    const snapshot = {
+      file_id: 'retained-code-file',
+      userId: user.toString(),
+      tenantId: 'tenant-a',
+      refs: [{ routeKey: 'default', ref: defaultRef }],
+    };
+    const metadata = {
+      codeEnvRef: defaultRef,
+      codeEnvRefs: { default: defaultRef, 'stateful:a': statefulRef },
+      embeddedEntities: ['agent-a'],
+      searchDestination: true,
+      destinationChosen: true,
+      routingMimeType: 'text/csv',
+      sourceDispatchedAt: 42,
+      toolResource: EToolResources.execute_code,
+    };
+    const seed = (overrides = {}) =>
+      File.collection.insertOne({
+        file_id: snapshot.file_id,
+        user,
+        tenantId: snapshot.tenantId,
+        context: FileContext.message_attachment,
+        conversationId: 'conversation-a',
+        filename: 'notes.csv',
+        filepath: '/uploads/notes.csv',
+        type: 'text/csv',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'none',
+        embedded: true,
+        updatedAt,
+        metadata,
+        ...overrides,
+      });
+    const read = () => File.collection.findOne({ file_id: snapshot.file_id, user });
+
+    it('removes matching pointers without changing content, intent or bookkeeping', async () => {
+      await seed({
+        createdAt: updatedAt,
+        expiresAt: new Date('2030-01-01'),
+        expiredAt: new Date('2026-10-19'),
+        deletionAttempts: 3,
+        deletionRetryAt: new Date('2026-10-23'),
+        text: 'canonical source',
+      });
+      const before = await read();
+      const update = jest.spyOn(mongoose.models.File, 'updateOne');
+      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(update).toHaveBeenLastCalledWith(
+        {
+          file_id: snapshot.file_id,
+          user: snapshot.userId,
+          $and: [{ tenantId: snapshot.tenantId }],
+        },
+        expect.any(Array),
+        { timestamps: false },
+      );
+      const after = await read();
+      const { codeEnvRef: _alias, codeEnvRefs: _routes, ...intent } = metadata;
+      expect(after).toEqual({
+        ...before,
+        metadata: {
+          ...intent,
+          codeDestination: true,
+          codeEnvRefs: { 'stateful:a': statefulRef },
+        },
+      });
+      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+      expect(await read()).toEqual(after);
+    });
+
+    it.each([
+      ['kind', 'agent'],
+      ['id', 'other-owner'],
+      ['storage_session_id', 'new-session'],
+      ['file_id', 'new-remote-id'],
+      ['executionProfile', 'stateful'],
+      ['executionRouteKey', 'stateful:b'],
+      ['provisionedAt', 124],
+      ['sandboxFilename', 'new-name.csv'],
+      ['version', 2],
+    ])('preserves reprovisioned pointers when %s differs', async (field, value) => {
+      const replacement = { ...defaultRef, [field]: value };
+      await seed({
+        metadata: {
+          ...metadata,
+          codeEnvRef: replacement,
+          codeEnvRefs: { default: replacement, 'stateful:a': statefulRef },
+        },
+      });
+      const before = await read();
+      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+      expect(await read()).toEqual(before);
+    });
+
+    it.each([
+      [true, undefined],
+      [true, false],
+      [true, true],
+      [false, undefined],
+      [false, false],
+      [false, true],
+    ] as const)(
+      'retains code intent only for a matching snapshot: %s, %s',
+      async (matches, prior) => {
+        const ref = matches ? defaultRef : { ...defaultRef, provisionedAt: 124 };
+        await seed({
+          metadata: {
+            ...metadata,
+            codeEnvRef: ref,
+            codeEnvRefs: { default: ref },
+            ...(prior === undefined ? {} : { codeDestination: prior }),
+          },
+        });
+        expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+        expect((await read())?.metadata?.codeDestination).toBe(matches ? true : prior);
+      },
+    );
+
+    it('compares absent optional fields as part of the full snapshot', async () => {
+      const replacement = { ...defaultRef };
+      delete replacement.provisionedAt;
+      await seed({
+        metadata: { codeEnvRef: replacement, codeEnvRefs: { default: replacement } },
+      });
+      const before = await read();
+      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+      expect(await read()).toEqual(before);
+    });
+
+    it('matches every field regardless of BSON property order', async () => {
+      await seed();
+      const { file_id, ...rest } = defaultRef;
+      expect(
+        await fileMethods.clearFileCodeEnvRefs({
+          ...snapshot,
+          refs: [{ routeKey: 'default', ref: { file_id, ...rest } }],
+        }),
+      ).toBe(true);
+      const stored = await read();
+      expect(stored?.metadata?.codeEnvRef).toBeUndefined();
+      expect(stored?.metadata?.codeEnvRefs).toEqual({ 'stateful:a': statefulRef });
+    });
+
+    it('clears matching sibling routes even when another snapshot was replaced', async () => {
+      const replacement = { ...defaultRef, provisionedAt: 124 };
+      await seed({
+        metadata: {
+          ...metadata,
+          codeEnvRef: replacement,
+          codeEnvRefs: { default: replacement, 'stateful:a': statefulRef },
+        },
+      });
+      expect(
+        await fileMethods.clearFileCodeEnvRefs({
+          ...snapshot,
+          refs: [...snapshot.refs, { routeKey: 'stateful:a', ref: statefulRef }],
+        }),
+      ).toBe(true);
+      const stored = await read();
+      expect(stored?.metadata?.codeEnvRef).toEqual(replacement);
+      expect(stored?.metadata?.codeEnvRefs).toEqual({ default: replacement });
+    });
+
+    it.each([statefulRef, { ...defaultRef, provisionedAt: 124 }])(
+      'preserves an unrelated or replaced legacy alias: %p',
+      async (alias) => {
+        await seed({ metadata: { ...metadata, codeEnvRef: alias } });
+        expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+        const stored = await read();
+        expect(stored?.metadata?.codeEnvRef).toEqual(alias);
+        expect(stored?.metadata?.codeEnvRefs?.default).toBeUndefined();
+      },
+    );
+
+    it.each([false, true])(
+      'keeps generated files hydratable with legacy-only refs: %s',
+      async (legacyOnly) => {
+        await seed({
+          context: FileContext.execute_code,
+          metadata: {
+            codeEnvRef: defaultRef,
+            ...(legacyOnly ? {} : { codeEnvRefs: { default: defaultRef } }),
+          },
+        });
+        expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+        const stored = await read();
+        expect(stored?.metadata?.codeEnvRef).toBeUndefined();
+        expect(stored?.metadata?.codeEnvRefs).toEqual({});
+        const generated = await fileMethods.getCodeGeneratedFiles(
+          'conversation-a',
+          [snapshot.file_id],
+          snapshot,
+        );
+        expect(generated.map((file) => file.file_id)).toEqual([snapshot.file_id]);
+      },
+    );
+
+    it.each([FileContext.execute_code, FileContext.message_attachment])(
+      'hydrates marker-only code intent without crossing owner, tenant, conversation or thread: %s',
+      async (context) => {
+        await runAsSystem(() =>
+          File.create({
+            file_id: snapshot.file_id,
+            user,
+            tenantId: snapshot.tenantId,
+            conversationId: 'conversation-a',
+            context,
+            filename: 'notes.csv',
+            filepath: '/uploads/notes.csv',
+            type: 'text/csv',
+            bytes: 100,
+            llmDeliveryPath: 'none',
+            metadata: { codeDestination: true, destinationChosen: true },
+          }),
+        );
+        const hydrate = (ids: string[], scope = snapshot, conversationId = 'conversation-a') =>
+          context === FileContext.execute_code
+            ? fileMethods.getCodeGeneratedFiles(conversationId, ids, scope)
+            : fileMethods.getUserCodeFiles(ids, scope);
+        const files = await hydrate([snapshot.file_id]);
+        expect(files.map((file) => file.file_id)).toEqual([snapshot.file_id]);
+        expect(files[0].metadata?.codeDestination).toBe(true);
+        expect(files[0].metadata?.codeEnvRef).toBeUndefined();
+        expect(files[0].metadata?.codeEnvRefs).toBeUndefined();
+        expect(await hydrate(['not-in-thread'])).toEqual([]);
+        expect(
+          await hydrate([snapshot.file_id], {
+            ...snapshot,
+            userId: new mongoose.Types.ObjectId().toString(),
+          }),
+        ).toEqual([]);
+        expect(await hydrate([snapshot.file_id], { ...snapshot, tenantId: 'tenant-b' })).toEqual(
+          [],
+        );
+        if (context === FileContext.execute_code) {
+          expect(await hydrate([snapshot.file_id], snapshot, 'other-conversation')).toEqual([]);
+        } else {
+          const deferred = await fileMethods.getDeferredProvisionFiles(
+            [snapshot.file_id],
+            snapshot,
+            { code: true },
+          );
+          expect(deferred.map((file) => file.file_id)).toEqual([snapshot.file_id]);
+        }
+        await File.updateOne(
+          { file_id: snapshot.file_id },
+          { $set: { 'metadata.codeDestination': false } },
+        );
+        expect(await hydrate([snapshot.file_id])).toEqual([]);
+        await File.updateOne(
+          { file_id: snapshot.file_id },
+          { $unset: { 'metadata.codeDestination': '' } },
+        );
+        expect(await hydrate([snapshot.file_id])).toEqual([]);
+      },
+    );
+
+    it.each([
+      {},
+      { executionProfile: 'default' as const },
+      { executionProfile: 'stateful' as const },
+    ])('clears legacy-only refs and queues the missing route: %p', async (routeFields) => {
+      const ref: CodeEnvRef = {
+        kind: 'user',
+        id: user.toString(),
+        storage_session_id: 'legacy-session',
+        file_id: 'legacy-remote',
+        ...routeFields,
+      };
+      await seed({ metadata: { ...metadata, codeEnvRef: ref, codeEnvRefs: undefined } });
+      const routeKey = ref.executionProfile ?? 'default';
+      expect(
+        await fileMethods.getDeferredProvisionFiles([snapshot.file_id], snapshot, {
+          code: true,
+          codeRouteKey: routeKey,
+        }),
+      ).toEqual([]);
+      expect(
+        await fileMethods.clearFileCodeEnvRefs({ ...snapshot, refs: [{ routeKey, ref }] }),
+      ).toBe(true);
+      const deferred = await fileMethods.getDeferredProvisionFiles([snapshot.file_id], snapshot, {
+        code: true,
+        codeRouteKey: routeKey,
+      });
+      expect(deferred.map((file) => file.file_id)).toEqual([snapshot.file_id]);
+      expect(deferred[0].llmDeliveryPath).toBe('none');
+      expect(deferred[0].metadata?.destinationChosen).toBe(true);
+    });
+
+    it('persists each copy without mutating input or invalidating the embedding snapshot', async () => {
+      await seed();
+      const input = structuredClone(snapshot);
+      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+      expect(
+        await fileMethods.clearFileCodeEnvRefs({
+          ...snapshot,
+          refs: [{ routeKey: 'stateful:a', ref: statefulRef }],
+        }),
+      ).toBe(true);
+      expect(snapshot).toEqual(input);
+      expect(
+        await fileMethods.clearFileEmbeddings({
+          ...snapshot,
+          updatedAt,
+          embeddedEntities: metadata.embeddedEntities,
+        }),
+      ).toBe(true);
+      const stored = await read();
+      expect(stored?.updatedAt).toEqual(updatedAt);
+      expect(stored?.embedded).toBe(false);
+      expect(stored?.metadata?.codeEnvRefs).toEqual({});
+    });
+
+    it.each([
+      { userId: new mongoose.Types.ObjectId().toString() },
+      { tenantId: 'tenant-b' },
+      { tenantId: undefined },
+    ])('returns false without changing an unauthorized file: %p', async (scope) => {
+      await seed();
+      const before = await read();
+      expect(await fileMethods.clearFileCodeEnvRefs({ ...snapshot, ...scope })).toBe(false);
+      expect(await read()).toEqual(before);
+    });
+
+    it.each([false, true])('scopes legacy missing/null tenants explicitly: %s', async (missing) => {
+      const foreign = await seed();
+      const local = await seed({ tenantId: null });
+      if (missing) {
+        await File.collection.updateOne({ _id: local.insertedId }, { $unset: { tenantId: '' } });
+      }
+      expect(await fileMethods.clearFileCodeEnvRefs({ ...snapshot, tenantId: undefined })).toBe(
+        true,
+      );
+      const records = await File.collection.find({ file_id: snapshot.file_id }).toArray();
+      expect(records.find((record) => record._id.equals(foreign.insertedId))?.metadata).toEqual(
+        metadata,
+      );
+      expect(
+        records.find((record) => record._id.equals(local.insertedId))?.metadata?.codeEnvRefs,
+      ).toEqual({ 'stateful:a': statefulRef });
+    });
+
+    it.each([{ tenantId: 'tenant-b' }, { tenantId: undefined }])(
+      'does not let tenant middleware replace the caller scope: %p',
+      async (scope) => {
+        await seed();
+        const before = await read();
+        const cleared = await tenantStorage.run({ tenantId: snapshot.tenantId }, () =>
+          fileMethods.clearFileCodeEnvRefs({ ...snapshot, ...scope }),
+        );
+        expect(cleared).toBe(false);
+        expect(await read()).toEqual(before);
+      },
+    );
+
+    it('reports existence for empty or already-cleared snapshots', async () => {
+      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(false);
+      await seed({ metadata: {} });
+      expect(await fileMethods.clearFileCodeEnvRefs({ ...snapshot, refs: [] })).toBe(true);
+      expect(await fileMethods.clearFileCodeEnvRefs(snapshot)).toBe(true);
+      expect(
+        await fileMethods.clearFileCodeEnvRefs({ ...snapshot, file_id: 'missing', refs: [] }),
+      ).toBe(false);
+    });
+
+    it.each(['', 'stateful.invalid', '$stateful'])(
+      'rejects invalid route keys: %s',
+      async (routeKey) => {
+        await seed();
+        const before = await read();
+        await expect(
+          fileMethods.clearFileCodeEnvRefs({
+            ...snapshot,
+            refs: [...snapshot.refs, { routeKey, ref: statefulRef }],
+          }),
+        ).rejects.toThrow('Invalid code environment route key');
+        expect(await read()).toEqual(before);
+      },
+    );
+
+    it('propagates persistence failures', async () => {
+      await seed();
+      const before = await read();
+      jest.spyOn(mongoose.models.File, 'updateOne').mockImplementationOnce(() => {
+        throw new Error('mongo unavailable');
+      });
+      await expect(fileMethods.clearFileCodeEnvRefs(snapshot)).rejects.toThrow('mongo unavailable');
+      expect(await read()).toEqual(before);
+    });
   });
 
   describe('clearFileEmbeddings', () => {
@@ -478,6 +892,28 @@ describe('File Methods', () => {
   });
 
   describe('getAvailableProjectFiles', () => {
+    it('retains the embedded picker index and adds a distinct search-intent partial index', () => {
+      const keys = { user: 1, tenantId: 1, context: 1, _id: -1 };
+      expect(File.schema.indexes()).toEqual(
+        expect.arrayContaining([
+          [
+            keys,
+            expect.objectContaining({
+              name: 'project_file_picker',
+              partialFilterExpression: { embedded: true },
+            }),
+          ],
+          [
+            keys,
+            expect.objectContaining({
+              name: 'project_file_picker_search_destination',
+              partialFilterExpression: { 'metadata.searchDestination': true },
+            }),
+          ],
+        ]),
+      );
+    });
+
     it('treats an empty tenant id as no tenant, matching project file reads', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       await File.create({

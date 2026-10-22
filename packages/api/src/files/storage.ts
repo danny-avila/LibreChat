@@ -1,7 +1,6 @@
-import { FileSources } from 'librechat-data-provider';
-
+import { FileSources, getCodeEnvRefs } from 'librechat-data-provider';
 import type { ClearFileEmbeddingsParams } from '@librechat/data-schemas';
-
+import type { CodeEnvReferenceSet } from 'librechat-data-provider';
 import { getSafeErrorMetadata } from '../utils/errors';
 
 const MISSING_STORAGE_CODES = new Set<string | number>([
@@ -71,7 +70,10 @@ function readEmbeddedEntities(value: unknown): string[] | undefined {
 
 /** Keep the primary readable until every secondary has settled successfully or is already absent. */
 export function createDeleteFileWithSecondaryStorage<
-  TRequest extends { user: { id: string; tenantId?: string } },
+  TRequest extends {
+    user: { id: string; tenantId?: string };
+    config?: { fileConfig?: { retainedFileCleanup?: boolean } };
+  },
   TFile extends StorageFile,
   TClient,
 >({
@@ -88,13 +90,20 @@ export function createDeleteFileWithSecondaryStorage<
   logger: { warn: (message: string, error: unknown) => void };
 }): DeleteStorageFile<TRequest, TFile, TClient> {
   return async (req, file, client) => {
+    const hasCodeEnvRef =
+      getCodeEnvRefs(file.metadata as CodeEnvReferenceSet | undefined).length > 0;
+    if (
+      (file.embedded === true || hasCodeEnvRef) &&
+      req.config?.fileConfig?.retainedFileCleanup !== true
+    ) {
+      throw new Error('Retained file cleanup requires upgraded readers');
+    }
     const secondaries: Array<DeleteStorageFile<TRequest, TFile>> = [];
     let vectorIndex = -1;
     if (file.embedded === true && source !== FileSources.vectordb) {
       vectorIndex = secondaries.length;
       secondaries.push(getDeleteFile(FileSources.vectordb));
     }
-    const hasCodeEnvRef = file.metadata?.codeEnvRef != null || file.metadata?.codeEnvRefs != null;
     if (hasCodeEnvRef && source !== FileSources.execute_code) {
       secondaries.push(getDeleteFile(FileSources.execute_code));
     }
@@ -115,13 +124,15 @@ export function createDeleteFileWithSecondaryStorage<
       secondaries.map((deleteSecondary) => remove(() => deleteSecondary(req, file))),
     );
     const vectors = results[vectorIndex];
-    if (
-      vectors?.status === 'fulfilled' &&
-      vectors.value != null &&
-      typeof vectors.value === 'object' &&
-      'deleted' in vectors.value &&
-      vectors.value.deleted === true
-    ) {
+    if (vectorIndex >= 0 && vectors?.status === 'fulfilled') {
+      if (
+        vectors.value == null ||
+        typeof vectors.value !== 'object' ||
+        !('deleted' in vectors.value) ||
+        vectors.value.deleted !== true
+      ) {
+        throw new Error('Vector deletion was not confirmed');
+      }
       try {
         if (
           !file.file_id ||
@@ -147,6 +158,28 @@ export function createDeleteFileWithSecondaryStorage<
         throw result.reason;
       }
     }
-    await remove(() => deleteFile(req, file, client));
+    const code = results[vectorIndex >= 0 ? 1 : 0];
+    if (
+      hasCodeEnvRef &&
+      source !== FileSources.execute_code &&
+      code?.status === 'fulfilled' &&
+      (code.value == null ||
+        typeof code.value !== 'object' ||
+        !('deleted' in code.value) ||
+        code.value.deleted !== true)
+    ) {
+      throw new Error('Code storage deletion was not confirmed');
+    }
+    const primary = await remove(() => deleteFile(req, file, client));
+    if (
+      ((source === FileSources.vectordb && file.embedded === true) ||
+        (source === FileSources.execute_code && hasCodeEnvRef)) &&
+      (primary == null ||
+        typeof primary !== 'object' ||
+        !('deleted' in primary) ||
+        primary.deleted !== true)
+    ) {
+      throw new Error('Primary secondary-store deletion was not confirmed');
+    }
   };
 }

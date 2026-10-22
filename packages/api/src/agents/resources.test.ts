@@ -153,7 +153,7 @@ describe('primeResources', () => {
       };
       const providerError = new Error('provider unavailable');
       const primary = jest.fn().mockResolvedValue(undefined);
-      const code = jest.fn().mockResolvedValue(undefined);
+      const code = jest.fn().mockResolvedValue({ deleted: true });
       (failure === 'primary' ? primary : code).mockRejectedValue(providerError);
       const clearFileEmbeddings = jest.fn().mockResolvedValue(true);
       const remove = createDeleteFileWithSecondaryStorage({
@@ -164,7 +164,12 @@ describe('primeResources', () => {
         clearFileEmbeddings,
         logger: { warn: jest.fn() },
       });
-      await expect(remove({ user: { id: 'user1' } }, file)).rejects.toBe(providerError);
+      await expect(
+        remove(
+          { user: { id: 'user1' }, config: { fileConfig: { retainedFileCleanup: true } } },
+          file,
+        ),
+      ).rejects.toBe(providerError);
       expect(file.embedded).toBe(false);
       expect(file.metadata?.embeddedEntities).toBeUndefined();
       expect(file.metadata?.codeEnvRef?.file_id).toBe('code-copy');
@@ -240,7 +245,12 @@ describe('primeResources', () => {
           clearFileEmbeddings: jest.fn().mockResolvedValue(true),
           logger: { warn: jest.fn() },
         });
-        await expect(remove({ user: { id: 'user1' } }, file)).rejects.toBe(failure);
+        await expect(
+          remove(
+            { user: { id: 'user1' }, config: { fileConfig: { retainedFileCleanup: true } } },
+            file,
+          ),
+        ).rejects.toBe(failure);
         expect(file.embedded).toBe(false);
         expect(file.metadata?.embeddedEntities).toBeUndefined();
         expect(file.metadata?.searchDestination).toBe(true);

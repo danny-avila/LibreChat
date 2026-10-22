@@ -1,5 +1,6 @@
 import type { ToolApprovalGrantStorage } from 'librechat-data-provider';
 import type { ScheduleMCPConsentStorage } from './scheduleConsent';
+import type { ClearFileCodeEnvRefsParams } from '~/types/file';
 import { createToolApprovalGrantMethods } from './toolApprovalGrant';
 import { createScheduleMCPConsentStorage } from './scheduleConsent';
 export { createScheduleMCPConsentStorage } from './scheduleConsent';
@@ -585,6 +586,7 @@ export type {
   FileMethods,
   FileOwnerScope,
   AvailableProjectFileRecord,
+  ClearFileCodeEnvRefsParams,
   ClearFileEmbeddingsParams,
   AvailableProjectFilesOptions,
   AvailableProjectFilesResult,

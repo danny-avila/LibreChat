@@ -1109,3 +1109,16 @@ describe('resolveTurnLLMDeliveryPath', () => {
     ).toBe('none');
   });
 });
+
+describe('retained code destination', () => {
+  it('preserves chosen code intent without claiming the deleted copy exists', () => {
+    const file: TurnDeliveryFile = {
+      type: 'text/plain',
+      llmDeliveryPath: 'none',
+      metadata: { destinationChosen: true, codeDestination: true },
+    };
+    expect(hasToolResourceProvisioning(file, EToolResources.execute_code)).toBe(false);
+    expect(hasToolResourceDestination(file, EToolResources.execute_code)).toBe(true);
+    expect(hasToolResourceDestination(file, EToolResources.file_search)).toBe(false);
+  });
+});

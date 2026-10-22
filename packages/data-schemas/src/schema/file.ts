@@ -163,6 +163,11 @@ const file: Schema<IMongoFile> = new Schema(
         type: [String],
         default: undefined,
       },
+      /** Retains the code destination when confirmed deletion clears its pointers. */
+      codeDestination: {
+        type: Boolean,
+        default: undefined,
+      },
       /** Retains the search destination when confirmed deletion clears its vectors. */
       searchDestination: {
         type: Boolean,
@@ -228,6 +233,13 @@ file.index({ expiredAt: 1 });
 file.index(
   { user: 1, tenantId: 1, context: 1, _id: -1 },
   { name: 'project_file_picker', partialFilterExpression: { embedded: true } },
+);
+file.index(
+  { user: 1, tenantId: 1, context: 1, _id: -1 },
+  {
+    name: 'project_file_picker_search_destination',
+    partialFilterExpression: { 'metadata.searchDestination': true },
+  },
 );
 file.index({ createdAt: 1, updatedAt: 1 });
 file.index(

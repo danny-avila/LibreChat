@@ -7,6 +7,13 @@ import type {
   TFile,
 } from 'librechat-data-provider';
 
+export type ClearFileCodeEnvRefsParams = {
+  file_id: string;
+  userId: string;
+  tenantId?: string;
+  refs: Array<{ routeKey: string; ref: CodeEnvRef }>;
+};
+
 export type RunArtifactRunScope = {
   userId: string;
   tenantId?: string | null;
@@ -157,6 +164,8 @@ export interface IMongoFile extends Omit<Document, 'model'> {
     sourceDispatchedAt?: number;
     /** Vector namespaces this file has been embedded into. */
     embeddedEntities?: string[];
+    /** Code remains a destination even after its remote pointers are cleared. */
+    codeDestination?: boolean;
     /** Search remains a destination even after its vectors are cleared. */
     searchDestination?: boolean;
     /** The user named this destination, so absent ones were declined. */

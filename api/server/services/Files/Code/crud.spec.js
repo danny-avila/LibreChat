@@ -17,6 +17,8 @@ jest.mock('@librechat/agents', () => ({
  * and has its own dedicated `identity.spec.ts` covering the validation
  * matrix; this stub just mirrors enough behavior for the surrounding
  * crud tests to exercise the upload/download flow. */
+jest.mock('~/models', () => ({ clearFileCodeEnvRefs: jest.fn().mockResolvedValue(true) }));
+
 const VALID_KINDS = new Set(['skill', 'agent', 'user']);
 const validateIdentity = ({ kind, id, version }, label) => {
   if (!kind || !VALID_KINDS.has(kind)) throw new Error(`${label}: invalid kind "${kind}"`);
@@ -33,6 +35,7 @@ jest.mock('@librechat/api', () => {
   const http = require('http');
   const https = require('https');
   return {
+    ...jest.requireActual('../../../../../packages/api/src/files/code/delete'),
     appendCodeEnvFile: jest.fn((form, stream, filename) => {
       form.append('file', stream, { filename });
     }),
@@ -362,7 +365,7 @@ describe('Code CRUD', () => {
         Object.assign(new Error('missing'), { response: { status: 404 } }),
       );
 
-      await expect(deleteCodeEnvFile(req, file)).resolves.toBeUndefined();
+      await expect(deleteCodeEnvFile(req, file)).resolves.toEqual({ deleted: true });
       expect(mockAxios).toHaveBeenCalledTimes(1);
     });
 

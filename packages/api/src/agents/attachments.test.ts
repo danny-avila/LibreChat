@@ -35,6 +35,12 @@ const makeTextFile = (file_id: string, filename: string, text: string): IMongoFi
   }) as IMongoFile;
 
 describe('retained search ownership', () => {
+  it('keeps confirmed-deleted code destinations tool-owned without a live pointer', () => {
+    const file = { embedded: false, metadata: { codeDestination: true } } as IMongoFile;
+    expect(isToolOwnedAttachment(file)).toBe(true);
+    expect(isModelBoundAttachmentFile(file)).toBe(false);
+  });
+
   it('keeps markerless search files tool-owned while vectors await repair', () => {
     const file = { embedded: false, metadata: { searchDestination: true } } as IMongoFile;
     expect(isToolOwnedAttachment(file)).toBe(true);

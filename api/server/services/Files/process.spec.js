@@ -2667,7 +2667,7 @@ describe('processDeleteRequest', () => {
     const result = await processDeleteRequest({
       req: {
         body: {},
-        config: {},
+        config: { fileConfig: { retainedFileCleanup: true } },
         user: { id: 'user-123', tenantId: 'tenant-a' },
       },
       files: [
@@ -2690,7 +2690,7 @@ describe('processDeleteRequest', () => {
     const result = await processDeleteRequest({
       req: {
         body: {},
-        config: {},
+        config: { fileConfig: { retainedFileCleanup: true } },
         user: { id: 'user-123', tenantId: 'tenant-a' },
       },
       files: [
@@ -2707,7 +2707,7 @@ describe('processDeleteRequest', () => {
   });
 
   it('throws metadata delete failures after storage deletion succeeds', async () => {
-    const deleteFile = jest.fn().mockResolvedValue(undefined);
+    const deleteFile = jest.fn().mockResolvedValue({ deleted: true });
     const metadataError = new Error('mongo unavailable');
     getStrategyFunctions.mockReturnValue({ deleteFile });
     db.deleteFiles.mockRejectedValue(metadataError);
@@ -2716,7 +2716,7 @@ describe('processDeleteRequest', () => {
       processDeleteRequest({
         req: {
           body: {},
-          config: {},
+          config: { fileConfig: { retainedFileCleanup: true } },
           user: { id: 'user-123', tenantId: 'tenant-a' },
         },
         files: [
@@ -2734,8 +2734,8 @@ describe('processDeleteRequest', () => {
   });
 
   it('deletes vector storage before removing embedded file metadata', async () => {
-    const primaryDelete = jest.fn().mockResolvedValue(undefined);
-    const vectorDelete = jest.fn().mockResolvedValue(undefined);
+    const primaryDelete = jest.fn().mockResolvedValue({ deleted: true });
+    const vectorDelete = jest.fn().mockResolvedValue({ deleted: true });
     getStrategyFunctions.mockImplementation((source) =>
       source === FileSources.vectordb
         ? { deleteFile: vectorDelete }
@@ -2744,7 +2744,7 @@ describe('processDeleteRequest', () => {
     db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
     const req = {
       body: {},
-      config: {},
+      config: { fileConfig: { retainedFileCleanup: true } },
       user: { id: 'user-123', tenantId: 'tenant-a' },
     };
     const file = {
@@ -2763,7 +2763,7 @@ describe('processDeleteRequest', () => {
   });
 
   it('keeps primary storage and metadata when vector deletion fails', async () => {
-    const primaryDelete = jest.fn().mockResolvedValue(undefined);
+    const primaryDelete = jest.fn().mockResolvedValue({ deleted: true });
     const vectorDelete = jest.fn().mockRejectedValue(new Error('rag unavailable'));
     getStrategyFunctions.mockImplementation((source) =>
       source === FileSources.vectordb
@@ -2772,7 +2772,7 @@ describe('processDeleteRequest', () => {
     );
     const req = {
       body: {},
-      config: {},
+      config: { fileConfig: { retainedFileCleanup: true } },
       user: { id: 'user-123', tenantId: 'tenant-a' },
     };
     const file = {
@@ -2791,17 +2791,17 @@ describe('processDeleteRequest', () => {
   });
 
   it('retains primary storage, metadata and agent references through a partial cleanup retry', async () => {
-    const primaryDelete = jest.fn().mockResolvedValue(undefined);
+    const primaryDelete = jest.fn().mockResolvedValue({ deleted: true });
     const vectorDelete = jest
       .fn()
-      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ deleted: true })
       .mockRejectedValueOnce(Object.assign(new Error('already gone'), { status: 404 }));
     const codeDelete = jest
       .fn()
       .mockRejectedValueOnce(
         Object.assign(new Error('code unavailable'), { response: { status: 500 } }),
       )
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce({ deleted: true });
     const deleteMethods = {
       [FileSources.vectordb]: vectorDelete,
       [FileSources.execute_code]: codeDelete,
@@ -2811,7 +2811,7 @@ describe('processDeleteRequest', () => {
     }));
     const req = {
       body: { agent_id: 'agent_1', tool_resource: 'file_search' },
-      config: {},
+      config: { fileConfig: { retainedFileCleanup: true } },
       user: { id: 'user-123', tenantId: 'tenant-a' },
     };
     const file = {
@@ -2848,8 +2848,8 @@ describe('processDeleteRequest', () => {
   it.each(['primary', 'code', 'persistence'])(
     'keeps the retry anchor and agent association after %s failure',
     async (failure) => {
-      const primaryDelete = jest.fn().mockResolvedValue(undefined);
-      const codeDelete = jest.fn().mockResolvedValue(undefined);
+      const primaryDelete = jest.fn().mockResolvedValue({ deleted: true });
+      const codeDelete = jest.fn().mockResolvedValue({ deleted: true });
       const vectorDelete = jest.fn().mockResolvedValue({ deleted: true });
       const methods = {
         [FileSources.vectordb]: vectorDelete,
@@ -2871,7 +2871,7 @@ describe('processDeleteRequest', () => {
       };
       const req = {
         body: { agent_id: 'agent-a', tool_resource: 'file_search' },
-        config: {},
+        config: { fileConfig: { retainedFileCleanup: true } },
         user: { id: 'owner' },
       };
       expect(await processDeleteRequest({ req, files: [file] })).toEqual({
@@ -2891,7 +2891,7 @@ describe('processDeleteRequest', () => {
     getStrategyFunctions.mockReturnValue({ deleteFile });
     const req = {
       body: { agent_id: 'agent_1', tool_resource: 'file_search' },
-      config: {},
+      config: { fileConfig: { retainedFileCleanup: true } },
       user: { id: 'user-123', tenantId: 'tenant-a' },
     };
 
@@ -2925,7 +2925,7 @@ describe('processDeleteRequest', () => {
     db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
     const req = {
       body: { agent_id: 'agent_1', tool_resource: 'file_search' },
-      config: {},
+      config: { fileConfig: { retainedFileCleanup: true } },
       user: { id: 'user-123', tenantId: 'tenant-a' },
     };
 
@@ -2944,11 +2944,13 @@ describe('processDeleteRequest', () => {
   });
 
   it('keeps agent references when the metadata delete fails', async () => {
-    getStrategyFunctions.mockReturnValue({ deleteFile: jest.fn().mockResolvedValue(undefined) });
+    getStrategyFunctions.mockReturnValue({
+      deleteFile: jest.fn().mockResolvedValue({ deleted: true }),
+    });
     db.deleteFiles.mockRejectedValue(new Error('mongo unavailable'));
     const req = {
       body: { agent_id: 'agent_1', tool_resource: 'file_search' },
-      config: {},
+      config: { fileConfig: { retainedFileCleanup: true } },
       user: { id: 'user-123', tenantId: 'tenant-a' },
     };
 
@@ -2971,7 +2973,7 @@ describe('processDeleteRequest', () => {
 
   it('retains metadata when primary deletion fails after secondary cleanup', async () => {
     const primaryDelete = jest.fn().mockRejectedValue(new Error('permission denied'));
-    const vectorDelete = jest.fn().mockResolvedValue(undefined);
+    const vectorDelete = jest.fn().mockResolvedValue({ deleted: true });
     getStrategyFunctions.mockImplementation((source) =>
       source === FileSources.vectordb
         ? { deleteFile: vectorDelete }
@@ -2979,7 +2981,7 @@ describe('processDeleteRequest', () => {
     );
     const req = {
       body: {},
-      config: {},
+      config: { fileConfig: { retainedFileCleanup: true } },
       user: { id: 'user-123', tenantId: 'tenant-a' },
     };
     const file = {
@@ -3000,7 +3002,7 @@ describe('processDeleteRequest', () => {
   it('still deletes vector storage when primary embedded file storage is already missing', async () => {
     const missingError = Object.assign(new Error('no such file'), { code: 'ENOENT' });
     const primaryDelete = jest.fn().mockRejectedValue(missingError);
-    const vectorDelete = jest.fn().mockResolvedValue(undefined);
+    const vectorDelete = jest.fn().mockResolvedValue({ deleted: true });
     getStrategyFunctions.mockImplementation((source) =>
       source === FileSources.vectordb
         ? { deleteFile: vectorDelete }
@@ -3009,7 +3011,7 @@ describe('processDeleteRequest', () => {
     db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
     const req = {
       body: {},
-      config: {},
+      config: { fileConfig: { retainedFileCleanup: true } },
       user: { id: 'user-123', tenantId: 'tenant-a' },
     };
     const file = {
@@ -3028,8 +3030,8 @@ describe('processDeleteRequest', () => {
   });
 
   it('deletes code environment storage before removing code resource file metadata', async () => {
-    const primaryDelete = jest.fn().mockResolvedValue(undefined);
-    const codeDelete = jest.fn().mockResolvedValue(undefined);
+    const primaryDelete = jest.fn().mockResolvedValue({ deleted: true });
+    const codeDelete = jest.fn().mockResolvedValue({ deleted: true });
     getStrategyFunctions.mockImplementation((source) =>
       source === FileSources.execute_code
         ? { deleteFile: codeDelete }
@@ -3038,7 +3040,7 @@ describe('processDeleteRequest', () => {
     db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
     const req = {
       body: {},
-      config: {},
+      config: { fileConfig: { retainedFileCleanup: true } },
       user: { id: 'user-123', tenantId: 'tenant-a' },
     };
     const file = {
