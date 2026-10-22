@@ -264,6 +264,10 @@ export type AdminConfigChangeErrorResponse = {
  *   overrides rather than a cached merge, and a merge read before a clear is never cached. A read
  *   after a write's response therefore shows it; another instance shows it once the broadcast
  *   arrives, or, without Redis, within `limits.overrideCacheTtlMs`.
+ * - `changesBatch`: `POST /:principalType/:principalId/changes` applies up to
+ *   `limits.maxChangeOps` set, unset, tombstone, entry upsert/remove and rename ops to one
+ *   document in order, as one compare-and-swap write judged on the end state: an invalid op
+ *   writes nothing, ops that cancel out write nothing, and `dryRun` reports without writing.
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'
@@ -272,7 +276,8 @@ export type AdminConfigFeatureFlag =
   | 'webSearchStoredKeys'
   | 'expectedRevision'
   | 'prunesEmptyParents'
-  | 'awaitedInvalidation';
+  | 'awaitedInvalidation'
+  | 'changesBatch';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
 
@@ -344,6 +349,8 @@ export type AdminConfigMeta = {
   limits: {
     /** Most entries one `PATCH /fields` accepts. */
     maxPatchEntries: number;
+    /** Most ops one `POST /changes` accepts. */
+    maxChangeOps: number;
     /**
      * The app config service's `overrideCacheTtl`: how long another server instance may serve
      * resolved config from before a write.
