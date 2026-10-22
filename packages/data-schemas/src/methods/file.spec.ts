@@ -1766,12 +1766,12 @@ describe('File Methods', () => {
   });
 
   describe('recordFileWorkspaceImport', () => {
-    const makeFile = (fileId: string, ownerId: mongoose.Types.ObjectId) =>
+    const makeFile = (fileId: string, ownerId: mongoose.Types.ObjectId, tenantId = 'tenant-a') =>
       runAsSystem(() =>
         fileMethods.createFile({
           file_id: fileId,
           user: ownerId,
-          tenantId: 'tenant-a',
+          tenantId,
           filename: 'report.pdf',
           filepath: '/uploads/report.pdf',
           source: 'local',
@@ -1785,7 +1785,7 @@ describe('File Methods', () => {
     const keyB = 'b'.repeat(32);
     const copy = (path: string) => ({ sha256: 'c'.repeat(64), path });
 
-    it('records each workspace copy without replacing sibling targets or metadata', async () => {
+    it('records copies and the digest without replacing sibling targets or metadata', async () => {
       const ownerId = new mongoose.Types.ObjectId();
       const fileId = uuidv4();
       await makeFile(fileId, ownerId);
@@ -1795,17 +1795,24 @@ describe('File Methods', () => {
           fileMethods.recordFileWorkspaceImport({
             file_id: fileId,
             user: ownerId.toString(),
-            key: keyA,
-            target: copy('.librechat/attachments/report.pdf'),
-            digest: { source: 's/o', sha256: 'c'.repeat(64), bytes: 3 },
+            tenantId: 'tenant-a',
+            copy: { key: keyA, target: copy('.librechat/attachments/report.pdf') },
           }),
         ),
         runAsSystem(() =>
           fileMethods.recordFileWorkspaceImport({
             file_id: fileId,
             user: ownerId.toString(),
-            key: keyB,
-            target: copy('.librechat/attachments/report (2).pdf'),
+            tenantId: 'tenant-a',
+            copy: { key: keyB, target: copy('.librechat/attachments/report (2).pdf') },
+          }),
+        ),
+        runAsSystem(() =>
+          fileMethods.recordFileWorkspaceImport({
+            file_id: fileId,
+            user: ownerId.toString(),
+            tenantId: 'tenant-a',
+            digest: { source: 's/o', sha256: 'c'.repeat(64), bytes: 3 },
           }),
         ),
       ]);
@@ -1830,8 +1837,27 @@ describe('File Methods', () => {
         fileMethods.recordFileWorkspaceImport({
           file_id: fileId,
           user: new mongoose.Types.ObjectId().toString(),
-          key: keyA,
-          target: copy('.librechat/attachments/report.pdf'),
+          tenantId: 'tenant-a',
+          copy: { key: keyA, target: copy('.librechat/attachments/report.pdf') },
+        }),
+      );
+
+      expect(matched).toBe(false);
+      const stored = await runAsSystem(() => fileMethods.findFileById(fileId));
+      expect(stored?.metadata?.workspaceImports).toBeUndefined();
+    });
+
+    it("never marks the same user's record in another tenant", async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+      await makeFile(fileId, ownerId, 'tenant-b');
+
+      const matched = await runAsSystem(() =>
+        fileMethods.recordFileWorkspaceImport({
+          file_id: fileId,
+          user: ownerId.toString(),
+          tenantId: 'tenant-a',
+          copy: { key: keyA, target: copy('.librechat/attachments/report.pdf') },
         }),
       );
 
@@ -1845,8 +1871,7 @@ describe('File Methods', () => {
         fileMethods.recordFileWorkspaceImport({
           file_id: uuidv4(),
           user: new mongoose.Types.ObjectId().toString(),
-          key: 'targets.$where',
-          target: copy('.librechat/attachments/report.pdf'),
+          copy: { key: 'targets.$where', target: copy('.librechat/attachments/report.pdf') },
         }),
       ).rejects.toThrow('hex digests');
     });

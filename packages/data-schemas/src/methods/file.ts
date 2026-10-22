@@ -29,12 +29,14 @@ export type LegacySearchFileRef = {
   tenantId?: string;
 };
 
-/** One workspace copy of a user's file and, when freshly computed, the digest it came from. */
+/** A user's file's freshly computed digest, the copy placed in one workspace, or both. */
 export type WorkspaceImportRecord = {
   file_id: string;
   user: string;
-  key: string;
-  target: TFileWorkspaceImport;
+  /** The record's own tenant; an untenanted record is matched as untenanted. */
+  tenantId?: string | null;
+  /** `key` is an opaque hex digest of the conversation and workspace the copy went to. */
+  copy?: { key: string; target: TFileWorkspaceImport };
   digest?: NonNullable<TFileWorkspaceImports['digest']>;
 };
 
@@ -1225,34 +1227,42 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
-   * Records one workspace copy of a user's file, and the digest it was made from, without
-   * rewriting sibling targets another turn wrote in between. The target key becomes a dotted
-   * path, so only an opaque hex digest is accepted; the owner filter keeps a caller from
-   * marking another user's record.
+   * Records a workspace copy of a user's file and/or the digest of the stored bytes, without
+   * rewriting sibling targets another turn wrote in between. A digest is kept even when the
+   * copy fails, so a refused file is not hashed again every turn. The target key becomes a
+   * dotted path, so only an opaque hex digest is accepted; the owner filter keeps a caller
+   * from marking another user's record.
    *
    * @returns Whether a record matched.
    */
   async function recordFileWorkspaceImport({
     file_id,
     user,
-    key,
-    target,
+    tenantId,
+    copy,
     digest,
   }: WorkspaceImportRecord): Promise<boolean> {
-    if (!/^[a-f0-9]{32,64}$/.test(key)) {
+    if (copy != null && !/^[a-f0-9]{32,64}$/.test(copy.key)) {
       throw new Error('Workspace import keys must be hex digests');
     }
-    const File = mongoose.models.File as Model<IMongoFile>;
     const update: Record<
       string,
       TFileWorkspaceImport | NonNullable<TFileWorkspaceImports['digest']>
-    > = {
-      [`metadata.workspaceImports.targets.${key}`]: target,
-    };
-    if (digest) {
+    > = {};
+    if (copy != null) {
+      update[`metadata.workspaceImports.targets.${copy.key}`] = copy.target;
+    }
+    if (digest != null) {
       update['metadata.workspaceImports.digest'] = digest;
     }
-    const result = await File.updateOne({ file_id, user }, { $set: update });
+    if (Object.keys(update).length === 0) {
+      return false;
+    }
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const result = await File.updateOne(
+      { file_id, user, tenantId: tenantId ?? null },
+      { $set: update },
+    );
     return result.matchedCount > 0;
   }
 

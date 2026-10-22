@@ -84,12 +84,15 @@ interface AttachmentSource {
   file_id: string;
 }
 
-/** Persists one copy so a later turn can skip it without another workspace call. */
+/**
+ * Persists a copy and/or a freshly computed digest, so a later turn skips the copy without a
+ * workspace call and never hashes the same stored object twice.
+ */
 export interface WorkspaceImportRecord {
   file_id: string;
   user: string;
-  key: string;
-  target: TFileWorkspaceImport;
+  tenantId?: string | null;
+  copy?: { key: string; target: TFileWorkspaceImport };
   digest?: NonNullable<TFileWorkspaceImports['digest']>;
 }
 
@@ -196,7 +199,10 @@ export function assignAttachmentNames(filenames: readonly string[]): string[] {
 export function resolveWorkspaceAttachmentPolicy(
   context: CodeExecutionContext,
 ): { eligible: true } | { eligible: false; reason: 'unsupported' | 'denied' } {
-  if (context.codeWorkspace?.operations.includes('import_file') !== true) {
+  const operations = context.codeWorkspace?.operations;
+  /** Without `write_file` the folder could not ignore itself, and copies would surface as
+   *  untracked repository content. */
+  if (operations?.includes('import_file') !== true || !operations.includes('write_file')) {
     return { eligible: false, reason: 'unsupported' };
   }
   const policy: AttachedCodeEnvironmentPolicySettings = {
@@ -209,7 +215,11 @@ export function resolveWorkspaceAttachmentPolicy(
   return { eligible: true };
 }
 
-/** Opaque key for one conversation's copies in one workspace checkout. */
+/**
+ * Opaque key for one conversation's copies in one workspace checkout on one live worker. The
+ * Code API route and worker are part of it, so a machine replaced under the same environment
+ * id never inherits the previous machine's copies.
+ */
 export function getWorkspaceAttachmentTargetKey(
   context: CodeExecutionContext,
   conversationId: string,
@@ -222,6 +232,8 @@ export function getWorkspaceAttachmentTargetKey(
     .update(
       JSON.stringify([
         conversationId,
+        context.baseUrl.trim().replace(/\/+$/, ''),
+        context.bridgeWorkerId ?? null,
         context.environmentId ?? workspace.environmentId,
         workspace.workspaceId,
         workspace.workspaceInstanceId ?? null,
@@ -408,6 +420,8 @@ async function importOne({
   if (source == null) {
     return { status: 'unavailable', reason: 'not_staged' };
   }
+  let freshDigest: NonNullable<TFileWorkspaceImports['digest']> | undefined;
+  let copy: TFileWorkspaceImport | undefined;
   try {
     const sourceKey = `${source.storage_session_id}/${source.file_id}`;
     const stored = file.metadata?.workspaceImports?.digest;
@@ -418,7 +432,9 @@ async function importOne({
     if (digest == null) {
       return { status: 'unavailable', reason: 'not_staged' };
     }
-    const freshDigest = stored?.source === sourceKey ? undefined : { source: sourceKey, ...digest };
+    if (stored?.source !== sourceKey) {
+      freshDigest = { source: sourceKey, ...digest };
+    }
     const recorded = target.key
       ? file.metadata?.workspaceImports?.targets?.[target.key]
       : undefined;
@@ -428,17 +444,17 @@ async function importOne({
     void ensureGitignore();
     let attemptName = name;
     for (let attempt = 0; ; attempt++) {
-      const path = `${WORKSPACE_ATTACHMENTS_DIRECTORY}/${attemptName}`;
       try {
-        const result = await sendImport({ target, deps, signal, path, source, digest });
-        await persistImport({
-          file,
+        const path = await sendImport({
           target,
           deps,
-          copy: { sha256: digest.sha256, path: result },
-          digest: freshDigest,
+          signal,
+          path: `${WORKSPACE_ATTACHMENTS_DIRECTORY}/${attemptName}`,
+          source,
+          digest,
         });
-        return { status: 'imported', path: result };
+        copy = { sha256: digest.sha256, path };
+        return { status: 'imported', path };
       } catch (error) {
         const reason = classifyImportFailure(error);
         if (reason !== 'conflict' || attempt >= MAX_CONFLICT_RETRIES || signal.aborted) {
@@ -456,6 +472,12 @@ async function importOne({
       `[workspaceAttachments] Import of file ${file.file_id} into workspace ${target.workspaceId} failed: ${reason}`,
     );
     return { status: 'unavailable', reason };
+  } finally {
+    /** Bookkeeping only: past the deadline the turn goes on and the write lands when it can. */
+    await Promise.race([
+      persistImport({ file, target, deps, copy, digest: freshDigest }),
+      whenAborted(signal),
+    ]);
   }
 }
 
@@ -521,19 +543,20 @@ async function persistImport({
   file: TFile;
   target: ImportTarget;
   deps: WorkspaceAttachmentDeps;
-  copy: TFileWorkspaceImport;
+  copy?: TFileWorkspaceImport;
   digest?: NonNullable<TFileWorkspaceImports['digest']>;
 }): Promise<void> {
-  if (target.key == null) {
+  const key = target.key;
+  const recordedCopy = copy != null && key != null ? { key, target: copy } : undefined;
+  if (recordedCopy == null && digest == null) {
     return;
   }
-  const key = target.key;
   try {
     await deps.recordImport({
       file_id: file.file_id,
       user: deps.userId,
-      key,
-      target: copy,
+      tenantId: file.tenantId ?? null,
+      ...(recordedCopy ? { copy: recordedCopy } : {}),
       ...(digest ? { digest } : {}),
     });
     const imports = file.metadata?.workspaceImports;
@@ -542,7 +565,9 @@ async function persistImport({
       workspaceImports: {
         ...imports,
         ...(digest ? { digest } : {}),
-        targets: { ...imports?.targets, [key]: copy },
+        ...(recordedCopy
+          ? { targets: { ...imports?.targets, [recordedCopy.key]: recordedCopy.target } }
+          : {}),
       },
     };
   } catch (error) {
@@ -563,9 +588,6 @@ async function writeAttachmentsGitignore({
   deps: WorkspaceAttachmentDeps;
   signal: AbortSignal;
 }): Promise<void> {
-  if (target.context.codeWorkspace?.operations.includes('write_file') !== true) {
-    return;
-  }
   const cacheKey = JSON.stringify([
     deps.userId,
     target.context.baseUrl,
@@ -774,6 +796,41 @@ async function provisionQueued({
 }
 
 /**
+ * Primes every agent once per turn, whether it is initialized with the turn or joins later as
+ * a lazily selected subagent. `getProvisionFiles` is read at call time, so a callback wrapped
+ * after the primer was created is the one used.
+ */
+export function createWorkspaceAttachmentPrimer({
+  toolContexts,
+  getProvisionFiles,
+  deps,
+}: {
+  toolContexts?: ReadonlyMap<string, WorkspaceAttachmentToolContext>;
+  getProvisionFiles?: () => ProvisionFiles | undefined;
+  deps: WorkspaceAttachmentDeps;
+}): (
+  agents: ReadonlyArray<WorkspaceAttachmentAgent | null | undefined>,
+  signal?: AbortSignal,
+) => Promise<void> {
+  const primed = new WeakSet<WorkspaceAttachmentAgent>();
+  return (agents, signal) => {
+    const pending = agents.filter(
+      (agent): agent is WorkspaceAttachmentAgent => agent != null && !primed.has(agent),
+    );
+    for (const agent of pending) {
+      primed.add(agent);
+    }
+    return primeWorkspaceAttachments({
+      agents: pending,
+      toolContexts,
+      provisionFiles: getProvisionFiles?.(),
+      signal,
+      deps,
+    });
+  };
+}
+
+/**
  * For agents on an attached workspace, copies the chat's own attachments into
  * `.librechat/attachments/` before the model runs and replaces the code-file note with
  * where they are. Agents that cannot receive them get a note saying so instead of a path
@@ -806,6 +863,7 @@ export async function primeWorkspaceAttachments({
   const shared = new Map<string, Promise<WorkspaceAttachmentOutcome>>();
   const timeoutMs = deps.timeoutMs ?? WORKSPACE_ATTACHMENT_IMPORT_TIMEOUT_MS;
   const timer = setTimeout(() => deadline.abort(), timeoutMs);
+  signal?.throwIfAborted();
   const abortOnTurn = () => deadline.abort(signal?.reason);
   signal?.addEventListener('abort', abortOnTurn, { once: true });
   try {

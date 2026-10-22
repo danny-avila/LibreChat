@@ -1610,6 +1610,13 @@ export const agentsEndpointSchema = baseEndpointSchema
           timeoutMs: z.number().int().min(100).max(30_000).optional().default(2000),
         })
         .optional(),
+      /** How long a turn on an attached workspace may spend copying chat attachments into it
+       * before the model runs; unfinished copies fall back to a note and retry next turn. */
+      workspaceAttachments: z
+        .object({
+          timeoutMs: z.number().int().min(1_000).max(120_000).optional().default(10_000),
+        })
+        .optional(),
       /** Budget and cache configuration for resolving an agent's linked prompt-group
        * instructions. Omitting the block applies the defaults below. */
       linkedInstructions: z

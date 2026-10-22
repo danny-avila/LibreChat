@@ -9,6 +9,7 @@ import type { ProvisionState } from '~/agents/resources';
 import type { CodeBridgeFetch } from './bridge';
 import {
   toAttachmentName,
+  createWorkspaceAttachmentPrimer,
   assignAttachmentNames,
   primeWorkspaceAttachments,
   importWorkspaceAttachments,
@@ -376,7 +377,7 @@ describe('primeWorkspaceAttachments', () => {
     expect(note).toContain('.librechat/attachments/release prep.zip (attached by user)');
     expect(note).toContain('.librechat/attachments/data.csv (attached by user)');
     expect(note).not.toContain('$LIBRECHAT_CODE_DATA_DIR');
-    expect(records.map((record) => record.target.path).sort()).toEqual([
+    expect(records.map((record) => record.copy?.target.path).sort()).toEqual([
       '.librechat/attachments/data.csv',
       '.librechat/attachments/release prep.zip',
     ]);
@@ -495,7 +496,7 @@ describe('primeWorkspaceAttachments', () => {
     expect(imports.map((request) => request.workspaceInstanceId)).toEqual([instance, undefined]);
     expect(worker.files.get(`${instance}:.librechat/attachments/lane.txt`)).toBe('lane');
     expect(worker.files.get('root:.librechat/attachments/lane.txt')).toBe('lane');
-    expect(new Set(records.map((record) => record.key)).size).toBe(2);
+    expect(new Set(records.map((record) => record.copy?.key)).size).toBe(2);
   });
 
   it('says plainly that files are unavailable when the worker cannot import', async () => {
@@ -576,6 +577,21 @@ describe('primeWorkspaceAttachments', () => {
     );
   });
 
+  it('keeps the digest of a refused file so the next turn does not hash it again', async () => {
+    const worker = createFakeWorker({ denyWrites: true });
+    const { deps, digests, records } = createDeps(worker);
+    const file = remember(chatFile('big.iso', 'iso', worker.objects));
+
+    await primeWorkspaceAttachments({ agents: [agentWith(attachedContext(), [file])], deps });
+    await primeWorkspaceAttachments({ agents: [agentWith(attachedContext(), [file])], deps });
+
+    expect(digests).toEqual([file.file.file_id]);
+    expect(records).toEqual([
+      expect.objectContaining({ digest: expect.objectContaining({ bytes: 3 }) }),
+    ]);
+    expect(records[0].copy).toBeUndefined();
+  });
+
   it('never copies the agent’s own files or another user’s', async () => {
     const worker = createFakeWorker();
     const { deps } = createDeps(worker);
@@ -600,15 +616,103 @@ describe('primeWorkspaceAttachments', () => {
     const worker = createFakeWorker({ delayMs: 5_000 });
     const { deps, records } = createDeps(worker);
     const file = remember(chatFile('big.zip', 'zip', worker.objects));
-    const agent = agentWith(attachedContext(['import_file']), [file]);
+    const agent = agentWith(attachedContext(), [file]);
 
     const startedAt = Date.now();
     await primeWorkspaceAttachments({ agents: [agent], deps: { ...deps, timeoutMs: 100 } });
 
     expect(Date.now() - startedAt).toBeLessThan(2_000);
-    expect(records).toHaveLength(0);
+    expect(records.map((record) => record.copy)).toEqual([undefined]);
     expect(agent.dynamicToolContextMap?.[Tools.execute_code]).toContain(
       'big.zip (attached by user): copying it to this machine did not finish in time',
+    );
+  });
+
+  it('does not import without write_file, since the folder could not ignore itself', async () => {
+    const worker = createFakeWorker();
+    const { deps } = createDeps(worker);
+    const file = remember(chatFile('report.pdf', 'pdf', worker.objects));
+    const agent = agentWith(attachedContext(['read_file', 'import_file']), [file]);
+
+    await primeWorkspaceAttachments({ agents: [agent], deps });
+
+    expect(worker.requests).toHaveLength(0);
+    expect(agent.dynamicToolContextMap?.[Tools.execute_code]).toContain(
+      'cannot receive attachments yet',
+    );
+  });
+
+  it('starts nothing when the turn is already cancelled', async () => {
+    const worker = createFakeWorker();
+    const { deps, digests } = createDeps(worker);
+    const file = remember(chatFile('report.pdf', 'pdf', worker.objects));
+    const controller = new AbortController();
+    controller.abort(new Error('cancelled'));
+
+    await expect(
+      primeWorkspaceAttachments({
+        agents: [agentWith(attachedContext(), [file])],
+        deps,
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow('cancelled');
+    expect(digests).toHaveLength(0);
+    expect(worker.requests).toHaveLength(0);
+  });
+
+  it('does not hold the turn for a stalled metadata write', async () => {
+    const worker = createFakeWorker();
+    const { deps } = createDeps(worker);
+    const file = remember(chatFile('report.pdf', 'pdf', worker.objects));
+    const agent = agentWith(attachedContext(), [file]);
+
+    const startedAt = Date.now();
+    await primeWorkspaceAttachments({
+      agents: [agent],
+      deps: { ...deps, timeoutMs: 100, recordImport: () => new Promise<void>(() => undefined) },
+    });
+
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(agent.dynamicToolContextMap?.[Tools.execute_code]).toContain(
+      '.librechat/attachments/report.pdf',
+    );
+  });
+
+  it('copies again when the same environment id now names a different worker', async () => {
+    const worker = createFakeWorker();
+    const { deps } = createDeps(worker);
+    const file = remember(chatFile('report.pdf', 'pdf', worker.objects));
+
+    await primeWorkspaceAttachments({ agents: [agentWith(attachedContext(), [file])], deps });
+    const replaced = attachedContext(undefined, { bridgeWorkerId: 'replacement-worker' });
+    await primeWorkspaceAttachments({ agents: [agentWith(replaced, [file])], deps });
+
+    expect(worker.requests.filter((request) => request.operation === 'import_file')).toHaveLength(
+      2,
+    );
+  });
+
+  it('primes each agent once, including a subagent that joins later', async () => {
+    const worker = createFakeWorker();
+    const { deps } = createDeps(worker);
+    const file = remember(chatFile('report.pdf', 'pdf', worker.objects));
+    const primary = agentWith(attachedContext(), [file]);
+    const lazy = { ...agentWith(attachedContext(), [file]), id: 'lazy-subagent' };
+    const provisionFiles = jest.fn(async () => []);
+    const prime = createWorkspaceAttachmentPrimer({
+      deps,
+      getProvisionFiles: () => provisionFiles,
+    });
+
+    await prime([primary]);
+    lazy.dynamicToolContextMap = { [Tools.execute_code]: 'stale programmatic note' };
+    await prime([lazy, primary]);
+
+    expect(lazy.dynamicToolContextMap?.[Tools.execute_code]).toContain(
+      '.librechat/attachments/report.pdf',
+    );
+    expect(worker.requests.filter((request) => request.operation === 'import_file')).toHaveLength(
+      1,
     );
   });
 

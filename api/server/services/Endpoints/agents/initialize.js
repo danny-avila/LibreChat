@@ -10,7 +10,7 @@ const {
   resolveInitializationProjectContext,
   initializeAgent,
   primeInvokedSkillsForProfiles,
-  primeWorkspaceAttachments,
+  createWorkspaceAttachmentPrimer,
   validateAgentModel,
   extractManualSkills,
   GenerationJobManager,
@@ -594,6 +594,20 @@ const initializeClientWithProvider = async ({
       resolveExecutionContext: getRoutedToolContext,
     }),
   };
+
+  const primeAttachments = createWorkspaceAttachmentPrimer({
+    toolContexts: agentToolContexts,
+    getProvisionFiles: () => toolExecuteOptions.provisionFiles,
+    deps: {
+      userId: req.user.id,
+      conversationId,
+      getAuthHeaders: (workerId) => getCodeApiAuthHeaders(req, workerId),
+      digestFile: (file, digestSignal) => digestFile({ req, file, signal: digestSignal }),
+      recordImport: db.recordFileWorkspaceImport,
+      codeApiMaxRetryWaitMs: appConfig?.endpoints?.agents?.codeApiMaxRetryWaitMs,
+      timeoutMs: appConfig?.endpoints?.agents?.workspaceAttachments?.timeoutMs,
+    },
+  });
 
   const summarizationOptions =
     appConfig?.summarization?.enabled === false ? { enabled: false } : { enabled: true };
@@ -1489,6 +1503,7 @@ const initializeClientWithProvider = async ({
       toolContext: buildAgentToolContext({ agent: routedAgent, config }),
     });
     endpointTokenConfigByAgentId.set(agentId, config.endpointTokenConfig);
+    await primeAttachments([config], context.signal);
     return config;
   };
   const initializeLazySubagent = async ({
@@ -2032,20 +2047,7 @@ const initializeClientWithProvider = async ({
   toolExecuteOptions.provisionFiles = runFileBindings.wrapProvision(
     toolExecuteOptions.provisionFiles,
   );
-  await primeWorkspaceAttachments({
-    agents: [primaryConfig, ...agentConfigs.values()],
-    toolContexts: agentToolContexts,
-    provisionFiles: toolExecuteOptions.provisionFiles,
-    signal,
-    deps: {
-      userId: req.user.id,
-      conversationId,
-      getAuthHeaders: (workerId) => getCodeApiAuthHeaders(req, workerId),
-      digestFile: (file, digestSignal) => digestFile({ req, file, signal: digestSignal }),
-      recordImport: db.recordFileWorkspaceImport,
-      codeApiMaxRetryWaitMs: appConfig?.endpoints?.agents?.codeApiMaxRetryWaitMs,
-    },
-  });
+  await primeAttachments([primaryConfig, ...agentConfigs.values()], signal);
 
   const eventHandlers = getDefaultHandlers({
     res,
