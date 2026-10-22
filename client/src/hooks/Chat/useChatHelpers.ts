@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAtom, useSetAtom, useStore, useAtomValue } from 'jotai';
 import { Constants, QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
@@ -25,6 +24,7 @@ import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatest
 import { useAbortStreamMutation, supportsGenerationProtocolV2 } from '~/data-provider';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
+import { messageAttachmentsMapAtom } from '~/hooks/SSE/atoms';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import { resolveAbortSteerTarget } from '~/utils';
 import useNewConvo from '~/hooks/useNewConvo';
@@ -33,7 +33,7 @@ import { useAbortCleanup } from './abort';
 import store from '~/store';
 
 /** The live attachments map the stream and preview polling write. */
-const useLiveAttachments = () => useRecoilValue(store.messageAttachmentsMap);
+const useLiveAttachments = () => useAtomValue(messageAttachmentsMapAtom);
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId?: string): ChatContract {

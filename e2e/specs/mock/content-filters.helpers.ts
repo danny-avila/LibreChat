@@ -179,6 +179,11 @@ function getConfigFromResult(result: RequestResult): RuntimeConfig {
   return result.body.config as RuntimeConfig;
 }
 
+/**
+ * A committed admin config write is what makes the server reload librechat.yaml; a request with
+ * nothing to write reloads nothing. A PUT that carries `priority` always writes the sentinel,
+ * and the returned `config` confirms it did (a no-op answers with only a message).
+ */
 async function triggerConfigReload(request: APIRequestContext, token: string): Promise<void> {
   const result = await requestResult(request, {
     path: RELOAD_SENTINEL_PATH,
