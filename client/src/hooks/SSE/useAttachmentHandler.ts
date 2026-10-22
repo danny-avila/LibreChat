@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import { useToastContext } from '@librechat/client';
 import { QueryKeys, Tools } from 'librechat-data-provider';
 import type {
@@ -9,11 +9,11 @@ import type {
   TFile,
 } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
+import { messageAttachmentsMapAtom } from '~/hooks/SSE/atoms';
 import { invalidateRecentFiles } from '~/utils/files';
 import { handleMemoryArtifact } from '~/utils/memory';
 import { NotificationSeverity } from '~/common';
 import useLocalize from '~/hooks/useLocalize';
-import store from '~/store';
 
 /** Identity of a re-emitted web-search snapshot: its tool call, turn, agent,
  *  and host step. Scoped to `web_search` because that is the flow whose server
@@ -35,7 +35,7 @@ const searchSnapshotKeyOf = (attachment: TAttachment): string | undefined => {
 };
 
 export default function useAttachmentHandler(queryClient?: QueryClient) {
-  const setAttachmentsMap = useSetRecoilState(store.messageAttachmentsMap);
+  const setAttachmentsMap = useSetAtom(messageAttachmentsMapAtom);
   const projectNotices = useRef(new Set<string>());
   const localize = useLocalize();
   const { showToast } = useToastContext();

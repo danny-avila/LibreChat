@@ -3,7 +3,7 @@ import { logger, isValidObjectIdString, RoleConflictError } from '@librechat/dat
 import type {
   IRole,
   IUser,
-  IConfig,
+  ConfigRecord,
   AdminMember,
   ISystemGrant,
   AuditSeverity,
@@ -127,7 +127,7 @@ export interface AdminRolesDeps {
   deleteConfig: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-  ) => Promise<IConfig | null>;
+  ) => Promise<ConfigRecord | null>;
   /** Removes all ACL entries scoped to this principal. */
   deleteAclEntries: (filter: {
     principalType: PrincipalType;
@@ -156,10 +156,10 @@ export interface AdminRolesDeps {
     principalType: PrincipalType,
     principalId: string,
     options?: { includeInactive?: boolean },
-  ) => Promise<IConfig | null>;
+  ) => Promise<ConfigRecord | null>;
   /** Re-creates a deleted config document in full, only if none exists. Resolves
    * to whether it inserted. */
-  restoreConfig?: (snapshot: Record<string, unknown>) => Promise<boolean>;
+  restoreConfig?: (snapshot: ConfigRecord) => Promise<boolean>;
   /** Optional audit emission for role mutations and the grants removed by the
    * role-deletion cascade. Failure is logged unless `auditFailClosed` is set. */
   recordAuditEntry?: RecordAuditEntry;
@@ -576,8 +576,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
                     return;
                   }
                   /** Insert-only: an override written after the snapshot is kept. */
-                  const plain = (config as { toObject?: () => unknown }).toObject?.() ?? config;
-                  const restored = await restoreConfig(plain as Record<string, unknown>);
+                  const restored = await restoreConfig(config);
                   if (!restored) {
                     logger.warn('[adminRoles] config restore skipped, override exists:', name);
                   }

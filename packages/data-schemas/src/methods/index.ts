@@ -1,3 +1,11 @@
+import { createSubagentContentMethods, type SubagentContentMethods } from './subagentContent';
+export type {
+  SubagentContentScope,
+  SubagentContentHead,
+  SubagentContentBatch,
+  SubagentContentMethods,
+  SubagentContentAppendResult,
+} from './subagentContent';
 import type { ToolApprovalGrantStorage } from 'librechat-data-provider';
 import type { ScheduleMCPConsentStorage } from './scheduleConsent';
 import { createToolApprovalGrantMethods } from './toolApprovalGrant';
@@ -261,7 +269,8 @@ export {
   AgentQueuedTurnLaneRetiredError,
 };
 
-export type AllMethods = ToolApprovalGrantStorage &
+export type AllMethods = SubagentContentMethods &
+  ToolApprovalGrantStorage &
   UserMethods &
   SessionMethods &
   TokenMethods &
@@ -510,6 +519,7 @@ export function createMethods(
     ...createRefreshTokenBridgeMethods(mongoose),
     ...createOpenIDRefreshFlightMethods(mongoose),
     ...createResourceLockMethods(mongoose),
+    ...createSubagentContentMethods(mongoose),
     ...createPasskeyMethods(mongoose),
     ...roleMethods,
     ...createKeyMethods(mongoose),

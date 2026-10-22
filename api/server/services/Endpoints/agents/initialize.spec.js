@@ -1142,6 +1142,73 @@ describe('initializeClient — processAgent ACL gate', () => {
       canCreateSkillSpy.mockRestore();
     }
   });
+
+  describe('an agent saved under another spelling of a served endpoint', () => {
+    const actualApi = jest.requireActual('@librechat/api');
+
+    /** The effective config as served: custom endpoint `Ollama` from librechat.yaml, its
+     *  models under the served name `ollama`, and `allowedProviders` in served names. */
+    const runAgent = async (provider, catalog = { ollama: ['llama3.2'] }) => {
+      const req = makeReq();
+      req.config = {
+        endpoints: {
+          agents: { allowedProviders: ['ollama'] },
+          custom: [
+            {
+              name: 'Ollama',
+              apiKey: 'ollama',
+              baseURL: 'http://ollama.test:11434/v1',
+              models: { default: ['llama3.2'] },
+            },
+          ],
+        },
+      };
+      getModelsConfig.mockResolvedValueOnce(catalog);
+      mockValidateAgentModel.mockImplementation(actualApi.validateAgentModel);
+      mockInitializeAgent.mockImplementation(actualApi.initializeAgent);
+      loadAgentTools.mockResolvedValue({ tools: [], toolContextMap: {}, toolDefinitions: [] });
+      await initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: {
+          ...makeEndpointOption(),
+          agent: Promise.resolve({
+            id: PRIMARY_ID,
+            name: 'Primary',
+            provider,
+            model: 'llama3.2',
+            tools: [],
+          }),
+          model_parameters: { model: 'llama3.2' },
+        },
+      });
+      return agentClientArgs.agent;
+    };
+
+    afterEach(() => {
+      mockValidateAgentModel.mockReset();
+      mockInitializeAgent.mockReset();
+      loadAgentTools.mockReset();
+    });
+
+    it.each(['Ollama', 'OLLAMA'])(
+      'validates and runs an agent saved as %s on the served ollama endpoint',
+      async (provider) => {
+        const agent = await runAgent(provider);
+
+        expect(agent.endpoint).toBe('ollama');
+        expect(agent.model).toBe('llama3.2');
+        expect(mockValidateAgentModel).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('still rejects a provider the served allowedProviders do not name', async () => {
+      await expect(runAgent('Probe', { Probe: ['llama3.2'] })).rejects.toThrow(
+        ErrorTypes.INVALID_AGENT_PROVIDER,
+      );
+    });
+  });
 });
 
 describe('initializeClient — subagent loading', () => {
@@ -1367,22 +1434,30 @@ describe('initializeClient — subagent loading', () => {
       endpointOption: makeEndpointOption(),
     });
     const existingConfig = agentClientArgs.subagentTasks;
-    const hasTasksSpy = jest.spyOn(existingConfig.store, 'hasTasks').mockResolvedValueOnce(true);
+    const subagentThreadTaskStore = require('./subagentThreadStore');
+    const hasTasksSpy = jest.spyOn(subagentThreadTaskStore, 'hasTasks').mockResolvedValueOnce(true);
     mockInitializeAgent.mockResolvedValue(makePrimaryConfig({}));
     const changedReq = makeSubagentReq();
     changedReq.config.endpoints.agents.capabilities.push('run_in_background');
 
-    await initializeClient({
-      req: changedReq,
-      res: {},
-      signal: new AbortController().signal,
-      endpointOption: makeEndpointOption(),
-    });
+    try {
+      await initializeClient({
+        req: changedReq,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      });
 
-    expect(agentClientArgs.subagentTasks).toEqual(existingConfig);
-    expect(capturedToolExecuteOptions.subagentTasks).toEqual(existingConfig);
-    expect(agentClientArgs.agent.subagents).toBeUndefined();
-    hasTasksSpy.mockRestore();
+      const currentConfig = agentClientArgs.subagentTasks;
+      expect(hasTasksSpy).toHaveBeenCalledWith(existingConfig.scopeId);
+      expect(currentConfig.scopeId).toBe(existingConfig.scopeId);
+      expect(currentConfig.completionDelivery).toBe(existingConfig.completionDelivery);
+      expect(currentConfig.store).not.toBe(existingConfig.store);
+      expect(capturedToolExecuteOptions.subagentTasks).toBe(currentConfig);
+      expect(agentClientArgs.agent.subagents).toBeUndefined();
+    } finally {
+      hasTasksSpy.mockRestore();
+    }
   });
 
   it('disables every nested subagent path at the durable child-thread depth limit', async () => {

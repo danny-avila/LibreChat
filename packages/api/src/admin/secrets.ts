@@ -1,6 +1,13 @@
 import isPlainObject from 'lodash/isPlainObject';
-import { encryptV3, decryptV3, logger } from '@librechat/data-schemas';
 import { envVarRegex, extractEnvVariable } from 'librechat-data-provider';
+import {
+  logger,
+  encryptV3,
+  decryptV3,
+  foldConfigMergeKey,
+  combineFoldedConfigItems,
+} from '@librechat/data-schemas';
+import type { AdminConfigRules } from '@librechat/data-schemas';
 import { isUserProvided } from '~/utils/common';
 
 const ENCRYPTED_PREFIX = 'v3:';
@@ -23,8 +30,9 @@ interface ConfigSecretField extends ConfigSecretFieldInput {
  * config API encrypt these at rest, reads redact them, and omitting them on a
  * subsequent write preserves the stored encrypted value. Each secret's
  * masked-preview companion is derived as `<path>Preview` — recognizing a new
- * sensitive field is a one-line path addition (plus the `<field>Preview`
- * companion in the config schema).
+ * sensitive field is a one-line path addition, plus the `<field>Preview`
+ * companion in the config schema and a runtime reader that decrypts the stored
+ * value (`secrets.runtime.spec.ts` lists them).
  */
 const CONFIG_SECRET_FIELDS: readonly ConfigSecretField[] = (
   [
@@ -40,6 +48,7 @@ const CONFIG_SECRET_FIELDS: readonly ConfigSecretField[] = (
     { path: 'webSearch.searxngApiKey', allowEnvPlaceholder: true },
     { path: 'webSearch.firecrawlApiKey', allowEnvPlaceholder: true },
     { path: 'webSearch.tavilyApiKey', allowEnvPlaceholder: true },
+    { path: 'webSearch.keenableApiKey', allowEnvPlaceholder: true },
     { path: 'webSearch.jinaApiKey', allowEnvPlaceholder: true },
     { path: 'webSearch.cohereApiKey', allowEnvPlaceholder: true },
     { path: 'endpoints.assistants.apiKey', allowEnvPlaceholder: true },
@@ -65,10 +74,15 @@ interface ArraySecretField {
   secretKey: string;
   /** Masked-preview companion on each item, always the sibling `<secretKey>Preview`. */
   previewKey: string;
-  /** Item field matched verbatim across writes for omit-to-keep round-trips. */
+  /** Item field matched across writes for omit-to-keep round-trips, as the merge keys it. */
   identityKey: string;
   /** Reference values that must stay readable and never encrypt, e.g. `user_provided`, `${ENV_VAR}`. */
   isPassthroughValue: (value: string) => boolean;
+}
+
+/** `user_provided` and `${ENV_VAR}`: values that name where a credential comes from, not the credential. */
+function isCredentialReference(value: string): boolean {
+  return isUserProvided(value) || envVarRegex.test(value);
 }
 
 /**
@@ -82,9 +96,32 @@ const ARRAY_SECRET_FIELDS: readonly ArraySecretField[] = [
     secretKey: 'apiKey',
     previewKey: 'apiKeyPreview',
     identityKey: 'name',
-    isPassthroughValue: (value) => isUserProvided(value) || envVarRegex.test(value),
+    isPassthroughValue: isCredentialReference,
   },
 ];
+
+/** A credential location in a resolved config; `*` matches every item of an array or value of a record. */
+interface ResolvedSecretField {
+  segments: readonly string[];
+  isPassthroughValue: (value: string) => boolean;
+}
+
+/**
+ * Credentials that reach the resolved config (AppService output, and the raw `librechat.yaml`
+ * copy it carries as `config`) from places the write registry above does not cover yet: Azure
+ * group keys, which `azureConfigSetup` also copies into `groupMap`, and the Vertex service key,
+ * which `vertexConfigSetup` resolves from `${ENV_VAR}` into `vertexConfig`. Reads remove them;
+ * writes to these paths are unchanged.
+ */
+const RESOLVED_SECRET_FIELDS: readonly ResolvedSecretField[] = [
+  { path: 'endpoints.azureOpenAI.groups.*.apiKey', isPassthroughValue: isCredentialReference },
+  { path: 'endpoints.azureOpenAI.groupMap.*.apiKey', isPassthroughValue: isCredentialReference },
+  { path: 'endpoints.anthropic.vertex.serviceKeyFile', isPassthroughValue: isEnvPlaceholder },
+  {
+    path: 'endpoints.anthropic.vertexConfig.serviceKeyFile',
+    isPassthroughValue: isEnvPlaceholder,
+  },
+].map(({ path, isPassthroughValue }) => ({ segments: path.split('.'), isPassthroughValue }));
 
 const SECRET_FIELDS_BY_PATH = new Map<string, ConfigSecretField>(
   CONFIG_SECRET_FIELDS.map((field) => [field.path, field]),
@@ -95,12 +132,52 @@ const PREVIEW_PATHS = new Set<string>([
   ...LEGACY_PREVIEW_PATHS.values(),
 ]);
 
+/** One dynamic key in a secret location pattern, such as a record entry name. */
+const ANY_SEGMENT = '*';
+
+/**
+ * Every proper ancestor of the given secret locations. A write of an object at one of them can
+ * carry a secret, so the write path walks it for encryption, preservation and redaction. A
+ * location may use `*` for a dynamic key (a record entry such as an MCP server name); its
+ * ancestors keep the wildcard.
+ */
+export function getSecretAncestorPatterns(locations: readonly string[]): string[] {
+  const ancestors = new Set<string>();
+  for (const location of locations) {
+    const segments = location.split('.');
+    for (let length = 1; length < segments.length; length++) {
+      ancestors.add(segments.slice(0, length).join('.'));
+    }
+  }
+  return [...ancestors];
+}
+
+/**
+ * Ancestors of every registered location: scalar secrets and the containers of array secrets
+ * (an array container itself is matched by `ARRAY_SECRET_FIELDS`, since it must stay an array).
+ */
+const ANCESTOR_PATTERNS = getSecretAncestorPatterns([
+  ...CONFIG_SECRET_FIELDS.map((field) => field.path),
+  ...ARRAY_SECRET_FIELDS.map((field) => field.arrayPath),
+]);
+
+const isWildcardPattern = (pattern: string): boolean => pattern.split('.').includes(ANY_SEGMENT);
+
 const ANCESTOR_PATHS = new Set<string>(
-  CONFIG_SECRET_FIELDS.flatMap((field) => {
-    const segments = field.path.split('.');
-    return segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join('.'));
-  }),
+  ANCESTOR_PATTERNS.filter((pattern) => !isWildcardPattern(pattern)),
 );
+
+const ANCESTOR_WILDCARDS: readonly string[] = ANCESTOR_PATTERNS.filter(isWildcardPattern);
+
+/** Whether a dotted path matches a location pattern segment for segment. */
+export function matchesSecretPattern(fieldPath: string, pattern: string): boolean {
+  const segments = fieldPath.split('.');
+  const expected = pattern.split('.');
+  return (
+    segments.length === expected.length &&
+    expected.every((segment, index) => segment === ANY_SEGMENT || segment === segments[index])
+  );
+}
 
 const SECRET_SECTIONS: readonly string[] = [
   ...new Set([
@@ -141,6 +218,29 @@ export function normalizeStoredPreview(preview: string): string {
 /** Top-level config sections containing registered secret fields. */
 export function getConfigSecretSections(): readonly string[] {
   return SECRET_SECTIONS;
+}
+
+/** The secret registries as plain data, for admin clients that render secret inputs. */
+export function getConfigSecretRules(): Pick<
+  AdminConfigRules,
+  'secretFields' | 'arraySecretFields' | 'refusedMaps'
+> {
+  return {
+    secretFields: CONFIG_SECRET_FIELDS.map(({ path, previewPath, allowEnvPlaceholder }) => ({
+      path,
+      previewPath,
+      allowEnvPlaceholder: allowEnvPlaceholder === true,
+    })),
+    arraySecretFields: ARRAY_SECRET_FIELDS.map(
+      ({ arrayPath, secretKey, previewKey, identityKey }) => ({
+        arrayPath,
+        secretKey,
+        previewKey,
+        identityKey,
+      }),
+    ),
+    refusedMaps: [...CONFIG_SECRET_MAP_FIELDS],
+  };
 }
 
 function normalizeSecretString(value: unknown): string | undefined {
@@ -226,7 +326,7 @@ function isConfigSecretRelatedPath(fieldPath: string): boolean {
   ) {
     return true;
   }
-  return ANCESTOR_PATHS.has(fieldPath) || isConfigSecretDescendantPath(fieldPath);
+  return isConfigSecretAncestorPath(fieldPath) || isConfigSecretDescendantPath(fieldPath);
 }
 
 export function decryptConfigSecret(value: unknown): string | undefined {
@@ -243,10 +343,6 @@ export function decryptConfigSecret(value: unknown): string | undefined {
 }
 
 /**
- * Resolves a config credential for runtime use: decrypts encrypted values and
- * resolves `${ENV_VAR}` placeholders, passing plain literals through unchanged.
- */
-/**
  * Whether a value has the exact shape `encryptV3` produces
  * (`v3:<32-hex-iv>:<hex-ciphertext>`). Runtime resolution uses this strict
  * check so a legitimate literal credential that merely starts with `v3:`
@@ -257,6 +353,10 @@ export function isEncryptedSecretPayload(value: string): boolean {
   return ENCRYPTED_PAYLOAD_REGEX.test(value.trim());
 }
 
+/**
+ * Resolves a config credential for runtime use: decrypts encrypted values and
+ * resolves `${ENV_VAR}` placeholders, passing plain literals through unchanged.
+ */
 export function resolveConfigSecret(value?: string): string | undefined {
   if (value == null || value === '') {
     return value;
@@ -265,6 +365,19 @@ export function resolveConfigSecret(value?: string): string | undefined {
     return decryptConfigSecret(value);
   }
   return extractEnvVariable(value);
+}
+
+/**
+ * Resolves a stored config credential without consulting the environment:
+ * decrypts an encrypted value and returns any other value verbatim, so a
+ * stored value never splices `${ENV_VAR}` references into a request. A failed
+ * decryption yields undefined, never the ciphertext.
+ */
+export function resolveStoredConfigSecret(value: string): string | undefined {
+  if (isEncryptedSecretPayload(value)) {
+    return decryptConfigSecret(value);
+  }
+  return value;
 }
 
 export function getConfigSecretMutationPaths(fieldPath: string): string[] {
@@ -288,7 +401,72 @@ export function isConfigSecretDescendantPath(fieldPath: string): boolean {
 }
 
 export function isConfigSecretAncestorPath(fieldPath: string): boolean {
-  return ANCESTOR_PATHS.has(fieldPath);
+  if (ANCESTOR_PATHS.has(fieldPath)) {
+    return true;
+  }
+  return ANCESTOR_WILDCARDS.some((pattern) => matchesSecretPattern(fieldPath, pattern));
+}
+
+/**
+ * Every registered secret location as segments: scalar secrets with their previews (legacy
+ * spellings included), and the secret and preview keys of any item of an array secret
+ * container, where `*` stands for the item index.
+ */
+const SECRET_LOCATIONS: ReadonlyArray<readonly string[]> = [
+  ...[
+    ...CONFIG_SECRET_FIELDS.flatMap((field) => [field.path, field.previewPath]),
+    ...LEGACY_PREVIEW_PATHS.values(),
+  ].map((path) => path.split('.')),
+  ...ARRAY_SECRET_FIELDS.flatMap((field) => {
+    const container = field.arrayPath.split('.');
+    return [
+      [...container, ANY_SEGMENT, field.secretKey],
+      [...container, ANY_SEGMENT, field.previewKey],
+    ];
+  }),
+];
+
+/**
+ * Whether a write at `segments` touches a registered secret: the secret's own location or its
+ * preview's, an ancestor that can carry it, or a path inside it. Segments are compared one by
+ * one, so a key that contains a dot is never mistaken for the path its dots would spell.
+ */
+export function isConfigSecretRelatedSegments(segments: readonly string[]): boolean {
+  return SECRET_LOCATIONS.some((location) => {
+    const shared = Math.min(location.length, segments.length);
+    for (let index = 0; index < shared; index++) {
+      if (location[index] !== ANY_SEGMENT && location[index] !== segments[index]) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+/**
+ * Whether renaming key `from` to `to` of the record at `segments` would carry a value onto or
+ * off a registered secret location: the record lies at or inside one, or a location names
+ * `from` or `to` literally at the renamed position. A location with a wildcard there (an entry
+ * of a record of servers, say) moves with its entry and stays registered.
+ */
+export function isConfigSecretKeyRename(
+  segments: readonly string[],
+  from: string,
+  to: string,
+): boolean {
+  const matches = (location: readonly string[], length: number): boolean =>
+    segments
+      .slice(0, length)
+      .every((segment, index) => location[index] === ANY_SEGMENT || location[index] === segment);
+  return SECRET_LOCATIONS.some((location) => {
+    if (location.length <= segments.length) {
+      return matches(location, location.length);
+    }
+    const key = location[segments.length];
+    return (
+      matches(location, segments.length) && key !== ANY_SEGMENT && (key === from || key === to)
+    );
+  });
 }
 
 export function getConfigSecretInputError(fieldPath: string, value: unknown): string | null {
@@ -362,16 +540,18 @@ function getSecretArray(root: unknown, field: ArraySecretField, basePath = ''): 
 }
 
 /**
- * Exact-string entry identity for preserve matching. Deliberately untrimmed:
- * the runtime config merge keys entries by their verbatim name, so `"Prod"`
- * and `" Prod "` are distinct endpoints with distinct credentials.
+ * Entry identity for preserve matching: the identity the runtime config merge keys entries
+ * by (`foldConfigMergeKey`), so `Ollama` and `ollama` share one stored key. Deliberately
+ * untrimmed: `"Prod"` and `" Prod "` are distinct endpoints with distinct credentials.
  */
 function getEntryIdentity(
   entry: Record<string, unknown> | null,
   field: ArraySecretField,
 ): string | undefined {
   const value = entry?.[field.identityKey];
-  return typeof value === 'string' && value !== '' ? value : undefined;
+  return typeof value === 'string' && value !== ''
+    ? foldConfigMergeKey(field.arrayPath, value)
+    : undefined;
 }
 
 /**
@@ -425,10 +605,20 @@ function applyArraySecretWrites(entries: unknown[], field: ArraySecretField): vo
   }
 }
 
+/**
+ * Stored entries as the runtime merge reads them: a document stored before names were folded
+ * may name one entry in two spellings, which the merge combines (`combineFoldedConfigItems`),
+ * so the secret an omitted key keeps is the one the runtime uses.
+ */
+function getStoredSecretEntries(existing: unknown, field: ArraySecretField): unknown[] | null {
+  const entries = getSecretArray(existing, field);
+  return entries && combineFoldedConfigItems(field.arrayPath, entries);
+}
+
 function preserveArraySecrets(result: unknown, existing: unknown, basePath: string): void {
   for (const field of ARRAY_SECRET_FIELDS) {
     const entries = getSecretArray(result, field, basePath);
-    const existingEntries = getSecretArray(existing, field);
+    const existingEntries = getStoredSecretEntries(existing, field);
     if (!entries || !existingEntries) {
       continue;
     }
@@ -863,12 +1053,40 @@ function redactSecretMapFields(rootRecord: Record<string, unknown>): void {
 }
 
 /**
+ * Gives a plaintext secret without a preview the one its next save would
+ * write. A value stored before its path joined the registry stays plaintext
+ * until its section is saved again, and the runtime still reads it, so a read
+ * must show it as set.
+ */
+function previewLegacyPlaintext(
+  section: Record<string, unknown>,
+  previewKey: string,
+  value: unknown,
+): void {
+  const plaintext = normalizeSecretString(value);
+  if (!plaintext || section[previewKey] || isEncryptedSecretPayload(plaintext)) {
+    return;
+  }
+  section[previewKey] = getSecretPreview(plaintext);
+}
+
+interface RedactConfigSecretsOptions {
+  /** Gives a plaintext secret without a preview the one its next save would write. */
+  previewPlaintext?: boolean;
+  /** The librechat.yaml config a merged `root` came from; plaintext values it supplies get no preview. */
+  yamlConfig?: unknown;
+}
+
+/**
  * Deletes registered secret values from `root` in place so admin reads never
  * return them (encrypted or plaintext). Preview companions and plain
  * `${ENV_VAR}` references (for fields that allow them) are preserved.
  * Secret *maps* are masked value-by-value. The caller passes a cloned object.
  */
-export function redactConfigSecrets<T>(root: T): T {
+export function redactConfigSecrets<T>(
+  root: T,
+  { previewPlaintext = false, yamlConfig }: RedactConfigSecretsOptions = {},
+): T {
   const rootRecord = getPlainRecord(root);
   if (!rootRecord) {
     return root;
@@ -905,6 +1123,9 @@ export function redactConfigSecrets<T>(root: T): T {
     if (field.allowEnvPlaceholder && typeof value === 'string' && isEnvPlaceholder(value)) {
       continue;
     }
+    if (previewPlaintext && walkToParent(yamlConfig, segments)?.[key] !== value) {
+      previewLegacyPlaintext(section, previewKey, value);
+    }
     delete section[key];
   }
 
@@ -922,6 +1143,53 @@ export function redactConfigSecrets<T>(root: T): T {
         delete entry[field.secretKey];
       }
     }
+  }
+  return root;
+}
+
+/** Deletes the value at `segments` under `node` unless it is empty or a pass-through reference. */
+function redactResolvedSecret(
+  node: unknown,
+  segments: readonly string[],
+  field: ResolvedSecretField,
+): void {
+  const [segment, ...rest] = segments;
+  if (segment === '*') {
+    const children = Array.isArray(node) ? node : Object.values(getPlainRecord(node) ?? {});
+    for (const child of children) {
+      redactResolvedSecret(child, rest, field);
+    }
+    return;
+  }
+  const record = getPlainRecord(node);
+  if (!record || !Object.prototype.hasOwnProperty.call(record, segment)) {
+    return;
+  }
+  if (rest.length > 0) {
+    redactResolvedSecret(record[segment], rest, field);
+    return;
+  }
+  const value = record[segment];
+  if (typeof value === 'string') {
+    const normalized = normalizeSecretString(value);
+    if (normalized == null || field.isPassthroughValue(normalized)) {
+      return;
+    }
+  }
+  delete record[segment];
+}
+
+/**
+ * Deletes, in place, the credentials a resolved config carries outside the write registry
+ * (`RESOLVED_SECRET_FIELDS`), for admin reads of the AppConfig or its raw `config`. Empty
+ * values and pass-through references stay readable; anything else that is not a string is
+ * removed too. Stored override documents are left alone: their writes do not preserve an
+ * omitted value at these paths yet, so redacting them would break a read-then-write round
+ * trip. The caller passes a cloned object.
+ */
+export function redactResolvedConfigSecrets<T>(root: T): T {
+  for (const field of RESOLVED_SECRET_FIELDS) {
+    redactResolvedSecret(root, field.segments, field);
   }
   return root;
 }

@@ -3,11 +3,11 @@ import { Button, TextareaAutosize, TooltipAnchor } from '@librechat/client';
 import { ChevronDown, MessageCircleQuestion, TriangleAlert } from 'lucide-react';
 import type { Agents } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
-import type { ComposerBindings } from '~/hooks/Input/useComposerBindings';
 import { isCancelKey, isReboundSubmitChord, resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useApprovalContext, useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
 import { splitOtherOption, ASK_USER_DECLINED_ANSWER } from '~/utils/approval';
 import { useOptionalChatSurface } from '~/components/Chat/Subagents/surface';
+import { NO_HOST_BINDINGS } from '~/hooks/Input/useComposerBindings';
 import { cn, forceResize, insertTextAtCursor } from '~/utils';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskOptions from '~/components/Chat/ask/options';
@@ -16,12 +16,6 @@ import AskUserQuestions from './AskUserQuestions';
 import { useLocalize } from '~/hooks';
 
 /** Stock preferences for a card rendered outside a chat surface. */
-const NO_HOST_BINDINGS: ComposerBindings = {
-  shortcutsEnabled: true,
-  submitOverride: undefined,
-  yieldedChords: new Set(),
-};
-
 /**
  * Renders an `ask_user_question` pause: the prompt, optional description, any
  * curated option buttons, and a free-form text answer. Single-select options

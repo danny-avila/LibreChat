@@ -11,10 +11,17 @@ let getConfigSecretInputError: typeof import('./secrets').getConfigSecretInputEr
 let getConfigSecretMutationPaths: typeof import('./secrets').getConfigSecretMutationPaths;
 let getConfigSecretSections: typeof import('./secrets').getConfigSecretSections;
 let isConfigSecretAncestorPath: typeof import('./secrets').isConfigSecretAncestorPath;
+let getSecretAncestorPatterns: typeof import('./secrets').getSecretAncestorPatterns;
+let matchesSecretPattern: typeof import('./secrets').matchesSecretPattern;
+let isConfigSecretRelatedSegments: typeof import('./secrets').isConfigSecretRelatedSegments;
 let isConfigSecretDescendantPath: typeof import('./secrets').isConfigSecretDescendantPath;
+let isConfigSecretKeyRename: typeof import('./secrets').isConfigSecretKeyRename;
 let preserveConfigSecrets: typeof import('./secrets').preserveConfigSecrets;
 let redactConfigSecrets: typeof import('./secrets').redactConfigSecrets;
+let redactResolvedConfigSecrets: typeof import('./secrets').redactResolvedConfigSecrets;
 let resolveConfigSecret: typeof import('./secrets').resolveConfigSecret;
+let resolveStoredConfigSecret: typeof import('./secrets').resolveStoredConfigSecret;
+let getConfigSecretRules: typeof import('./secrets').getConfigSecretRules;
 let resolveCustomEndpointSecrets: typeof import('./secrets').resolveCustomEndpointSecrets;
 let decryptV3: typeof import('@librechat/data-schemas').decryptV3;
 
@@ -28,10 +35,17 @@ beforeAll(async () => {
     getConfigSecretMutationPaths,
     getConfigSecretSections,
     isConfigSecretAncestorPath,
+    getSecretAncestorPatterns,
+    matchesSecretPattern,
+    isConfigSecretRelatedSegments,
     isConfigSecretDescendantPath,
+    isConfigSecretKeyRename,
     preserveConfigSecrets,
     redactConfigSecrets,
+    redactResolvedConfigSecrets,
     resolveConfigSecret,
+    resolveStoredConfigSecret,
+    getConfigSecretRules,
     resolveCustomEndpointSecrets,
   } = await import('./secrets'));
   ({ decryptV3 } = await import('@librechat/data-schemas'));
@@ -205,6 +219,33 @@ describe('Langfuse config secrets', () => {
       destination: 'eu',
       publicKey: 'pk-lf-1',
       secretKeyPreview: '*************',
+    });
+  });
+
+  it('previews a stored plaintext secret only when reading stored overrides', () => {
+    const encrypted = encryptConfigSecretFields({ 'webSearch.serperApiKey': 'serper-key-00001' });
+    const stored = () => ({
+      webSearch: {
+        keenableApiKey: ' kn-legacy-plain-0002 ',
+        searxngApiKey: 'short',
+        tavilyApiKey: 'tvly-legacy-plain-0003',
+        tavilyApiKeyPreview: '...kept',
+        serperApiKey: encrypted['webSearch.serperApiKey'],
+        jinaApiKey: '${JINA_API_KEY}',
+        cohereApiKey: '',
+      },
+    });
+
+    expect(redactConfigSecrets(stored(), { previewPlaintext: true })).toEqual({
+      webSearch: {
+        keenableApiKeyPreview: '...0002',
+        searxngApiKeyPreview: '*****',
+        tavilyApiKeyPreview: '...kept',
+        jinaApiKey: '${JINA_API_KEY}',
+      },
+    });
+    expect(redactConfigSecrets(stored())).toEqual({
+      webSearch: { tavilyApiKeyPreview: '...kept', jinaApiKey: '${JINA_API_KEY}' },
     });
   });
 
@@ -597,6 +638,35 @@ describe('Config secret registry fields', () => {
     expect(resolveConfigSecret('v3:provider-literal-token')).toBe('v3:provider-literal-token');
   });
 
+  it('resolveStoredConfigSecret decrypts and passes every other value through verbatim', () => {
+    const encrypted = encryptConfigSecrets({ webSearch: { keenableApiKey: 'kn-stored' } }).webSearch
+      .keenableApiKey;
+    expect(resolveStoredConfigSecret(encrypted)).toBe('kn-stored');
+
+    process.env.SECRETS_SPEC_TEST_KEY = 'sk-from-env';
+    expect(resolveStoredConfigSecret('${SECRETS_SPEC_TEST_KEY}')).toBe('${SECRETS_SPEC_TEST_KEY}');
+    expect(resolveStoredConfigSecret('kn-${SECRETS_SPEC_TEST_KEY}')).toBe(
+      'kn-${SECRETS_SPEC_TEST_KEY}',
+    );
+    delete process.env.SECRETS_SPEC_TEST_KEY;
+
+    expect(resolveStoredConfigSecret('kn-plain-literal')).toBe('kn-plain-literal');
+    expect(resolveStoredConfigSecret('v3:provider-literal-token')).toBe(
+      'v3:provider-literal-token',
+    );
+  });
+
+  it('registers the Keenable web search key with its preview companion', () => {
+    expect(getConfigSecretRules().secretFields).toContainEqual({
+      path: 'webSearch.keenableApiKey',
+      previewPath: 'webSearch.keenableApiKeyPreview',
+      allowEnvPlaceholder: true,
+    });
+    const out = encryptConfigSecretFields({ 'webSearch.keenableApiKey': 'kn-0123456789abcdef' });
+    expect(decryptV3(out['webSearch.keenableApiKey'] as string)).toBe('kn-0123456789abcdef');
+    expect(out['webSearch.keenableApiKeyPreview']).toBe('...cdef');
+  });
+
   it('reports mutation paths (including the preview companion) and ancestor/descendant checks for registry fields', () => {
     expect(getConfigSecretMutationPaths('speech.tts.openai.apiKey')).toEqual([
       'speech.tts.openai.apiKey',
@@ -626,6 +696,50 @@ describe('Config secret registry fields', () => {
     expect(isConfigSecretDescendantPath('speech.tts.openai.model')).toBe(false);
   });
 
+  it('derives ancestors from array secret containers as well as scalar secrets', () => {
+    expect(isConfigSecretAncestorPath('endpoints')).toBe(true);
+    expect(isConfigSecretAncestorPath('endpoints.custom')).toBe(false);
+    expect(isConfigSecretAncestorPath('endpoints.assistants')).toBe(true);
+    expect(isConfigSecretAncestorPath('endpoints.azureOpenAI')).toBe(false);
+
+    expect(
+      getSecretAncestorPatterns(['speech.tts.openai.apiKey', 'endpoints.custom']).sort(),
+    ).toEqual(['endpoints', 'speech', 'speech.tts', 'speech.tts.openai']);
+  });
+
+  it('keeps dynamic segments in derived ancestors and matches them segment by segment', () => {
+    expect(
+      getSecretAncestorPatterns(['mcpServers.*.oauth.client_secret', 'mcpServers.*.apiKey.key']),
+    ).toEqual(['mcpServers', 'mcpServers.*', 'mcpServers.*.oauth', 'mcpServers.*.apiKey']);
+
+    expect(matchesSecretPattern('mcpServers.github.oauth', 'mcpServers.*.oauth')).toBe(true);
+    expect(matchesSecretPattern('mcpServers.github', 'mcpServers.*')).toBe(true);
+    expect(matchesSecretPattern('mcpServers.github.oauth.x', 'mcpServers.*.oauth')).toBe(false);
+    expect(matchesSecretPattern('mcpServers', 'mcpServers.*')).toBe(false);
+    expect(matchesSecretPattern('mcpSettings.github.oauth', 'mcpServers.*.oauth')).toBe(false);
+  });
+
+  it('relates a segment path to a secret it is, holds, or lies inside, comparing whole keys', () => {
+    expect(isConfigSecretRelatedSegments(['webSearch'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['webSearch', 'serperApiKey'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['webSearch', 'serperApiKeyPreview'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['webSearch', 'serperApiKey', 'x'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['langfuse', 'displaySecretKey'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['endpoints', 'custom'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['endpoints', 'custom', 'my.endpoint'])).toBe(true);
+    expect(isConfigSecretRelatedSegments(['endpoints', 'custom', '0', 'apiKey'])).toBe(true);
+
+    expect(isConfigSecretRelatedSegments(['webSearch', 'searchProvider'])).toBe(false);
+    expect(isConfigSecretRelatedSegments(['webSearch', 'serperApiKey.x'])).toBe(false);
+    expect(isConfigSecretRelatedSegments(['speech', 'tts.openai'])).toBe(false);
+    expect(isConfigSecretRelatedSegments(['endpoints', 'custom', '0', 'headers', 'X.Id'])).toBe(
+      false,
+    );
+    expect(
+      isConfigSecretRelatedSegments(['endpoints', 'bedrock', 'inferenceProfiles', 'us.a.b']),
+    ).toBe(false);
+  });
+
   it('rejects encrypted submissions at registry paths and inside ancestor objects', () => {
     expect(getConfigSecretInputError('webSearch.serperApiKey', 'v3:attacker')).toContain(
       'Encrypted config secret values',
@@ -647,6 +761,7 @@ describe('Config secret registry fields', () => {
       'speech.stt.azureOpenAI.apiKeyPreview',
       'webSearch.serperApiKeyPreview',
       'webSearch.cohereApiKeyPreview',
+      'webSearch.keenableApiKeyPreview',
       'endpoints.assistants.apiKeyPreview',
       'endpoints.azureAssistants.apiKeyPreview',
       'langfuse.secretKeyPreview',
@@ -914,6 +1029,50 @@ describe('Custom endpoint config secrets', () => {
     expect(decryptV3(spaced.apiKey)).toBe('sk-prod-spaced-key');
   });
 
+  it('matches endpoint names the runtime folds together as one identity', () => {
+    const existing = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'Ollama', apiKey: 'sk-ollama-stored-key' },
+        { name: 'OpenRouter', apiKey: 'sk-or-stored-value' },
+      ]),
+    );
+    const next = encryptConfigSecrets(endpointsWith([{ name: 'ollama' }, { name: 'openrouter' }]));
+
+    const preserved = preserveConfigSecrets(next, existing);
+    const [ollama, openRouter] = preserved.endpoints.custom as Array<Record<string, string>>;
+
+    expect(decryptV3(ollama.apiKey)).toBe('sk-ollama-stored-key');
+    expect(ollama.apiKeyPreview).toBe('...-key');
+    expect(openRouter.apiKey).toBeUndefined();
+  });
+
+  /** A document stored before names were folded may hold both spellings; the runtime merge
+   *  combines them in order, so an omitted key keeps the key that merge applies. */
+  it.each([
+    ['only the earlier item holds a key', [{ apiKey: 'sk-ollama-first-key' }, {}], 'first'],
+    [
+      'both items hold a key',
+      [{ apiKey: 'sk-ollama-first-key' }, { apiKey: 'sk-ollama-second-key' }],
+      'second',
+    ],
+  ])('keeps the combined key of two stored spellings when %s', (_case, keys, expected) => {
+    const existing = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'Ollama', baseURL: 'http://first/v1', ...keys[0] },
+        { name: 'ollama', modelDisplayLabel: 'Second', ...keys[1] },
+      ]),
+    );
+
+    const preserved = preserveConfigSecrets(
+      encryptConfigSecrets(endpointsWith([{ name: 'ollama' }])),
+      existing,
+    );
+
+    const [entry] = preserved.endpoints.custom as Array<Record<string, string>>;
+    expect(decryptV3(entry.apiKey)).toBe(`sk-ollama-${expected}-key`);
+    expect(entry.apiKeyPreview).toBe('...-key');
+  });
+
   it('does not preserve keys for duplicated endpoint identities', () => {
     const existing = encryptConfigSecrets(
       endpointsWith([
@@ -986,5 +1145,130 @@ describe('Custom endpoint config secrets', () => {
     expect(resolved.apiKey).toBe('sk-runtime');
     const passthrough = { name: 'B', apiKey: 'user_provided' };
     expect(resolveCustomEndpointSecrets(passthrough)).toBe(passthrough);
+  });
+});
+
+describe('Resolved config secrets (Azure groups and the Vertex service key)', () => {
+  const SERVICE_KEY_JSON =
+    '{"type":"service_account","private_key":"-----BEGIN PRIVATE KEY-----x"}';
+
+  it('removes literal Azure group keys from groupMap, merged groups and the raw YAML copy', () => {
+    const azure = () => ({
+      groups: [
+        { group: 'east', apiKey: 'azure-literal-east-key', instanceName: 'east' },
+        { group: 'west', apiKey: '${WEST_API_KEY}', instanceName: 'west' },
+        { group: 'user', apiKey: 'user_provided', instanceName: 'user' },
+        { group: 'blank', apiKey: '', instanceName: 'blank' },
+      ],
+      groupMap: {
+        east: {
+          apiKey: 'azure-literal-east-key',
+          instanceName: 'east',
+          models: { 'gpt-4o': true },
+        },
+        west: { apiKey: ' ${WEST_API_KEY} ', instanceName: 'west' },
+        user: { apiKey: 'user_provided', instanceName: 'user' },
+      },
+    });
+    const resolved = redactResolvedConfigSecrets({
+      endpoints: { azureOpenAI: azure() },
+      config: { endpoints: { azureOpenAI: azure() } },
+    });
+    redactResolvedConfigSecrets(resolved.config);
+
+    expect(JSON.stringify(resolved)).not.toContain('azure-literal-east-key');
+    for (const target of [resolved.endpoints.azureOpenAI, resolved.config.endpoints.azureOpenAI]) {
+      expect(target.groups.map((group) => group.apiKey)).toEqual([
+        undefined,
+        '${WEST_API_KEY}',
+        'user_provided',
+        '',
+      ]);
+      expect(target.groups[0]).toEqual({ group: 'east', instanceName: 'east' });
+    }
+    expect(resolved.endpoints.azureOpenAI.groupMap).toEqual({
+      east: { instanceName: 'east', models: { 'gpt-4o': true } },
+      west: { apiKey: ' ${WEST_API_KEY} ', instanceName: 'west' },
+      user: { apiKey: 'user_provided', instanceName: 'user' },
+    });
+  });
+
+  it('removes the Vertex service key unless it is an unresolved environment reference', () => {
+    const resolved = redactResolvedConfigSecrets({
+      endpoints: {
+        anthropic: {
+          vertex: { serviceKeyFile: SERVICE_KEY_JSON, region: 'us-east5' },
+          vertexConfig: { serviceKeyFile: '/secrets/vertex.json', region: 'us-east5' },
+        },
+      },
+    });
+    expect(resolved.endpoints.anthropic).toEqual({
+      vertex: { region: 'us-east5' },
+      vertexConfig: { region: 'us-east5' },
+    });
+
+    const referenced = redactResolvedConfigSecrets({
+      endpoints: {
+        anthropic: {
+          vertex: { serviceKeyFile: '${GOOGLE_SERVICE_KEY_FILE}' },
+          vertexConfig: { serviceKeyFile: '${GOOGLE_SERVICE_KEY_FILE}' },
+        },
+      },
+    });
+    expect(referenced.endpoints.anthropic.vertex.serviceKeyFile).toBe('${GOOGLE_SERVICE_KEY_FILE}');
+    expect(referenced.endpoints.anthropic.vertexConfig.serviceKeyFile).toBe(
+      '${GOOGLE_SERVICE_KEY_FILE}',
+    );
+
+    const userProvided = redactResolvedConfigSecrets({
+      endpoints: { anthropic: { vertex: { serviceKeyFile: 'user_provided' } } },
+    });
+    expect(userProvided.endpoints.anthropic.vertex).toEqual({});
+  });
+
+  it('fails closed on malformed shapes: non-string values and swapped containers', () => {
+    const resolved = redactResolvedConfigSecrets({
+      endpoints: {
+        azureOpenAI: {
+          groups: { east: { apiKey: 'azure-literal-in-record' } },
+          groupMap: [{ apiKey: 'azure-literal-in-array' }, { apiKey: { nested: 'object-key' } }],
+        },
+        anthropic: { vertex: { serviceKeyFile: { private_key: 'object-key' } } },
+      },
+    });
+
+    expect(JSON.stringify(resolved)).not.toMatch(/azure-literal|object-key/);
+  });
+
+  it('leaves configs without these endpoints, and unrelated fields, untouched', () => {
+    const config = {
+      endpoints: { custom: [{ name: 'A', apiKey: 'custom-literal' }], azureOpenAI: null },
+      speech: { tts: { openai: { apiKey: 'speech-literal' } } },
+    };
+    expect(redactResolvedConfigSecrets(structuredClone(config))).toEqual(config);
+    expect(redactResolvedConfigSecrets(null)).toBeNull();
+    expect(redactResolvedConfigSecrets('text')).toBe('text');
+  });
+});
+
+describe('isConfigSecretKeyRename', () => {
+  it('refuses a rename that would move a value onto or off a literal secret location', () => {
+    expect(isConfigSecretKeyRename(['webSearch'], 'serperApiKey', 'other')).toBe(true);
+    expect(isConfigSecretKeyRename(['webSearch'], 'other', 'serperApiKeyPreview')).toBe(true);
+    expect(isConfigSecretKeyRename(['speech', 'tts'], 'openai', 'mine')).toBe(true);
+    expect(isConfigSecretKeyRename(['langfuse'], 'displaySecretKey', 'x')).toBe(true);
+  });
+
+  it('refuses a rename inside a secret value', () => {
+    expect(isConfigSecretKeyRename(['webSearch', 'serperApiKey'], 'a', 'b')).toBe(true);
+  });
+
+  it('allows renames that never touch a registered location', () => {
+    expect(isConfigSecretKeyRename(['mcpServers'], 'a', 'b')).toBe(false);
+    expect(isConfigSecretKeyRename(['mcpServers', 'a', 'headers'], 'X-Old', 'X-New')).toBe(false);
+    expect(isConfigSecretKeyRename(['webSearch'], 'firecrawlOptions', 'other')).toBe(false);
+    expect(
+      isConfigSecretKeyRename(['endpoints', 'bedrock', 'inferenceProfiles'], 'us.a', 'eu.a'),
+    ).toBe(false);
   });
 });
