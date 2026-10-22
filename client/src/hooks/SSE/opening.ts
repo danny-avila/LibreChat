@@ -11,12 +11,14 @@ import type {
 import type { EventHandlerContext } from './handlers';
 import {
   scrollToEnd,
+  adoptComposerConversation,
   hasRealTitle,
   withoutListFlags,
   setDocumentTitle,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
 } from '~/utils';
+import { transferFileSearchPreference, withFileSearchPreference } from '~/hooks/Files/search';
 import { startupConfigKey, markTitleGenerationProcessed } from '~/data-provider';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { getConvoTitle } from './turns';
@@ -65,6 +67,7 @@ export default function useTurnHandlers(ctx: EventHandlerContext) {
     setShowStopButton,
     setConversation,
     isAddedRequest,
+    runIndex,
     announcePolite,
     lastAnnouncementTimeRef,
     setAbortScroll,
@@ -111,6 +114,7 @@ export default function useTurnHandlers(ctx: EventHandlerContext) {
     (data: TSyncData, submission: EventSubmission) => {
       const { conversationId, thread_id, responseMessage, requestMessage } = data;
       const { initialResponse, messages: _messages, userMessage, isTemporary = false } = submission;
+      adoptComposerConversation(submission.conversation, conversationId, runIndex);
       /** Swap the optimistic user row for the server-stamped one IN PLACE.
        *  Filtering it out and re-appending at the tail would order any of its
        *  already-present children (abandoned responses from preempted
@@ -182,7 +186,15 @@ export default function useTurnHandlers(ctx: EventHandlerContext) {
 
       setShowStopButton(true);
     },
-    [queryClient, setMessages, isAddedRequest, announcePolite, setConversation, setShowStopButton],
+    [
+      queryClient,
+      setMessages,
+      isAddedRequest,
+      announcePolite,
+      setConversation,
+      setShowStopButton,
+      runIndex,
+    ],
   );
 
   const createdHandler = useCallback(
@@ -211,6 +223,14 @@ export default function useTurnHandlers(ctx: EventHandlerContext) {
       }
 
       const { conversationId, parentMessageId } = userMessage;
+      if (conversationId) {
+        adoptComposerConversation(
+          submission.conversation,
+          conversationId,
+          runIndex,
+          transferFileSearchPreference,
+        );
+      }
       lastAnnouncementTimeRef.current = Date.now();
       announcePolite({
         message: 'start',
@@ -263,7 +283,7 @@ export default function useTurnHandlers(ctx: EventHandlerContext) {
         applyAgentTemplate({
           targetId: conversationId,
           sourceId: submission.conversation?.conversationId,
-          ephemeralAgent: submission.ephemeralAgent,
+          ephemeralAgent: withFileSearchPreference(conversationId, submission.ephemeralAgent),
           specName: submission.conversation?.spec,
           startupConfig: queryClient.getQueryData<TStartupConfig>(startupConfigKey(true)),
         });
@@ -281,6 +301,7 @@ export default function useTurnHandlers(ctx: EventHandlerContext) {
       applyAgentTemplate,
       focusRegeneratedResponse,
       lastAnnouncementTimeRef,
+      runIndex,
     ],
   );
 

@@ -14,9 +14,12 @@
 # since env-gated suites self-skip under this job's default env — and the run takes no
 # path filters at all.
 #
-# It cannot fail the branch: the test step is continue-on-error. The newest merge cancels
-# older vote runs. The whole campaign switches off by setting repo variable
-# CODEGRAPH_E2E_VOTES=off once the election passes.
+# It cannot fail the branch: the test step is continue-on-error. A vote run is never
+# cancelled once it starts, because only a finished run is a trial: while each merge
+# cancelled the run before it (dev merges every few minutes, the suite takes ~43 min), 480
+# of 499 runs from 2026-09-24 never finished and graduation evidence stopped at 09-30. One
+# run proceeds and the newest merge waits as the single pending run. The whole campaign
+# switches off by setting repo variable CODEGRAPH_E2E_VOTES=off once the election passes.
 name: Codegraph E2E Votes
 
 on:
@@ -34,7 +37,7 @@ permissions:
 
 concurrency:
   group: codegraph-e2e-votes
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   NODE_OPTIONS: '--max-old-space-size=6144'
@@ -45,7 +48,8 @@ jobs:
     name: vote (full suite)
     if: vars.CODEGRAPH_E2E_VOTES != 'off'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The full suite took 35.8-45.0 min in the runs that finished; 45 cut 153 runs short.
+    timeout-minutes: 75
     env:
       CI: 'true'
       E2E_CHROMIUM_CHANNEL: chrome
@@ -53,10 +57,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Use Node.js 24.16.0
+      - name: Use Node.js 24.22.1
         uses: actions/setup-node@v5
         with:
-          node-version: '24.16.0'
+          node-version: '24.22.1'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -71,7 +75,7 @@ jobs:
             packages/data-schemas/node_modules
             packages/api/node_modules
             api/node_modules
-          key: node-modules-e2e-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
+          key: node-modules-e2e-${{ runner.os }}-24.22.1-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'

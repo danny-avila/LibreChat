@@ -21,6 +21,7 @@ import {
   pendingUsageFamily,
   removeUsageAtoms,
 } from '~/components/Chat/Input/TokenUsage/store';
+import { registerComposerDraft, captureComposerDraft, bindComposerLaunch } from '~/utils/drafts';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
@@ -503,6 +504,27 @@ describe('useResumableSSE', () => {
 
     return { sse, unmount, chatHelpers };
   };
+
+  it('adopts the acknowledged composer before hydrating a resumable submission', async () => {
+    window.history.replaceState({}, '', '/c/new?prompt=hello');
+    const release = registerComposerDraft(0, Constants.NEW_CONVO, Constants.PENDING_CONVO, {});
+    const submission = buildSubmission({
+      conversation: { conversationId: String(Constants.NEW_CONVO) },
+    });
+    bindComposerLaunch(submission.conversation, 0);
+    const captured = captureComposerDraft(0, Constants.NEW_CONVO);
+    const helpers = buildChatHelpers();
+    const { unmount } = renderHook(() => useResumableSSE(submission, helpers));
+    await flushMicrotasks();
+    expect(captured.conversationId()).toBe('stream-123');
+    expect(window.location.pathname).toBe('/c/stream-123');
+    expect(window.location.search).toBe('?prompt=hello');
+    expect(captured()).toBe(true);
+    getLastSSE().readyState = MOCK_SSE_CLOSED;
+    unmount();
+    release();
+    window.history.replaceState({}, '', '/');
+  });
 
   it.each([useSSE, useResumableSSE])(
     '%p binds a created response before any output or usage',

@@ -93,6 +93,105 @@ export type AdminConfigTombstoneRequest = AdminConfigWritePrecondition &
     priority?: number;
   };
 
+/* ── Admin config contract (GET /api/admin/config/meta) ─────────────── */
+
+/**
+ * Admin config API behaviours a client gates on. A flag is `true` only when the running server
+ * has the behaviour; a server without the meta route (404) has none of them.
+ * - `dottedKeys`: keys containing dots survive writes where the schema has a record (model
+ *   names such as `gpt-4.1`, Bedrock inference profiles, MIME types, header names); a dotted key
+ *   at a fixed-shape position is a `dotted_key` issue, and `$`-prefixed or prototype keys are
+ *   rejected with `CONFIG_UNSAFE_KEY`. Issues carry `segments`, which name a dotted record key
+ *   unambiguously. A database engine that cannot store a dotted key answers 422
+ *   `CONFIG_KEY_NOT_STORABLE` and stores nothing.
+ * - `sectionAllowlist`: writes to a top-level key `configSchema` does not define are rejected,
+ *   and stored ones are ignored at merge.
+ * - `readFilteredWriteResponses`: write responses are filtered by the caller's read access.
+ */
+export type AdminConfigFeatureFlag =
+  | 'dottedKeys'
+  | 'sectionAllowlist'
+  | 'readFilteredWriteResponses';
+
+export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
+
+/** A secret config field: encrypted at rest, omitted from reads, kept when a write omits it. */
+export type AdminConfigSecretFieldRule = {
+  path: string;
+  /** Masked-preview companion returned on reads; never writable. */
+  previewPath: string;
+  /** Whether a `${ENV_VAR}` reference is stored and returned as is instead of encrypted. */
+  allowEnvPlaceholder: boolean;
+};
+
+/** A secret held by every item of an array, matched across writes by `identityKey`. */
+export type AdminConfigArraySecretFieldRule = {
+  arrayPath: string;
+  secretKey: string;
+  previewKey: string;
+  identityKey: string;
+};
+
+/** How overrides merge, in override (`librechat.yaml`) key names. */
+export type AdminConfigMergeRules = {
+  /** Arrays merged item by item on a key field instead of replaced. */
+  arrayMergeKeys: Record<string, string>;
+  /** Objects an override replaces whole instead of merging into. */
+  atomicMergePaths: string[];
+  /** Override sections the resolved config (`GET /base`) holds under another name. */
+  overrideKeyMap: Record<string, string>;
+};
+
+export type AdminConfigRules = AdminConfigMergeRules & {
+  /** Top-level sections `configSchema` defines; enforced on writes when `sectionAllowlist`. */
+  acceptedSections: string[];
+  /** Sections only `librechat.yaml` sets; writes to them are dropped. */
+  baseOnlySections: string[];
+  /** Sections only the base (`__base__`) document may hold, through their dedicated APIs. */
+  basePrincipalSections: string[];
+  /** Fields inside overridable sections that only `librechat.yaml` sets. */
+  baseOnlyPaths: string[];
+  secretFields: AdminConfigSecretFieldRule[];
+  arraySecretFields: AdminConfigArraySecretFieldRule[];
+  /** Maps of credentials admin writes are refused for; reads mask their values. */
+  refusedMaps: string[];
+  /** MCP server fields that make a server process-backed; only `librechat.yaml` sets them. */
+  processMcpFields: string[];
+  interface: {
+    /** Interface fields that are role permissions; overrides drop them. */
+    permissionFields: string[];
+    /** Permission fields whose boolean form is a runtime toggle overrides keep. */
+    runtimeFields: string[];
+    /** Sub-keys of an object-form permission field that are permission bits. */
+    permissionSubKeys: string[];
+  };
+  /** Whether `endpoints.all` title settings apply as one block or per field. */
+  titleResolution: 'block' | 'field';
+};
+
+export type AdminConfigMeta = {
+  metaVersion: 1;
+  versions: {
+    /** LibreChat release. */
+    librechat: string;
+    /** `librechat-data-provider` the server validates with. */
+    dataProvider: string;
+    /** `librechat.yaml` schema version. */
+    configSchema: string;
+  };
+  features: AdminConfigFeatures;
+  limits: {
+    /** Most entries one `PATCH /fields` accepts. */
+    maxPatchEntries: number;
+    /**
+     * The app config service's `overrideCacheTtl`: how long another server instance may serve
+     * resolved config from before a write.
+     */
+    overrideCacheTtlMs: number;
+  };
+  rules: AdminConfigRules;
+};
+
 /* ── Audit log taxonomy ─────────────────────────────────────────────── */
 
 /**
