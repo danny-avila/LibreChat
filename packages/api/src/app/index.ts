@@ -1,4 +1,5 @@
 export * from './service';
+export * from './invalidation';
 export * from './loader';
 export * from './config';
 export * from './metrics';
