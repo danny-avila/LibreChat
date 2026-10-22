@@ -58,8 +58,21 @@ const NUMERIC_MATH = new RegExp(
   String.raw`(?<![\w-])(?:${MATH_FUNCTIONS})?\((?:[\d.%+*/,\s-]|e|pi|infinity|nan|nearest|up|down|to-zero)*\)`,
   'gi',
 );
+const ANGLE_UNIT = '(?:deg|grad|rad|turn)';
+/** An angle is a number with a unit; it is a hue when it leads a triplet. */
+const ANGLE = `[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:e[+-]?\\d+)?${ANGLE_UNIT}`;
+/** A trigonometric function over numbers and angles returns a number. */
+const TRIG_MATH = new RegExp(
+  String.raw`(?<![\w-])(?:sin|cos|tan)\((?:[\d.%+*/,\s-]|e|pi|infinity|nan|${ANGLE_UNIT})*\)`,
+  'gi',
+);
+/** An innermost math function over numbers and at least one angle is itself an angle. */
+const ANGLE_MATH = new RegExp(
+  String.raw`(?<![\w-])(?:${MATH_FUNCTIONS})?\((?=[^()]*\d${ANGLE_UNIT})(?:[\d.%+*/,\s-]|e|pi|infinity|nan|${ANGLE_UNIT})*\)`,
+  'gi',
+);
 const SEPARATOR = '(?:\\s*,\\s*|\\s+)';
-const BARE_TRIPLET = `${CHANNEL}${SEPARATOR}${CHANNEL}${SEPARATOR}${CHANNEL}(?:\\s*/\\s*(?:${CHANNEL}|var\\([^)]*\\)))?`;
+const BARE_TRIPLET = `(?:${CHANNEL}|${ANGLE})${SEPARATOR}${CHANNEL}${SEPARATOR}${CHANNEL}(?:\\s*/\\s*(?:${CHANNEL}|var\\([^)]*\\)))?`;
 /** The whole value is three bare channels, or one is the fallback of a `var()`. */
 const TRIPLET = new RegExp(
   `^\\s*${BARE_TRIPLET}\\s*$|var\\(\\s*--[\\w-]+\\s*,\\s*${BARE_TRIPLET}\\s*\\)`,
@@ -73,9 +86,12 @@ const NON_COLOR_PROPERTY =
 
 const blank = (match: string): string => match.replace(/[^\n]/g, ' ');
 
-/** A math function over numbers (`calc(255)`, `min(100, max(0, 255))`) is a fixed channel, so it reads as one. */
+/** A math function over numbers (`calc(255)`, `min(100, max(0, 255))`) is a fixed channel, so it reads as one; so is a trigonometric result and an angle. */
 function collapseMath(text: string): string {
-  const collapsed = text.replace(NUMERIC_MATH, '0');
+  const collapsed = text
+    .replace(TRIG_MATH, '0')
+    .replace(ANGLE_MATH, '0deg')
+    .replace(NUMERIC_MATH, '0');
   return collapsed === text ? text : collapseMath(collapsed);
 }
 

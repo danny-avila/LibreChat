@@ -17,11 +17,11 @@ const RECIPES = new Map([
 
 /** The full-opacity override every recipe carries, so a class list that spells one out also
  *  counts; another `theme-disabled:` utility alone still leaves the control faded. */
-const RECIPE_VARIANTS = [
-  [/(?:^|\s)theme-disabled:(!?)opacity-100(!?)(?=\s|$)/, 'self'],
-  [/(?:^|\s)theme-disabled-within:(!?)opacity-100(!?)(?=\s|$)/, 'within'],
-  [/(?:^|\s)peer-theme-disabled:(!?)opacity-100(!?)(?=\s|$)/, 'peer'],
-];
+const RECIPE_VARIANTS = new Map([
+  ['theme-disabled', 'self'],
+  ['theme-disabled-within', 'within'],
+  ['peer-theme-disabled', 'peer'],
+]);
 
 /** Where the shared primitives live, for a relative import inside the component library. */
 const PRIMITIVES_DIR = /packages[\\/]client[\\/]src[\\/]components[\\/]([\w.-]+?)(?:\.tsx?)?$/;
@@ -74,10 +74,12 @@ const WITHIN_MARKERS = /^(?:has-\[:disabled\]|has-disabled|\[&:has\(:disabled\)\
 const isDescendantModifier = (variant) => /^\[&[\s_>~+]/.test(variant) || /^\*{1,2}$/.test(variant);
 
 /** The disabled markers `theme-disabled` matches (`:disabled`, `[data-disabled]`,
- *  `[aria-disabled='true']`); a self variant spelled with another marker, such as
+ *  `[aria-disabled='true']`, and a selector that implies one, such as `[&:disabled:hover]` or
+ *  `[&:is(:disabled)]`); a self variant spelled with another marker, such as
  *  `data-[state=disabled]`, is one no recipe restores. */
-const SELF_MARKERS =
-  /^(?:disabled|aria-disabled|data-disabled|data-\[disabled(?:=["']?true["']?)?\]|aria-\[disabled=["']?true["']?\]|\[&:disabled\]|\[&\[data-disabled\]\]|\[&\[aria-disabled=["']?true["']?\]\])$/;
+const SELF_MARKERS = new RegExp(
+  String.raw`^(?:disabled|aria-disabled|data-disabled|data-\[disabled(?:=["']?true["']?)?\]|aria-\[disabled=["']?true["']?\]|\[&:(?:(?:hover|focus|focus-visible|active):)*(?:disabled|(?:is|where)\(:disabled\))(?::(?:hover|focus|focus-visible|active))*\]|\[&\[data-disabled\]\]|\[&\[aria-disabled=["']?true["']?\]\])$`,
+);
 
 const TOPOLOGY_ORDER = ['group', 'peer', 'within', 'self'];
 
@@ -149,6 +151,27 @@ function bareDims(value, topology) {
     if (!isOpacity(base) || variants.some(isDisabledVariant)) return [];
     const distant = variants.some(isDescendantModifier);
     return [{ dim: token, topology: distant ? 'group' : topology, important: isImportant(base) }];
+  });
+}
+
+/** The enclosing variants of a utility: every variant that is not a disabled selector, so
+ *  `md:disabled:opacity-50` and `md:theme-disabled:opacity-100` share `md`. */
+const enclosingOf = (variants) => variants.filter((variant) => !isDisabledVariant(variant));
+
+/** Whether `value` spells out a recipe's full-opacity override for the element `need` fades.
+ *  The override may sit under fewer enclosing variants than the dim, since it is then active
+ *  whenever the dim is, but not under variants the dim lacks. */
+function spellsRecipe(value, need) {
+  const dim = splitVariants(need.dim ?? '');
+  const dimEnclosing = enclosingOf(dim.variants);
+  return value.split(/\s+/).some((token) => {
+    const { variants, base } = splitVariants(token);
+    const match = /^(!?)opacity-100(!?)$/.exec(base);
+    const recipe = RECIPE_VARIANTS.get(variants[variants.length - 1]);
+    if (!match || recipe === undefined) return false;
+    if (!(need.topology === 'any' || recipe === need.topology)) return false;
+    if (need.important && !match[1] && !match[2]) return false;
+    return variants.slice(0, -1).every((variant) => dimEnclosing.includes(variant));
   });
 }
 
@@ -351,8 +374,6 @@ function classNameElement(root) {
   return attribute?.name.name === 'className' ? attribute.parent : undefined;
 }
 
-const isCva = (call) => call.type === 'CallExpression' && call.callee.name === 'cva';
-
 /** The helpers that join their arguments into one class list; another call's result is not
  *  known to carry what it was given. */
 const CLASS_CALLS = new Set(['cn', 'clsx', 'cx', 'classNames', 'twMerge', 'twJoin', 'cva']);
@@ -387,6 +408,14 @@ const isClassCall = (call, source, filename) => {
     definition?.type === 'ImportBinding' && isHelperSource(definition.parent.source.value, filename)
   );
 };
+
+/** A call of the `cva` helper, resolved the way the other class helpers are: a local `cva`
+ *  or one imported from elsewhere is another function and its base proves nothing. */
+const isCva = (call, source, filename) =>
+  call.type === 'CallExpression' &&
+  call.callee.type === 'Identifier' &&
+  call.callee.name === 'cva' &&
+  isClassCall(call, source, filename);
 
 /** Reads, for one class list, what a recipe reference resolves to and which strings and
  *  expressions always emit one. */
@@ -427,13 +456,7 @@ function recipeReader(context) {
   };
 
   /** A spelled-out recipe for the dim's element, `!important` when the dim is. */
-  const stringCovers = (value, need) =>
-    typeof value === 'string' &&
-    RECIPE_VARIANTS.some(([pattern, recipe]) => {
-      const match = pattern.exec(value);
-      if (!match || !(need.topology === 'any' || recipe === need.topology)) return false;
-      return !need.important || Boolean(match[1] || match[2]);
-    });
+  const stringCovers = (value, need) => typeof value === 'string' && spellsRecipe(value, need);
 
   /** Whether `node` emits a recipe covering `need` (the dim's element and importance) on every
    *  path through it. */
@@ -453,7 +476,7 @@ function recipeReader(context) {
       case 'MemberExpression':
         return !node.computed && covers(memberRecipeOf(node), topology);
       case 'CallExpression':
-        if (isCva(node)) {
+        if (isCva(node, source, context.filename)) {
           const [base] = node.arguments;
           return base !== undefined && always(base, topology);
         }
@@ -476,7 +499,7 @@ function recipeReader(context) {
       case 'ObjectExpression':
         return node.properties.some((property) => mapEntryAlways(property, topology));
       case 'SpreadElement':
-        return always(node.argument, topology);
+        return node.argument.type === 'ArrayExpression' && always(node.argument, topology);
       case 'ChainExpression':
       case 'TSAsExpression':
       case 'TSSatisfiesExpression':
@@ -548,7 +571,7 @@ function recipeReader(context) {
     switch (parent.type) {
       case 'CallExpression': {
         if (parent.callee === child) return false;
-        if (isCva(parent)) {
+        if (isCva(parent, source, context.filename)) {
           const [base] = parent.arguments;
           return child !== base && base !== undefined && always(base, topology);
         }
@@ -714,7 +737,7 @@ const disabledRecipe = {
     };
 
     /** `node` is the string as an expression; a template's text reports on its own part. */
-    const check = (node, value, reported = node) => {
+    const check = (node, value, reported = node, bareOnly = false) => {
       if (typeof value !== 'string' || !value.includes('opacity-')) return;
       const list = classList(node);
       const element = classNameElement(list);
@@ -729,16 +752,33 @@ const disabledRecipe = {
       if (element) bareTopology = control ? 'self' : 'within';
       const picked = known.get(STATIC) === true || chosenByDisabled(node, source, known);
       const chosen = picked ? bareDims(value, bareTopology) : [];
-      const dims = [...variantDims(value), ...chosen];
+      const dims = [...(bareOnly ? [] : variantDims(value)), ...chosen];
       if (dims.length === 0) return;
       /** A primitive's own recipe restores a plain fade of the control itself; an important one,
        *  or one on another element, still needs the caller's recipe. */
       const coveredByPrimitive = (need) =>
         !need.important && (need.topology === 'self' || need.topology === 'any');
-      if (isPrimitive(element) && dims.every(coveredByPrimitive)) return;
-      const missing = dims.find((need) => !restored(node, list, { ...need, known }));
+      const unrestored = isPrimitive(element)
+        ? dims.filter((need) => !coveredByPrimitive(need))
+        : dims;
+      const missing = unrestored.find((need) => !restored(node, list, { ...need, known }));
       if (!missing) return;
       context.report({ node: reported, messageId: 'missing', data: { dim: missing.dim } });
+    };
+    /** The string a `const` identifier holds, when it is a plain string or a template without
+     *  expressions. */
+    const constantString = (identifier) => {
+      const variable = findVariable(source.getScope(identifier), identifier.name);
+      const declarator = variable?.defs[0]?.node;
+      if (declarator?.type !== 'VariableDeclarator' || declarator.parent.kind !== 'const') {
+        return undefined;
+      }
+      const init = declarator.init;
+      let value = init?.type === 'Literal' ? init.value : undefined;
+      if (init?.type === 'TemplateLiteral' && init.expressions.length === 0) {
+        value = init.quasis[0].value.cooked;
+      }
+      return typeof value === 'string' ? value : undefined;
     };
     /** A constant class string the element names (`const faded = 'opacity-50'` then
      *  `<button disabled className={faded} />`): read where it is used, since the literal on its
@@ -750,24 +790,12 @@ const disabledRecipe = {
       if (expression?.type !== 'Identifier') return;
       const element = attribute.parent;
       if (disabledExpressions(element, source).get(STATIC) !== true) return;
-      const variable = findVariable(source.getScope(expression), expression.name);
-      const declarator = variable?.defs[0]?.node;
-      if (declarator?.type !== 'VariableDeclarator' || declarator.parent.kind !== 'const') return;
-      const init = declarator.init;
-      let value = init?.type === 'Literal' ? init.value : undefined;
-      if (init?.type === 'TemplateLiteral' && init.expressions.length === 0) {
-        value = init.quasis[0].value.cooked;
-      }
-      if (typeof value !== 'string') return;
+      const value = constantString(expression);
+      if (value === undefined) return;
       const primitive = isPrimitive(element);
       const dim = bareDims(value, 'self').find((need) => {
         if (primitive && !need.important && need.topology === 'self') return false;
-        return !RECIPE_VARIANTS.some(([pattern, recipe]) => {
-          const match = pattern.exec(value);
-          return (
-            match && recipe === need.topology && (!need.important || Boolean(match[1] || match[2]))
-          );
-        });
+        return !spellsRecipe(value, need);
       });
       if (!dim) return;
       context.report({ node: expression, messageId: 'missing', data: { dim: dim.dim } });
@@ -775,6 +803,21 @@ const disabledRecipe = {
 
     return {
       JSXAttribute: checkReference,
+      /** A constant composed into a class list a `disabled` condition chooses
+       *  (`cn(busy && faded)`): its bare fades are read where it is used, while a variant dim is
+       *  reported once, at the constant. The bare `className={faded}` is
+       *  `checkReference`'s. */
+      Identifier(node) {
+        const { parent } = node;
+        if (!COMPOSING.has(parent.type)) return;
+        if (parent.type === 'Property' && parent.key === node && !parent.computed) return;
+        if (parent.type === 'JSXExpressionContainer' && parent.parent.type === 'JSXAttribute') {
+          return;
+        }
+        const value = constantString(node);
+        if (value === undefined || !value.includes('opacity-')) return;
+        check(node, value, node, true);
+      },
       Literal(node) {
         check(node, node.value);
       },

@@ -103,6 +103,25 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
     "cn('[&:not(:disabled)]:opacity-50')",
     "cn(isNotDisabled && 'opacity-50')",
     "cn({ 'opacity-50': props.nonDisabled })",
+    "cn('md:disabled:opacity-50', 'md:theme-disabled:opacity-100')",
+    "cn('md:disabled:opacity-50', 'theme-disabled:opacity-100')",
+    "cn('md:hover:disabled:opacity-50 hover:md:theme-disabled:opacity-100')",
+    "cn(disabled && 'md:opacity-50', 'md:theme-disabled:opacity-100')",
+    "cn('md:peer-disabled:opacity-70', 'md:peer-theme-disabled:opacity-100')",
+    "import { cva } from 'class-variance-authority'; cva(disabledFillClasses, { variants: { size: { sm: 'disabled:opacity-50' } } })",
+    "cn('disabled:opacity-50', ...[disabledFillClasses])",
+    "const faded = 'opacity-50'; cn(busy && faded, busy && disabledFillClasses)",
+    "const faded = 'opacity-50'; cn(faded)",
+    "cn('[&:disabled:hover]:opacity-50', disabledFillClasses)",
+    "cn('[&:is(:disabled)]:opacity-50 [&:where(:disabled)]:opacity-40', disabledFillClasses)",
+    "cn('[&:hover:disabled]:opacity-50', disabledFillClasses)",
+    "cn((a || b) && 'opacity-50', (a || b) && disabledFillClasses)",
+    "const faded = 'opacity-50'; <button disabled={busy} className={faded} />",
+    "const faded = 'opacity-50'; <button disabled={busy} className={cn(busy ? faded : '', disabledFillClasses)} />",
+    {
+      code: '<Button className="disabled:opacity-80 peer-disabled:opacity-70 peer-theme-disabled:opacity-100" />',
+      options: [{ primitives: ['Button'] }],
+    },
   ],
   invalid: [
     {
@@ -397,6 +416,39 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
     {
       code: "<button disabled={importMutation.isLoading} className={cn('px-2', importMutation.isLoading && 'cursor-wait opacity-50')} />",
       errors: [missing('opacity-50')],
+    },
+    {
+      code: "const faded = 'opacity-50'; <button disabled={busy} className={cn(busy && faded)} />",
+      errors: [missing('opacity-50')],
+    },
+    {
+      code: "const faded = 'opacity-50'; <button disabled={busy} className={cn(busy ? faded : '')} />",
+      errors: [missing('opacity-50')],
+    },
+    {
+      code: "cn('[&:not(:disabled)]:hover:opacity-50 [&:disabled:hover]:opacity-50')",
+      errors: [missing('[&:disabled:hover]:opacity-50')],
+    },
+    {
+      code: "cn('md:disabled:opacity-50', 'lg:theme-disabled:opacity-100')",
+      errors: [missing('md:disabled:opacity-50')],
+    },
+    {
+      code: "cn('disabled:opacity-50', 'md:theme-disabled:opacity-100')",
+      errors: [missing('disabled:opacity-50')],
+    },
+    {
+      code: "const cva = (base) => base; cva(disabledFillClasses, { variants: { size: { sm: 'disabled:opacity-50' } } })",
+      errors: [missing('disabled:opacity-50')],
+    },
+    {
+      code: "cn('disabled:opacity-50', [...disabledFillClasses])",
+      errors: [missing('disabled:opacity-50')],
+    },
+    {
+      code: '<Button className="disabled:opacity-80 peer-disabled:opacity-70" />',
+      options: [{ primitives: ['Button'] }],
+      errors: [missing('peer-disabled:opacity-70')],
     },
     {
       code: "<button disabled={!canOpenDetails} className={cn(canOpenDetails ? 'hover:bg-surface-hover' : 'opacity-50')} />",

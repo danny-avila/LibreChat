@@ -207,6 +207,19 @@ test('reads math function channels in a custom property triplet', () => {
   );
 });
 
+test('reads angle channels in a custom property triplet', () => {
+  assert.deepEqual(literals('a { --brand: sin(90deg) 0 0; }'), ['sin(90deg) 0 0']);
+  assert.deepEqual(literals('a { --h: 90deg 50% 50%; }'), ['90deg 50% 50%']);
+  assert.deepEqual(literals('a { --h: 0.25turn 50% 50%; }'), ['0.25turn 50% 50%']);
+  assert.deepEqual(literals('a { --h: calc(45deg * 2) 50% 50%; }'), ['calc(45deg * 2) 50% 50%']);
+  assert.deepEqual(literals('a { --h: 120 50% cos(1rad); }'), ['120 50% cos(1rad)']);
+  assert.deepEqual(literals('a { --h: sin(calc(90deg)) 0 0; }'), ['sin(calc(90deg)) 0 0']);
+  assert.deepEqual(literals('a { --size: calc(1px + 2px) 0 0; }'), []);
+  assert.deepEqual(literals('a { --size: calc(1deg + 2px) 0 0; }'), []);
+  assert.deepEqual(literals('a { --h: sin(var(--angle)) 0 0; }'), []);
+  assert.deepEqual(literals('a { --h: 0 90deg 0; }'), []);
+});
+
 test('a token source exempts its custom properties only', () => {
   const css = ':root { --x: 255 0 0; --y: #fff; }\na { color: #fff; width: calc(1 * 2); }';
   assert.deepEqual(findCssColorLiterals(css, [], true), [{ line: 2, literal: '#fff' }]);
