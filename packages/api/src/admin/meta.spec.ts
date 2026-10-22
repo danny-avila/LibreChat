@@ -3,10 +3,12 @@ import mongoose from 'mongoose';
 import { readFileSync } from 'fs';
 import mongoSanitize from 'express-mongo-sanitize';
 import {
+  AppService,
   loadWebSearchConfig,
   mergeConfigOverrides,
   createConfigOperations,
   getConfigOverrideIssues,
+  BASE_CONFIG_PRINCIPAL_ID,
   isConfigOverrideStateEmpty,
 } from '@librechat/data-schemas';
 import {
@@ -28,6 +30,7 @@ import {
 } from 'librechat-data-provider';
 import type {
   AdminConfigFeatureFlag,
+  ConfigOverrideLayer,
   AdminConfigMeta,
   ConfigRecord,
   ConfigStore,
@@ -39,6 +42,7 @@ import type { Request, Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { AdminConfigDeps } from './config';
 import { createRequestSanitizer, rejectUnsafeConfigKeys } from '~/middleware/sanitize';
+import { resolvePreAuthAppConfig, resolvePreLoginAppConfig } from '~/app/resolve';
 import { redactConfigSecrets, encryptConfigSecretFields } from './secrets';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { createMCPPolicyResolver } from '~/mcp/registry/policy';
@@ -214,6 +218,7 @@ describe('GET /api/admin/config/meta', () => {
       'changesBatch',
       'dottedKeys',
       'expectedRevision',
+      'preAuthBaseOverrides',
       'prunesEmptyParents',
       'readFilteredWriteResponses',
       'sectionAllowlist',
@@ -248,6 +253,7 @@ describe('GET /api/admin/config/meta', () => {
       dottedKeys: true,
       sectionAllowlist: true,
       readFilteredWriteResponses: true,
+      preAuthBaseOverrides: true,
       webSearchStoredKeys: true,
       expectedRevision: true,
       prunesEmptyParents: true,
@@ -486,6 +492,43 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
         !('memory' in overrides)
       );
     });
+  },
+  async preAuthBaseOverrides() {
+    const store = new Map<string, unknown>();
+    const base: ConfigOverrideLayer = {
+      principalType: PrincipalType.ROLE,
+      principalId: BASE_CONFIG_PRINCIPAL_ID,
+      priority: 0,
+      overrides: {
+        registration: { socialLogins: ['github'] },
+        turnstile: { siteKey: 'base-site-key' },
+      },
+    };
+    const { getAppConfig } = createAppConfigService({
+      loadBaseConfig: () =>
+        AppService({
+          config: {
+            registration: { socialLogins: ['openid'] },
+            turnstile: { siteKey: 'yaml-site-key' },
+          },
+        }),
+      setCachedTools: async () => undefined,
+      getCache: () => ({
+        get: async (key: string) => store.get(key),
+        set: async (key: string, value: unknown) => store.set(key, value),
+        delete: async (key: string) => store.delete(key),
+      }),
+      cacheKeys: { APP_CONFIG: 'app_config' },
+      getApplicableConfigs: jest.fn().mockResolvedValue([base]),
+      getUserPrincipals: jest.fn().mockResolvedValue([]),
+    });
+    const signedOut = await resolvePreLoginAppConfig(getAppConfig);
+    const preAuth = await resolvePreAuthAppConfig(getAppConfig);
+    return [signedOut, preAuth].every(
+      (config) =>
+        config.registration?.socialLogins?.join() === 'github' &&
+        config.turnstileConfig?.siteKey === 'yaml-site-key',
+    );
   },
   async webSearchStoredKeys() {
     const keys = {
