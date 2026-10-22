@@ -6,6 +6,7 @@ import {
 import type { TCustomConfig, TWebSearchConfigInput } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
 import {
+  foldConfigMergeKey,
   isConfigRecordPath,
   getConfigMergeRules,
   mergeConfigOverrides,
@@ -17,6 +18,7 @@ import {
   getConfigArrayMergeKey,
   getDottedSectionIssues,
   getConfigOverrideIssues,
+  combineFoldedConfigItems,
   getIndexedMergeKeyIssues,
 } from './resolution';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
@@ -1808,6 +1810,250 @@ describe('getConfigOverrideIssues', () => {
   });
 });
 
+describe('endpoints.custom: names the runtime folds together', () => {
+  type CustomItem = Record<string, unknown>;
+  const customOf = (config: AppConfig): CustomItem[] =>
+    (config as unknown as { endpoints: { custom: CustomItem[] } }).endpoints.custom;
+  const yamlOllama = {
+    name: 'Ollama',
+    apiKey: 'ollama',
+    baseURL: 'http://yaml-host:11434/v1',
+    models: { default: ['llama3'], fetch: true },
+    modelDisplayLabel: 'Ollama (YAML)',
+  };
+  const base = { endpoints: { custom: [yamlOllama] } } as unknown as AppConfig;
+
+  it('merges an override `ollama` into the YAML `Ollama`, which keeps its name', () => {
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig(
+        { endpoints: { custom: [{ name: 'ollama', baseURL: 'http://override:11434/v1' }] } },
+        10,
+      ),
+    ]);
+
+    expect(customOf(merged)).toEqual([{ ...yamlOllama, baseURL: 'http://override:11434/v1' }]);
+  });
+
+  it('folds every layer onto one entry, the highest priority winning', () => {
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig({ endpoints: { custom: [{ name: 'OLLAMA', modelDisplayLabel: 'Low' }] } }, 10),
+      fakeConfig({ endpoints: { custom: [{ name: 'ollama', modelDisplayLabel: 'High' }] } }, 20),
+    ]);
+
+    expect(customOf(merged)).toEqual([{ ...yamlOllama, modelDisplayLabel: 'High' }]);
+  });
+
+  it('folds custom endpoint merge keys only, and only the names the runtime folds', () => {
+    expect(foldConfigMergeKey('endpoints.custom', 'OLLAMA')).toBe('ollama');
+    expect(foldConfigMergeKey('endpoints.custom', 'Ollama')).toBe('ollama');
+    expect(foldConfigMergeKey('endpoints.custom', 'OpenRouter')).toBe('OpenRouter');
+    expect(foldConfigMergeKey('endpoints.custom', ' Ollama ')).toBe(' Ollama ');
+    expect(foldConfigMergeKey('mcpServers', 'Ollama')).toBe('Ollama');
+  });
+
+  it('keeps the spelling of the layer that first defined the entry', () => {
+    const merged = mergeConfigOverrides({ endpoints: { custom: [] } } as unknown as AppConfig, [
+      fakeConfig({ endpoints: { custom: [{ name: 'OLLAMA', baseURL: 'http://low/v1' }] } }, 10),
+      fakeConfig({ endpoints: { custom: [{ name: 'ollama', baseURL: 'http://high/v1' }] } }, 20),
+    ]);
+
+    expect(customOf(merged)).toEqual([{ name: 'OLLAMA', baseURL: 'http://high/v1' }]);
+  });
+
+  it('applies an override to every YAML spelling when YAML itself holds both', () => {
+    const merged = mergeConfigOverrides(
+      {
+        endpoints: { custom: [yamlOllama, { ...yamlOllama, name: 'ollama', baseURL: 'http://b' }] },
+      } as unknown as AppConfig,
+      [fakeConfig({ endpoints: { custom: [{ name: 'OLLAMA', modelDisplayLabel: 'Both' }] } }, 10)],
+    );
+
+    expect(customOf(merged)).toEqual([
+      { ...yamlOllama, modelDisplayLabel: 'Both' },
+      { ...yamlOllama, name: 'ollama', baseURL: 'http://b', modelDisplayLabel: 'Both' },
+    ]);
+  });
+
+  it('keeps every other custom endpoint name case-sensitive', () => {
+    const openRouter = { name: 'OpenRouter', baseURL: 'https://openrouter.ai/api/v1' };
+    const merged = mergeConfigOverrides(
+      { endpoints: { custom: [openRouter] } } as unknown as AppConfig,
+      [fakeConfig({ endpoints: { custom: [{ name: 'openrouter', baseURL: 'https://o' }] } }, 10)],
+    );
+
+    expect(customOf(merged).map((item) => item.name)).toEqual(['OpenRouter', 'openrouter']);
+  });
+
+  it('rejects a write that names one entry in two spellings, reporting the earlier item', () => {
+    const custom = [
+      { name: 'Ollama', modelDisplayLabel: 'First' },
+      { name: 'ollama', modelDisplayLabel: 'Second' },
+    ];
+
+    expect(getConfigOverrideIssues({ endpoints: { custom } })).toEqual([
+      {
+        path: 'endpoints.custom.0',
+        segments: ['endpoints', 'custom', '0'],
+        code: 'duplicate_merge_key',
+      },
+    ]);
+  });
+
+  describe('a stored document that names one entry in two spellings', () => {
+    /** Stored before names were folded: requests used the first item's host and key. */
+    const legacy = [
+      {
+        name: 'Ollama',
+        baseURL: 'http://override-first/v1',
+        apiKey: 'v3:first-key',
+        modelDisplayLabel: 'legacy-first',
+      },
+      { name: 'ollama', modelDisplayLabel: 'legacy-second' },
+    ];
+    let warn: jest.SpyInstance;
+
+    beforeEach(() => {
+      warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    });
+
+    afterEach(() => {
+      warn.mockRestore();
+    });
+
+    it('combines the items in document order onto the YAML entry, keeping the first host and key', () => {
+      const merged = mergeConfigOverrides(base, [
+        fakeConfig({ endpoints: { custom: legacy } }, 10, undefined, 'legacy-doc'),
+      ]);
+
+      expect(customOf(merged)).toEqual([
+        {
+          ...yamlOllama,
+          baseURL: 'http://override-first/v1',
+          apiKey: 'v3:first-key',
+          modelDisplayLabel: 'legacy-second',
+        },
+      ]);
+      const messages = warn.mock.calls.map(([message]) => String(message));
+      expect(messages).toEqual([expect.stringContaining('Combining "endpoints.custom" items')]);
+      expect(messages[0]).toContain('legacy-doc');
+    });
+
+    it('lets the later item win the fields both set', () => {
+      const merged = mergeConfigOverrides(base, [
+        fakeConfig(
+          {
+            endpoints: {
+              custom: [legacy[0], { name: 'OLLAMA', baseURL: 'http://override-second/v1' }],
+            },
+          },
+          10,
+        ),
+      ]);
+
+      expect(customOf(merged)).toEqual([
+        {
+          ...yamlOllama,
+          baseURL: 'http://override-second/v1',
+          apiKey: 'v3:first-key',
+          modelDisplayLabel: 'legacy-first',
+        },
+      ]);
+    });
+
+    it('appends the combined entry where the first item stood when YAML has no such entry', () => {
+      const merged = mergeConfigOverrides({ endpoints: { custom: [] } } as unknown as AppConfig, [
+        fakeConfig({ endpoints: { custom: [...legacy, { name: 'Other', apiKey: 'k' }] } }, 10),
+      ]);
+
+      expect(customOf(merged)).toEqual([
+        {
+          name: 'ollama',
+          baseURL: 'http://override-first/v1',
+          apiKey: 'v3:first-key',
+          modelDisplayLabel: 'legacy-second',
+        },
+        { name: 'Other', apiKey: 'k' },
+      ]);
+    });
+  });
+
+  it('keeps the existing rule for a stored repeat of one spelling: the last item applies', () => {
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig(
+        {
+          endpoints: {
+            custom: [
+              { name: 'ollama', baseURL: 'http://first/v1' },
+              { name: 'ollama', modelDisplayLabel: 'Second' },
+            ],
+          },
+        },
+        10,
+      ),
+    ]);
+
+    expect(customOf(merged)).toEqual([{ ...yamlOllama, modelDisplayLabel: 'Second' }]);
+  });
+
+  it('attributes an issue on the merged entry to the override item that folds onto it', () => {
+    const yamlBase = { endpoints: { custom: [yamlOllama] } } as Partial<TCustomConfig>;
+
+    expect(
+      getConfigOverrideIssues({ endpoints: { custom: [{ name: 'OLLAMA', models: 5 }] } }, yamlBase),
+    ).toEqual([
+      {
+        path: 'endpoints.custom.0.models',
+        segments: ['endpoints', 'custom', '0', 'models'],
+        code: 'invalid_type',
+      },
+    ]);
+    expect(
+      getConfigOverrideIssues(
+        { endpoints: { custom: [{ name: 'ollama', modelDisplayLabel: 'Local' }] } },
+        yamlBase,
+      ),
+    ).toEqual([]);
+  });
+
+  it('strips an invalid field of a folded override and keeps the YAML value beneath it', () => {
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig({ endpoints: { custom: [{ name: 'ollama', models: 5, iconURL: 'i.png' }] } }, 10),
+    ]);
+
+    expect(customOf(merged)).toEqual([{ ...yamlOllama, iconURL: 'i.png' }]);
+  });
+});
+
+describe('combineFoldedConfigItems', () => {
+  it('returns the same array when no entry is named in two spellings', () => {
+    const items = [{ name: 'ollama' }, { name: 'ollama', a: 1 }, { name: 'Other' }, 'loose', {}];
+
+    expect(combineFoldedConfigItems('endpoints.custom', items)).toBe(items);
+  });
+
+  it('combines every item of a two-spelling group in order, at the first position', () => {
+    const items = [
+      { name: 'A' },
+      { name: 'Ollama', baseURL: 'one', headers: { x: '1' } },
+      { name: 'ollama', headers: { y: '2' } },
+      { name: 'B' },
+      { name: 'OLLAMA', baseURL: 'three' },
+    ];
+
+    expect(combineFoldedConfigItems('endpoints.custom', items)).toEqual([
+      { name: 'A' },
+      { name: 'OLLAMA', baseURL: 'three', headers: { x: '1', y: '2' } },
+      { name: 'B' },
+    ]);
+  });
+
+  it('leaves arrays whose keys are not folded alone', () => {
+    const items = [{ name: 'Ollama' }, { name: 'ollama' }];
+
+    expect(combineFoldedConfigItems('modelSpecs.list', items)).toBe(items);
+  });
+});
+
 describe('getDottedSectionIssues', () => {
   it('reports only top-level keys holding a dot', () => {
     expect(getDottedSectionIssues({ 'filters.x': 1, registration: { 'a.b': 1 } })).toEqual([
@@ -2353,6 +2599,35 @@ describe('getConfigChangeIssues', () => {
     ]).state;
     expect(paths(getConfigChangeIssues(renamed, {}, stored, []))).toEqual([
       'endpoints.custom.3.baseURL',
+    ]);
+  });
+
+  it('matches an existing issue of an entry under any spelling of its folded key', () => {
+    const stored = {
+      overrides: {
+        endpoints: {
+          custom: [
+            { name: 'first', baseURL: 'https://first.example.com/v1' },
+            { name: 'Ollama', baseURL: 42 },
+          ],
+        },
+      },
+    };
+    const respelled = {
+      overrides: { endpoints: { custom: [{ name: 'ollama', baseURL: 42 }] } },
+      tombstones: [],
+    };
+    const other = {
+      overrides: { endpoints: { custom: [{ name: 'Foo', baseURL: 42 }] } },
+      tombstones: [],
+    };
+    const otherStored = {
+      overrides: { endpoints: { custom: [{ name: 'foo', baseURL: 42 }] } },
+    };
+
+    expect(getConfigChangeIssues(respelled, {}, stored, [])).toEqual([]);
+    expect(paths(getConfigChangeIssues(other, {}, otherStored, []))).toEqual([
+      'endpoints.custom.0.baseURL',
     ]);
   });
 

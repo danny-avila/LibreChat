@@ -6,6 +6,7 @@ import {
   RUNTIME_CONFIG_INTERFACE_FIELDS,
   PERMISSION_SUB_KEYS,
   isProcessMCPServerConfig,
+  normalizeEndpointName,
   configSchema,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
@@ -46,6 +47,16 @@ const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_S
  */
 const ARRAY_MERGE_KEYS: Record<string, string> = {
   'endpoints.custom': 'name',
+};
+
+/**
+ * How a merge key is folded before items are matched, by `ARRAY_MERGE_KEYS` path: two
+ * spellings the runtime serves as one item are one item to the merge too. Custom endpoint
+ * names fold through `normalizeEndpointName`, so an override `ollama` lands on the YAML
+ * `Ollama` instead of serving beside it with a different baseURL and key.
+ */
+const MERGE_KEY_FOLDS: Record<string, (key: string) => string> = {
+  'endpoints.custom': normalizeEndpointName,
 };
 
 /**
@@ -115,11 +126,40 @@ function isSafePath(path: string): boolean {
  * such as `name` for `endpoints.custom`; `undefined` for any other path.
  */
 export function getConfigArrayMergeKey(segments: readonly string[]): string | undefined {
+  const arrayPath = getMergeArrayPath(segments);
+  return arrayPath === undefined ? undefined : ARRAY_MERGE_KEYS[arrayPath];
+}
+
+/** The `ARRAY_MERGE_KEYS` path of the merged-by-key array at an override (YAML) path. */
+function getMergeArrayPath(segments: readonly string[]): string | undefined {
   if (segments.length === 0 || segments.some((segment) => segment.includes('.'))) {
     return undefined;
   }
   const appConfigPath = remapOverridePath(segments.join('.'));
-  return hasOwn(ARRAY_MERGE_KEYS, appConfigPath) ? ARRAY_MERGE_KEYS[appConfigPath] : undefined;
+  return hasOwn(ARRAY_MERGE_KEYS, appConfigPath) ? appConfigPath : undefined;
+}
+
+/**
+ * The identity entry key `key` of the merged-by-key array at an override (YAML) path has: the
+ * key as the runtime merge folds it (`foldConfigMergeKey`), so `Ollama` and `ollama` name one
+ * custom endpoint to entry changes as they do to the merge. A key at any other path is its own
+ * identity.
+ */
+export function getConfigEntryIdentity(segments: readonly string[], key: string): string {
+  const arrayPath = getMergeArrayPath(segments);
+  return arrayPath === undefined ? key : foldConfigMergeKey(arrayPath, key);
+}
+
+/**
+ * `combineFoldedConfigItems` for the merged-by-key array at an override (YAML) path: stored
+ * items naming one entry in two spellings, combined as the runtime merge combines them.
+ */
+export function combineFoldedConfigEntries(
+  segments: readonly string[],
+  items: unknown[],
+): unknown[] {
+  const arrayPath = getMergeArrayPath(segments);
+  return arrayPath === undefined ? items : combineFoldedConfigItems(arrayPath, items);
 }
 
 function remapOverridePath(path: string): string {
@@ -182,6 +222,89 @@ function deleteConfigPath<T extends AnyObject>(target: T, path: string): T {
   return { ...target, mcpConfig: processServers } as T;
 }
 
+/**
+ * Folds a merge key of the merged-by-key array at `arrayPath` into the identity layers match
+ * on (`Ollama` and `ollama` are one custom endpoint); other keys come back unchanged. Code that
+ * pairs items across writes, such as secret preservation, matches on the same identity.
+ */
+export function foldConfigMergeKey(arrayPath: string, key: string): string {
+  return hasOwn(MERGE_KEY_FOLDS, arrayPath) ? MERGE_KEY_FOLDS[arrayPath](key) : key;
+}
+
+/** The identity an item of the merged-by-key array at `arrayPath` matches on. */
+function getMergeKey(item: AnyObject, keyField: string, arrayPath: string): unknown {
+  const key = item[keyField];
+  return typeof key === 'string' ? foldConfigMergeKey(arrayPath, key) : key;
+}
+
+/**
+ * Combines the items of a stored merged-by-key array that name one item in more than one
+ * spelling of its folded key (`Ollama` and `ollama`): merged in document order, later fields
+ * winning, at the first one's position. A document stored before names were folded kept such
+ * items apart, and the runtime took requests' `baseURL` and key from the first while serving
+ * the later one's metadata, so the combined item keeps what each contributed instead of losing
+ * the earlier one as a duplicate. A key repeated in only one spelling is left as is (the last
+ * item applies). Returns the same array when nothing combines.
+ */
+export function combineFoldedConfigItems(arrayPath: string, items: unknown[]): unknown[] {
+  const keyField = ARRAY_MERGE_KEYS[arrayPath];
+  if (!keyField || !hasOwn(MERGE_KEY_FOLDS, arrayPath)) {
+    return items;
+  }
+  const groups = new Map<string, { spellings: Set<string>; indexes: number[] }>();
+  items.forEach((item, index) => {
+    const key = isPlainObject(item) ? item[keyField] : undefined;
+    if (typeof key !== 'string' || key === '') {
+      return;
+    }
+    const identity = MERGE_KEY_FOLDS[arrayPath](key);
+    const group = groups.get(identity) ?? { spellings: new Set<string>(), indexes: [] };
+    group.spellings.add(key);
+    group.indexes.push(index);
+    groups.set(identity, group);
+  });
+  const depth = arrayPath.split('.').length;
+  const combined = new Map<number, AnyObject>();
+  const absorbed = new Set<number>();
+  for (const { spellings, indexes } of groups.values()) {
+    if (spellings.size < 2) {
+      continue;
+    }
+    const [first, ...rest] = indexes;
+    const merged = rest.reduce<AnyObject>(
+      (item, index) => deepMerge(item, items[index] as AnyObject, depth, arrayPath),
+      items[first] as AnyObject,
+    );
+    combined.set(first, merged);
+    rest.forEach((index) => absorbed.add(index));
+  }
+  if (combined.size === 0) {
+    return items;
+  }
+  return items.flatMap((item, index) => (absorbed.has(index) ? [] : [combined.get(index) ?? item]));
+}
+
+/** `combineFoldedConfigItems` over every folded array of a stored overrides document. */
+function combineStoredFoldedItems(overrides: unknown, principal: string): unknown {
+  let result = overrides;
+  for (const arrayPath of Object.keys(MERGE_KEY_FOLDS)) {
+    const segments = arrayPath.split('.');
+    const items = getPath(result, segments);
+    if (!Array.isArray(items)) {
+      continue;
+    }
+    const combined = combineFoldedConfigItems(arrayPath, items);
+    if (combined === items) {
+      continue;
+    }
+    logger.warn(
+      `[mergeConfigOverrides] Combining "${arrayPath}" items that name one entry in different spellings for ${principal}; a write of this list must name each entry once`,
+    );
+    result = setPath(result, segments, combined);
+  }
+  return result;
+}
+
 function mergeArrayByKey(
   target: AnyObject[],
   source: AnyObject[],
@@ -192,7 +315,7 @@ function mergeArrayByKey(
   const sourceByKey = new Map<unknown, AnyObject>();
   for (const item of source) {
     if (item != null && typeof item === 'object') {
-      const key = item[keyField];
+      const key = getMergeKey(item, keyField, path);
       // Source items without a key value are skipped: no stable identity
       // for matching or appending. (Keyless target items are preserved as-is below.)
       if (key != null) {
@@ -206,13 +329,15 @@ function mergeArrayByKey(
 
   // Pass the array container path (not a per-element path) so item
   // properties build paths like 'endpoints.custom.baseURL' for any
-  // nested ARRAY_MERGE_KEYS lookups.
+  // nested ARRAY_MERGE_KEYS lookups. A matched item keeps the spelling of
+  // its key the layer beneath gave it: an override `ollama` modifies the
+  // YAML `Ollama`, which stays the entry's name.
   for (const item of target) {
     if (item != null && typeof item === 'object') {
-      const key = item[keyField];
+      const key = getMergeKey(item, keyField, path);
       const override = key != null ? sourceByKey.get(key) : undefined;
       if (override) {
-        result.push(deepMerge(item, override, depth + 1, path));
+        result.push({ ...deepMerge(item, override, depth + 1, path), [keyField]: item[keyField] });
         seen.add(key);
       } else {
         result.push({ ...item });
@@ -348,15 +473,16 @@ function findItemIndex(
   key: string,
   keyField: string | undefined,
   mergedItem: unknown,
+  arrayPath: string,
 ): number {
   if (keyField) {
+    if (!isPlainObject(mergedItem)) {
+      return -1;
+    }
+    const mergedKey = getMergeKey(mergedItem, keyField, arrayPath);
     for (let index = node.length - 1; index >= 0; index--) {
       const item = node[index];
-      if (
-        isPlainObject(item) &&
-        isPlainObject(mergedItem) &&
-        item[keyField] === mergedItem[keyField]
-      ) {
+      if (isPlainObject(item) && getMergeKey(item, keyField, arrayPath) === mergedKey) {
         return index;
       }
     }
@@ -390,7 +516,7 @@ function attributeIssue(
         ? ARRAY_MERGE_KEYS[arrayPath]
         : undefined;
       const mergedItem = Array.isArray(mergedNode) ? mergedNode[Number(key)] : undefined;
-      const index = findItemIndex(node, key, keyField, mergedItem);
+      const index = findItemIndex(node, key, keyField, mergedItem, arrayPath);
       if (keyField && index < 0) {
         return undefined;
       }
@@ -448,12 +574,15 @@ function getMergeKeyIssues(overrides: AnyObject): ConfigOverrideIssue[] {
       return [];
     }
     const lastIndex = new Map<unknown, number>();
-    node.forEach((item, index) => isPlainObject(item) && lastIndex.set(item[keyField], index));
+    node.forEach(
+      (item, index) =>
+        isPlainObject(item) && lastIndex.set(getMergeKey(item, keyField, arrayPath), index),
+    );
     return node.flatMap((item, index) => {
       if (!isPlainObject(item) || typeof item[keyField] !== 'string' || item[keyField] === '') {
         return [toIssue([...segments, String(index)], 'missing_merge_key')];
       }
-      return lastIndex.get(item[keyField]) === index
+      return lastIndex.get(getMergeKey(item, keyField, arrayPath)) === index
         ? []
         : [toIssue([...segments, String(index)], 'duplicate_merge_key')];
     });
@@ -872,9 +1001,10 @@ function hasMergeKey(item: unknown, keyField: string): boolean {
 
 /**
  * Where an issue sits in `overrides`, in a form that survives entries moving: an item of a
- * merged-by-key array is named by its key, or (without one) by its place among the keyless
- * items, rather than by its index. Removing one entry shifts the ones after it, and their
- * issues must still match the ones the stored document already had.
+ * merged-by-key array is named by its key's identity (`getConfigEntryIdentity`), or (without
+ * one) by its place among the keyless items, rather than by its index. Removing one entry
+ * shifts the ones after it, and their issues must still match the ones the stored document
+ * already had.
  */
 function getIssueLocation(segments: readonly string[], overrides: unknown): string {
   const location: Array<string | { key: unknown } | { keyless: number }> = [];
@@ -889,7 +1019,12 @@ function getIssueLocation(segments: readonly string[], overrides: unknown): stri
       const item: unknown = node[position];
       location.push(
         hasMergeKey(item, keyField)
-          ? { key: (item as AnyObject)[keyField] }
+          ? {
+              key: getConfigEntryIdentity(
+                segments.slice(0, index),
+                (item as AnyObject)[keyField] as string,
+              ),
+            }
           : {
               keyless: node.slice(0, position).filter((other) => !hasMergeKey(other, keyField))
                 .length,
@@ -1022,7 +1157,7 @@ function stripInvalidOverrides(
   base: Partial<TCustomConfig>,
 ): AnyObject {
   const principal = `${config.principalType}/${config.principalId}`;
-  let stripped: unknown = config.overrides;
+  let stripped: unknown = combineStoredFoldedItems(config.overrides, principal);
   /**
    * Removing a field can make a related field it supplies fail, so check again while
    * removals make progress. If they stop, only the sections that still fail are dropped.

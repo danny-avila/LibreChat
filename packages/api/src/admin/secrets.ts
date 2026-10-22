@@ -1,6 +1,12 @@
 import isPlainObject from 'lodash/isPlainObject';
-import { encryptV3, decryptV3, logger } from '@librechat/data-schemas';
 import { envVarRegex, extractEnvVariable } from 'librechat-data-provider';
+import {
+  logger,
+  encryptV3,
+  decryptV3,
+  foldConfigMergeKey,
+  combineFoldedConfigItems,
+} from '@librechat/data-schemas';
 import type { AdminConfigRules } from '@librechat/data-schemas';
 import { isUserProvided } from '~/utils/common';
 
@@ -68,7 +74,7 @@ interface ArraySecretField {
   secretKey: string;
   /** Masked-preview companion on each item, always the sibling `<secretKey>Preview`. */
   previewKey: string;
-  /** Item field matched verbatim across writes for omit-to-keep round-trips. */
+  /** Item field matched across writes for omit-to-keep round-trips, as the merge keys it. */
   identityKey: string;
   /** Reference values that must stay readable and never encrypt, e.g. `user_provided`, `${ENV_VAR}`. */
   isPassthroughValue: (value: string) => boolean;
@@ -534,16 +540,18 @@ function getSecretArray(root: unknown, field: ArraySecretField, basePath = ''): 
 }
 
 /**
- * Exact-string entry identity for preserve matching. Deliberately untrimmed:
- * the runtime config merge keys entries by their verbatim name, so `"Prod"`
- * and `" Prod "` are distinct endpoints with distinct credentials.
+ * Entry identity for preserve matching: the identity the runtime config merge keys entries
+ * by (`foldConfigMergeKey`), so `Ollama` and `ollama` share one stored key. Deliberately
+ * untrimmed: `"Prod"` and `" Prod "` are distinct endpoints with distinct credentials.
  */
 function getEntryIdentity(
   entry: Record<string, unknown> | null,
   field: ArraySecretField,
 ): string | undefined {
   const value = entry?.[field.identityKey];
-  return typeof value === 'string' && value !== '' ? value : undefined;
+  return typeof value === 'string' && value !== ''
+    ? foldConfigMergeKey(field.arrayPath, value)
+    : undefined;
 }
 
 /**
@@ -597,10 +605,20 @@ function applyArraySecretWrites(entries: unknown[], field: ArraySecretField): vo
   }
 }
 
+/**
+ * Stored entries as the runtime merge reads them: a document stored before names were folded
+ * may name one entry in two spellings, which the merge combines (`combineFoldedConfigItems`),
+ * so the secret an omitted key keeps is the one the runtime uses.
+ */
+function getStoredSecretEntries(existing: unknown, field: ArraySecretField): unknown[] | null {
+  const entries = getSecretArray(existing, field);
+  return entries && combineFoldedConfigItems(field.arrayPath, entries);
+}
+
 function preserveArraySecrets(result: unknown, existing: unknown, basePath: string): void {
   for (const field of ARRAY_SECRET_FIELDS) {
     const entries = getSecretArray(result, field, basePath);
-    const existingEntries = getSecretArray(existing, field);
+    const existingEntries = getStoredSecretEntries(existing, field);
     if (!entries || !existingEntries) {
       continue;
     }

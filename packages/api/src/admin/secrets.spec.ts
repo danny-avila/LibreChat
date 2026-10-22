@@ -1029,6 +1029,50 @@ describe('Custom endpoint config secrets', () => {
     expect(decryptV3(spaced.apiKey)).toBe('sk-prod-spaced-key');
   });
 
+  it('matches endpoint names the runtime folds together as one identity', () => {
+    const existing = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'Ollama', apiKey: 'sk-ollama-stored-key' },
+        { name: 'OpenRouter', apiKey: 'sk-or-stored-value' },
+      ]),
+    );
+    const next = encryptConfigSecrets(endpointsWith([{ name: 'ollama' }, { name: 'openrouter' }]));
+
+    const preserved = preserveConfigSecrets(next, existing);
+    const [ollama, openRouter] = preserved.endpoints.custom as Array<Record<string, string>>;
+
+    expect(decryptV3(ollama.apiKey)).toBe('sk-ollama-stored-key');
+    expect(ollama.apiKeyPreview).toBe('...-key');
+    expect(openRouter.apiKey).toBeUndefined();
+  });
+
+  /** A document stored before names were folded may hold both spellings; the runtime merge
+   *  combines them in order, so an omitted key keeps the key that merge applies. */
+  it.each([
+    ['only the earlier item holds a key', [{ apiKey: 'sk-ollama-first-key' }, {}], 'first'],
+    [
+      'both items hold a key',
+      [{ apiKey: 'sk-ollama-first-key' }, { apiKey: 'sk-ollama-second-key' }],
+      'second',
+    ],
+  ])('keeps the combined key of two stored spellings when %s', (_case, keys, expected) => {
+    const existing = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'Ollama', baseURL: 'http://first/v1', ...keys[0] },
+        { name: 'ollama', modelDisplayLabel: 'Second', ...keys[1] },
+      ]),
+    );
+
+    const preserved = preserveConfigSecrets(
+      encryptConfigSecrets(endpointsWith([{ name: 'ollama' }])),
+      existing,
+    );
+
+    const [entry] = preserved.endpoints.custom as Array<Record<string, string>>;
+    expect(decryptV3(entry.apiKey)).toBe(`sk-ollama-${expected}-key`);
+    expect(entry.apiKeyPreview).toBe('...-key');
+  });
+
   it('does not preserve keys for duplicated endpoint identities', () => {
     const existing = encryptConfigSecrets(
       endpointsWith([

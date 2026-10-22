@@ -23,6 +23,8 @@ import {
   setConfigFields,
   applyConfigChange,
   getConfigEntryKey,
+  getConfigEntryMatcher,
+  getConfigEntryIdentity,
   unsetConfigPaths,
   getConfigRevision,
   isConfigEntryError,
@@ -1181,7 +1183,8 @@ function prepareEntryChange(
 
 /**
  * What a change addresses, for refusing two changes of a batch that address the same thing: a
- * path, or one entry of a collection (by its key; a rename by the key it starts from).
+ * path, or one entry of a collection (by its key's identity, so `Ollama` and `ollama` are one
+ * custom endpoint; a rename by the key it starts from).
  */
 function getChangeIdentity(
   raw: Record<string, unknown>,
@@ -1191,18 +1194,20 @@ function getChangeIdentity(
   if (!isEntryOp(op)) {
     return JSON.stringify(['path', segments]);
   }
+  const toEntry = (key: unknown): string =>
+    JSON.stringify([
+      'entry',
+      segments,
+      typeof key === 'string' ? getConfigEntryIdentity(segments, key) : null,
+    ]);
   if (op === 'rename') {
-    return JSON.stringify(['entry', segments, raw.from]);
+    return toEntry(raw.from);
   }
   if (op === 'removeEntry') {
-    return JSON.stringify(['entry', segments, raw.key]);
+    return toEntry(raw.key);
   }
   const keyField = getConfigArrayMergeKey(segments);
-  return JSON.stringify([
-    'entry',
-    segments,
-    keyField ? getConfigEntryKey(raw.entry, keyField) : null,
-  ]);
+  return toEntry(keyField ? getConfigEntryKey(raw.entry, keyField) : null);
 }
 
 /**
@@ -1328,13 +1333,17 @@ function expandChange(change: PreparedChange, overrides: unknown): ConfigChange[
   }
 }
 
-/** Whether `librechat.yaml` itself defines entry `name` of the collection a change addresses. */
+/**
+ * Whether `librechat.yaml` itself defines entry `name` of the collection a change addresses:
+ * an entry of a merged-by-key array by its identity, so `ollama` names the YAML `Ollama`.
+ */
 function isYamlEntry(base: unknown, change: PreparedChange, name: string): boolean {
   const node = getAtPath(base, change.target.segments);
   const keyField = getConfigArrayMergeKey(change.target.segments);
   if (keyField) {
     return (
-      Array.isArray(node) && node.some((item) => isPlainRecord(item) && item[keyField] === name)
+      Array.isArray(node) &&
+      node.some(getConfigEntryMatcher(change.target.segments, keyField, name))
     );
   }
   return isPlainRecord(node) && Object.prototype.hasOwnProperty.call(node, name);

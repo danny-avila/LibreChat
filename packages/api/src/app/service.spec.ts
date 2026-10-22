@@ -8,6 +8,7 @@ import {
   _resetOverrideStrictCache,
   getAppConfigOptionsFromUser,
 } from './service';
+import { loadCustomEndpointsConfig } from '~/endpoints/custom/config';
 import { getProviderConfig } from '~/endpoints/config/providers';
 
 /** Extends AppConfig with mock fields used by merge behavior tests. */
@@ -723,6 +724,91 @@ describe('createAppConfigService', () => {
       const config = await getAppConfig({ baseOnly: true });
 
       expect(config.modelSpecs?.list?.[0]?.preset?.endpoint).toBe('agents');
+    });
+
+    describe('endpoint names the runtime folds together', () => {
+      function ollamaBase() {
+        return AppService({
+          config: {
+            interface: { modelSelect: true },
+            endpoints: {
+              custom: [
+                {
+                  name: 'Ollama',
+                  apiKey: 'ollama',
+                  baseURL: 'http://yaml-host:11434/v1',
+                  models: { default: ['llama3'] },
+                  modelDisplayLabel: 'Ollama (YAML)',
+                },
+              ],
+              agents: { allowedProviders: ['Ollama', 'openAI'] },
+            },
+            modelSpecs: {
+              list: [{ name: 'local', label: 'Local', preset: { endpoint: 'Ollama' } }],
+              addedEndpoints: ['Ollama', 'agents', 'ollama'],
+            },
+          },
+        });
+      }
+
+      it('serves YAML endpoint references under their served names', async () => {
+        const deps = createDeps({
+          loadBaseConfig: jest.fn().mockResolvedValue(await ollamaBase()),
+        });
+        const { getAppConfig } = createAppConfigService(deps);
+
+        for (const config of [
+          await getAppConfig({ baseOnly: true }),
+          await getAppConfig({ role: 'USER' }),
+        ]) {
+          expect(config.modelSpecs?.addedEndpoints).toEqual(['ollama', 'agents']);
+          expect(config.modelSpecs?.list?.[0]?.preset?.endpoint).toBe('ollama');
+          expect(config.endpoints?.agents?.allowedProviders).toEqual(['ollama', 'openAI']);
+        }
+      });
+
+      it('merges an override `ollama` into the YAML `Ollama` and serves it as one endpoint', async () => {
+        const deps = createDeps({
+          loadBaseConfig: jest.fn().mockResolvedValue(await ollamaBase()),
+          getApplicableConfigs: jest.fn().mockResolvedValue([
+            {
+              priority: 10,
+              isActive: true,
+              overrides: {
+                endpoints: {
+                  custom: [
+                    {
+                      name: 'ollama',
+                      baseURL: 'http://override:11434/v1',
+                      modelDisplayLabel: 'Ollama (override)',
+                    },
+                  ],
+                  agents: { allowedProviders: ['Ollama'] },
+                },
+                modelSpecs: {
+                  list: [{ name: 'override', label: 'Override', preset: { endpoint: 'OLLAMA' } }],
+                  addedEndpoints: ['Ollama'],
+                },
+              },
+            },
+          ]),
+        });
+        const { getAppConfig } = createAppConfigService(deps);
+
+        const config = await getAppConfig({ role: 'USER' });
+
+        expect(config.endpoints?.custom).toHaveLength(1);
+        expect(config.endpoints?.custom?.[0]?.name).toBe('Ollama');
+        const served = loadCustomEndpointsConfig(config.endpoints?.custom);
+        expect(Object.keys(served ?? {})).toEqual(['ollama']);
+        expect(served?.ollama?.modelDisplayLabel).toBe('Ollama (override)');
+        const provider = getProviderConfig({ provider: 'ollama', appConfig: config });
+        expect(provider.customEndpointConfig?.baseURL).toBe('http://override:11434/v1');
+        expect(provider.customEndpointConfig?.apiKey).toBe('ollama');
+        expect(config.endpoints?.agents?.allowedProviders).toEqual(['ollama']);
+        expect(config.modelSpecs?.list?.[0]?.preset?.endpoint).toBe('ollama');
+        expect(config.modelSpecs?.addedEndpoints).toEqual(['ollama']);
+      });
     });
 
     /**

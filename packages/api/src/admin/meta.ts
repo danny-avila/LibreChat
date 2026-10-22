@@ -58,7 +58,7 @@ export function buildAdminConfigMeta(limits: AdminConfigMeta['limits']): AdminCo
         runtimeFields: [...RUNTIME_CONFIG_INTERFACE_FIELDS],
         permissionSubKeys: [...PERMISSION_SUB_KEYS],
       },
-      titleResolution: 'block',
+      titleResolution: 'field',
     },
   };
 }
