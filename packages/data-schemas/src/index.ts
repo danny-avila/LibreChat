@@ -122,6 +122,6 @@ export {
 } from './migrations';
 export type { SearchTokenBackfillResult } from './migrations';
 
-export { createBrowserSetupStore } from './methods/browserSetup';
+export { createBrowserSetupStore, createBrowserSetupBackend } from './methods/browserSetup';
 export type * from './types/browserSetup';
 export type * from './types/codeEnvironmentSetup';

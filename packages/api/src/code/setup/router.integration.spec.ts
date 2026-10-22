@@ -3,7 +3,7 @@ import request from 'supertest';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
-import { createMethods, createModels } from '@librechat/data-schemas';
+import { createMethods, createModels, createBrowserSetupBackend } from '@librechat/data-schemas';
 import {
   browserSetupRequestHash,
   signBrowserSetupProof,
@@ -103,6 +103,8 @@ describe('browser setup HTTP protocol boundary', () => {
   let owner: string;
   let base: AppConfig;
   let support = true;
+  let refreshCount = 0;
+  const lifetimes: AbortController[] = [];
   let approval: BrowserEnrollmentApproval | undefined;
   let completed = false;
   let credentialExpiresAt: string;
@@ -131,6 +133,7 @@ describe('browser setup HTTP protocol boundary', () => {
       termsAccepted: true,
       role: 'USER',
     });
+    refreshCount = 0;
     owner = user._id.toString();
     base = config();
     support = true;
@@ -138,10 +141,12 @@ describe('browser setup HTTP protocol boundary', () => {
     completed = false;
     credentialExpiresAt = new Date(Date.now() + 900_000).toISOString();
     jest.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
-      expect(init?.redirect).toBe('error');
-      expect(init?.headers).toEqual(
-        expect.objectContaining({ Authorization: 'Bearer server-only-administrator' }),
-      );
+      if (
+        init?.redirect !== 'error' ||
+        new Headers(init?.headers).get('Authorization') !== 'Bearer server-only-administrator'
+      ) {
+        throw new Error('Invalid administrator transport');
+      }
       if (String(url).endsWith('/capabilities'))
         return Response.json(
           support ? { browserEnrollmentVersion: 1, serverId: 'https://code.example.test' } : {},
@@ -149,7 +154,8 @@ describe('browser setup HTTP protocol boundary', () => {
         );
       const payload: unknown = JSON.parse(String(init?.body));
       if (String(url).endsWith('/status')) {
-        expect(isBrowserEnrollmentStatusRequest(payload)).toBe(true);
+        if (!isBrowserEnrollmentStatusRequest(payload))
+          throw new Error('Invalid upstream status request');
         return approval
           ? Response.json({
               protocolVersion: 1,
@@ -159,7 +165,7 @@ describe('browser setup HTTP protocol boundary', () => {
           : Response.json({}, { status: 409 });
       }
       if (String(url).endsWith('/redeem')) {
-        expect(isBrowserEnrollmentRedemption(payload)).toBe(true);
+        if (!isBrowserEnrollmentRedemption(payload)) throw new Error('Invalid upstream redemption');
         completed = true;
         return Response.json({
           protocolVersion: 1,
@@ -168,13 +174,15 @@ describe('browser setup HTTP protocol boundary', () => {
           expiresAt: credentialExpiresAt,
         });
       }
-      expect(isBrowserEnrollmentApproval(payload)).toBe(true);
       if (!isBrowserEnrollmentApproval(payload)) throw new Error('invalid upstream approval');
       approval = payload;
       return Response.json(payload);
     });
   });
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => {
+    lifetimes.splice(0).forEach((controller) => controller.abort());
+    jest.restoreAllMocks();
+  });
   afterAll(async () => {
     for (const [name, value] of Object.entries({
       CODEAPI_JWT_ENABLED: previous.jwt,
@@ -188,15 +196,26 @@ describe('browser setup HTTP protocol boundary', () => {
     await mongo.stop();
   });
 
-  function app() {
+  function app(options: { registrationUnavailable?: boolean } = {}) {
+    const lifetime = new AbortController();
+    lifetimes.push(lifetime);
+    const backend = createBrowserSetupBackend(mongoose);
+    if (options.registrationUnavailable)
+      backend.ensureRegistration = async () => {
+        throw new Error('Index enforcement unavailable');
+      };
     const app = express();
     app.set('trust proxy', 1);
     app.use(express.json());
     app.use(
       '/api/code-environments/setup',
       createCodeSetupRouter({
-        mongoose,
-        getAppConfig: async () => base,
+        backend,
+        signal: lifetime.signal,
+        getAppConfig: async (options) => {
+          if (options.refresh) refreshCount++;
+          return base;
+        },
         registry: () => createCodeEnvironmentRegistry(mongoose),
         requireJwtAuth: (req, res, next) => {
           if (req.headers.authorization !== 'Bearer browser-session') {
@@ -345,6 +364,35 @@ describe('browser setup HTTP protocol boundary', () => {
     expect((await request(server).get('/api/code-environments/setup/capabilities')).status).toBe(
       503,
     );
+  });
+
+  test('rate-limited and invalid machine requests never trigger a forced configuration reload', async () => {
+    const server = app();
+    const settings = base.endpoints!.agents!.statefulCodeSessions!.principalWorkers!.browserSetup!;
+    settings.requestsPerMinute = 2;
+    settings.requestsPerIpMinute = 2;
+    expect(
+      (await request(server).post('/api/code-environments/setup/start').send({ invalid: true }))
+        .status,
+    ).toBe(400);
+    expect(refreshCount).toBe(0);
+    expect((await request(server).get('/api/code-environments/setup/capabilities')).status).toBe(
+      200,
+    );
+    const admitted = refreshCount;
+    expect((await request(server).get('/api/code-environments/setup/capabilities')).status).toBe(
+      429,
+    );
+    expect(refreshCount).toBe(admitted);
+  });
+
+  test('capabilities fail closed when the required unique registration indexes cannot be enforced', async () => {
+    const response = await request(app({ registrationUnavailable: true })).get(
+      '/api/code-environments/setup/capabilities',
+    );
+    expect(response.status).toBe(503);
+    expect(response.body.browserEnrollmentVersion).toBeUndefined();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   test('bounded anonymous allocation cannot grow by changing attempt IDs or forwarded IPs', async () => {

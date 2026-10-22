@@ -43,7 +43,7 @@ function requestBudget() {
   return mongoose.connection.db!.collection<{
     _id: string;
     count: number;
-    peers: Array<{ ipHash: string; count: number }>;
+    peers: Record<string, number>;
   }>('browser_setup_requests');
 }
 
@@ -62,6 +62,18 @@ describe('durable browser setup store', () => {
   afterAll(async () => {
     await mongoose.disconnect();
     await mongo.stop();
+  });
+
+  test('constructing a store does not launch database work outside an awaited boundary', async () => {
+    const createIndex = jest.spyOn(mongoose.mongo.Collection.prototype, 'createIndex');
+    try {
+      const fresh = createBrowserSetupStore(mongoose);
+      expect(createIndex).not.toHaveBeenCalled();
+      await fresh.get('missing');
+      expect(createIndex).toHaveBeenCalledTimes(2);
+    } finally {
+      createIndex.mockRestore();
+    }
   });
 
   test('concurrent start preserves the first immutable session and survives factory recreation', async () => {
@@ -216,9 +228,7 @@ describe('durable browser setup store', () => {
     await expect(store.claimNonce({ ...input, requestHash: hash('wrong') })).resolves.toBe(
       'missing',
     );
-    const persisted = await mongoose.connection
-      .db!.collection('browser_setup_sessions')
-      .findOne({ _id: original.attemptId });
+    const persisted = await persistedSessions().findOne({ _id: original.attemptId });
     expect(persisted?.nonces).toHaveLength(1);
     expect(persisted?.operations).toBe(2);
   });
@@ -257,9 +267,7 @@ describe('durable browser setup store', () => {
         patch: { purgeAt: new Date(now).toISOString() },
       }),
     ).rejects.toThrow('Unresolved');
-    const unresolved = await mongoose.connection
-      .db!.collection('browser_setup_sessions')
-      .findOne({ _id: owned.attemptId });
+    const unresolved = await persistedSessions().findOne({ _id: owned.attemptId });
     expect(unresolved?.deleteAfter).toBeUndefined();
     await store.update({
       attemptId: owned.attemptId,
@@ -274,9 +282,7 @@ describe('durable browser setup store', () => {
     await expect(
       store.start({ session: session('later'), ipHash, now: now + 86_400_000, limits }),
     ).resolves.toMatchObject({ status: 'created' });
-    const resolved = await mongoose.connection
-      .db!.collection('browser_setup_sessions')
-      .findOne({ _id: owned.attemptId });
+    const resolved = await persistedSessions().findOne({ _id: owned.attemptId });
     expect(resolved?.deleteAfter).toEqual(new Date(now + 1000));
     expect(await store.listReconcile(2, now + 86_400_000)).toHaveLength(2);
   });
@@ -292,11 +298,9 @@ describe('durable browser setup store', () => {
       ),
     );
     expect(diverse.filter(Boolean)).toHaveLength(limits.global - limits.perIp);
-    const budget = await mongoose.connection
-      .db!.collection('browser_setup_requests')
-      .findOne({ _id: 'global' });
+    const budget = await requestBudget().findOne({ _id: 'global' });
     expect(budget?.count).toBe(limits.global);
-    expect(budget?.peers.length).toBeLessThanOrEqual(limits.global);
+    expect(Object.keys(budget?.peers ?? {}).length).toBeLessThanOrEqual(limits.global);
     expect(await requestBudget().countDocuments()).toBe(1);
     expect(
       await createBrowserSetupStore(mongoose).consumeRequest({
@@ -305,10 +309,8 @@ describe('durable browser setup store', () => {
         limits,
       }),
     ).toBe(true);
-    const reset = await mongoose.connection
-      .db!.collection('browser_setup_requests')
-      .findOne({ _id: 'global' });
-    expect(reset?.peers).toEqual([{ ipHash, count: 1 }]);
+    const reset = await requestBudget().findOne({ _id: 'global' });
+    expect(reset?.peers).toEqual({ [ipHash]: 1 });
   });
 
   test('allocation per-IP bound is atomic under racing starts', async () => {
@@ -375,9 +377,7 @@ describe('durable browser setup store', () => {
       patch: { stopReason: 'withdrawn' },
     });
     expect(withdrawn?.progress?.cleanup).toBe(false);
-    const persisted = await mongoose.connection
-      .db!.collection('browser_setup_sessions')
-      .findOne({ _id: original.attemptId });
+    const persisted = await persistedSessions().findOne({ _id: original.attemptId });
     expect(persisted?.deleteAfter).toBeUndefined();
     await expect(
       store.update({
@@ -414,9 +414,7 @@ describe('durable browser setup store', () => {
       revision: failed!.revision,
       leaseId: 'withdrawal',
     });
-    const resolved = await mongoose.connection
-      .db!.collection('browser_setup_sessions')
-      .findOne({ _id: original.attemptId });
+    const resolved = await persistedSessions().findOne({ _id: original.attemptId });
     expect(resolved?.deleteAfter).toEqual(new Date(clock + 120_000));
   });
 
@@ -459,9 +457,7 @@ describe('durable browser setup store', () => {
   test('a lost session insert reuses the durable allocation snapshot rather than new retry randomness', async () => {
     const original = session('insert-loss');
     await store.start({ session: original, ipHash, now, limits });
-    await mongoose.connection
-      .db!.collection('browser_setup_sessions')
-      .deleteOne({ _id: original.attemptId });
+    await persistedSessions().deleteOne({ _id: original.attemptId });
     const recovered = await createBrowserSetupStore(mongoose).start({
       session: { ...original, verificationCode: 'new-code' },
       ipHash,
@@ -469,9 +465,7 @@ describe('durable browser setup store', () => {
       limits,
     });
     expect(recovered).toEqual({ status: 'created', session: original });
-    const budget = await mongoose.connection
-      .db!.collection('browser_setup_budget')
-      .findOne({ _id: 'global' });
+    const budget = await allocationBudget().findOne({ _id: 'global' });
     expect(budget?.allocations).toHaveLength(1);
   });
 
@@ -488,9 +482,7 @@ describe('durable browser setup store', () => {
   test('reconciliation recovers an abandoned allocation snapshot without a client retry', async () => {
     const original = session('abandoned-insert');
     await store.start({ session: original, ipHash, now, limits });
-    await mongoose.connection
-      .db!.collection('browser_setup_sessions')
-      .deleteOne({ _id: original.attemptId });
+    await persistedSessions().deleteOne({ _id: original.attemptId });
     const recovered = await createBrowserSetupStore(mongoose).listReconcile(1, now + 600_001);
     expect(recovered).toEqual([original]);
     await store.update({
@@ -499,9 +491,7 @@ describe('durable browser setup store', () => {
       revision: 0,
       patch: { status: 'expired', progress: { cleanup: true } },
     });
-    const budget = await mongoose.connection
-      .db!.collection('browser_setup_budget')
-      .findOne({ _id: 'global' });
+    const budget = await allocationBudget().findOne({ _id: 'global' });
     expect(budget?.allocations).toEqual([]);
   });
 });

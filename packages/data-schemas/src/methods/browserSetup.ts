@@ -1,14 +1,17 @@
 import { createHash } from 'node:crypto';
 import type { mongo } from 'mongoose';
-
 import type {
   BrowserSetupStore,
+  BrowserSetupBackend,
   BrowserSetupSession,
   BrowserSetupStatus,
   BrowserSetupProgress,
   BrowserSetupStartResult,
   BrowserSetupNonceResult,
 } from '~/types/browserSetup';
+import type { IUser } from '~/types/user';
+import { createCodeEnvironmentMethods } from './codeEnvironment';
+import { buildIndexWithRetry } from '~/utils/retry';
 
 type SessionDocument = BrowserSetupSession & {
   _id: string;
@@ -31,7 +34,7 @@ type RequestBudget = {
   _id: string;
   expiresAt: number;
   count: number;
-  peers: Array<{ ipHash: string; count: number }>;
+  peers: Record<string, number>;
 };
 
 function duplicate(error: unknown): boolean {
@@ -66,27 +69,45 @@ export function createBrowserSetupStore(mongoose: typeof import('mongoose')): Br
   const sessions = db.collection<SessionDocument>('browser_setup_sessions');
   const budgets = db.collection<AllocationBudget>('browser_setup_budget');
   const requests = db.collection<RequestBudget>('browser_setup_requests');
-  const ready = Promise.all([
-    sessions.createIndex({ deleteAfter: 1 }, { expireAfterSeconds: 0 }),
-    sessions.createIndex({ reconciledAt: 1, expiresAt: 1, _id: 1 }),
-    requests
-      .updateOne(
-        { _id: 'global' },
-        { $setOnInsert: { expiresAt: 0, count: 0, peers: [] } },
-        { upsert: true },
-      )
-      .catch((error: unknown) => {
-        if (!duplicate(error)) throw error;
-      }),
-    budgets
-      .updateOne({ _id: 'global' }, { $setOnInsert: { allocations: [] } }, { upsert: true })
-      .catch((error: unknown) => {
-        if (!duplicate(error)) throw error;
-      }),
-  ]);
+  let initialization: Promise<void> | undefined;
+  async function initialize(): Promise<void> {
+    await buildIndexWithRetry(
+      () => sessions.createIndex({ deleteAfter: 1 }, { expireAfterSeconds: 0 }),
+      'browser-setup-ttl',
+    );
+    await buildIndexWithRetry(
+      () => sessions.createIndex({ reconciledAt: 1, expiresAt: 1, _id: 1 }),
+      'browser-setup-reconciliation',
+    );
+    await Promise.all([
+      requests
+        .updateOne(
+          { _id: 'global' },
+          { $setOnInsert: { expiresAt: 0, count: 0, peers: {} } },
+          { upsert: true },
+        )
+        .catch((error: unknown) => {
+          if (!duplicate(error)) throw error;
+        }),
+      budgets
+        .updateOne({ _id: 'global' }, { $setOnInsert: { allocations: [] } }, { upsert: true })
+        .catch((error: unknown) => {
+          if (!duplicate(error)) throw error;
+        }),
+    ]);
+  }
+  async function ready(): Promise<void> {
+    const current = (initialization ??= initialize());
+    try {
+      await current;
+    } catch (error) {
+      if (initialization === current) initialization = undefined;
+      throw error;
+    }
+  }
 
   async function get(attemptId: string): Promise<BrowserSetupSession | null> {
-    await ready;
+    await ready();
     const found = await sessions.findOne({ _id: attemptId });
     if (found == null) return null;
     await releaseResolved([found]);
@@ -131,7 +152,7 @@ export function createBrowserSetupStore(mongoose: typeof import('mongoose')): Br
       )
     )
       throw new Error('Invalid browser setup allocation');
-    await ready;
+    await ready();
     const existing = await get(session.attemptId);
     if (existing != null)
       return existing.requestCanonical === session.requestCanonical &&
@@ -164,27 +185,16 @@ export function createBrowserSetupStore(mongoose: typeof import('mongoose')): Br
           ],
         },
       },
-      [
-        {
-          $set: {
-            allocations: {
-              $concatArrays: [
-                active,
-                {
-                  $literal: [
-                    {
-                      attemptId: session.attemptId,
-                      ipHash,
-                      expiresAt: now + limits.windowMs,
-                      session,
-                    },
-                  ],
-                },
-              ],
-            },
+      {
+        $push: {
+          allocations: {
+            attemptId: session.attemptId,
+            ipHash,
+            expiresAt: now + limits.windowMs,
+            session,
           },
         },
-      ],
+      },
       {
         returnDocument: 'after',
         projection: { allocations: { $elemMatch: { 'session.attemptId': session.attemptId } } },
@@ -232,7 +242,7 @@ export function createBrowserSetupStore(mongoose: typeof import('mongoose')): Br
     patch,
     leaseId,
   }: Parameters<BrowserSetupStore['update']>[0]): Promise<BrowserSetupSession | null> {
-    await ready;
+    await ready();
     const existing = await get(attemptId);
     if (
       existing == null ||
@@ -386,33 +396,38 @@ export function createBrowserSetupStore(mongoose: typeof import('mongoose')): Br
       expiresAt <= now
     )
       throw new Error('Invalid browser setup nonce');
-    await ready;
-    const active = {
-      $filter: { input: '$nonces', as: 'entry', cond: { $gt: ['$$entry.expiresAt', now] } },
-    };
-    const result = await sessions.updateOne(
-      {
-        _id: attemptId,
-        requestHash,
-        operations: { $lt: maxOperations },
-        nonces: { $not: { $elemMatch: { nonce, expiresAt: { $gt: now } } } },
-        $expr: { $lt: [{ $size: active }, maxNonces] },
-      },
-      [
+    await ready();
+    const claim = async (): Promise<boolean> => {
+      const result = await sessions.updateOne(
         {
-          $set: {
-            nonces: { $concatArrays: [active, { $literal: [{ nonce, expiresAt }] }] },
-            operations: { $add: ['$operations', 1] },
-          },
+          _id: attemptId,
+          requestHash,
+          operations: { $lt: maxOperations },
+          nonces: { $not: { $elemMatch: { nonce, expiresAt: { $gt: now } } } },
+          [`nonces.${maxNonces - 1}`]: { $exists: false },
         },
-      ],
-    );
-    if (result.matchedCount === 1) return 'claimed';
-    const found = await sessions.findOne({ _id: attemptId, requestHash });
+        { $push: { nonces: { nonce, expiresAt } }, $inc: { operations: 1 } },
+      );
+      return result.matchedCount === 1;
+    };
+    if (await claim()) return 'claimed';
+    let found = await sessions.findOne({ _id: attemptId, requestHash });
     if (found == null) return 'missing';
-    return found.nonces.some((entry) => entry.nonce === nonce && entry.expiresAt > now)
-      ? 'replay'
-      : 'limited';
+    if (found.nonces.some((entry) => entry.nonce === nonce && entry.expiresAt > now))
+      return 'replay';
+    if (found.operations >= maxOperations) return 'limited';
+    if (found.nonces.some((entry) => entry.expiresAt <= now)) {
+      await sessions.updateOne(
+        { _id: attemptId, requestHash },
+        { $pull: { nonces: { expiresAt: { $lte: now } } } },
+      );
+      if (await claim()) return 'claimed';
+      found = await sessions.findOne({ _id: attemptId, requestHash });
+      if (found == null) return 'missing';
+      if (found.nonces.some((entry) => entry.nonce === nonce && entry.expiresAt > now))
+        return 'replay';
+    }
+    return 'limited';
   }
 
   async function consumeRequest({
@@ -428,55 +443,27 @@ export function createBrowserSetupStore(mongoose: typeof import('mongoose')): Br
       !boundedInteger(limits.windowMs, 86_400_000)
     )
       throw new Error('Invalid browser setup request budget');
-    await ready;
-    const expired = { $lte: ['$expiresAt', now] };
-    const peer = { $literal: [{ ipHash, count: 1 }] };
-    const result = await requests.updateOne(
-      {
-        _id: 'global',
-        $or: [
-          { expiresAt: { $lte: now } },
-          {
-            count: { $lt: limits.global },
-            peers: { $not: { $elemMatch: { ipHash, count: { $gte: limits.perIp } } } },
-          },
-        ],
-      },
-      [
+    await ready();
+    // The validated hash is a bounded field in one singleton, never a new attacker-owned bucket.
+    const peer = `peers.${ipHash}`;
+    const increment = async (): Promise<boolean> => {
+      const result = await requests.updateOne(
         {
-          $set: {
-            expiresAt: { $cond: [expired, now + limits.windowMs, '$expiresAt'] },
-            count: { $cond: [expired, 1, { $add: ['$count', 1] }] },
-            peers: {
-              $cond: [
-                expired,
-                peer,
-                {
-                  $cond: [
-                    { $in: [{ $literal: ipHash }, '$peers.ipHash'] },
-                    {
-                      $map: {
-                        input: '$peers',
-                        as: 'peer',
-                        in: {
-                          $cond: [
-                            { $eq: ['$$peer.ipHash', { $literal: ipHash }] },
-                            { ipHash: { $literal: ipHash }, count: { $add: ['$$peer.count', 1] } },
-                            '$$peer',
-                          ],
-                        },
-                      },
-                    },
-                    { $concatArrays: ['$peers', peer] },
-                  ],
-                },
-              ],
-            },
-          },
+          _id: 'global',
+          expiresAt: { $gt: now },
+          count: { $lt: limits.global },
+          $or: [{ [peer]: { $exists: false } }, { [peer]: { $lt: limits.perIp } }],
         },
-      ],
+        { $inc: { count: 1, [peer]: 1 } },
+      );
+      return result.matchedCount === 1;
+    };
+    if (await increment()) return true;
+    await requests.updateOne(
+      { _id: 'global', expiresAt: { $lte: now } },
+      { $set: { expiresAt: now + limits.windowMs, count: 0, peers: {} } },
     );
-    return result.matchedCount === 1;
+    return await increment();
   }
 
   async function claim({
@@ -493,7 +480,7 @@ export function createBrowserSetupStore(mongoose: typeof import('mongoose')): Br
       !boundedInteger(leaseMs, 300_000)
     )
       throw new Error('Invalid browser setup lease');
-    await ready;
+    await ready();
     const found = await sessions.findOneAndUpdate(
       {
         _id: attemptId,
@@ -517,7 +504,7 @@ export function createBrowserSetupStore(mongoose: typeof import('mongoose')): Br
     revision,
     leaseId,
   }: Parameters<BrowserSetupStore['release']>[0]): Promise<BrowserSetupSession | null> {
-    await ready;
+    await ready();
     const found = await sessions.findOneAndUpdate(
       { _id: attemptId, requestHash, revision, leaseId },
       { $unset: { leaseId: '', leaseExpiresAt: '' }, $inc: { revision: 1 } },
@@ -550,7 +537,7 @@ export function createBrowserSetupStore(mongoose: typeof import('mongoose')): Br
           },
         },
         { $match: { persisted: { $size: 0 } } },
-        { $replaceWith: '$allocations' },
+        { $replaceRoot: { newRoot: '$allocations' } },
         { $limit: limit },
       ])
       .toArray();
@@ -610,7 +597,7 @@ export function createBrowserSetupStore(mongoose: typeof import('mongoose')): Br
   ): Promise<BrowserSetupSession[]> {
     if (!boundedInteger(limit, 512) || !Number.isSafeInteger(now))
       throw new Error('Invalid browser setup reconciliation limit');
-    await ready;
+    await ready();
     await restoreAllocations(limit);
     const found = await sessions
       .find({
@@ -639,4 +626,35 @@ export function createBrowserSetupStore(mongoose: typeof import('mongoose')): Br
   }
 
   return { start, get, update, claimNonce, consumeRequest, claim, release, listReconcile };
+}
+
+export function createBrowserSetupBackend(
+  mongoose: typeof import('mongoose'),
+): BrowserSetupBackend {
+  const methods = createCodeEnvironmentMethods(mongoose);
+  return {
+    ensureRegistration: methods.ensureSetupEnvironmentIndexes,
+    createStore: () => createBrowserSetupStore(mongoose),
+    isConnected: () => mongoose.connection.readyState === 1,
+    async getUser(id) {
+      const user = await mongoose.models.User.findById(id)
+        .select(
+          '_id tenantId role idOnTheSource provider emailVerified twoFactorEnabled termsAccepted expiresAt agentTriggerDeletionStartedAt',
+        )
+        .lean<IUser>();
+      if (user == null) return null;
+      return {
+        id: user._id.toString(),
+        tenantId: user.tenantId,
+        role: user.role,
+        idOnTheSource: user.idOnTheSource ?? null,
+        provider: user.provider,
+        emailVerified: user.emailVerified,
+        twoFactorEnabled: user.twoFactorEnabled,
+        termsAccepted: user.termsAccepted,
+        expiresAt: user.expiresAt,
+        agentTriggerDeletionStartedAt: user.agentTriggerDeletionStartedAt,
+      };
+    },
+  };
 }

@@ -14,7 +14,7 @@ import type {
 import type { BrowserEnrollmentRequest } from '@librechat/code/browser-enrollment';
 import type { CodeSetupAttempt } from 'librechat-data-provider';
 import type { CodeEnvironmentSetupInput, CodeEnvironmentSummary } from '../environments';
-import type { SetupPolicyReader, SetupPolicy, SetupConfig } from './policy';
+import type { SetupPolicyReader, SetupConfig, ExistingSetupPolicy } from './policy';
 import type { SetupBridge, SetupCredential } from './bridge';
 import { setupRedemptionContract } from './bridge';
 import { SetupPolicyError } from './policy';
@@ -73,7 +73,7 @@ function terminal(session: BrowserSetupSession): boolean {
 
 export function createSetupService(deps: SetupServiceDependencies): {
   availablePlanes: (
-    policy: SetupPolicy,
+    policy: ExistingSetupPolicy,
   ) => Promise<Array<{ id: string; name: string; serverId: string }>>;
   start: (
     input: BrowserEnrollmentRequest,
@@ -101,7 +101,7 @@ export function createSetupService(deps: SetupServiceDependencies): {
   }
 
   async function availablePlanes(
-    policy: SetupPolicy,
+    policy: ExistingSetupPolicy,
   ): Promise<Array<{ id: string; name: string; serverId: string }>> {
     const results = await Promise.all(
       policy.planes.map(async (plane) => {
@@ -154,7 +154,11 @@ export function createSetupService(deps: SetupServiceDependencies): {
     return result.session;
   }
 
-  function assertOwner(session: BrowserSetupSession, userId: string, policy: SetupPolicy): void {
+  function assertOwner(
+    session: BrowserSetupSession,
+    userId: string,
+    policy: ExistingSetupPolicy,
+  ): void {
     if (
       session.ownerId != null &&
       (session.ownerId !== userId || session.tenantId !== policy.tenantId)
@@ -165,7 +169,7 @@ export function createSetupService(deps: SetupServiceDependencies): {
 
   async function project(
     session: BrowserSetupSession,
-    policy: SetupPolicy,
+    policy: ExistingSetupPolicy,
   ): Promise<CodeSetupAttempt> {
     const input = request(session);
     const choices =
@@ -197,7 +201,10 @@ export function createSetupService(deps: SetupServiceDependencies): {
   }
 
   async function inspect(session: BrowserSetupSession, userId: string): Promise<CodeSetupAttempt> {
-    const policy = await deps.policy.user(userId);
+    const policy =
+      session.status === 'completed'
+        ? await deps.policy.frozen(session, { completed: true })
+        : await deps.policy.user(userId);
     assertOwner(session, userId, policy);
     const needsProgress =
       session.status === 'provisioning' ||
@@ -214,6 +221,7 @@ export function createSetupService(deps: SetupServiceDependencies): {
     userId: string,
     planeId: string,
   ): Promise<CodeSetupAttempt> {
+    if (session.status === 'completed') return await inspect(session, userId);
     const policy = await deps.policy.user(userId);
     assertOwner(session, userId, policy);
     if (terminal(session)) return await project(session, policy);
@@ -370,17 +378,22 @@ export function createSetupService(deps: SetupServiceDependencies): {
         purgeAt: new Date(now() + retentionMs).toISOString(),
       });
     }
-    async function cleanup(reason: NonNullable<BrowserSetupSession['stopReason']>): Promise<void> {
+    async function cleanup(
+      reason: NonNullable<BrowserSetupSession['stopReason']>,
+      alreadyRevoked = false,
+    ): Promise<void> {
       await save({ stopReason: reason });
       const value = current();
       if (value.approval != null) {
         await fence();
         // Issuance can have succeeded without a response. Revocation also fences late issuance.
-        await deps.revoke({
-          baseURL: value.baseURL!,
-          token: token(value),
-          workerId: value.workerId,
-        });
+        if (!alreadyRevoked) {
+          await deps.revoke({
+            baseURL: value.baseURL!,
+            token: token(value),
+            workerId: value.workerId,
+          });
+        }
         await fence();
         await scoped(async () => deps.registry.discardSetup(registration(value)));
       }
@@ -398,22 +411,20 @@ export function createSetupService(deps: SetupServiceDependencies): {
         }
         return { session: current() };
       }
-      let policy: SetupPolicy | undefined;
+      await fence();
+      const remote = await deps.bridge.status(value.baseURL!, token(value), value.approval!);
+      let policy: ExistingSetupPolicy | undefined;
       try {
-        policy = await deps.policy.frozen(value);
+        policy = await deps.policy.frozen(value, { completed: remote === 'completed' });
       } catch (error) {
         if (!(error instanceof SetupPolicyError)) throw error;
         await save({ stopReason: 'withdrawn', failureCode: error.code });
       }
       value = current();
-      await fence();
-      const remote = await deps.bridge.status(value.baseURL!, token(value), value.approval!);
       // Enrollment, not the setup deadline or a profile acknowledgement, owns completion.
       if (remote === 'completed' && value.stopReason !== 'withdrawn') {
         await fence();
-        await scoped(async () =>
-          deps.registry.completeSetup(registration(value, policy?.maxOwned)),
-        );
+        await scoped(async () => deps.registry.completeSetup(registration(value)));
         await save({ progress: { registryCompleted: true, redemption: true } });
         await finish('completed', policy?.config.retentionMs);
         if (redemptionSignature == null) return { session: current() };
@@ -441,7 +452,8 @@ export function createSetupService(deps: SetupServiceDependencies): {
             stop ??
             (Date.parse(value.expiresAt) <= now() ? 'expired' : 'withdrawn'),
         });
-        await cleanup(current().stopReason!);
+        // The exact contract is already fenced. A newer manual generation must not be revoked.
+        await cleanup(current().stopReason!, true);
         return { session: current() };
       }
       const reason =
@@ -486,12 +498,10 @@ export function createSetupService(deps: SetupServiceDependencies): {
         redemptionSignature,
       );
       await save({ progress: { redemption: true } });
-      // If authority changed during redemption, deliberately revoke. Never call that ordinary expiry.
-      await deps.policy.frozen(current());
+      // Existing trust still needs current account/tenant/plane authorization, not a new enrollment slot.
+      await deps.policy.frozen(current(), { completed: true });
       await fence();
-      await scoped(async () =>
-        deps.registry.completeSetup(registration(current(), policy.maxOwned)),
-      );
+      await scoped(async () => deps.registry.completeSetup(registration(current())));
       await save({ progress: { registryCompleted: true } });
       await finish('completed', policy.config.retentionMs);
       return { session: current(), credential };

@@ -10,6 +10,7 @@ import type {
 import type { CodeEnvironmentDocument } from '~/types';
 import type { IAclEntry } from '~/types';
 import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
 
 const CODE_ENVIRONMENT_TOMBSTONES = 'code_environment_tombstones';
@@ -233,6 +234,7 @@ type CreateCodeEnvironmentInput = Pick<
   >;
 
 export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')): {
+  ensureSetupEnvironmentIndexes: () => Promise<void>;
   reserveSetupEnvironment: (
     binding: CodeEnvironmentSetupBinding,
     maxOwned?: number,
@@ -283,6 +285,16 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
   deleteUserCodeEnvironments: (userId: string | Types.ObjectId) => Promise<number>;
 } {
   const model = () => mongoose.models.CodeEnvironment as Model<CodeEnvironmentDocument>;
+  let setupIndexInitialization: Promise<void> | undefined;
+  async function ensureSetupEnvironmentIndexes(): Promise<void> {
+    const current = (setupIndexInitialization ??= createIndexesWithRetry(model()));
+    try {
+      await current;
+    } catch (error) {
+      if (setupIndexInitialization === current) setupIndexInitialization = undefined;
+      throw error;
+    }
+  }
 
   function setupFilter(binding: CodeEnvironmentSetupBinding) {
     return {
@@ -427,6 +439,7 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
     binding: CodeEnvironmentSetupBinding,
     maxOwned?: number,
   ): Promise<CodeEnvironmentSetupRecord | null> {
+    await ensureSetupEnvironmentIndexes();
     const replay = await findSetupEnvironment(binding);
     if (replay != null) return replay;
     const input: CreateCodeEnvironmentInput = {
@@ -805,6 +818,7 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
   }
 
   return {
+    ensureSetupEnvironmentIndexes,
     reserveSetupEnvironment,
     findSetupEnvironment,
     completeSetupEnvironment,

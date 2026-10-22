@@ -126,3 +126,23 @@ export type BrowserSetupStore = {
     maxOperations: number;
   }) => Promise<BrowserSetupNonceResult>;
 };
+
+export type BrowserSetupUser = {
+  id: string;
+  tenantId?: string;
+  role?: string;
+  idOnTheSource?: string | null;
+  provider?: string;
+  emailVerified?: boolean;
+  twoFactorEnabled?: boolean;
+  termsAccepted?: boolean;
+  agentTriggerDeletionStartedAt?: Date | null;
+  expiresAt?: Date;
+};
+
+export type BrowserSetupBackend = {
+  createStore: () => BrowserSetupStore;
+  ensureRegistration: () => Promise<void>;
+  getUser: (id: string) => Promise<BrowserSetupUser | null>;
+  isConnected: () => boolean;
+};

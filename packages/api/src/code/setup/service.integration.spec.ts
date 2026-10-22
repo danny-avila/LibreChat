@@ -76,6 +76,7 @@ function codeApi() {
   let unavailable = false;
   let issueCount = 0;
   let redeemCount = 0;
+  let revokeCount = 0;
   const credential = {
     protocolVersion: 1 as const,
     workerId: '',
@@ -94,17 +95,11 @@ function codeApi() {
     if (url.endsWith('/status')) {
       expect(isBrowserEnrollmentStatusRequest(body)).toBe(true);
       if (!approval) return Response.json({ code: 'ENROLLMENT_INVALID' }, { status: 409 });
-      return Response.json({
-        protocolVersion: 1,
-        workerId: approval.workerId,
-        status: revoked
-          ? 'revoked'
-          : completed
-            ? 'completed'
-            : Date.parse(approval.expiresAt) <= Date.now()
-              ? 'revoked'
-              : 'pending',
-      });
+      let status = 'pending';
+      if (completed) status = 'completed';
+      if (revoked || (!completed && Date.parse(approval.expiresAt) <= Date.now()))
+        status = 'revoked';
+      return Response.json({ protocolVersion: 1, workerId: approval.workerId, status });
     }
     if (url.endsWith('/redeem')) {
       expect(isBrowserEnrollmentRedemption(body)).toBe(true);
@@ -147,8 +142,9 @@ function codeApi() {
     },
     revoke: async () => {
       revoked = true;
+      revokeCount++;
     },
-    status: () => ({ approval, completed, revoked, issueCount, redeemCount }),
+    status: () => ({ approval, completed, revoked, issueCount, redeemCount, revokeCount }),
   };
 }
 
@@ -220,6 +216,12 @@ async function fixture() {
     latest,
     signature,
     make,
+    disableEnrollment: () => {
+      base.endpoints!.agents!.statefulCodeSessions!.principalWorkers!.maxPerUser = 0;
+    },
+    disableBrowserSetup: () => {
+      base.endpoints!.agents!.statefulCodeSessions!.principalWorkers!.browserSetup!.enabled = false;
+    },
     deleteAccount: async () => {
       await mongoose.models.User.deleteOne({ _id: ownerId });
     },
@@ -448,6 +450,39 @@ describe('browser setup durable lifecycle', () => {
       clock.mockRestore();
     }
   });
+
+  test.each([false, true])(
+    'already revoked enrollment is not revoked again after completion=%s',
+    async (completed) => {
+      const f = await fixture();
+      await f.service.approve(await f.latest(), ownerId, 'code-api');
+      if (completed) await f.service.advance(await f.latest(), await f.signature());
+      await f.external.revoke();
+      expect((await f.make().service.advance(await f.latest())).session.status).toBe('failed');
+      expect(f.external.status().revokeCount).toBe(1);
+      expect(await mongoose.models.CodeEnvironment.countDocuments()).toBe(0);
+    },
+  );
+
+  test.each(['disableEnrollment', 'disableBrowserSetup'] as const)(
+    'lost redemption remains completed after %s without revocation or another slot',
+    async (disable) => {
+      const f = await fixture();
+      await f.service.approve(await f.latest(), ownerId, 'code-api');
+      const approved = (await f.latest()).approval;
+      f.external.loseRedeem();
+      await expect(f.service.advance(await f.latest(), await f.signature())).rejects.toThrow();
+      f[disable]();
+      expect((await f.make().service.advance(await f.latest())).session.status).toBe('completed');
+      expect(f.external.status().revoked).toBe(false);
+      expect((await f.latest()).approval).toEqual(approved);
+      expect(await mongoose.models.CodeEnvironment.countDocuments()).toBe(1);
+      expect((await f.service.inspect(await f.latest(), ownerId)).status).toBe('completed');
+      expect(
+        (await f.make().service.advance(await f.latest(), await f.signature())).credential,
+      ).toBeDefined();
+    },
+  );
 
   test('authorization withdrawal after completion deliberately revokes instead of treating it as TTL cleanup', async () => {
     const f = await fixture();

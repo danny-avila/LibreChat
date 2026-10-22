@@ -1,8 +1,8 @@
 import { Keyv } from 'keyv';
 import { Router } from 'express';
 import { createHash } from 'node:crypto';
+import { runAsSystem } from '@librechat/data-schemas';
 import { ViolationTypes } from 'librechat-data-provider';
-import { createMethods, createBrowserSetupStore, runAsSystem } from '@librechat/data-schemas';
 import {
   isBrowserEnrollmentRequest,
   isBrowserSetupProof,
@@ -14,25 +14,30 @@ import {
   verifyBrowserEnrollmentRedemption,
 } from '@librechat/code/browser-enrollment';
 import type {
+  BrowserSetupSession,
+  BrowserSetupBackend,
+  BrowserSetupStore,
+} from '@librechat/data-schemas';
+import type {
   BrowserSetupProof,
   BrowserEnrollmentRequest,
 } from '@librechat/code/browser-enrollment';
-import type { BrowserSetupSession } from '@librechat/data-schemas';
 import type { RequestHandler, Request, Response } from 'express';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { SetupRegistry, SetupService } from './service';
 import type { GetAppConfigOptions } from '~/app/service';
 import type { SetupConfig } from './policy';
 import { isCodeApiJwtAuthEnabled, assertCodeApiJwtSigningReady } from '~/auth/codeapi';
+import { createSetupPolicy, readSetupConfig, SetupPolicyError } from './policy';
 import { readCodeBridgeSecret, revokeCodeBridgeWorker } from '../bridge';
-import { createSetupPolicy, SetupPolicyError } from './policy';
 import { createSetupBridge, SetupBridgeError } from './bridge';
 import { createSetupService, SetupError } from './service';
 import { isEnabled } from '~/utils/common';
 import { keyvMongo } from '~/cache';
 
 interface SetupRouterDependencies {
-  mongoose: typeof import('mongoose');
+  backend: BrowserSetupBackend;
+  signal?: AbortSignal;
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
   registry: () => SetupRegistry;
   requireJwtAuth: RequestHandler;
@@ -112,7 +117,7 @@ export function createCodeSetupRouter(deps: SetupRouterDependencies): Router {
   let runtime:
     | {
         service: SetupService;
-        store: ReturnType<typeof createBrowserSetupStore>;
+        store: BrowserSetupStore;
         policy: ReturnType<typeof createSetupPolicy>;
       }
     | undefined;
@@ -121,31 +126,12 @@ export function createCodeSetupRouter(deps: SetupRouterDependencies): Router {
 
   function getRuntime(): NonNullable<typeof runtime> {
     if (runtime != null) return runtime;
-    const methods = createMethods(deps.mongoose);
-    const store = createBrowserSetupStore(deps.mongoose);
+    const store = deps.backend.createStore();
     const policy = createSetupPolicy({
       getAppConfig: deps.getAppConfig,
       principalAuthEnabled: isCodeApiJwtAuthEnabled,
       principalAuthReady: assertCodeApiJwtSigningReady,
-      getUser: async (id) => {
-        const user = await methods.getUserById(
-          id,
-          '_id tenantId role idOnTheSource provider emailVerified twoFactorEnabled termsAccepted expiresAt +agentTriggerDeletionStartedAt',
-        );
-        if (user == null) return null;
-        return {
-          id: user._id.toString(),
-          tenantId: user.tenantId,
-          role: user.role,
-          idOnTheSource: user.idOnTheSource ?? null,
-          provider: user.provider,
-          emailVerified: user.emailVerified,
-          twoFactorEnabled: user.twoFactorEnabled,
-          termsAccepted: user.termsAccepted,
-          expiresAt: user.expiresAt,
-          agentTriggerDeletionStartedAt: user.agentTriggerDeletionStartedAt,
-        };
-      },
+      getUser: deps.backend.getUser,
       userIsBanned: async (id) => {
         if (!isEnabled(process.env.BAN_VIOLATIONS)) return false;
         banCache ??= new Keyv({ store: keyvMongo, namespace: ViolationTypes.BAN, ttl: 0 });
@@ -198,21 +184,27 @@ export function createCodeSetupRouter(deps: SetupRouterDependencies): Router {
     return ipHash;
   }
 
+  async function admit(req: Request): Promise<string> {
+    const cached = await deps.getAppConfig({ baseOnly: true, failClosed: true });
+    return await limit(req, readSetupConfig(cached, false));
+  }
+
   async function machine(
     req: Request,
     operation: BrowserSetupProof['operation'],
   ): Promise<{ session: BrowserSetupSession; body: MachineBody }> {
     const current = getRuntime();
-    const deployment = await current.policy.deployment();
-    const ipHash = await limit(req, deployment.config);
+    const ipHash = await admit(req);
     const body = parseBody(req.body, operation);
+    let session = await current.store.get(body.request.attemptId);
+    const deployment = await current.policy.deployment({ existing: session != null });
     if (
       body.request.instance !== deployment.config.instance ||
       Math.abs(Date.now() - Date.parse(body.proof.timestamp)) > deployment.config.proofWindowMs
     )
       throw new SetupError(401, 'SETUP_PROOF_INVALID');
-    let session = await current.store.get(body.request.attemptId);
     if (session == null && operation === 'setup.start') {
+      await deps.backend.ensureRegistration();
       if ((await current.service.availablePlanes(deployment)).length === 0)
         throw new SetupError(503, 'SETUP_UNAVAILABLE');
       session = await current.service.start(body.request, ipHash, deployment.config);
@@ -254,8 +246,9 @@ export function createCodeSetupRouter(deps: SetupRouterDependencies): Router {
     '/capabilities',
     boundary(async (req, res) => {
       const current = getRuntime();
+      await admit(req);
       const policy = await current.policy.deployment();
-      await limit(req, policy.config);
+      await deps.backend.ensureRegistration();
       if ((await current.service.availablePlanes(policy)).length === 0)
         throw new SetupError(503, 'SETUP_UNAVAILABLE');
       res.json({ browserEnrollmentVersion: 1 });
@@ -329,7 +322,7 @@ export function createCodeSetupRouter(deps: SetupRouterDependencies): Router {
 
   // The timer only schedules work. Mongo owns intent, deadlines, leases and retry progress.
   const timer = setInterval(() => {
-    if (sweeping || deps.mongoose.connection.readyState !== 1 || Date.now() < nextSweep) return;
+    if (sweeping || !deps.backend.isConnected() || Date.now() < nextSweep) return;
     sweeping = true;
     void runAsSystem(async () => {
       const current = getRuntime();
@@ -349,5 +342,7 @@ export function createCodeSetupRouter(deps: SetupRouterDependencies): Router {
       });
   }, 1_000);
   timer.unref();
+  if (deps.signal?.aborted) clearInterval(timer);
+  else deps.signal?.addEventListener('abort', () => clearInterval(timer), { once: true });
   return router;
 }

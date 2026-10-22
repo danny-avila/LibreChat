@@ -45,6 +45,31 @@ describe('staged browser setup registry', () => {
     await mongo.stop();
   });
 
+  test('explicitly enforces owner-slot uniqueness when automatic index creation is disabled', async () => {
+    const model = mongoose.models.CodeEnvironment;
+    await model.collection.dropIndex('createdBy_1_ownerSlot_1_tenantId_1');
+    const previous = mongoose.get('autoIndex');
+    mongoose.set('autoIndex', false);
+    try {
+      const ownerId = new Types.ObjectId().toHexString();
+      const outcomes = await Promise.allSettled(
+        Array.from({ length: 8 }, (_, index) =>
+          createCodeEnvironmentRegistry(mongoose).reserveSetup(input(`no-auto-${index}`, ownerId)),
+        ),
+      );
+      expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+      expect(await model.countDocuments({ createdBy: ownerId })).toBe(1);
+      const indexes = await model.collection.indexes();
+      expect(
+        indexes.some(
+          (entry) => entry.unique && entry.key.createdBy === 1 && entry.key.ownerSlot === 1,
+        ),
+      ).toBe(true);
+    } finally {
+      mongoose.set('autoIndex', previous);
+    }
+  });
+
   test('reservation stays hidden and replays before owner capacity checks', async () => {
     const ownerId = new Types.ObjectId().toString();
     const registry = createCodeEnvironmentRegistry(mongoose);

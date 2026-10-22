@@ -1,6 +1,6 @@
 import { runAsSystem, tenantStorage } from '@librechat/data-schemas';
 import { normalizeBrowserEnrollmentInstance } from '@librechat/code/browser-enrollment';
-import type { AppConfig, BrowserSetupSession } from '@librechat/data-schemas';
+import type { AppConfig, BrowserSetupSession, BrowserSetupUser } from '@librechat/data-schemas';
 import type { GetAppConfigOptions } from '~/app/service';
 import { resolveCodeWorkerEnrollmentLimit } from '../enrollment';
 import { isTwoFactorEnrollmentRequired } from '~/auth/twoFactor';
@@ -8,33 +8,21 @@ import { getAppConfigOptionsFromUser } from '~/app/service';
 import { getCodeApiTenantIdForUser } from '~/auth/codeapi';
 import { isEnabled } from '~/utils/common';
 
-export type SetupUser = {
-  id: string;
-  tenantId?: string;
-  role?: string;
-  idOnTheSource?: string | null;
-  provider?: string;
-  emailVerified?: boolean;
-  twoFactorEnabled?: boolean;
-  termsAccepted?: boolean;
-  agentTriggerDeletionStartedAt?: Date | null;
-  expiresAt?: Date;
-};
-
+export type SetupUser = BrowserSetupUser;
 type Sessions = NonNullable<NonNullable<AppConfig['endpoints']>['agents']>['statefulCodeSessions'];
 export type SetupPlane = NonNullable<NonNullable<Sessions>['environments']>[number];
 export type SetupConfig = NonNullable<
   NonNullable<NonNullable<Sessions>['principalWorkers']>['browserSetup']
 >;
-
-export type SetupPolicy = {
-  config: SetupConfig;
+export type ExistingSetupPolicy = {
+  config: Pick<SetupConfig, 'instance' | 'retentionMs'>;
   planes: SetupPlane[];
   maxOwned: number;
   user?: SetupUser;
   tenantId?: string;
   codeTenantId?: string;
 };
+export type SetupPolicy = ExistingSetupPolicy & { config: SetupConfig };
 
 export class SetupPolicyError extends Error {
   constructor(
@@ -43,7 +31,6 @@ export class SetupPolicyError extends Error {
     super(code);
   }
 }
-
 export interface SetupPolicyDependencies {
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
   getUser: (id: string) => Promise<SetupUser | null>;
@@ -51,27 +38,25 @@ export interface SetupPolicyDependencies {
   principalAuthEnabled: () => boolean;
   principalAuthReady: () => Promise<void> | void;
 }
-
 function sessions(config: AppConfig): Sessions {
   return config.endpoints?.agents?.statefulCodeSessions;
 }
-
-function planes(config: AppConfig): SetupPlane[] {
+function planes(config: AppConfig, existing = false): SetupPlane[] {
   return (
     sessions(config)?.environments?.filter(
       (plane) =>
         plane.type === 'attached' &&
         plane.owner === 'deployment' &&
-        plane.pairing?.allowPrincipalWorkers === true &&
-        plane.pairing.tokenEnv != null,
+        plane.pairing?.tokenEnv != null &&
+        (existing || plane.pairing.allowPrincipalWorkers === true),
     ) ?? []
   );
 }
-
-function validConfig(config: AppConfig): SetupConfig {
+export function readSetupConfig(config: AppConfig, requireEnabled = true): SetupConfig {
   const settings = sessions(config)?.principalWorkers?.browserSetup;
   if (
-    settings?.enabled !== true ||
+    settings == null ||
+    (requireEnabled && settings.enabled !== true) ||
     normalizeBrowserEnrollmentInstance(settings.instance) !== settings.instance
   ) {
     throw new SetupPolicyError('SETUP_UNAVAILABLE');
@@ -79,84 +64,127 @@ function validConfig(config: AppConfig): SetupConfig {
   return settings;
 }
 
-/** This reader takes an identity, not a synthetic authenticated request. */
+/** Identity and authorization are reloaded independently of browser middleware. */
 export function createSetupPolicy(deps: SetupPolicyDependencies): {
-  deployment: () => Promise<SetupPolicy>;
+  deployment: (options?: { existing?: boolean }) => Promise<SetupPolicy>;
   user: (id: string, expectedTenantId?: string) => Promise<SetupPolicy>;
-  frozen: (session: BrowserSetupSession) => Promise<SetupPolicy>;
+  frozen: (
+    session: BrowserSetupSession,
+    options?: { completed?: boolean },
+  ) => Promise<ExistingSetupPolicy>;
 } {
-  async function deployment(): Promise<SetupPolicy> {
+  async function deployment(options: { existing?: boolean } = {}): Promise<SetupPolicy> {
     if (!deps.principalAuthEnabled()) throw new SetupPolicyError('SETUP_UNAVAILABLE');
     const [base] = await Promise.all([
       deps.getAppConfig({ baseOnly: true, failClosed: true, refresh: true }),
       deps.principalAuthReady(),
     ]);
-    const config = validConfig(base);
+    const config = readSetupConfig(base, !options.existing);
     const maxOwned = resolveCodeWorkerEnrollmentLimit(sessions(base)?.principalWorkers);
-    const authorized = planes(base);
-    if (maxOwned === 0 || authorized.length === 0) throw new SetupPolicyError('SETUP_UNAVAILABLE');
+    const authorized = planes(base, options.existing);
+    if (!options.existing && (maxOwned === 0 || authorized.length === 0))
+      throw new SetupPolicyError('SETUP_UNAVAILABLE');
     return { config, planes: authorized, maxOwned };
   }
-
-  async function user(id: string, expectedTenantId?: string): Promise<SetupPolicy> {
-    const [account, banned] = await Promise.all([
+  async function account(id: string, expectedTenantId?: string): Promise<SetupUser> {
+    const [user, banned] = await Promise.all([
       runAsSystem(async () => deps.getUser(id)),
       deps.userIsBanned(id),
     ]);
     if (
-      account == null ||
-      account.id !== id ||
-      account.agentTriggerDeletionStartedAt != null ||
+      user == null ||
+      user.id !== id ||
+      user.agentTriggerDeletionStartedAt != null ||
       banned ||
-      (account.expiresAt != null && account.expiresAt.getTime() <= Date.now()) ||
-      isTwoFactorEnrollmentRequired(account) ||
-      (account.provider === 'local' &&
-        account.emailVerified !== true &&
+      (user.expiresAt != null && user.expiresAt.getTime() <= Date.now()) ||
+      isTwoFactorEnrollmentRequired(user) ||
+      (user.provider === 'local' &&
+        user.emailVerified !== true &&
         !isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN)) ||
-      (expectedTenantId != null && (account.tenantId ?? '') !== expectedTenantId)
+      (expectedTenantId != null && (user.tenantId ?? '') !== expectedTenantId)
     ) {
       throw new SetupPolicyError('ACCOUNT_UNAVAILABLE');
     }
-    return await tenantStorage.run({ tenantId: account.tenantId, userId: id }, async () => {
+    return user;
+  }
+  function assertTerms(config: AppConfig, user: SetupUser): void {
+    if (
+      config.interfaceConfig?.termsOfService?.modalAcceptance === true &&
+      user.termsAccepted !== true
+    ) {
+      throw new SetupPolicyError('POLICY_WITHDRAWN');
+    }
+  }
+  async function user(id: string, expectedTenantId?: string): Promise<SetupPolicy> {
+    const owner = await account(id, expectedTenantId);
+    return await tenantStorage.run({ tenantId: owner.tenantId, userId: id }, async () => {
       const [base, effective] = await Promise.all([
         deployment(),
         deps.getAppConfig({
-          ...getAppConfigOptionsFromUser(account),
+          ...getAppConfigOptionsFromUser(owner),
           refresh: true,
           failClosed: true,
           skipRuntimeAugmentation: true,
         }),
       ]);
-      const effectiveSettings = sessions(effective)?.principalWorkers;
-      if (
-        effectiveSettings?.browserSetup?.enabled === false ||
-        (effective.interfaceConfig?.termsOfService?.modalAcceptance === true &&
-          account.termsAccepted !== true)
-      ) {
+      assertTerms(effective, owner);
+      const settings = sessions(effective)?.principalWorkers;
+      const maxOwned = resolveCodeWorkerEnrollmentLimit({ maxPerUser: base.maxOwned }, settings);
+      const allowed = new Set(planes(effective).map((plane) => plane.id));
+      const authorized = base.planes.filter((plane) => allowed.has(plane.id));
+      if (settings?.browserSetup?.enabled === false || maxOwned === 0 || authorized.length === 0)
         throw new SetupPolicyError('POLICY_WITHDRAWN');
-      }
-      const maxOwned = resolveCodeWorkerEnrollmentLimit(
-        { maxPerUser: base.maxOwned },
-        effectiveSettings,
-      );
-      const allowed = new Set(planes(effective).map(({ id: planeId }) => planeId));
-      const authorized = base.planes.filter(({ id: planeId }) => allowed.has(planeId));
-      if (maxOwned === 0 || authorized.length === 0) throw new SetupPolicyError('POLICY_WITHDRAWN');
       return {
         ...base,
-        user: account,
+        user: owner,
         maxOwned,
         planes: authorized,
-        tenantId: account.tenantId ?? '',
-        codeTenantId: getCodeApiTenantIdForUser(account),
+        tenantId: owner.tenantId ?? '',
+        codeTenantId: getCodeApiTenantIdForUser(owner),
       };
     });
   }
-
-  async function frozen(session: BrowserSetupSession): Promise<SetupPolicy> {
+  async function existing(session: BrowserSetupSession): Promise<ExistingSetupPolicy> {
+    const owner = await account(session.ownerId!, session.tenantId);
+    if (!deps.principalAuthEnabled()) throw new SetupPolicyError('POLICY_WITHDRAWN');
+    return await tenantStorage.run({ tenantId: owner.tenantId, userId: owner.id }, async () => {
+      const [base, effective] = await Promise.all([
+        deps.getAppConfig({ baseOnly: true, refresh: true, failClosed: true }),
+        deps.getAppConfig({
+          ...getAppConfigOptionsFromUser(owner),
+          refresh: true,
+          failClosed: true,
+          skipRuntimeAugmentation: true,
+        }),
+        deps.principalAuthReady(),
+      ]);
+      assertTerms(effective, owner);
+      const allowed = new Set(planes(effective, true).map((plane) => plane.id));
+      const authorized = planes(base, true).filter((plane) => allowed.has(plane.id));
+      const settings = sessions(base)?.principalWorkers?.browserSetup;
+      // Enrollment toggles and capacity govern new trust, not an existing redeemed identity.
+      return {
+        config: {
+          instance: settings?.instance ?? session.approval!.instance,
+          retentionMs: settings?.retentionMs ?? 86_400_000,
+        },
+        planes: authorized,
+        maxOwned: 0,
+        user: owner,
+        tenantId: owner.tenantId ?? '',
+        codeTenantId: getCodeApiTenantIdForUser(owner),
+      };
+    });
+  }
+  async function frozen(
+    session: BrowserSetupSession,
+    options: { completed?: boolean } = {},
+  ): Promise<ExistingSetupPolicy> {
     if (session.ownerId == null || session.approval == null)
       throw new SetupPolicyError('POLICY_WITHDRAWN');
-    const resolved = await user(session.ownerId, session.tenantId);
+    const resolved = options.completed
+      ? await existing(session)
+      : await user(session.ownerId, session.tenantId);
     const plane = resolved.planes.find(({ id }) => id === session.planeId);
     if (
       plane == null ||
@@ -164,13 +192,10 @@ export function createSetupPolicy(deps: SetupPolicyDependencies): {
       plane.pairing?.tokenEnv !== session.tokenEnv ||
       resolved.codeTenantId !== session.approval.binding.tenantId ||
       resolved.config.instance !== session.approval.instance
-    ) {
+    )
       throw new SetupPolicyError('POLICY_WITHDRAWN');
-    }
     return resolved;
   }
-
   return { deployment, user, frozen };
 }
-
 export type SetupPolicyReader = ReturnType<typeof createSetupPolicy>;

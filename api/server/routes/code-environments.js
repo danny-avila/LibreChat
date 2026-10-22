@@ -8,7 +8,7 @@ const {
   codeEnvironmentStatusIpLimiter,
   codeEnvironmentStatusLimiter,
 } = require('@librechat/api');
-const { SystemCapabilities } = require('@librechat/data-schemas');
+const { SystemCapabilities, createBrowserSetupBackend } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { getAppConfig, getCodeEnvironmentRegistry } = require('~/server/services/Config');
 const { requireJwtAuth, requireSameOrigin, checkBan } = require('~/server/middleware');
@@ -38,7 +38,7 @@ const requireCodeEnvironmentManage = requireCapability(SystemCapabilities.MANAGE
 router.use(
   '/setup',
   createCodeSetupRouter({
-    mongoose,
+    backend: createBrowserSetupBackend(mongoose),
     getAppConfig,
     registry: getCodeEnvironmentRegistry,
     requireJwtAuth,

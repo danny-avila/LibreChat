@@ -52,6 +52,7 @@ const mockModels = {
 
 jest.mock('@librechat/data-schemas', () => ({
   SystemCapabilities: { MANAGE_CODE_ENVIRONMENTS: 'manage:code_environments' },
+  createBrowserSetupBackend: jest.fn(() => ({})),
 }));
 
 jest.mock('@librechat/api', () => ({
