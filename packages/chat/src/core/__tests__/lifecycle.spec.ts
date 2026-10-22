@@ -2626,3 +2626,31 @@ describe('Chat snapshots the host reducer folds in', () => {
     expect(sync.data.resumeState?.pendingAction).toBeUndefined();
   });
 });
+
+describe('Chat unframed stops while a lost start is owed', () => {
+  it.each([
+    [
+      'settled',
+      { success: false, settled: true, terminalStatus: 'complete', generationProtocolVersion: 2 },
+    ],
+    [
+      'persistence failed',
+      { success: true, aborted: 'convo-1', persistenceFailed: true, generationProtocolVersion: 2 },
+    ],
+    ['gone', Object.assign(new Error('Not Found'), { response: { status: 404 } })],
+  ])('(2) a %s stop of a restored pause keeps the lost start failure', async (_label, answer) => {
+    const h = createHarness();
+    await lost(h);
+    const failure = h.chat.error;
+    h.chat.restorePendingAction(askAction, 500);
+    if (answer instanceof Error) {
+      h.transport.abort.mockRejectedValueOnce(answer);
+    } else {
+      h.transport.abort.mockResolvedValueOnce(answer as ChatAbortResult);
+    }
+
+    await expect(h.chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+    expect(h.chat.status).toBe('error');
+    expect(h.chat.error).toBe(failure);
+  });
+});

@@ -1229,7 +1229,9 @@ export class Chat {
       persistenceFailed,
       stoppedConversationId: generation.stoppedConversationId,
     });
-    this.publish(outcome, generation.responseId, generation.responseUnknown);
+    /** A lost start still owed its own abort keeps the failure it reported. */
+    const owed = this.unaddressed && this.error ? this.error : undefined;
+    this.publish(outcome, generation.responseId, generation.responseUnknown, false, owed);
     return true;
   }
 
@@ -1970,16 +1972,18 @@ export class Chat {
     responseId: string | undefined,
     responseUnknown = false,
     responseless = false,
+    /** A failure another generation reported, which this terminal state does not resolve. */
+    owed?: Error,
   ): void {
     const { state } = this.init;
-    const status: ChatStatus = outcome.kind === 'error' ? 'error' : 'ready';
+    const status: ChatStatus = outcome.kind === 'error' || owed ? 'error' : 'ready';
     if (state.connection !== 'idle') {
       state.connection = 'idle';
     }
     if (state.status !== status) {
       state.status = status;
     }
-    state.error = outcome.kind === 'error' ? outcome.error : undefined;
+    state.error = owed ?? (outcome.kind === 'error' ? outcome.error : undefined);
     const messages = this.messages;
     let message: TMessage | undefined;
     if (responseId !== undefined) {
