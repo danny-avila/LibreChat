@@ -305,7 +305,7 @@ export async function processCodeOutput(
     /** Retain the completed output for token-qualified persistence after storage settles. */
     let pendingOutput: CodeOutputStoredFile | undefined;
     async function commitCodeFile(fileData: CodeOutputStoredFile): Promise<boolean> {
-      pendingOutput = fileData;
+      pendingOutput = structuredClone(fileData);
       return true;
     }
 

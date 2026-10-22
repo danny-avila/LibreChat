@@ -397,7 +397,11 @@ describe('Code Process', () => {
     });
 
     it('holds regenerated output storage through primary write and full record commit', async () => {
-      mockClaimCodeFile.mockResolvedValue({ file_id: 'existing-output', user: 'user-123' });
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-output',
+        user: 'user-123',
+        messageId: 'original-message',
+      });
       let finishWrite;
       const writing = new Promise((resolve) => {
         finishWrite = resolve;
@@ -418,6 +422,11 @@ describe('Code Process', () => {
       finishWrite();
       const result = await pending;
       expect(result.file.file_id).toBe('existing-output');
+      expect(result.file.messageId).toBe(baseParams.messageId);
+      expect(mockCommitCodeFile).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'original-message' }),
+        undefined,
+      );
       expect(mockCommitFileProvision).toHaveBeenCalledWith(
         expect.objectContaining({
           output: expect.objectContaining({
