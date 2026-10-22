@@ -157,6 +157,25 @@ describe('createProvisionFilesCallback', () => {
       };
     }
 
+    it('rejects an unauthenticated provisioning principal before acquiring storage', async () => {
+      const harness = claimHarness();
+      const provisionFiles = createProvisionFilesCallback({
+        req: {} as ServerRequest,
+        fileStorage: harness.fileStorage,
+        agentToolContexts: harness.agentToolContexts,
+        provisionToCodeEnv: harness.provisionToCodeEnv as never,
+        provisionToVectorDB: harness.provisionToVectorDB as never,
+        updateFile: harness.updateFile,
+        updateCodeEnvRef: harness.updateCodeEnvRef,
+        addEmbeddedEntity: harness.addEmbeddedEntity,
+      });
+      await expect(provisionFiles(toolNames, 'agent-a')).rejects.toThrow(
+        'File provisioning requires an authenticated user',
+      );
+      expect(harness.fileStorage.acquireFileProvision).not.toHaveBeenCalled();
+      expect(harness.upload).not.toHaveBeenCalled();
+    });
+
     it('does not read credentials or upload when the durable claim is denied', async () => {
       const harness = claimHarness();
       const readKey = jest.fn();

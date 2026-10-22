@@ -182,6 +182,9 @@ export function createProvisionFilesCallback({
       return [];
     }
 
+    const userId = req.user?.id;
+    if (!userId) throw new Error('File provisioning requires an authenticated user');
+
     /** Chat attachments and generated code outputs stay in the user's sandbox and unscoped
      *  vector index; only this agent's own setup files are scoped to it. Membership decides
      *  that, not the record's context: a user may attach another agent's setup file to this
@@ -280,7 +283,7 @@ export function createProvisionFilesCallback({
             () =>
               withFileProvisioning({
                 file,
-                userId: req.user.id,
+                userId,
                 storage: fileStorage,
                 operation: async (claim) => {
                   const {
@@ -363,7 +366,7 @@ export function createProvisionFilesCallback({
           const result = await shareProvisioning(shareKey('search', file), () =>
             withFileProvisioning({
               file,
-              userId: req.user.id,
+              userId,
               storage: fileStorage,
               operation: async (claim) => {
                 const provisioned = await provisionToVectorDB({

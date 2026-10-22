@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
-import { FileContext } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { FileContext, FileSources } from 'librechat-data-provider';
 import { createModels, createMethods } from '@librechat/data-schemas';
 import type { IChatProject, IMongoFile, ProjectFileRecord } from '@librechat/data-schemas';
 import {
@@ -104,7 +104,12 @@ describe('ChatProject resource hydration', () => {
     const [policy] = await resolveChatProjectPolicyFiles(params);
     const runtimeSource = {
       ...record,
-      metadata: { ...metadata, destinationChosen: true, embeddedEntities: ['private-agent'] },
+      metadata: {
+        ...metadata,
+        routingMimeType: metadata?.routingMimeType,
+        destinationChosen: true,
+        embeddedEntities: ['private-agent'],
+      },
     };
     const direct = toRuntimeFile(runtimeSource);
     for (const result of [resource.file, runtime, policy, direct]) {
@@ -119,7 +124,12 @@ describe('ChatProject resource hydration', () => {
     for (const allowed of ['image/heic', 'image/jpeg']) {
       expect(
         filterFilesByEndpointRuntimeConfig(
-          { fileConfig: { endpoints: { openAI: { supportedMimeTypes: [allowed] } } } },
+          {
+            config: {},
+            fileStrategy: FileSources.local,
+            imageOutputType: 'png',
+            fileConfig: { endpoints: { openAI: { supportedMimeTypes: [allowed] } } },
+          },
           { files: [runtime], endpoint: 'openAI' },
         ),
       ).toHaveLength((metadata?.routingMimeType ?? 'image/jpeg') === allowed ? 1 : 0);
