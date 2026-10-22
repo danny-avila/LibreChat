@@ -14,6 +14,7 @@ import type { RunFileSessionDeps } from './session';
 import type { RunFileToolContext } from './host';
 import type { ServerRequest } from '~/types';
 import { createRunFileHost, resolveRunFileCodeExecutionContext } from './host';
+import { createFileProvisionRecovery } from '../../files/operations';
 import * as sessionModule from './session';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -212,15 +213,16 @@ function harness(
     encodeMessages,
     provisioning: {
       fileStorage: {
+        recovery: createFileProvisionRecovery(),
         acquireFileProvision: jest.fn(async () => true),
         releaseFileProvision: jest.fn(async () => true),
         commitFileProvision: jest.fn(
           async ({ claim, code, entityId, embedded }: FileProvisionCommit) => {
-            const result = code
-              ? await updateCodeEnvRef({ file_id: claim.file_id, ...code })
-              : entityId != null
-                ? await addEmbeddedEntity({ file_id: claim.file_id, entityId })
-                : await updateFile({ file_id: claim.file_id, embedded });
+            let result: unknown;
+            if (code) result = await updateCodeEnvRef({ file_id: claim.file_id, ...code });
+            else if (entityId != null)
+              result = await addEmbeddedEntity({ file_id: claim.file_id, entityId });
+            else result = await updateFile({ file_id: claim.file_id, embedded });
             return result !== null && result !== false;
           },
         ),

@@ -52,6 +52,7 @@ export interface ProvisionDeps {
     file_id: string;
     entity_id?: string;
     signal?: AbortSignal;
+    onUploadStart?: () => void;
   }) => Promise<{ embedded?: boolean } | undefined>;
   loadAuthValues: (params: {
     userId: string;
@@ -98,6 +99,7 @@ export interface ProvisionService {
     sandboxFilename?: string;
     signal?: AbortSignal;
     rateLimitBudget?: CodeApiRateLimitBudget;
+    onUploadStart?: () => void;
   }) => Promise<{
     referenceSet: CodeEnvReferenceSetResult;
     refUpdate: CodeEnvRefUpdate;
@@ -110,6 +112,7 @@ export interface ProvisionService {
     entity_id?: string;
     existingStream?: Readable;
     signal?: AbortSignal;
+    onUploadStart?: () => void;
   }) => Promise<{ embedded: boolean; fileUpdate: ProvisionFileUpdate | null }>;
   checkSessionsAlive: (params: {
     files: TFile[];
@@ -265,6 +268,7 @@ export function createProvisionService({
     sandboxFilename: requestedSandboxFilename,
     signal,
     rateLimitBudget,
+    onUploadStart,
   }: {
     req: ServerRequest;
     file: TFile;
@@ -273,6 +277,7 @@ export function createProvisionService({
     sandboxFilename?: string;
     signal?: AbortSignal;
     rateLimitBudget?: CodeApiRateLimitBudget;
+    onUploadStart?: () => void;
   }) {
     signal?.throwIfAborted();
     const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
@@ -325,6 +330,7 @@ export function createProvisionService({
           ...(route?.baseUrl ? { codeApiBaseUrl: route.baseUrl } : {}),
           executionProfile,
           signal,
+          onUploadStart,
         }),
     });
 
@@ -378,6 +384,7 @@ export function createProvisionService({
     file,
     entity_id,
     existingStream,
+    onUploadStart,
     signal,
   }: {
     req: ServerRequest;
@@ -385,6 +392,7 @@ export function createProvisionService({
     entity_id?: string;
     existingStream?: Readable;
     signal?: AbortSignal;
+    onUploadStart?: () => void;
   }): Promise<{ embedded: boolean; fileUpdate: { file_id: string; embedded?: boolean } | null }> {
     /* Unique per attempt: two concurrent requests provisioning the same file_id would
      * otherwise share one path, and the first to finish unlinks it while the second is
@@ -423,6 +431,7 @@ export function createProvisionService({
         file_id: file.file_id,
         entity_id,
         signal,
+        onUploadStart,
       });
 
       const embedded = embeddingResult?.embedded ?? false;

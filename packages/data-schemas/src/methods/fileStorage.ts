@@ -48,10 +48,11 @@ export function createFileStorageMethods(mongoose: typeof import('mongoose')): {
     return result.matchedCount === 1;
   }
 
+  /** An already-applied release is successful; only the supplied token is removed. */
   async function releaseFileProvision(data: FileStorageClaim): Promise<boolean> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const result = await File.updateOne(
-      { ...claimFilter(data), 'storageOperations.provisioning': data.token },
+      claimFilter(data),
       { $pull: { 'storageOperations.provisioning': data.token } },
       { timestamps: false },
     );

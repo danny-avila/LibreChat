@@ -2,8 +2,8 @@ import { FileSources, getCodeEnvRefs } from 'librechat-data-provider';
 import type { ClearFileEmbeddingsParams, FileStorageCleanupParams } from '@librechat/data-schemas';
 import type { CodeEnvReferenceSet } from 'librechat-data-provider';
 import type { FileDeleteStorage } from './operations';
+import { withFileDeletion, isDefinitiveFileStorageFailure } from './operations';
 import { getSafeErrorMetadata } from '../utils/errors';
-import { withFileDeletion } from './operations';
 
 const MISSING_STORAGE_CODES = new Set<string | number>([
   404,
@@ -112,7 +112,10 @@ export function createDeleteFileWithSecondaryStorage<
     ) {
       throw new Error('Retained file cleanup requires upgraded readers');
     }
-    const deleteStorage = async (primaryDeleted: () => void): Promise<void> => {
+    const deleteStorage = async (
+      primaryDeleted: (confirmed?: boolean) => void,
+      onOutcomeUnknown: () => void,
+    ): Promise<void> => {
       const secondaries: Array<DeleteStorageFile<TRequest, TFile>> = [];
       let vectorIndex = -1;
       if (file.embedded === true && source !== FileSources.vectordb) {
@@ -128,6 +131,7 @@ export function createDeleteFileWithSecondaryStorage<
           return await operation();
         } catch (error) {
           if (!isMissingStorageError(error)) {
+            if (!isDefinitiveFileStorageFailure(error)) onOutcomeUnknown();
             throw error;
           }
           logger.warn(
@@ -213,6 +217,8 @@ export function createDeleteFileWithSecondaryStorage<
         }
       };
       if (source !== FileSources.execute_code) await confirmCleanup();
+      // Dispatch can succeed remotely even when its response never arrives.
+      primaryDeleted(false);
       const primary = await remove(() => deleteFile(req, file, client));
       if (
         ((source === FileSources.vectordb && file.embedded === true) ||
@@ -224,11 +230,15 @@ export function createDeleteFileWithSecondaryStorage<
       ) {
         throw new Error('Primary secondary-store deletion was not confirmed');
       }
-      primaryDeleted();
+      primaryDeleted(true);
       if (source === FileSources.vectordb && file.embedded === true) await reconcileVectors();
       if (source === FileSources.execute_code) await confirmCleanup();
     };
-    if (!file.file_id || providerOnly) return deleteStorage(() => undefined);
+    if (!file.file_id || providerOnly)
+      return deleteStorage(
+        () => undefined,
+        () => undefined,
+      );
     return withFileDeletion({
       file: { ...file, file_id: file.file_id },
       userId: req.user.id,

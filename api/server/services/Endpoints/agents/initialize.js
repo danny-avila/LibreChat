@@ -117,6 +117,7 @@ const {
 } = require('./backgroundCompletion');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
+const { getFileStorage } = require('~/server/services/Files/operations');
 const { getAppConfig } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -1991,11 +1992,7 @@ const initializeClientWithProvider = async ({
     filterFiles: filterFilesByAgentAccess,
     listPublications: db.listRunArtifacts,
     provisioning: {
-      fileStorage: {
-        acquireFileProvision: db.acquireFileProvision,
-        releaseFileProvision: db.releaseFileProvision,
-        commitFileProvision: db.commitFileProvision,
-      },
+      fileStorage: getFileStorage(),
       provisionToCodeEnv,
       provisionToVectorDB,
       updateFile: db.updateFile,

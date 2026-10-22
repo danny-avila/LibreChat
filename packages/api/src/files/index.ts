@@ -7,6 +7,7 @@ export * from './deletion';
 export * from './finalize';
 export * from './storage';
 export * from './operations';
+export * from './dispatch';
 export * from './orphan';
 export * from './extract';
 export * from './documents/crud';

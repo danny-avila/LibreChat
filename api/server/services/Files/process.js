@@ -76,6 +76,7 @@ const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
 const db = require('~/models');
+const { getFileStorage } = require('~/server/services/Files/operations');
 
 /**
  * Creates a modular file upload wrapper that ensures filename sanitization
@@ -273,10 +274,7 @@ const processDeleteRequest = async ({ req, files }) => {
         getDeleteFile: (src) => getDeleteMethod({ source: src, deletionMethods }),
         clearFileEmbeddings: db.clearFileEmbeddings,
         isFileStorageClean: db.isFileStorageClean,
-        fileStorage: {
-          acquireFileDeletion: db.acquireFileDeletion,
-          releaseFileDeletion: db.releaseFileDeletion,
-        },
+        fileStorage: getFileStorage(),
         logger,
       }),
       promises,

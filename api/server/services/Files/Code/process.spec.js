@@ -217,6 +217,15 @@ const mockUpdateFile = jest.fn();
 const mockAcquireFileProvision = jest.fn(async () => true);
 const mockReleaseFileProvision = jest.fn(async () => true);
 const mockCommitFileProvision = jest.fn();
+let mockProvisionRecovery;
+jest.mock('~/server/services/Files/operations', () => ({
+  getFileStorage: () => ({
+    recovery: mockProvisionRecovery,
+    acquireFileProvision: (...args) => mockAcquireFileProvision(...args),
+    releaseFileProvision: (...args) => mockReleaseFileProvision(...args),
+    commitFileProvision: (...args) => mockCommitFileProvision(...args),
+  }),
+}));
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({}),
   getFiles: jest.fn(),
@@ -306,6 +315,7 @@ describe('Code Process', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockProvisionRecovery = jest.requireActual('@librechat/api').createFileProvisionRecovery();
     mockAcquireFileProvision.mockReset().mockResolvedValue(true);
     mockReleaseFileProvision.mockReset().mockResolvedValue(true);
     mockCommitFileProvision.mockReset().mockImplementation(async ({ claim, code }) => {
@@ -3206,10 +3216,30 @@ describe('Code Process', () => {
       const dbFile = claimedFile();
       setupReuploadMocks({ storage_session_id: 'NEW_SESSION', file_id: 'NEW_ID' });
       getFiles.mockResolvedValue([dbFile]);
-      mockCommitFileProvision.mockResolvedValueOnce(false);
+      mockCommitFileProvision.mockResolvedValue(false);
       await expect(primeClaimedFile(dbFile)).rejects.toThrow();
-      expect(mockCommitFileProvision).toHaveBeenCalledTimes(1);
+      expect(mockCommitFileProvision).toHaveBeenCalledTimes(2);
       expect(mockReleaseFileProvision).not.toHaveBeenCalled();
+    });
+
+    it('reuses the original claim and uploaded ref in the next primer invocation', async () => {
+      const dbFile = claimedFile();
+      const { handleFileUpload } = setupReuploadMocks({
+        storage_session_id: 'NEW_SESSION',
+        file_id: 'NEW_ID',
+      });
+      getFiles.mockResolvedValue([dbFile]);
+      mockCommitFileProvision.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+      await expect(primeClaimedFile(dbFile)).rejects.toThrow();
+      const originalClaim = mockAcquireFileProvision.mock.calls[0][0];
+      const result = await primeClaimedFile(dbFile);
+      expect(result.files).toEqual([expect.objectContaining({ id: 'NEW_ID' })]);
+      expect(handleFileUpload).toHaveBeenCalledTimes(1);
+      expect(mockAcquireFileProvision).toHaveBeenCalledTimes(1);
+      expect(mockCommitFileProvision).toHaveBeenLastCalledWith(
+        expect.objectContaining({ claim: originalClaim }),
+      );
+      expect(mockReleaseFileProvision).toHaveBeenCalledWith(originalClaim);
     });
 
     it.each(['upload', 'persist'])(
@@ -3223,7 +3253,7 @@ describe('Code Process', () => {
         getFiles.mockResolvedValue([dbFile]);
         if (failure === 'upload')
           handleFileUpload.mockRejectedValueOnce(new Error('upload unavailable'));
-        else updateFile.mockRejectedValueOnce(new Error('database unavailable'));
+        else updateFile.mockRejectedValue(new Error('database unavailable'));
         await expect(primeClaimedFile(dbFile)).rejects.toThrow();
         if (failure === 'upload') {
           expect(mockReleaseFileProvision).toHaveBeenCalledTimes(1);

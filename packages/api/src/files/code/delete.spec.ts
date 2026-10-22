@@ -1,5 +1,6 @@
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
+import { createFileProvisionRecovery } from '../operations';
 import { createCodeFileDeleter } from './delete';
 
 const req = { user: { id: 'owner' } } as ServerRequest;
@@ -111,6 +112,10 @@ it('invalidates a confirmed code pointer even when a later vector deletion fails
     clearFileEmbeddings,
     isFileStorageClean: jest.fn().mockResolvedValue(true),
     fileStorage: {
+      recovery: createFileProvisionRecovery(),
+      acquireFileProvision: jest.fn().mockResolvedValue(true),
+      releaseFileProvision: jest.fn().mockResolvedValue(true),
+      commitFileProvision: jest.fn().mockResolvedValue(true),
       acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
       releaseFileDeletion: jest.fn().mockResolvedValue(true),
     },

@@ -4,7 +4,6 @@ const { getCodeBaseURL } = require('@librechat/agents');
 const {
   withTimeout,
   withFileProvisioning,
-  confirmFileProvision,
   getBasePath,
   logAxiosError,
   hasOfficeHtmlPath,
@@ -57,16 +56,9 @@ const {
   getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const {
-  getFiles,
-  updateFile,
-  claimCodeFile,
-  commitCodeFile,
-  acquireFileProvision,
-  releaseFileProvision,
-  commitFileProvision,
-} = require('~/models');
+const { getFiles, updateFile, claimCodeFile, commitCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { getFileStorage } = require('~/server/services/Files/operations');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { determineFileType } = require('~/server/utils');
@@ -815,11 +807,19 @@ const primeFiles = async (options) => {
 
     const reuploadFile = async () => {
       try {
-        await withFileProvisioning({
+        const newRef = await withFileProvisioning({
           file,
           userId: req.user.id,
-          storage: { acquireFileProvision, releaseFileProvision, commitFileProvision },
-          operation: async (claim) => {
+          storage: getFileStorage(),
+          destination: JSON.stringify([
+            'code',
+            executionRouteKey,
+            sourceRef.kind,
+            sourceRef.id,
+            sourceRef.kind === 'skill' ? sourceRef.version : null,
+            sandboxName,
+          ]),
+          operation: async (_claim, onUploadStart) => {
             const { getDownloadStream } = getStrategyFunctions(file.source);
             const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
               FileSources.execute_code,
@@ -857,6 +857,7 @@ const primeFiles = async (options) => {
                   executionProfile,
                   bridgeWorkerId,
                   signal,
+                  onUploadStart,
                 }),
             });
 
@@ -886,24 +887,20 @@ const primeFiles = async (options) => {
 
             const updatedRefs = mergeCodeEnvRef(file.metadata, newRef);
 
-            await confirmFileProvision(
-              { commitFileProvision },
-              {
-                claim,
+            return {
+              value: newRef,
+              commit: {
                 code: {
                   routeKey: executionRouteKey,
                   ref: newRef,
                   legacyRef: updatedRefs.codeEnvRef,
                 },
               },
-            );
-            pushFile(newRef.storage_session_id, newRef.file_id, newRef.sandboxFilename);
-            logger.debug(
-              `[primeCodeFiles] file=${file.file_id} path=reupload-success ` +
-                `oldSession=${session_id} newSession=${newRef.storage_session_id} newFileId=${newRef.file_id}`,
-            );
+            };
           },
         });
+        pushFile(newRef.storage_session_id, newRef.file_id, newRef.sandboxFilename);
+        logger.debug(`[primeCodeFiles] file=${file.file_id} path=reupload-success`);
       } catch (error) {
         /* Cancellation is an operation outcome, not a recoverable per-file
          * miss. Swallowing it here would keep walking and could dispatch more

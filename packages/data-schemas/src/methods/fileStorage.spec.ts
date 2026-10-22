@@ -51,8 +51,6 @@ beforeAll(async () => {
   File = mongoose.models.File as mongoose.Model<IMongoFile>;
   methods = createFileStorageMethods(mongoose);
   peer = createFileStorageMethods(mongoose);
-  const publicMethods: Pick<AllMethods, keyof FileStorageMethods> = methods;
-  expect(Object.keys(publicMethods)).toHaveLength(5);
 }, 30_000);
 
 beforeEach(async () => {
@@ -69,6 +67,10 @@ afterAll(async () => {
 });
 
 describe('file storage fence', () => {
+  it('exports every storage claim method through the shared factory contract', () => {
+    const publicMethods: Pick<AllMethods, keyof FileStorageMethods> = methods;
+    expect(Object.keys(publicMethods)).toHaveLength(5);
+  });
   it('retains every concurrent provisioning owner until release', async () => {
     await seed();
     const claims = ['code-a', 'code-b', 'search'].map((token) => ({ ...claim, token }));
@@ -80,7 +82,8 @@ describe('file storage fence', () => {
       'search',
     ]);
     expect(await peer.acquireFileDeletion(deletion)).toBeNull();
-    expect(await peer.releaseFileProvision({ ...claim, token: 'thief' })).toBe(false);
+    expect(await peer.releaseFileProvision({ ...claim, token: 'thief' })).toBe(true);
+    expect((await read())?.storageOperations?.provisioning).toContain(claims[0].token);
     expect(await methods.releaseFileProvision(claims[0])).toBe(true);
     expect(await peer.acquireFileDeletion(deletion)).toBeNull();
     expect(await Promise.all(claims.slice(1).map(methods.releaseFileProvision))).toEqual([
@@ -212,7 +215,7 @@ describe('file storage fence', () => {
     await File.collection.deleteMany({});
     await seed();
     expect(await methods.commitFileProvision({ claim, embedded: true })).toBe(false);
-    expect(await methods.releaseFileProvision(claim)).toBe(false);
+    expect(await methods.releaseFileProvision(claim)).toBe(true);
     expect((await read())?.embedded).toBeUndefined();
   });
 

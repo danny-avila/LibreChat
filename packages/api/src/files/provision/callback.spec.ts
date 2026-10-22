@@ -8,6 +8,7 @@ import type { CodeFileAgent } from '../code/queued';
 import type { ServerRequest } from '~/types';
 import { mergeCodeFilesIntoContext } from '~/agents/codeFilesSession';
 import { prepareQueuedCodeFileContext } from '../code/queued';
+import { createFileProvisionRecovery } from '../operations';
 import { createSubagentCodeRouting } from '~/code/targets';
 import { createProvisionFilesCallback } from './callback';
 
@@ -101,15 +102,16 @@ function buildHarness({
     ): Promise<unknown> => ({}),
   );
   const fileStorage = {
+    recovery: createFileProvisionRecovery(),
     acquireFileProvision: jest.fn(async (_claim: FileStorageClaim) => true),
     releaseFileProvision: jest.fn(async (_claim: FileStorageClaim) => true),
     commitFileProvision: jest.fn(
       async ({ claim, code, entityId, embedded }: FileProvisionCommit) => {
-        const result = code
-          ? await updateCodeEnvRef({ file_id: claim.file_id, ...code })
-          : entityId != null
-            ? await addEmbeddedEntity({ file_id: claim.file_id, entityId })
-            : await updateFile({ file_id: claim.file_id, embedded });
+        let result: unknown;
+        if (code) result = await updateCodeEnvRef({ file_id: claim.file_id, ...code });
+        else if (entityId != null)
+          result = await addEmbeddedEntity({ file_id: claim.file_id, entityId });
+        else result = await updateFile({ file_id: claim.file_id, embedded });
         return result !== null && result !== false;
       },
     ),
@@ -277,6 +279,73 @@ describe('createProvisionFilesCallback', () => {
       ]).toEqual([harness.file]);
     });
 
+    it('recovers persistence in a fresh callback without another upload or token', async () => {
+      const harness = claimHarness();
+      harness.fileStorage.commitFileProvision
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false);
+      await expect(harness.provisionFiles(toolNames, 'agent-a')).rejects.toThrow(
+        'Failed to provision',
+      );
+      const originalClaim = harness.fileStorage.acquireFileProvision.mock.calls[0][0];
+      const next = createProvisionFilesCallback({
+        req,
+        fileStorage: harness.fileStorage,
+        agentToolContexts: harness.agentToolContexts,
+        provisionToCodeEnv: harness.provisionToCodeEnv as never,
+        provisionToVectorDB: harness.provisionToVectorDB as never,
+        updateFile: harness.updateFile,
+        updateCodeEnvRef: harness.updateCodeEnvRef,
+        addEmbeddedEntity: harness.addEmbeddedEntity,
+      });
+      await next(toolNames, 'agent-a');
+      expect(harness.upload).toHaveBeenCalledTimes(1);
+      expect(harness.fileStorage.acquireFileProvision).toHaveBeenCalledTimes(1);
+      expect(harness.fileStorage.commitFileProvision).toHaveBeenLastCalledWith(
+        expect.objectContaining({ claim: originalClaim }),
+      );
+      expect(harness.fileStorage.releaseFileProvision).toHaveBeenCalledWith(originalClaim);
+      expect(harness.provisionState.codeEnvFiles).toEqual([]);
+      expect(harness.provisionState.vectorDBFiles).toEqual([]);
+    });
+
+    it('retains the claim when a dispatched upload loses its response', async () => {
+      const harness = claimHarness();
+      harness.upload.mockImplementationOnce(
+        async ({ onUploadStart }: { onUploadStart: () => void }) => {
+          onUploadStart();
+          throw new Error('transport response lost');
+        },
+      );
+      await expect(harness.provisionFiles(toolNames, 'agent-a')).rejects.toThrow(
+        'Failed to provision',
+      );
+      expect(harness.fileStorage.releaseFileProvision).not.toHaveBeenCalled();
+      await expect(harness.provisionFiles(toolNames, 'agent-a')).rejects.toThrow(
+        'Failed to provision',
+      );
+      expect(harness.upload).toHaveBeenCalledTimes(1);
+      expect(harness.fileStorage.acquireFileProvision).toHaveBeenCalledTimes(1);
+      expect(harness.fileStorage.commitFileProvision).not.toHaveBeenCalled();
+    });
+
+    it('releases a dispatched claim after a definitive access rejection', async () => {
+      const harness = claimHarness();
+      harness.upload.mockImplementationOnce(
+        async ({ onUploadStart }: { onUploadStart: () => void }) => {
+          onUploadStart();
+          throw Object.assign(new Error('denied'), { response: { status: 403 } });
+        },
+      );
+      await expect(harness.provisionFiles(toolNames, 'agent-a')).rejects.toThrow(
+        'Failed to provision',
+      );
+      expect(harness.fileStorage.releaseFileProvision).toHaveBeenCalledTimes(1);
+      await harness.provisionFiles(toolNames, 'agent-a');
+      expect(harness.upload).toHaveBeenCalledTimes(2);
+      expect(harness.fileStorage.releaseFileProvision).toHaveBeenCalledTimes(2);
+    });
+
     it('releases the claim on an upload failure and retains the queue', async () => {
       const harness = claimHarness();
       harness.upload.mockRejectedValueOnce(new Error('upload unavailable'));
@@ -312,7 +381,7 @@ describe('createProvisionFilesCallback', () => {
         expect(harness.file.embedded).toBe(false);
         harness.persist.mockResolvedValue(undefined);
         await harness.provisionFiles(toolNames, 'agent-a');
-        expect(harness.upload).toHaveBeenCalledTimes(2);
+        expect(harness.upload).toHaveBeenCalledTimes(1);
         expect(harness.fileStorage.releaseFileProvision).toHaveBeenCalledTimes(1);
         expect([
           ...harness.provisionState.codeEnvFiles,

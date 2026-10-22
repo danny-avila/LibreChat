@@ -122,6 +122,7 @@ jest.mock('@librechat/api', () => {
   );
   return {
     ...jest.requireActual('../../../../packages/api/src/files/storage'),
+    ...jest.requireActual('../../../../packages/api/src/files/operations'),
     ...jest.requireActual('../../../../packages/api/src/files/finalize'),
     sanitizeFilename: jest.fn((n) => n),
     /** Grants both; these specs vary the capability set, not the role. */

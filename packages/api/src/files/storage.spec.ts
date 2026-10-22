@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { FileSources } from 'librechat-data-provider';
 import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { createDeleteFileWithSecondaryStorage, isMissingStorageError } from './storage';
+import { createFileProvisionRecovery } from './operations';
 
 const req: {
   user: { id: string; tenantId: string };
@@ -31,6 +32,10 @@ function setup(source: string = FileSources.local) {
   const clearFileEmbeddings = jest.fn().mockResolvedValue(true);
   const isFileStorageClean = jest.fn().mockResolvedValue(true);
   const fileStorage = {
+    recovery: createFileProvisionRecovery(),
+    acquireFileProvision: jest.fn().mockResolvedValue(true),
+    releaseFileProvision: jest.fn().mockResolvedValue(true),
+    commitFileProvision: jest.fn().mockResolvedValue(true),
     acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
     releaseFileDeletion: jest.fn().mockResolvedValue(true),
   };
@@ -95,6 +100,10 @@ describe('createDeleteFileWithSecondaryStorage', () => {
         clearFileEmbeddings,
         isFileStorageClean,
         fileStorage: {
+          recovery: createFileProvisionRecovery(),
+          acquireFileProvision: jest.fn().mockResolvedValue(true),
+          releaseFileProvision: jest.fn().mockResolvedValue(true),
+          commitFileProvision: jest.fn().mockResolvedValue(true),
           acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
           releaseFileDeletion: jest.fn().mockResolvedValue(true),
         },
@@ -226,6 +235,39 @@ describe('createDeleteFileWithSecondaryStorage', () => {
     expect(primary).toHaveBeenCalledTimes(2);
   });
 
+  it('retains deletion intent when primary dispatch loses its response', async () => {
+    const { primary, fileStorage, remove } = setup();
+    primary.mockRejectedValue(Object.assign(new Error('response lost'), { code: 'ETIMEDOUT' }));
+    await expect(remove(req, file)).rejects.toThrow('response lost');
+    expect(fileStorage.releaseFileDeletion).toHaveBeenCalledWith(
+      expect.objectContaining({ retainDeletion: true }),
+    );
+  });
+
+  it('reopens repair after a definitive primary access rejection', async () => {
+    const { primary, fileStorage, remove } = setup();
+    primary.mockRejectedValue(
+      Object.assign(new Error('access denied'), { response: { status: 403 } }),
+    );
+    await expect(remove(req, file)).rejects.toThrow('access denied');
+    expect(fileStorage.releaseFileDeletion).toHaveBeenCalledWith(
+      expect.objectContaining({ retainDeletion: false }),
+    );
+  });
+
+  it('retains uncertainty from a second secondary instead of forgiving it as the first denial', async () => {
+    const { vectors, code, primary, fileStorage, remove } = setup();
+    vectors.mockRejectedValue(
+      Object.assign(new Error('vector denied'), { response: { status: 403 } }),
+    );
+    code.mockRejectedValue(Object.assign(new Error('code response lost'), { code: 'ETIMEDOUT' }));
+    await expect(remove(req, file)).rejects.toThrow('vector denied');
+    expect(primary).not.toHaveBeenCalled();
+    expect(fileStorage.releaseFileDeletion).toHaveBeenCalledWith(
+      expect.objectContaining({ retainDeletion: true }),
+    );
+  });
+
   it('logs only safe metadata for an already-removed secondary', async () => {
     const { vectors, logger, remove } = setup();
     vectors.mockRejectedValue(
@@ -314,6 +356,10 @@ describe('createDeleteFileWithSecondaryStorage', () => {
       clearFileEmbeddings: jest.fn().mockResolvedValue(true),
       isFileStorageClean: jest.fn().mockResolvedValue(true),
       fileStorage: {
+        recovery: createFileProvisionRecovery(),
+        acquireFileProvision: jest.fn().mockResolvedValue(true),
+        releaseFileProvision: jest.fn().mockResolvedValue(true),
+        commitFileProvision: jest.fn().mockResolvedValue(true),
         acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
         releaseFileDeletion: jest.fn().mockResolvedValue(true),
       },
@@ -427,6 +473,10 @@ describe('createDeleteFileWithSecondaryStorage', () => {
       clearFileEmbeddings: jest.fn().mockResolvedValue(true),
       isFileStorageClean: jest.fn().mockResolvedValue(true),
       fileStorage: {
+        recovery: createFileProvisionRecovery(),
+        acquireFileProvision: jest.fn().mockResolvedValue(true),
+        releaseFileProvision: jest.fn().mockResolvedValue(true),
+        commitFileProvision: jest.fn().mockResolvedValue(true),
         acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
         releaseFileDeletion: jest.fn().mockResolvedValue(true),
       },
@@ -450,6 +500,10 @@ describe('createDeleteFileWithSecondaryStorage', () => {
       clearFileEmbeddings: jest.fn().mockResolvedValue(true),
       isFileStorageClean: jest.fn().mockResolvedValue(true),
       fileStorage: {
+        recovery: createFileProvisionRecovery(),
+        acquireFileProvision: jest.fn().mockResolvedValue(true),
+        releaseFileProvision: jest.fn().mockResolvedValue(true),
+        commitFileProvision: jest.fn().mockResolvedValue(true),
         acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
         releaseFileDeletion: jest.fn().mockResolvedValue(true),
       },

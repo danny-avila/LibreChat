@@ -11,6 +11,7 @@ import type { IUser, AppConfig } from '@librechat/data-schemas';
 import type { Request as ServerRequest } from 'express';
 import type { TGetFiles, TFilterFilesByAgentAccess } from './resources';
 import { createDeleteFileWithSecondaryStorage } from '../files/storage';
+import { createFileProvisionRecovery } from '../files/operations';
 import { primeResources } from './resources';
 
 // Mock logger
@@ -164,6 +165,10 @@ describe('primeResources', () => {
         clearFileEmbeddings,
         isFileStorageClean: jest.fn().mockResolvedValue(true),
         fileStorage: {
+          recovery: createFileProvisionRecovery(),
+          acquireFileProvision: jest.fn().mockResolvedValue(true),
+          releaseFileProvision: jest.fn().mockResolvedValue(true),
+          commitFileProvision: jest.fn().mockResolvedValue(true),
           acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
           releaseFileDeletion: jest.fn().mockResolvedValue(true),
         },
@@ -250,6 +255,10 @@ describe('primeResources', () => {
           clearFileEmbeddings: jest.fn().mockResolvedValue(true),
           isFileStorageClean: jest.fn().mockResolvedValue(true),
           fileStorage: {
+            recovery: createFileProvisionRecovery(),
+            acquireFileProvision: jest.fn().mockResolvedValue(true),
+            releaseFileProvision: jest.fn().mockResolvedValue(true),
+            commitFileProvision: jest.fn().mockResolvedValue(true),
             acquireFileDeletion: jest.fn().mockResolvedValue({ resumed: false }),
             releaseFileDeletion: jest.fn().mockResolvedValue(true),
           },

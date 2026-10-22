@@ -36,6 +36,7 @@ jest.mock('@librechat/api', () => {
   const https = require('https');
   return {
     ...jest.requireActual('../../../../../packages/api/src/files/code/delete'),
+    ...jest.requireActual('../../../../../packages/api/src/files/dispatch'),
     appendCodeEnvFile: jest.fn((form, stream, filename) => {
       form.append('file', stream, { filename });
     }),
@@ -92,6 +93,42 @@ describe('Code CRUD', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     getCodeApiAuthHeaders.mockResolvedValue({});
+  });
+
+  it('marks upload dispatch after authentication and before a lost HTTP response', async () => {
+    const onUploadStart = jest.fn();
+    mockAxios.post.mockImplementationOnce(async () => {
+      expect(onUploadStart).toHaveBeenCalledTimes(1);
+      throw new Error('transport response lost');
+    });
+    await expect(
+      uploadCodeEnvFile({
+        req: { user: { id: 'user-123' } },
+        stream: Readable.from('data'),
+        filename: 'data.csv',
+        kind: 'user',
+        id: 'user-123',
+        onUploadStart,
+      }),
+    ).rejects.toThrow('transport response lost');
+    expect(onUploadStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not mark remote dispatch when upload authentication fails locally', async () => {
+    const onUploadStart = jest.fn();
+    getCodeApiAuthHeaders.mockRejectedValueOnce(new Error('credential lookup unavailable'));
+    await expect(
+      uploadCodeEnvFile({
+        req: { user: { id: 'user-123' } },
+        stream: Readable.from('data'),
+        filename: 'data.csv',
+        kind: 'user',
+        id: 'user-123',
+        onUploadStart,
+      }),
+    ).rejects.toThrow('credential lookup unavailable');
+    expect(onUploadStart).not.toHaveBeenCalled();
+    expect(mockAxios.post).not.toHaveBeenCalled();
   });
 
   describe('getCodeOutputDownloadStream', () => {

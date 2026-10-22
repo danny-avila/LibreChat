@@ -8,6 +8,7 @@ import type { ServerRequest } from '~/types';
 import { createProvisionFilesCallback } from '~/files/provision/callback';
 import { SUBAGENT_COMPLETION_DELIVERY } from '~/agents/subagentDelivery';
 import { mergeCodeFilesIntoContext } from '~/agents/codeFilesSession';
+import { createFileProvisionRecovery } from '../../files/operations';
 import { CHECK_BACKGROUND_TASK_NAME } from '~/agents/background';
 import { createRun } from '~/agents/run';
 
@@ -460,15 +461,16 @@ describe('createRun code-tool eager/session wiring', () => {
         req: { user: { id: 'user-1' } } as ServerRequest,
         agentToolContexts: contexts,
         fileStorage: {
+          recovery: createFileProvisionRecovery(),
           acquireFileProvision: jest.fn(async () => true),
           releaseFileProvision: jest.fn(async () => true),
           commitFileProvision: jest.fn(
             async ({ claim, code, entityId, embedded }: FileProvisionCommit) => {
-              const result = code
-                ? await updateCodeEnvRef({ file_id: claim.file_id, ...code })
-                : entityId != null
-                  ? await addEmbeddedEntity({ file_id: claim.file_id, entityId })
-                  : await updateFile({ file_id: claim.file_id, embedded });
+              let result: unknown;
+              if (code) result = await updateCodeEnvRef({ file_id: claim.file_id, ...code });
+              else if (entityId != null)
+                result = await addEmbeddedEntity({ file_id: claim.file_id, entityId });
+              else result = await updateFile({ file_id: claim.file_id, embedded });
               return result !== null && result !== false;
             },
           ),
