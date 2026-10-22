@@ -1,7 +1,9 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const {
   GenerationJobManager,
   createCodeEnvironmentHttpHandlers,
+  createCodeSetupRouter,
   codeEnvironmentPairingLimiter,
   codeEnvironmentStatusIpLimiter,
   codeEnvironmentStatusLimiter,
@@ -9,7 +11,9 @@ const {
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { getAppConfig, getCodeEnvironmentRegistry } = require('~/server/services/Config');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireJwtAuth, requireSameOrigin, checkBan } = require('~/server/middleware');
+const { ViolationTypes } = require('librechat-data-provider');
+const getLogStores = require('~/cache/getLogStores');
 const db = require('~/models');
 
 const router = express.Router();
@@ -31,6 +35,18 @@ function getHandlers() {
 }
 const requireCodeEnvironmentManage = requireCapability(SystemCapabilities.MANAGE_CODE_ENVIRONMENTS);
 
+router.use(
+  '/setup',
+  createCodeSetupRouter({
+    mongoose,
+    getAppConfig,
+    registry: getCodeEnvironmentRegistry,
+    requireJwtAuth,
+    requireSameOrigin,
+    checkBan,
+    banStore: getLogStores(ViolationTypes.BAN),
+  }),
+);
 router.use(requireJwtAuth);
 router.get('/', (req, res, next) => getHandlers().list(req, res, next));
 router.post('/pairings', codeEnvironmentPairingLimiter, (req, res, next) =>

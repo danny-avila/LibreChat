@@ -113,6 +113,7 @@ export enum QueryKeys {
   conversationPullRequest = 'conversationPullRequest',
   pullRequestConnection = 'pullRequestConnection',
   codeEnvironments = 'codeEnvironments',
+  codeSetupAttempt = 'codeSetupAttempt',
   agentQueuedTurns = 'agentQueuedTurns',
   /* Combined Pinned-section display order (favorites + pinned chats) */
   pinnedOrder = 'pinnedOrder',
@@ -120,6 +121,8 @@ export enum QueryKeys {
 
 // Dynamic query keys that require parameters
 export const DynamicQueryKeys = {
+  codeSetupAttempt: (attemptId: string, userId: string) =>
+    [QueryKeys.codeSetupAttempt, userId, attemptId] as const,
   agentFiles: (agentId: string) => ['agentFiles', agentId] as const,
   projectFiles: (projectId: string) => [QueryKeys.projectFiles, projectId] as const,
   projectAvailableFiles: (projectId: string) =>
@@ -128,6 +131,8 @@ export const DynamicQueryKeys = {
 } as const;
 
 export enum MutationKeys {
+  approveCodeSetup = 'approveCodeSetup',
+  denyCodeSetup = 'denyCodeSetup',
   resetToolApprovalGrants = 'resetToolApprovalGrants',
   subagentControl = 'subagentControl',
   cancelBackgroundTasks = 'cancelBackgroundTasks',

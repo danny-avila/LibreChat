@@ -1723,6 +1723,39 @@ export const agentsEndpointSchema = baseEndpointSchema
               enabled: z.boolean().optional(),
               /** Defaults to five. Zero disables enrollment; existing machines remain usable. */
               maxPerUser: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+              browserSetup: z
+                .object({
+                  enabled: z.boolean().optional().default(false),
+                  /** Canonical public instance URL, including the deployment prefix. */
+                  instance: z.string().url(),
+                  maxPending: z.number().int().min(1).max(512).optional().default(128),
+                  maxPerIp: z.number().int().min(1).max(512).optional().default(5),
+                  requestsPerMinute: z.number().int().min(1).max(20000).optional().default(1200),
+                  requestsPerIpMinute: z.number().int().min(1).max(2000).optional().default(120),
+                  proofWindowMs: z.number().int().min(10000).max(120000).optional().default(60000),
+                  maxProofsPerAttempt: z
+                    .number()
+                    .int()
+                    .min(320)
+                    .max(10000)
+                    .optional()
+                    .default(1024),
+                  reconcileIntervalMs: z
+                    .number()
+                    .int()
+                    .min(1000)
+                    .max(60000)
+                    .optional()
+                    .default(10000),
+                  retentionMs: z
+                    .number()
+                    .int()
+                    .min(600000)
+                    .max(604800000)
+                    .optional()
+                    .default(86400000),
+                })
+                .optional(),
             })
             .optional(),
           /** Server-only policy letting a conversation's owner move its sealed attached decision

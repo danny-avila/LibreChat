@@ -50,6 +50,10 @@ export const userPlugins = () => `${BASE_URL}/api/user/plugins`;
 
 export const deleteUser = () => `${BASE_URL}/api/user/delete`;
 export const codeEnvironments = () => `${BASE_URL}/api/code-environments`;
+export const codeSetupAttempt = (attemptId: string) =>
+  `${codeEnvironments()}/setup/${encodeURIComponent(attemptId)}`;
+export const codeSetupApprove = (attemptId: string) => `${codeSetupAttempt(attemptId)}/approve`;
+export const codeSetupDeny = (attemptId: string) => `${codeSetupAttempt(attemptId)}/deny`;
 export const codeEnvironmentPairings = () => `${codeEnvironments()}/pairings`;
 export const codeEnvironmentById = (id: string) =>
   `${codeEnvironments()}/${encodeURIComponent(id)}`;

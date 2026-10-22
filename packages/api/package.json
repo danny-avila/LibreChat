@@ -179,6 +179,7 @@
     "helmet": "^8.3.0",
     "protobufjs": "^7.6.5",
     "proxy-from-env": "^2.1.0",
-    "re2js": "^2.8.6"
+    "re2js": "^2.8.6",
+    "@librechat/code": "file:../../vendor/code"
   }
 }

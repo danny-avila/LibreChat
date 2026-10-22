@@ -8,9 +8,11 @@ import type {
 } from './types/traces';
 import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
 import type { ScheduleMCPConsentView, ConfirmScheduleMCPConsent } from './types/scheduleConsent';
+import type { CodeSetupAttempt, CodeSetupApprovalRequest } from './codeSetup';
 import type { TFileConfig } from './file-config';
 import type * as tl from './types/tools';
 import type * as t from './types';
+import { codeSetupAttemptSchema, codeSetupApprovalRequestSchema } from './codeSetup';
 import { TOOL_CALL_PREVIEWS_PARAM, TOOL_CALL_PREVIEWS_VERSION } from './previews';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
@@ -104,6 +106,38 @@ export function revokeAllUserKeys(): Promise<unknown> {
 
 export function deleteUser(payload?: t.TDeleteUserRequest): Promise<unknown> {
   return request.deleteWithOptions(endpoints.deleteUser(), { data: payload });
+}
+
+function parseCodeSetupAttempt(attemptId: string, data: unknown): CodeSetupAttempt {
+  const attempt = codeSetupAttemptSchema.parse(data);
+  if (attempt.attemptId !== attemptId) {
+    throw new Error('Code setup response does not match the requested attempt');
+  }
+  return attempt;
+}
+
+export async function getCodeSetupAttempt(attemptId: string): Promise<CodeSetupAttempt> {
+  return parseCodeSetupAttempt(attemptId, await request.get(endpoints.codeSetupAttempt(attemptId)));
+}
+
+export async function approveCodeSetupAttempt(
+  attemptId: string,
+  payload: CodeSetupApprovalRequest,
+): Promise<CodeSetupAttempt> {
+  return parseCodeSetupAttempt(
+    attemptId,
+    await request.post(
+      endpoints.codeSetupApprove(attemptId),
+      codeSetupApprovalRequestSchema.parse(payload),
+    ),
+  );
+}
+
+export async function denyCodeSetupAttempt(attemptId: string): Promise<CodeSetupAttempt> {
+  return parseCodeSetupAttempt(
+    attemptId,
+    await request.post(endpoints.codeSetupDeny(attemptId), {}),
+  );
 }
 
 export function getCodeEnvironments(): Promise<t.TCodeEnvironmentsResponse> {
