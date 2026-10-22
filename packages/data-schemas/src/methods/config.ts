@@ -1,8 +1,8 @@
 import { Types } from 'mongoose';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
-import type { FilterQuery, Model, ClientSession } from 'mongoose';
+import type { FilterQuery, UpdateQuery, Model, ClientSession } from 'mongoose';
 import type { TCustomConfig } from 'librechat-data-provider';
-import type { IConfig, ConfigTombstones } from '~/types';
+import type { IConfig, ConfigTombstones, ConfigWritePrecondition } from '~/types';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { escapeRegExp } from '~/utils/string';
 
@@ -17,6 +17,10 @@ export function getTombstonePathsToClear(fieldPath: string): string[] {
 
 function getPathAndDescendantsRegex(fieldPath: string): RegExp {
   return new RegExp(`^${escapeRegExp(fieldPath)}(?:\\.|$)`);
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  return (error as { code?: number } | null)?.code === 11000;
 }
 
 export function createConfigMethods(mongoose: typeof import('mongoose')): {
@@ -39,7 +43,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean; preservePriority?: boolean },
+    options?: { expectEmpty?: boolean; preservePriority?: boolean } & ConfigWritePrecondition,
   ) => Promise<IConfig | null>;
   patchConfigFields: (
     principalType: PrincipalType,
@@ -48,6 +52,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     fields: Record<string, unknown>,
     priority: number,
     session?: ClientSession,
+    options?: ConfigWritePrecondition,
   ) => Promise<IConfig | null>;
   tombstoneConfigField: (
     principalType: PrincipalType,
@@ -56,12 +61,14 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     fieldPath: string,
     priority: number,
     session?: ClientSession,
+    options?: ConfigWritePrecondition,
   ) => Promise<IConfig | null>;
   unsetConfigField: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     fieldPath: string,
     session?: ClientSession,
+    options?: ConfigWritePrecondition,
   ) => Promise<IConfig | null>;
   deleteConfig: (
     principalType: PrincipalType,
@@ -171,6 +178,88 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       .lean<IConfig[]>();
   }
 
+  /**
+   * The filter a write with a version precondition applies to, or `null` when
+   * the precondition no longer holds. A caller that saw no document gets an
+   * empty one created first, at version 0, so its write cannot land on a
+   * document another writer created after the read.
+   */
+  async function getPreconditionFilter(
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    onInsert: { principalModel: PrincipalModel; priority: number },
+    expectedVersion: number | null,
+    session?: ClientSession,
+  ): Promise<FilterQuery<IConfig> | null> {
+    const filter = { principalType, principalId: principalId.toString() };
+    if (expectedVersion != null) {
+      return { ...filter, configVersion: expectedVersion };
+    }
+    const Config = mongoose.models.Config as Model<IConfig>;
+    const now = new Date();
+    try {
+      /** Timestamps are written on insert only, so a document that already exists is left untouched. */
+      const result = await Config.findOneAndUpdate(
+        filter,
+        { $setOnInsert: { ...onInsert, createdAt: now, updatedAt: now } },
+        {
+          upsert: true,
+          new: true,
+          timestamps: false,
+          setDefaultsOnInsert: true,
+          includeResultMetadata: true,
+          ...(session ? { session } : {}),
+        },
+      );
+      if (result.value == null || result.lastErrorObject?.updatedExisting === true) {
+        return null;
+      }
+      return { ...filter, configVersion: result.value.configVersion };
+    } catch (error) {
+      if (isDuplicateKeyError(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /** Applies `update` only to the document version the caller read; `null` once it no longer matches. */
+  async function updateAtVersion(
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    onInsert: { principalModel: PrincipalModel; priority: number },
+    expectedVersion: number | null,
+    update: UpdateQuery<IConfig>,
+    session?: ClientSession,
+  ): Promise<IConfig | null> {
+    const filter = await getPreconditionFilter(
+      principalType,
+      principalId,
+      onInsert,
+      expectedVersion,
+      session,
+    );
+    if (filter == null) {
+      return null;
+    }
+    const Config = mongoose.models.Config as Model<IConfig>;
+    const sessionOption = session ? { session } : {};
+    try {
+      return await Config.findOneAndUpdate(filter, update, { new: true, ...sessionOption });
+    } catch (error) {
+      if (expectedVersion === null) {
+        /**
+         * Removes the empty document created above, so a write the database refused (such as a
+         * key name the engine cannot store) stores nothing. The filter carries the created
+         * version, so a document another write has since changed stays. A failure here
+         * replaces the refusal: the caller must not report that nothing was stored.
+         */
+        await Config.deleteOne(filter, sessionOption);
+      }
+      throw error;
+    }
+  }
+
   async function upsertConfig(
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -178,20 +267,10 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean; preservePriority?: boolean },
+    options?: { expectEmpty?: boolean; preservePriority?: boolean } & ConfigWritePrecondition,
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
-
-    const query: FilterQuery<IConfig> = {
-      principalType,
-      principalId: principalId.toString(),
-    };
-    if (options?.expectEmpty) {
-      query.$and = [
-        { $or: [{ overrides: { $eq: {} } }, { overrides: { $exists: false } }] },
-        { $or: [{ tombstones: { $size: 0 } }, { tombstones: { $exists: false } }] },
-      ];
-    }
+    const expectedVersion = options?.expectedVersion;
 
     const update = {
       $set: {
@@ -204,6 +283,28 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       $inc: { configVersion: 1 },
     };
 
+    if (expectedVersion !== undefined) {
+      return await updateAtVersion(
+        principalType,
+        principalId,
+        { principalModel, priority },
+        expectedVersion,
+        update,
+        session,
+      );
+    }
+
+    const query: FilterQuery<IConfig> = {
+      principalType,
+      principalId: principalId.toString(),
+    };
+    if (options?.expectEmpty) {
+      query.$and = [
+        { $or: [{ overrides: { $eq: {} } }, { overrides: { $exists: false } }] },
+        { $or: [{ tombstones: { $size: 0 } }, { tombstones: { $exists: false } }] },
+      ];
+    }
+
     const mongoOptions = {
       upsert: true,
       new: true,
@@ -214,7 +315,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     try {
       return await Config.findOneAndUpdate(query, update, mongoOptions);
     } catch (err: unknown) {
-      if ((err as { code?: number }).code === 11000) {
+      if (isDuplicateKeyError(err)) {
         if (options?.expectEmpty) {
           return null;
         }
@@ -235,8 +336,10 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     fields: Record<string, unknown>,
     priority: number,
     session?: ClientSession,
+    options?: ConfigWritePrecondition,
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
+    const expectedVersion = options?.expectedVersion;
 
     const setPayload: { principalModel: PrincipalModel; priority: number; [key: string]: unknown } =
       {
@@ -250,13 +353,6 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
 
     const tombstonesToClear = [...new Set(Object.keys(fields).flatMap(getTombstonePathsToClear))];
 
-    const options = {
-      upsert: true,
-      new: true,
-      setDefaultsOnInsert: true,
-      ...(session ? { session } : {}),
-    };
-
     const update: Record<string, unknown> = {
       $set: setPayload,
       $inc: { configVersion: 1 },
@@ -265,10 +361,21 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       update.$pull = { tombstones: { $in: tombstonesToClear } };
     }
 
+    if (expectedVersion !== undefined) {
+      return await updateAtVersion(
+        principalType,
+        principalId,
+        { principalModel, priority },
+        expectedVersion,
+        update,
+        session,
+      );
+    }
+
     return await Config.findOneAndUpdate(
       { principalType, principalId: principalId.toString() },
       update,
-      options,
+      { upsert: true, new: true, setDefaultsOnInsert: true, ...(session ? { session } : {}) },
     );
   }
 
@@ -279,28 +386,36 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     fieldPath: string,
     priority: number,
     session?: ClientSession,
+    options?: ConfigWritePrecondition,
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
+    const expectedVersion = options?.expectedVersion;
 
-    const options = {
-      upsert: true,
-      new: true,
-      setDefaultsOnInsert: true,
-      ...(session ? { session } : {}),
+    const update = {
+      $set: {
+        principalModel,
+        priority,
+      },
+      $unset: { [`overrides.${fieldPath}`]: '' },
+      $addToSet: { tombstones: fieldPath },
+      $inc: { configVersion: 1 },
     };
+
+    if (expectedVersion !== undefined) {
+      return await updateAtVersion(
+        principalType,
+        principalId,
+        { principalModel, priority },
+        expectedVersion,
+        update,
+        session,
+      );
+    }
 
     return await Config.findOneAndUpdate(
       { principalType, principalId: principalId.toString() },
-      {
-        $set: {
-          principalModel,
-          priority,
-        },
-        $unset: { [`overrides.${fieldPath}`]: '' },
-        $addToSet: { tombstones: fieldPath },
-        $inc: { configVersion: 1 },
-      },
-      options,
+      update,
+      { upsert: true, new: true, setDefaultsOnInsert: true, ...(session ? { session } : {}) },
     );
   }
 
@@ -309,22 +424,26 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     principalId: string | Types.ObjectId,
     fieldPath: string,
     session?: ClientSession,
+    options?: ConfigWritePrecondition,
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
-
-    const options = {
-      new: true,
-      ...(session ? { session } : {}),
-    };
+    const expectedVersion = options?.expectedVersion;
+    if (expectedVersion === null) {
+      return null;
+    }
 
     return await Config.findOneAndUpdate(
-      { principalType, principalId: principalId.toString() },
+      {
+        principalType,
+        principalId: principalId.toString(),
+        ...(expectedVersion !== undefined ? { configVersion: expectedVersion } : {}),
+      },
       {
         $unset: { [`overrides.${fieldPath}`]: '' },
         $pull: { tombstones: { $regex: getPathAndDescendantsRegex(fieldPath) } },
         $inc: { configVersion: 1 },
       },
-      options,
+      { new: true, ...(session ? { session } : {}) },
     );
   }
 

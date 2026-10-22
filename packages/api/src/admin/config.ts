@@ -1,7 +1,9 @@
 import {
   logger,
+  isFieldNameRejection,
   getConfigFieldIssues,
   applyConfigTombstones,
+  getDottedSectionIssues,
   getConfigOverrideIssues,
   BASE_CONFIG_PRINCIPAL_ID,
 } from '@librechat/data-schemas';
@@ -18,17 +20,19 @@ import {
   isProcessMCPServerField,
 } from 'librechat-data-provider';
 import type {
+  IConfig,
   AppConfig,
   ConfigSection,
-  IConfig,
   SystemCapability,
   ConfigOverrideIssue,
+  ConfigWritePrecondition,
 } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { AdminAuditEvent, RecordAuditEntry } from './audit';
 import type { CapabilityUser } from '~/middleware/capabilities';
+import type { SecretReentryIssue } from './binding';
 import type { ServerRequest } from '~/types/http';
 import {
   encryptConfigSecretFields,
@@ -42,8 +46,17 @@ import {
   preserveConfigSecrets,
   redactConfigSecrets,
 } from './secrets';
+import {
+  hasWebSearchSection,
+  getPatchReentryIssues,
+  isWebSearchBindingPath,
+  getRemovalReentryIssues,
+  getReplaceReentryIssues,
+} from './binding';
+import { DEFAULT_OVERRIDE_CACHE_TTL } from '~/app/service';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { createAdminAuditEmitter } from './audit';
+import { buildAdminConfigMeta } from './meta';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
@@ -196,8 +209,9 @@ export interface AdminConfigDeps {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean; preservePriority?: boolean },
+    options?: { expectEmpty?: boolean; preservePriority?: boolean } & ConfigWritePrecondition,
   ) => Promise<IConfig | null>;
+  /** Resolves to `null` only when `options.expectedVersion` no longer holds. */
   patchConfigFields: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -205,6 +219,7 @@ export interface AdminConfigDeps {
     fields: Record<string, unknown>,
     priority: number,
     session?: ClientSession,
+    options?: ConfigWritePrecondition,
   ) => Promise<IConfig | null>;
   tombstoneConfigField: (
     principalType: PrincipalType,
@@ -213,12 +228,14 @@ export interface AdminConfigDeps {
     fieldPath: string,
     priority: number,
     session?: ClientSession,
+    options?: ConfigWritePrecondition,
   ) => Promise<IConfig | null>;
   unsetConfigField: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     fieldPath: string,
     session?: ClientSession,
+    options?: ConfigWritePrecondition,
   ) => Promise<IConfig | null>;
   deleteConfig: (
     principalType: PrincipalType,
@@ -259,6 +276,11 @@ export interface AdminConfigDeps {
   /** When true, a failed audit write surfaces as a 5xx after the mutation has
    * been persisted. Defaults to fail-open. */
   auditFailClosed?: boolean;
+  /**
+   * The `overrideCacheTtl` the app config service runs with, which `GET /meta` reports.
+   * Defaults to the service's own default.
+   */
+  overrideCacheTtlMs?: number;
 }
 
 /** Audit target for a principal's override document. Records field paths and
@@ -424,27 +446,85 @@ function collectAppConfigSections(appConfig: AppConfig): string[] {
 function redactConfigForResponse(config: IConfig): IConfig {
   const safeConfig = JSON.parse(JSON.stringify(config)) as IConfig;
   if (safeConfig.overrides) {
-    redactConfigSecrets(safeConfig.overrides);
+    redactConfigSecrets(safeConfig.overrides, { previewPlaintext: true });
   }
   return safeConfig;
 }
 
-function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
+/**
+ * Redacts an `AppConfig` for an admin read. For a config merged with overrides,
+ * `yamlConfig` is the librechat.yaml config beneath them: a plaintext secret an
+ * override stored before its path was registered gets a preview, like a read
+ * of the override document itself.
+ */
+function redactAppConfigForResponse(appConfig: AppConfig, yamlConfig?: AppConfig): AppConfig {
   const safeConfig = JSON.parse(JSON.stringify(appConfig)) as AppConfig & { config?: unknown };
-  redactConfigSecrets(safeConfig);
+  redactConfigSecrets(safeConfig, { previewPlaintext: yamlConfig != null, yamlConfig });
   if (safeConfig.config != null && typeof safeConfig.config === 'object') {
     redactConfigSecrets(safeConfig.config);
   }
   return safeConfig;
 }
 
-/** Reports only the paths and stable codes: schema messages can echo the submitted values. */
+/**
+ * Reports only locations and stable codes: schema messages can echo the submitted values.
+ * `segments` names the location key by key, since `path` is ambiguous once a record key
+ * itself holds a dot.
+ */
 function invalidOverrideResponse(res: Response, issues: ConfigOverrideIssue[]): Response {
   return res.status(400).json({
     error: 'Invalid config override',
     code: 'CONFIG_OVERRIDE_INVALID',
-    issues: issues.map(({ path, code }) => ({ path, code })),
+    issues: issues.map(({ path, segments, code }) => ({ path, segments, code })),
   });
+}
+
+/**
+ * The database refused a key name in the written overrides, such as a dotted record key on an
+ * engine that cannot store one. Nothing was written; the key is not echoed.
+ */
+function unstorableKeyResponse(res: Response, operation: string): Response {
+  logger.warn(
+    `[adminConfig] ${operation}: the database rejected a key name in the overrides, such as a dotted record key this engine cannot store`,
+  );
+  return res.status(422).json({
+    error: 'The database cannot store a key name in this config',
+    code: 'CONFIG_KEY_NOT_STORABLE',
+  });
+}
+
+/**
+ * Rejects a write that would send a stored secret to a destination it was not
+ * entered for. Reports only locations and stable codes, never a value; `segments`
+ * names the location key by key, as other config issues do.
+ */
+function secretReentryResponse(res: Response, issues: SecretReentryIssue[]): Response {
+  return res.status(400).json({
+    error: 'Enter the stored API key again when changing the URL it is sent to',
+    code: 'CONFIG_SECRET_REENTRY_REQUIRED',
+    issues: issues.map(({ path, segments, code, secretPath }) => ({
+      path,
+      segments,
+      code,
+      secretPath,
+    })),
+  });
+}
+
+/**
+ * Rejects a write whose re-entry check read a document version another write
+ * has since replaced, so the check never approves a state it did not see.
+ */
+function versionConflictResponse(res: Response): Response {
+  return res.status(409).json({
+    error: 'The config changed while this write was being checked. Reload it and try again.',
+    code: 'CONFIG_VERSION_CONFLICT',
+  });
+}
+
+/** The version a binding write must apply to: the one read, or `null` when no document existed. */
+function readVersion(config: IConfig | null | undefined): ConfigWritePrecondition {
+  return { expectedVersion: config?.configVersion ?? null };
 }
 
 function preservePatchedConfigSecretFields(
@@ -464,6 +544,7 @@ function preservePatchedConfigSecretFields(
 
 export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   listConfigs: (req: ServerRequest, res: Response) => Promise<Response>;
+  getConfigMeta: (req: ServerRequest, res: Response) => Promise<Response>;
   getBaseConfig: (req: ServerRequest, res: Response) => Promise<Response>;
   getConfig: (req: ServerRequest, res: Response) => Promise<Response>;
   upsertConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
@@ -498,6 +579,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     invalidateConfigCaches,
     recordAuditEntry,
     auditFailClosed,
+    overrideCacheTtlMs = DEFAULT_OVERRIDE_CACHE_TTL,
   } = deps;
 
   const emitAudit = createAdminAuditEmitter({
@@ -505,6 +587,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     failClosed: auditFailClosed,
     logPrefix: '[adminConfig]',
   });
+
+  const meta = buildAdminConfigMeta({ maxPatchEntries: MAX_PATCH_ENTRIES, overrideCacheTtlMs });
 
   /** The deployment's `librechat.yaml` config, which overrides are validated on top of. */
   async function getBaseYamlConfig(tenantId?: string): Promise<Partial<TCustomConfig>> {
@@ -543,6 +627,29 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   }
 
   /**
+   * GET /meta — The contract this server applies to config writes: feature flags, limits,
+   * versions and the rules a client mirrors. An older server answers 404, which a client reads
+   * as every feature off.
+   */
+  async function getConfigMeta(req: ServerRequest, res: Response): Promise<Response> {
+    try {
+      const user = getCapabilityUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      if (!(await hasAnyConfigReadAccess(user))) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      return res.status(200).json(meta);
+    } catch (error) {
+      logger.error('[adminConfig] getConfigMeta error:', getSafeErrorMetadata(error));
+      return res.status(500).json({ error: 'Failed to get config meta' });
+    }
+  }
+
+  /**
    * GET /base — Return the raw AppConfig (YAML + DB base merged).
    * This is the full config structure admins can edit, NOT the startup payload.
    */
@@ -562,15 +669,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const baseOnly = (req.query as Record<string, unknown>).baseOnly === 'true';
-      const appConfig = await getAppConfig({
-        tenantId: user.tenantId,
-        baseOnly,
-      });
+      const [appConfig, yamlConfig] = await Promise.all([
+        getAppConfig({ tenantId: user.tenantId, baseOnly }),
+        baseOnly ? undefined : getAppConfig({ tenantId: user.tenantId, baseOnly: true }),
+      ]);
       const sections = collectAppConfigSections(appConfig) as ConfigSection[];
       const readable = await getReadableConfigSections(user, sections);
       const filteredAppConfig = filterAppConfigForReadAccess(appConfig, readable);
 
-      return res.status(200).json({ config: redactAppConfigForResponse(filteredAppConfig) });
+      return res
+        .status(200)
+        .json({ config: redactAppConfigForResponse(filteredAppConfig, yamlConfig) });
     } catch (error) {
       logger.error('[adminConfig] getBaseConfig error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to get base config' });
@@ -674,6 +783,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       if (!hasAssignConfigs) {
         return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      /**
+       * Checked before any section rule or secret encryption reads a dotted key as a path. A
+       * dotted key is a section write, which only broad manage may make.
+       */
+      const dottedSectionIssues = getDottedSectionIssues(rawOverrides);
+      if (dottedSectionIssues.length > 0) {
+        return hasBroadManage
+          ? invalidOverrideResponse(res, dottedSectionIssues)
+          : res.status(403).json({ error: 'Insufficient permissions' });
       }
 
       const filteredOverrides = {
@@ -797,6 +917,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         encryptedOverrides,
         existingConfig?.overrides,
       );
+      const reentryIssues = getReplaceReentryIssues(stored, filteredOverrides, preservedOverrides);
+      if (reentryIssues.length > 0) {
+        return secretReentryResponse(res, reentryIssues);
+      }
+      const precondition: ConfigWritePrecondition = hasWebSearchSection(filteredOverrides)
+        ? readVersion(stored)
+        : {};
       if (needsProtectedBaseSections) {
         for (const section of BASE_PRINCIPAL_OVERRIDE_SECTIONS) {
           const storedSection = (
@@ -814,8 +941,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         preservedOverrides,
         requestedPriority,
         undefined,
-        upsertOptions,
+        { ...upsertOptions, ...precondition },
       );
+      if (!config && precondition.expectedVersion !== undefined) {
+        return versionConflictResponse(res);
+      }
       if (!config && !hasBroadManage) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
@@ -838,6 +968,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         config: config ? redactConfigForResponse(config) : config,
       });
     } catch (error) {
+      if (isFieldNameRejection(error)) {
+        return unstorableKeyResponse(res, 'upsertConfigOverrides');
+      }
       logger.error('[adminConfig] upsertConfigOverrides error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to upsert config' });
     }
@@ -845,6 +978,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
   /**
    * PATCH /:principalType/:principalId/fields — Set individual fields via dot-paths.
+   *
+   * A `fieldPath` (here, and for tombstones and unsets) is split on dots, so it cannot address
+   * a record key that holds one, such as a Bedrock inference profile or a `gpt-4.1` model
+   * entry: write that record whole at its own path (`endpoints.bedrock.inferenceProfiles`).
    */
   async function patchConfigField(req: ServerRequest, res: Response): Promise<Response> {
     try {
@@ -992,6 +1129,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         encryptedFields,
         existing?.overrides,
       );
+      const reentryIssues = getPatchReentryIssues(existing, fields, preservedFields);
+      if (reentryIssues.length > 0) {
+        return secretReentryResponse(res, reentryIssues);
+      }
+      const precondition = Object.keys(fields).some(isWebSearchBindingPath)
+        ? readVersion(existing)
+        : undefined;
 
       const config = await patchConfigFields(
         principalType,
@@ -999,7 +1143,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         principalModel(principalType),
         preservedFields,
         requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
+        undefined,
+        precondition,
       );
+      if (!config && precondition) {
+        return versionConflictResponse(res);
+      }
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after patch:', err),
@@ -1013,6 +1162,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       return res.status(200).json({ config: config ? redactConfigForResponse(config) : config });
     } catch (error) {
+      if (isFieldNameRejection(error)) {
+        return unstorableKeyResponse(res, 'patchConfigField');
+      }
       logger.error('[adminConfig] patchConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to patch config fields' });
     }
@@ -1102,23 +1254,35 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
 
+      const binding = isWebSearchBindingPath(fieldPath);
       const existing =
-        requestedPriority == null
+        requestedPriority == null || binding
           ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
           : null;
+      const reentryIssues = getRemovalReentryIssues(existing, fieldPath, true);
+      if (reentryIssues.length > 0) {
+        return secretReentryResponse(res, reentryIssues);
+      }
+      const precondition = binding ? readVersion(existing) : undefined;
 
       let config: IConfig | null = null;
       /** Each write bumps configVersion, so creation is read off the first write only. */
       let created = false;
       try {
-        for (const path of getConfigSecretMutationPaths(fieldPath)) {
+        const paths = getConfigSecretMutationPaths(fieldPath);
+        for (let i = 0; i < paths.length; i++) {
           const fieldConfig = await writeConfigTombstone(
             principalType,
             principalId,
             principalModel(principalType),
-            path,
+            paths[i],
             requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
+            undefined,
+            i === 0 ? precondition : undefined,
           );
+          if (!fieldConfig && i === 0 && precondition) {
+            return versionConflictResponse(res);
+          }
           if (fieldConfig) {
             created ||= config == null && fieldConfig.configVersion === 1;
             config = fieldConfig;
@@ -1229,10 +1393,33 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
 
+      const binding = isWebSearchBindingPath(fieldPath);
+      const existing = binding
+        ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+        : undefined;
+      if (binding && !existing) {
+        return res.status(404).json({ error: 'Config not found' });
+      }
+      const reentryIssues = getRemovalReentryIssues(existing, fieldPath, false);
+      if (reentryIssues.length > 0) {
+        return secretReentryResponse(res, reentryIssues);
+      }
+      const precondition = binding ? readVersion(existing) : undefined;
+
       let config: IConfig | null = null;
       try {
-        for (const path of getConfigSecretMutationPaths(fieldPath)) {
-          const fieldConfig = await unsetConfigField(principalType, principalId, path);
+        const paths = getConfigSecretMutationPaths(fieldPath);
+        for (let i = 0; i < paths.length; i++) {
+          const fieldConfig = await unsetConfigField(
+            principalType,
+            principalId,
+            paths[i],
+            undefined,
+            i === 0 ? precondition : undefined,
+          );
+          if (!fieldConfig && i === 0 && precondition) {
+            return versionConflictResponse(res);
+          }
           if (fieldConfig) {
             config = fieldConfig;
           }
@@ -1409,6 +1596,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
   return {
     listConfigs,
+    getConfigMeta,
     getBaseConfig,
     getConfig,
     upsertConfigOverrides,

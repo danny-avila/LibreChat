@@ -132,6 +132,8 @@ const ADMIN_CONFIGURABLE_FIELDS = [
   'requestHeaders',
   'proxy',
   'requiresOAuth',
+  'oauthPrompt',
+  'oauthToolCatalog',
   'apiKey',
   'oauth',
   'oauth_headers',
