@@ -4,10 +4,14 @@ import mongoSanitize from 'express-mongo-sanitize';
 import {
   loadWebSearchConfig,
   mergeConfigOverrides,
+  createConfigOperations,
   getConfigOverrideIssues,
+  isConfigOverrideStateEmpty,
 } from '@librechat/data-schemas';
 import {
   Constants,
+  PrincipalType,
+  PrincipalModel,
   configSchema,
   RerankerTypes,
   SearchProviders,
@@ -23,14 +27,17 @@ import {
 import type {
   AdminConfigFeatureFlag,
   AdminConfigMeta,
+  ConfigRecord,
+  ConfigStore,
+  ConfigDraft,
   AppConfig,
-  IConfig,
 } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { AdminConfigDeps } from './config';
 import { createRequestSanitizer, rejectUnsafeConfigKeys } from '~/middleware/sanitize';
 import { redactConfigSecrets, encryptConfigSecretFields } from './secrets';
+import { createAppConfigService } from '~/app/service';
 import { createAdminConfigHandlers } from './config';
 import { ADMIN_CONFIG_FEATURES } from './meta';
 import { loadWebSearchAuth } from '~/web';
@@ -42,7 +49,7 @@ jest.mock('@librechat/data-schemas', () => {
 });
 
 type Doc = Record<string, unknown>;
-type ResponseBody = { config?: { overrides: Doc }; [key: string]: unknown };
+type ResponseBody = { config?: { overrides: Doc; revision?: string }; [key: string]: unknown };
 type MockRes = Response & { statusCode: number; body: ResponseBody | undefined };
 type MockReqInit = Omit<Partial<ServerRequest>, 'body'> & { body?: object };
 type PatchEntry = { fieldPath: string; value: unknown };
@@ -79,8 +86,10 @@ function createHandlers(overrides: Partial<AdminConfigDeps> = {}) {
   return createAdminConfigHandlers({
     listAllConfigs: jest.fn().mockResolvedValue([]),
     findConfigByPrincipal: jest.fn().mockResolvedValue(null),
-    upsertConfig: jest.fn().mockResolvedValue(null),
-    patchConfigFields: jest.fn().mockResolvedValue(null),
+    writeConfigDocument: jest.fn(
+      async (_type: string, _id: string, draft: ConfigDraft): Promise<ConfigRecord> =>
+        storedConfig(draft.overrides ?? {}),
+    ),
     tombstoneConfigField: jest.fn().mockResolvedValue(null),
     unsetConfigField: jest.fn().mockResolvedValue(null),
     deleteConfig: jest.fn().mockResolvedValue(null),
@@ -116,15 +125,17 @@ function patch(entries: PatchEntry[], overrides: Partial<AdminConfigDeps> = {}):
   return write('patchConfigField', { body: { entries } }, overrides);
 }
 
-function storedConfig(overrides: Doc, tombstones?: string[]): IConfig {
+function storedConfig(overrides: Doc, tombstones: string[] = []): ConfigRecord {
   return {
+    _id: 'c1',
     principalType: 'role',
     principalId: 'r1',
     priority: 10,
     overrides,
     tombstones,
     isActive: true,
-  } as Partial<IConfig> as IConfig;
+    configVersion: 1,
+  } as Partial<ConfigRecord> as ConfigRecord;
 }
 
 function setIn(target: Doc, segments: string[], value: unknown): Doc {
@@ -132,6 +143,11 @@ function setIn(target: Doc, segments: string[], value: unknown): Doc {
   const child = target[head];
   const parent = child != null && typeof child === 'object' ? (child as Doc) : {};
   return { ...target, [head]: rest.length === 0 ? value : setIn(parent, rest, value) };
+}
+
+/** Lets every pending promise settle, so a handler runs until it waits on something unresolved. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function getIn(target: object, path: string): unknown {
@@ -173,7 +189,10 @@ describe('GET /api/admin/config/meta', () => {
     expect(meta.metaVersion).toBe(1);
     expect(Object.keys(meta.versions)).toEqual(['librechat', 'dataProvider', 'configSchema']);
     expect(Object.keys(meta.features).sort()).toEqual([
+      'awaitedInvalidation',
       'dottedKeys',
+      'expectedRevision',
+      'prunesEmptyParents',
       'readFilteredWriteResponses',
       'sectionAllowlist',
       'webSearchStoredKeys',
@@ -203,6 +222,9 @@ describe('GET /api/admin/config/meta', () => {
       sectionAllowlist: true,
       readFilteredWriteResponses: true,
       webSearchStoredKeys: true,
+      expectedRevision: true,
+      prunesEmptyParents: true,
+      awaitedInvalidation: true,
     });
   });
 
@@ -291,12 +313,12 @@ describe('meta rules equal the rules the server applies', () => {
   });
 
   it('drops writes to base-only sections', async () => {
-    const patchConfigFields = jest.fn();
+    const writeConfigDocument = jest.fn();
     for (const section of meta.rules.baseOnlySections) {
-      const res = await patch([{ fieldPath: `${section}.x`, value: 1 }], { patchConfigFields });
-      expect(res.body).toEqual({ message: 'No actionable field entries provided' });
+      const res = await patch([{ fieldPath: `${section}.x`, value: 1 }], { writeConfigDocument });
+      expect(res.body).toEqual({ message: 'No actionable field entries provided', revision: null });
     }
-    expect(patchConfigFields).not.toHaveBeenCalled();
+    expect(writeConfigDocument).not.toHaveBeenCalled();
   });
 
   it('requires the listed merge key on items of every merged array', () => {
@@ -382,7 +404,7 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
         async (_user, section, verb = 'manage') => verb === 'manage' && section === 'endpoints',
       ),
       getReadableConfigSections: jest.fn().mockResolvedValue({ broad: false, sections: new Set() }),
-      patchConfigFields: jest.fn().mockResolvedValue(written),
+      writeConfigDocument: jest.fn().mockResolvedValue(written),
       tombstoneConfigField: jest.fn().mockResolvedValue(written),
       unsetConfigField: jest.fn().mockResolvedValue(written),
     };
@@ -439,6 +461,128 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     const requiresReentry =
       rebinding.statusCode === 400 && rebinding.body?.code === 'CONFIG_SECRET_REENTRY_REQUIRED';
     return encrypted && usesStoredKey && requiresReentry;
+  },
+  async expectedRevision() {
+    const writeConfigDocument = jest.fn(
+      async (
+        _type: string,
+        _id: string,
+        draft: ConfigDraft,
+        _expected: string,
+      ): Promise<ConfigRecord> => ({ ...storedConfig(draft.overrides ?? {}), configVersion: 2 }),
+    );
+    const write = async (expectedRevision: unknown) => {
+      const res = mockRes();
+      await createHandlers({
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue(storedConfig({ interface: { customWelcome: 'v1' } })),
+        writeConfigDocument,
+      }).patchConfigField(
+        mockReq({
+          params: { principalType: 'role', principalId: 'r1' },
+          body: {
+            entries: [{ fieldPath: 'interface.customWelcome', value: 'v2' }],
+            expectedRevision,
+          },
+        }),
+        res,
+      );
+      return res;
+    };
+
+    const stale = await write('c1:0');
+    const malformed = await write('c1');
+    const current = await write('c1:1');
+    return (
+      stale.statusCode === 409 &&
+      stale.body?.code === 'CONFIG_VERSION_CONFLICT' &&
+      stale.body?.currentRevision === 'c1:1' &&
+      malformed.statusCode === 400 &&
+      malformed.body?.code === 'INVALID_EXPECTED_REVISION' &&
+      current.statusCode === 200 &&
+      current.body?.config?.revision === 'c1:2' &&
+      writeConfigDocument.mock.calls.length === 1 &&
+      writeConfigDocument.mock.calls[0][3] === 'c1:1'
+    );
+  },
+  async prunesEmptyParents() {
+    let record: ConfigRecord = storedConfig({
+      balance: { startBalance: 5 },
+      interface: { theme: { name: 'x' } },
+      endpoints: { custom: [{ name: 'gw', headers: { A: 'a' } }] },
+    });
+    const store = {
+      read: async () => record,
+      write: async (_principal: unknown, draft: ConfigDraft) =>
+        (record = { ...record, ...draft, configVersion: record.configVersion + 1 }),
+    } as Partial<ConfigStore> as ConfigStore;
+    const operations = createConfigOperations(store);
+    const principal = { principalType: PrincipalType.ROLE, principalId: 'r1' };
+
+    await operations.unsetFields(principal, [
+      'balance.startBalance',
+      'endpoints.custom.0.headers.A',
+    ]);
+    await operations.tombstoneFields(principal, PrincipalModel.ROLE, 'interface.theme.name');
+    return (
+      JSON.stringify(record.overrides) ===
+        JSON.stringify({ endpoints: { custom: [{ name: 'gw' }] } }) &&
+      record.tombstones.includes('interface.theme.name') &&
+      isConfigOverrideStateEmpty({ overrides: { balance: {} }, tombstones: [] })
+    );
+  },
+  async awaitedInvalidation() {
+    let release: () => void = () => undefined;
+    const invalidateConfigCaches = jest.fn(
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    const res = mockRes();
+    const written = createHandlers({ invalidateConfigCaches }).patchConfigField(
+      mockReq({
+        params: { principalType: 'role', principalId: 'r1' },
+        body: { entries: [{ fieldPath: 'interface.customWelcome', value: 'hi' }] },
+      }),
+      res,
+    );
+    await settle();
+    const held = invalidateConfigCaches.mock.calls.length === 1 && res.body === undefined;
+    release();
+    await written;
+
+    const getAppConfig = jest.fn().mockResolvedValue({ config: {} });
+    await createHandlers({ getAppConfig }).getBaseConfig(mockReq(), mockRes());
+    const bypassed = getAppConfig.mock.calls.some(
+      ([options]) => (options as { bypassOverrideCache?: boolean }).bypassOverrideCache === true,
+    );
+
+    const entries = new Map<string, unknown>();
+    let releaseRead: (configs: ConfigRecord[]) => void = () => undefined;
+    const getApplicableConfigs = jest
+      .fn()
+      .mockImplementationOnce(() => new Promise((resolve) => (releaseRead = resolve)))
+      .mockResolvedValue([]);
+    const service = createAppConfigService({
+      loadBaseConfig: async () => ({ config: {} }) as AppConfig,
+      setCachedTools: async () => undefined,
+      getCache: () => ({
+        get: async (key: string) => entries.get(key),
+        set: async (key: string, value: unknown) => entries.set(key, value),
+        delete: async (key: string) => entries.delete(key),
+      }),
+      cacheKeys: { APP_CONFIG: 'app_config' },
+      getApplicableConfigs,
+      getUserPrincipals: async () => [],
+    });
+    const merging = service.getAppConfig({ role: 'ADMIN' });
+    await settle();
+    await service.clearOverrideCache();
+    releaseRead([storedConfig({ x: 'stale' })]);
+    await merging;
+    await service.getAppConfig({ role: 'ADMIN' });
+    const dropsStaleMerge = getApplicableConfigs.mock.calls.length === 2;
+
+    return held && res.statusCode === 200 && bypassed && dropsStaleMerge;
   },
 };
 

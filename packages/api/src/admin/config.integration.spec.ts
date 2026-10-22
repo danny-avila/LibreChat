@@ -70,8 +70,7 @@ function handlersFor(
   return createAdminConfigHandlers({
     listAllConfigs: methods.listAllConfigs,
     findConfigByPrincipal: methods.findConfigByPrincipal,
-    upsertConfig: methods.upsertConfig,
-    patchConfigFields: methods.patchConfigFields,
+    writeConfigDocument: methods.writeConfigDocument,
     tombstoneConfigField: methods.tombstoneConfigField,
     unsetConfigField: methods.unsetConfigField,
     deleteConfig: methods.deleteConfig,

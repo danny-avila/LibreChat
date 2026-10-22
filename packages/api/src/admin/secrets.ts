@@ -126,12 +126,52 @@ const PREVIEW_PATHS = new Set<string>([
   ...LEGACY_PREVIEW_PATHS.values(),
 ]);
 
+/** One dynamic key in a secret location pattern, such as a record entry name. */
+const ANY_SEGMENT = '*';
+
+/**
+ * Every proper ancestor of the given secret locations. A write of an object at one of them can
+ * carry a secret, so the write path walks it for encryption, preservation and redaction. A
+ * location may use `*` for a dynamic key (a record entry such as an MCP server name); its
+ * ancestors keep the wildcard.
+ */
+export function getSecretAncestorPatterns(locations: readonly string[]): string[] {
+  const ancestors = new Set<string>();
+  for (const location of locations) {
+    const segments = location.split('.');
+    for (let length = 1; length < segments.length; length++) {
+      ancestors.add(segments.slice(0, length).join('.'));
+    }
+  }
+  return [...ancestors];
+}
+
+/**
+ * Ancestors of every registered location: scalar secrets and the containers of array secrets
+ * (an array container itself is matched by `ARRAY_SECRET_FIELDS`, since it must stay an array).
+ */
+const ANCESTOR_PATTERNS = getSecretAncestorPatterns([
+  ...CONFIG_SECRET_FIELDS.map((field) => field.path),
+  ...ARRAY_SECRET_FIELDS.map((field) => field.arrayPath),
+]);
+
+const isWildcardPattern = (pattern: string): boolean => pattern.split('.').includes(ANY_SEGMENT);
+
 const ANCESTOR_PATHS = new Set<string>(
-  CONFIG_SECRET_FIELDS.flatMap((field) => {
-    const segments = field.path.split('.');
-    return segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join('.'));
-  }),
+  ANCESTOR_PATTERNS.filter((pattern) => !isWildcardPattern(pattern)),
 );
+
+const ANCESTOR_WILDCARDS: readonly string[] = ANCESTOR_PATTERNS.filter(isWildcardPattern);
+
+/** Whether a dotted path matches a location pattern segment for segment. */
+export function matchesSecretPattern(fieldPath: string, pattern: string): boolean {
+  const segments = fieldPath.split('.');
+  const expected = pattern.split('.');
+  return (
+    segments.length === expected.length &&
+    expected.every((segment, index) => segment === ANY_SEGMENT || segment === segments[index])
+  );
+}
 
 const SECRET_SECTIONS: readonly string[] = [
   ...new Set([
@@ -280,7 +320,7 @@ function isConfigSecretRelatedPath(fieldPath: string): boolean {
   ) {
     return true;
   }
-  return ANCESTOR_PATHS.has(fieldPath) || isConfigSecretDescendantPath(fieldPath);
+  return isConfigSecretAncestorPath(fieldPath) || isConfigSecretDescendantPath(fieldPath);
 }
 
 export function decryptConfigSecret(value: unknown): string | undefined {
@@ -355,7 +395,46 @@ export function isConfigSecretDescendantPath(fieldPath: string): boolean {
 }
 
 export function isConfigSecretAncestorPath(fieldPath: string): boolean {
-  return ANCESTOR_PATHS.has(fieldPath);
+  if (ANCESTOR_PATHS.has(fieldPath)) {
+    return true;
+  }
+  return ANCESTOR_WILDCARDS.some((pattern) => matchesSecretPattern(fieldPath, pattern));
+}
+
+/**
+ * Every registered secret location as segments: scalar secrets with their previews (legacy
+ * spellings included), and the secret and preview keys of any item of an array secret
+ * container, where `*` stands for the item index.
+ */
+const SECRET_LOCATIONS: ReadonlyArray<readonly string[]> = [
+  ...[
+    ...CONFIG_SECRET_FIELDS.flatMap((field) => [field.path, field.previewPath]),
+    ...LEGACY_PREVIEW_PATHS.values(),
+  ].map((path) => path.split('.')),
+  ...ARRAY_SECRET_FIELDS.flatMap((field) => {
+    const container = field.arrayPath.split('.');
+    return [
+      [...container, ANY_SEGMENT, field.secretKey],
+      [...container, ANY_SEGMENT, field.previewKey],
+    ];
+  }),
+];
+
+/**
+ * Whether a write at `segments` touches a registered secret: the secret's own location or its
+ * preview's, an ancestor that can carry it, or a path inside it. Segments are compared one by
+ * one, so a key that contains a dot is never mistaken for the path its dots would spell.
+ */
+export function isConfigSecretRelatedSegments(segments: readonly string[]): boolean {
+  return SECRET_LOCATIONS.some((location) => {
+    const shared = Math.min(location.length, segments.length);
+    for (let index = 0; index < shared; index++) {
+      if (location[index] !== ANY_SEGMENT && location[index] !== segments[index]) {
+        return false;
+      }
+    }
+    return true;
+  });
 }
 
 export function getConfigSecretInputError(fieldPath: string, value: unknown): string | null {

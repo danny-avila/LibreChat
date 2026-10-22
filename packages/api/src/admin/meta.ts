@@ -24,6 +24,9 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   sectionAllowlist: true,
   readFilteredWriteResponses: true,
   webSearchStoredKeys: true,
+  expectedRevision: true,
+  prunesEmptyParents: true,
+  awaitedInvalidation: true,
 };
 
 /**

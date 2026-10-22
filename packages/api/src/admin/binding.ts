@@ -1,6 +1,6 @@
 import isPlainObject from 'lodash/isPlainObject';
 import { webSearchPairedFields, getRebindingWebSearchKeys } from '@librechat/data-schemas';
-import type { Config, ConfigOverrideIssue } from '@librechat/data-schemas';
+import type { Config, ConfigFieldWrite, ConfigOverrideIssue } from '@librechat/data-schemas';
 
 /** Issue code for a URL a write changed while the secret stored beside it stays. */
 export const SECRET_REENTRY_REQUIRED = 'secret_reentry_required';
@@ -81,11 +81,6 @@ export function isWebSearchBindingPath(fieldPath: string): boolean {
   return fieldPath === WEB_SEARCH || getPairedField(fieldPath) != null;
 }
 
-/** Whether a full replace of a document's overrides writes its web search section. */
-export function hasWebSearchSection(overrides: unknown): boolean {
-  return getRecord(overrides)?.[WEB_SEARCH] !== undefined;
-}
-
 /**
  * Re-entry issues for a write that replaces a document's overrides. Its
  * tombstones stay as stored.
@@ -108,46 +103,38 @@ export function getReplaceReentryIssues(
 }
 
 /**
- * Re-entry issues for a field patch, which sets each dot-path on the stored
- * document and clears the tombstone at each written path.
+ * Re-entry issues for a field patch, judged on the document the patch would
+ * store. Writes apply in request order, so a later write can replace what an
+ * earlier one set (a whole `webSearch` after one of its fields); only the
+ * planned document says which URL a stored key ends up beside.
  * @param stored - The document before the write.
- * @param input - The field paths and values the request supplied.
- * @param next - The field paths and values the write would set, omitted secrets preserved.
+ * @param writes - The field writes the request supplied, in order.
+ * @param next - The overrides and tombstones the write would store, omitted secrets preserved.
  */
 export function getPatchReentryIssues(
   stored: StoredConfigState,
-  input: ConfigFields,
-  next: ConfigFields,
+  writes: readonly ConfigFieldWrite[],
+  next: StoredConfigState,
 ): SecretReentryIssue[] {
-  const storedWebSearch = getWebSearch(stored?.overrides);
-  let nextWebSearch = storedWebSearch;
   const written = new Set<string>();
-  if (WEB_SEARCH in next) {
-    nextWebSearch = getRecord(next[WEB_SEARCH]);
-    for (const field of Object.keys(getRecord(input[WEB_SEARCH]) ?? {})) {
-      written.add(field);
-    }
-  }
-  for (const [path, value] of Object.entries(next)) {
-    const field = path.startsWith(WEB_SEARCH_PREFIX) ? path.slice(WEB_SEARCH_PREFIX.length) : '';
-    if (field === '' || field.includes('.')) {
+  let touched = false;
+  for (const { segments, value } of writes) {
+    if (segments[0] !== WEB_SEARCH) {
       continue;
     }
-    nextWebSearch = { ...nextWebSearch, [field]: value };
-    if (path in input) {
-      written.add(field);
+    touched = true;
+    if (segments.length === 1) {
+      Object.keys(getRecord(value) ?? {}).forEach((field) => written.add(field));
+    } else if (segments.length === 2) {
+      written.add(segments[1]);
     }
   }
-  if (nextWebSearch === storedWebSearch) {
+  if (!touched) {
     return [];
   }
-  const tombstones = stored?.tombstones ?? [];
   return toReentryIssues(
-    getWebSearchView(storedWebSearch, tombstones),
-    getWebSearchView(
-      nextWebSearch,
-      tombstones.filter((path) => !(path in next)),
-    ),
+    getWebSearchView(getWebSearch(stored?.overrides), stored?.tombstones),
+    getWebSearchView(getWebSearch(next?.overrides), next?.tombstones),
     written,
   );
 }
