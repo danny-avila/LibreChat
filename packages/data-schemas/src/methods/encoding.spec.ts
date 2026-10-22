@@ -1,3 +1,4 @@
+import { runInNewContext } from 'vm';
 import { decodeStoredKey, encodeStoredKey, decodeStoredKeys, encodeStoredKeys } from './encoding';
 
 const NUL = String.fromCharCode(0);
@@ -61,5 +62,13 @@ describe('config key encoding', () => {
     const date = new Date(0);
 
     expect(encodeStoredKeys({ 'a.b': date })).toEqual({ 'a%2Eb': date });
+  });
+
+  it('encodes objects built in another realm', () => {
+    const foreign = runInNewContext('({ groups: [{ models: { "gpt-4.1": true } }] })');
+
+    expect(JSON.stringify(encodeStoredKeys({ endpoints: foreign }))).toBe(
+      JSON.stringify({ endpoints: { groups: [{ models: { 'gpt-4%2E1': true } }] } }),
+    );
   });
 });
