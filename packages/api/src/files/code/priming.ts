@@ -110,7 +110,6 @@ export function getProjectCodeScope(
   if (req.config?.projects?.codeExecution !== true || req.chatProjectContext == null) {
     return undefined;
   }
-  req.codeFileReferences ??= new Map();
   const sessions = (req.projectCodeSessions ??= new Map());
   let sessionPlan = sessions.get(codeSessionKey);
   if (!sessionPlan) {
@@ -173,21 +172,20 @@ export async function selectCodeFiles({
       skippedNoRef++;
       continue;
     }
-    let probe: Promise<CodeFileInfo | null> | undefined;
-    const getInfo = () =>
-      (probe ??= withCodeApiUploadSlot({
-        registry,
-        scope: routeKey,
-        concurrency,
-        signal,
-        task: () => getFileInfo(sourceRef),
-      }));
-    candidates.push({ file, ref, sourceRef, getInfo, temporary: canonicalRef == null });
+    candidates.push({ file, ref, sourceRef, temporary: canonicalRef == null });
   }
   const resolved = await Promise.all(
     candidates.map(async (candidate) => {
-      const { file, ref, sourceRef, getInfo, temporary } = candidate;
-      const info = ref ? await getInfo() : null;
+      const { file, ref, sourceRef, temporary } = candidate;
+      const info = ref
+        ? await withCodeApiUploadSlot({
+            registry,
+            scope: routeKey,
+            concurrency,
+            signal,
+            task: () => getFileInfo(sourceRef),
+          })
+        : null;
       signal?.throwIfAborted();
       const recovering = !ref || !checkCodeFileActive(info?.lastModified);
       const storedName = temporary
@@ -195,9 +193,8 @@ export async function selectCodeFiles({
         : (sourceRef.sandboxFilename ?? info?.originalFilename);
       const sandboxName = storedName ?? resolveSandboxFilename(file.filename, file.type);
       const destination = recovering
-        ? getCodeEnvUploadFilename(resolveSandboxFilename(sandboxName, file.type))
+        ? getCodeEnvUploadFilename(sandboxName, file.type)
         : sandboxName;
-      const assignRecoveryName = !ref || recovering;
       let scopePriority = 0;
       if (isImportedProjectFile(file, project)) {
         scopePriority = 4;
@@ -215,7 +212,6 @@ export async function selectCodeFiles({
         temporary,
         sandboxName: destination,
         storedName: ref ? storedName : undefined,
-        assignRecoveryName,
         selectionPriority:
           scopePriority +
           Number(!ref || (recovering && (!storedName || destination !== storedName))),
@@ -286,7 +282,7 @@ export async function selectCodeFiles({
     }
     const conflictsWithProject =
       !imported && isCodeDestinationTaken(fixedProjectPaths, candidate.sandboxName);
-    if (candidate.assignRecoveryName) {
+    if (!candidate.isActive) {
       const sandboxName = claimCodeDestination(
         destinations,
         candidate.sandboxName,
@@ -311,9 +307,7 @@ export async function selectCodeFiles({
           temporary: true,
           sandboxName: claimCodeDestination(
             destinations,
-            getCodeEnvUploadFilename(
-              resolveSandboxFilename(candidate.sandboxName, candidate.file.type),
-            ),
+            getCodeEnvUploadFilename(candidate.sandboxName, candidate.file.type),
             candidate.file.file_id,
           ),
         });

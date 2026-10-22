@@ -1,9 +1,4 @@
-import {
-  EToolResources,
-  getCodeEnvRefs,
-  getCodeEnvRefForProfile,
-  resolveSandboxFilename,
-} from 'librechat-data-provider';
+import { EToolResources, getCodeEnvRefs, getCodeEnvRefForProfile } from 'librechat-data-provider';
 import type { CodeEnvFile, SubagentExecutionContext } from '@librechat/agents';
 import type { Agent, TFile } from 'librechat-data-provider';
 import type {
@@ -199,7 +194,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
       context.provisionState?.codeEnvDestinations?.get(file.file_id) ??
       ref?.sandboxFilename ??
       (ref ? seeded?.get(codeRefKey(ref))?.name : undefined) ??
-      getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type))
+      getCodeEnvUploadFilename(file.filename, file.type)
     );
   };
   const seededLastModified = new Date(createdAt).toISOString();
@@ -317,7 +312,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
         storedNames.get(file.file_id) ??
         getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
         state.codeEnvDestinations?.get(file.file_id) ??
-        getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type));
+        getCodeEnvUploadFilename(file.filename, file.type);
       plan.mountedNames.set(file.file_id, claimCodeDestination(claimed, name, file.file_id));
     }
     if (!plan.frozen) {
@@ -327,7 +322,7 @@ export function createRunFileHost<TContext extends RunFileToolContext>({
           inheritedProject?.sessionPlan?.destinations.get(file.file_id) ??
           state.codeEnvDestinations?.get(file.file_id) ??
           getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
-          getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type));
+          getCodeEnvUploadFilename(file.filename, file.type);
         plan.destinations.set(file.file_id, claimCodeDestination(claimed, name, file.file_id));
       }
       plan.frozen = true;

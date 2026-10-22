@@ -1,4 +1,5 @@
 import * as path from 'path';
+import { resolveSandboxFilename } from 'librechat-data-provider';
 
 import type FormData from 'form-data';
 
@@ -73,8 +74,10 @@ export function getCodeEnvFileOptions(filename: string): CodeEnvFileOptions {
 }
 
 /** The destination encoded by the multipart adapter, including its safe-path fallback. */
-export function getCodeEnvUploadFilename(filename: string): string {
-  const options = getCodeEnvFileOptions(filename);
+export function getCodeEnvUploadFilename(filename: string, mimeType?: string): string {
+  const options = getCodeEnvFileOptions(
+    mimeType == null ? filename : resolveSandboxFilename(filename, mimeType),
+  );
   return options.filepath ?? options.filename;
 }
 

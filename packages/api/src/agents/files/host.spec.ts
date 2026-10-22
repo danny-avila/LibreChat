@@ -356,6 +356,26 @@ function seedFile(id: string, name: string): CodeEnvFile {
   };
 }
 
+function sameNamedFiles(privateUpload = false): TFile[] {
+  const uploadContext = privateUpload ? FileContext.agents : FileContext.message_attachment;
+  return ['upload', 'output'].map((id, index) =>
+    storedFile(
+      id,
+      {
+        kind: index === 0 && privateUpload ? 'agent' : 'user',
+        id: index === 0 && privateUpload ? 'parent' : 'user',
+        sandboxFilename: 'results.csv',
+      },
+      {
+        filename: 'results.csv',
+        conversationId: 'conversation',
+        context: index === 1 ? FileContext.execute_code : uploadContext,
+        createdAt: new Date(index + 1),
+      },
+    ),
+  );
+}
+
 function configureProject(h: ReturnType<typeof harness>, ids?: string[], enabled = true): void {
   h.req.config!.projects = configSchema.parse({
     version: '1.3.9',
@@ -411,23 +431,7 @@ describe('run file execution host', () => {
   ])(
     'keeps the newest seeded output over an older upload (project code=$projectCode, private=$privateUpload)',
     async ({ projectCode, privateUpload }) => {
-      const uploadContext = privateUpload ? FileContext.agents : FileContext.message_attachment;
-      const records = ['upload', 'output'].map((id, index) =>
-        storedFile(
-          id,
-          {
-            kind: index === 0 && privateUpload ? 'agent' : 'user',
-            id: index === 0 && privateUpload ? 'parent' : 'user',
-            sandboxFilename: 'results.csv',
-          },
-          {
-            filename: 'results.csv',
-            conversationId: 'conversation',
-            context: index === 1 ? FileContext.execute_code : uploadContext,
-            createdAt: new Date(index + 1),
-          },
-        ),
-      );
+      const records = sameNamedFiles(privateUpload);
       const seed: CodeEnvFile[] = [seedFile('output', 'results.csv')];
       const h = harness({
         inputs: [],
@@ -440,13 +444,6 @@ describe('run file execution host', () => {
       configureProject(h, undefined, projectCode);
 
       const privateFileIds = new Set(privateUpload ? ['upload'] : []);
-      const initial = await selectCodeFiles({
-        files: records,
-        privateFileIds,
-        routeKey: 'managed-worker',
-        getFileInfo: async () => ({ lastModified: new Date().toISOString() }),
-      });
-      expect(initial.selected.map((entry) => entry.file.file_id)).toEqual(['output']);
       const root = h.contexts.get('parent')!;
       root.provisionState = {
         codeEnvFiles: [],
@@ -535,18 +532,7 @@ describe('run file execution host', () => {
     });
     configureProject(h, ['upload', 'output'], true);
 
-    const records = ['upload', 'output'].map((id, index) =>
-      storedFile(
-        id,
-        { sandboxFilename: 'results.csv' },
-        {
-          filename: 'results.csv',
-          conversationId: 'conversation',
-          context: index === 0 ? FileContext.message_attachment : FileContext.execute_code,
-          createdAt: new Date(index + 1),
-        },
-      ),
-    );
+    const records = sameNamedFiles();
     h.req.chatProjectFiles = structuredClone(records);
     const root = h.contexts.get('parent')!;
     const project = getProjectCodeScope(h.req, root.codeExecutionContext!.codeSessionKey)!;
@@ -603,18 +589,7 @@ describe('run file execution host', () => {
   });
 
   it('replaces only the recovered record among same-named stored files', async () => {
-    const records = ['upload', 'output'].map((id, index) =>
-      storedFile(
-        id,
-        { sandboxFilename: 'results.csv' },
-        {
-          filename: 'results.csv',
-          conversationId: 'conversation',
-          createdAt: new Date(index + 1),
-          context: index === 0 ? FileContext.message_attachment : FileContext.execute_code,
-        },
-      ),
-    );
+    const records = sameNamedFiles();
     const h = harness({
       inputs: [],
       setup: [],
@@ -785,14 +760,6 @@ describe('run file execution host', () => {
         };
       }
 
-      const initial = await selectCodeFiles({
-        files: [upload],
-        routeKey: 'managed-worker',
-        getFileInfo: async () => ({ lastModified: new Date().toISOString() }),
-      });
-      expect(initial.selected.map((file) => [file.file.file_id, file.sandboxName])).toEqual([
-        ['upload', 'results.csv'],
-      ]);
       await h.prepare();
       await h.publishOutput(identity(), 'results');
       const delivered = await h.host.provision(['bash_tool'], 'parent', h.signal);

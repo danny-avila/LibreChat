@@ -151,39 +151,27 @@ function planProjectSession(
     }
   }
   // Recovery can convert or sanitize a name; imports must also avoid those planned aliases.
-  for (const file of sortCodeFilesByDestinationPriority(
-    [...pending.values()].map((entry) => entry.file),
-    privateIds,
-    project,
-  )) {
-    if (!file) continue;
-    const entry = pending.get(file.file_id);
-    if (!entry) continue;
-    plan.mountedNames.set(
-      file.file_id,
-      claimCodeDestination(
-        destinations,
-        getCodeEnvUploadFilename(resolveSandboxFilename(entry.name, file.type)),
+  for (const [entries, paths] of [
+    [pending, plan.mountedNames],
+    [imports, plan.destinations],
+  ] as const) {
+    for (const file of sortCodeFilesByDestinationPriority(
+      [...entries.values()].map((entry) => entry.file),
+      privateIds,
+      project,
+    )) {
+      if (!file || (plan.frozen && paths.has(file.file_id))) continue;
+      const entry = entries.get(file.file_id);
+      if (!entry) continue;
+      paths.set(
         file.file_id,
-      ),
-    );
-  }
-  for (const file of sortCodeFilesByDestinationPriority(
-    [...imports.values()].map((entry) => entry.file),
-    undefined,
-    project,
-  )) {
-    if (!file || (plan.frozen && plan.destinations.has(file.file_id))) continue;
-    const entry = imports.get(file.file_id);
-    if (!entry) continue;
-    plan.destinations.set(
-      file.file_id,
-      claimCodeDestination(
-        destinations,
-        getCodeEnvUploadFilename(resolveSandboxFilename(entry.name, file.type)),
-        file.file_id,
-      ),
-    );
+        claimCodeDestination(
+          destinations,
+          getCodeEnvUploadFilename(entry.name, file.type),
+          file.file_id,
+        ),
+      );
+    }
   }
   return plan;
 }
@@ -289,12 +277,10 @@ export function planCodeFileUploads({
   });
 
   const destinations = createCodeDestinationSet();
-  const importedDestinations = new Set<string>();
   const fixedProjectPaths = createCodeDestinationSet();
-  for (const [id, name] of projectSession?.destinations ?? []) {
+  for (const name of projectSession?.destinations.values() ?? []) {
     reserveCodeDestination(destinations, name);
     reserveCodeDestination(fixedProjectPaths, name);
-    importedDestinations.add(id);
   }
   const liveNames = new Map<string, string>();
   const reserveLiveFiles = (candidate: ProvisionToolContext): void => {
@@ -314,7 +300,8 @@ export function planCodeFileUploads({
         candidate.provisionState?.codeEnvDestinations?.get(file.file_id) ??
         resolveSandboxFilename(file.filename, file.type);
       if (
-        (importedDestinations.has(file.file_id) || reserveCodeDestination(destinations, name)) &&
+        (projectSession?.destinations.has(file.file_id) ||
+          reserveCodeDestination(destinations, name)) &&
         !liveNames.has(file.file_id)
       ) {
         liveNames.set(file.file_id, name);
@@ -367,12 +354,10 @@ export function planCodeFileUploads({
       claimCodeDestination(
         destinations,
         getCodeEnvUploadFilename(
-          resolveSandboxFilename(
-            getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
-              candidate?.recoveryName ??
-              file.filename,
-            file.type,
-          ),
+          getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
+            candidate?.recoveryName ??
+            file.filename,
+          file.type,
         ),
         file.file_id,
       );
@@ -382,7 +367,7 @@ export function planCodeFileUploads({
       const canonicalName =
         getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
         candidate?.recoveryName ??
-        getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type));
+        getCodeEnvUploadFilename(file.filename, file.type);
       if (
         state.temporaryCodeFileIds?.has(file.file_id) === true ||
         (isImportedProjectFile(file, state.project) && destination !== canonicalName) ||

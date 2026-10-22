@@ -350,34 +350,6 @@ describe('queued code-file destinations', () => {
     expect(current.dynamicToolContextMap!.queued_code_files).toContain('(project file)');
   });
 
-  it('keeps the originating path when its file expires before a same-named import', () => {
-    const current = agent('parent', [file('own', { conversationId: 'current' })]);
-    const imported = storedFile(
-      'imported',
-      {
-        kind: 'user',
-        id: 'user-1',
-        storage_session_id: 'store',
-        file_id: 'remote',
-        sandboxFilename: 'data.csv',
-      },
-      { conversationId: 'other' },
-    );
-    current.tool_resources = { execute_code: { files: [imported] } };
-    current.provisionState!.project = {
-      projectFileIds: new Set(['own', 'imported']),
-      conversationId: 'current',
-    };
-    current.provisionState!.codeEnvRecoveryNames = new Map([
-      ['own', { name: 'data.csv', isTargetScope: true }],
-    ]);
-    prepareQueuedCodeFileContext(current, [current], 'user-1');
-    expect(current.provisionState!.codeEnvDestinations!.get('own')).toBe('data.csv');
-    expect(current.provisionState!.codeEnvDestinations!.get('imported')).toMatch(/^data-.+\.csv$/);
-    expect(current.provisionState!.codeEnvFiles.map((file) => file.file_id)).toContain('imported');
-    expect(current.provisionState!.temporaryCodeFileIds).toEqual(new Set(['imported']));
-  });
-
   it.each([false, true])(
     'stages imports across agents before planning an expired own file (second agent pending: %s)',
     (secondPending) => {

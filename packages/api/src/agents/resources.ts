@@ -1044,7 +1044,6 @@ export const primeResources = async ({
     projectCodeFiles =
       screenProjectFiles?.(projectCodeFiles, persistedResourceFiles) ?? projectCodeFiles;
     const projectCodeFileIds = new Set(projectCodeFiles.map((file) => file.file_id));
-    if (projectCodeFileIds.size > 0 && req) req.codeFileReferences ??= new Map();
     for (const file of projectCodeFiles) {
       if (file.metadata?.codeEnvRef || file.metadata?.codeEnvRefs) {
         addFileToResource({
