@@ -377,6 +377,15 @@ html.high-contrast.dark .btn-neutral:hover {
   }
 }
 
+/* Forced colors computes `background-image` to none unless it holds a `url()`, which
+ * removes the gradient arrow; hand the indicator back to the browser. */
+@media (forced-colors: active) {
+  select {
+    -webkit-appearance: menulist;
+    appearance: menulist;
+  }
+}
+
 p > small {
   opacity: 0;
   animation: fadein 3s forwards;

@@ -135,4 +135,11 @@ describe('select arrow', () => {
     expect(rule).toContain('currentColor');
     expect(rule).not.toMatch(/url\(|#[0-9a-f]{3,8}\b|%23/i);
   });
+
+  it('falls back to the native indicator when forced colors drops the gradients', () => {
+    const forced = /@media \(forced-colors: active\) \{\s*select \{[^}]*appearance: menulist/.exec(
+      stylesheet,
+    );
+    expect(forced).not.toBeNull();
+  });
 });
