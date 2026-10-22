@@ -182,6 +182,7 @@ describe('GET /api/admin/config/meta', () => {
     expect(Object.keys(meta.versions)).toEqual(['librechat', 'dataProvider', 'configSchema']);
     expect(Object.keys(meta.features).sort()).toEqual([
       'awaitedInvalidation',
+      'changesBatch',
       'dottedKeys',
       'expectedRevision',
       'prunesEmptyParents',
@@ -189,7 +190,11 @@ describe('GET /api/admin/config/meta', () => {
       'sectionAllowlist',
       'webSearchStoredKeys',
     ]);
-    expect(meta.limits).toEqual({ maxPatchEntries: 100, overrideCacheTtlMs: 60_000 });
+    expect(meta.limits).toEqual({
+      maxPatchEntries: 100,
+      maxChangeOps: 1000,
+      overrideCacheTtlMs: 60_000,
+    });
     expect(Object.keys(meta.rules).sort()).toEqual([
       'acceptedSections',
       'arrayMergeKeys',
@@ -542,6 +547,57 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     const dropsStaleMerge = getApplicableConfigs.mock.calls.length === 2;
 
     return held && res.statusCode === 200 && bypassed && dropsStaleMerge;
+  },
+  async changesBatch() {
+    const writeConfigDocument = jest.fn(
+      async (_type: string, _id: string, draft: ConfigDraft): Promise<ConfigRecord> => ({
+        ...storedConfig(draft.overrides ?? {}),
+        tombstones: draft.tombstones ?? [],
+        configVersion: 2,
+      }),
+    );
+    const deps = {
+      findConfigByPrincipal: jest
+        .fn()
+        .mockResolvedValue(storedConfig({ interface: { customWelcome: 'v1' } })),
+      writeConfigDocument,
+    };
+    const send = async (ops: unknown[]) => {
+      const res = mockRes();
+      await createHandlers(deps).applyConfigChanges(
+        mockReq({ params: { principalType: 'role', principalId: 'r1' }, body: { ops } }),
+        res,
+      );
+      return res;
+    };
+
+    const tooMany = await send(
+      Array.from({ length: 1001 }, (_, i) => ({
+        op: 'set',
+        fieldPath: `interface.customWelcome${i}`,
+        value: 'x',
+      })),
+    );
+    const refused = await send([
+      { op: 'set', fieldPath: 'interface.customWelcome', value: 'v2' },
+      { op: 'set', fieldPath: 'interface.modelSelect', value: 'yes' },
+    ]);
+    const writesAfterRefusal = writeConfigDocument.mock.calls.length;
+    const applied = await send([
+      { op: 'set', fieldPath: 'interface.customWelcome', value: 'v2' },
+      { op: 'tombstone', fieldPath: 'interface.privacyPolicy' },
+    ]);
+    const [, , draft] = writeConfigDocument.mock.calls[0] ?? [];
+    return (
+      tooMany.statusCode === 400 &&
+      tooMany.body?.code === 'TOO_MANY_OPS' &&
+      refused.statusCode === 400 &&
+      writesAfterRefusal === 0 &&
+      applied.statusCode === 200 &&
+      writeConfigDocument.mock.calls.length === 1 &&
+      getIn(draft?.overrides ?? {}, 'interface.customWelcome') === 'v2' &&
+      (draft?.tombstones ?? []).includes('interface.privacyPolicy')
+    );
   },
 };
 

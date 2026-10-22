@@ -7,15 +7,23 @@ import type { TCustomConfig, TWebSearchConfigInput } from 'librechat-data-provid
 import type { AppConfig, IConfig } from '~/types';
 import {
   foldConfigMergeKey,
+  isConfigRecordPath,
   getConfigMergeRules,
   mergeConfigOverrides,
+  isConfigArrayItemPath,
+  isAcceptedOverrideSection,
   getConfigFieldIssues,
   applyConfigTombstones,
+  getConfigChangeIssues,
+  getConfigArrayMergeKey,
   getDottedSectionIssues,
   getConfigOverrideIssues,
   combineFoldedConfigItems,
+  getIndexedMergeKeyIssues,
 } from './resolution';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
+import { toConfigOverrideState } from './mutations';
+import { applyConfigChanges } from './changes';
 import { loadWebSearchConfig } from './web';
 import logger from '~/config/winston';
 
@@ -199,6 +207,10 @@ describe('mergeConfigOverrides', () => {
 
     const removed = read([fakeConfig({}, 10, ['endpoints.agents.pullRequests.host'])]);
     expect(removed.host).toBe('ghe.example.com');
+
+    for (const ancestor of ['endpoints', 'endpoints.agents', 'endpoints.agents.pullRequests']) {
+      expect(read([fakeConfig({}, 10, [ancestor])])).toEqual({ host: 'ghe.example.com' });
+    }
 
     const unset = { endpoints: { agents: { pullRequests: {} } } } as unknown as AppConfig;
     const added = mergeConfigOverrides(unset, [
@@ -2199,5 +2211,264 @@ describe('getConfigFieldIssues', () => {
         stored,
       ),
     ).toEqual([]);
+  });
+});
+
+describe('getConfigFieldIssues: tombstones a write clears', () => {
+  const unionBase = {
+    memory: { agent: { id: 'agent_yaml' } },
+  } as unknown as Partial<TCustomConfig>;
+
+  it('lets a write replace a hidden field with its own value, as sequential clients do', () => {
+    const stored = {
+      overrides: { memory: { agent: { provider: 'openAI', model: 'gpt-4o' } } },
+      tombstones: ['memory.agent.id'],
+    };
+
+    expect(getConfigFieldIssues({ 'memory.agent.id': 'agent_other' }, unionBase, stored)).toEqual(
+      [],
+    );
+  });
+
+  it('reports stored fields that conflict with an inherited value a deeper write brings back', () => {
+    const stored = {
+      overrides: { memory: { agent: { provider: 'openAI', model: 'gpt-4o' } } },
+      tombstones: ['memory.agent'],
+    };
+
+    expect(
+      getConfigFieldIssues({ 'memory.agent.enabled': true }, unionBase, stored).map(
+        (issue) => issue.path,
+      ),
+    ).toEqual(['memory.agent.provider', 'memory.agent.model']);
+  });
+});
+
+describe('getConfigChangeIssues', () => {
+  const base = {
+    memory: { agent: { id: 'agent_yaml' } },
+  } as unknown as Partial<TCustomConfig>;
+
+  const paths = (issues: Array<{ path: string }>) => issues.map((issue) => issue.path);
+
+  it('judges a batch in its end state: a tombstone plus the fields that replace it pass', () => {
+    const changes = [
+      { op: 'tombstone' as const, segments: ['memory', 'agent', 'id'] },
+      { op: 'set' as const, segments: ['memory', 'agent', 'provider'], value: 'openAI' },
+      { op: 'set' as const, segments: ['memory', 'agent', 'model'], value: 'gpt-4o' },
+    ];
+    const { state } = applyConfigChanges({ overrides: {}, tombstones: [] }, changes);
+    const written = changes.map((change) => change.segments);
+
+    expect(getConfigChangeIssues(state, base, null, written)).toEqual([]);
+
+    const setsOnly = applyConfigChanges({ overrides: {}, tombstones: [] }, changes.slice(1));
+    expect(paths(getConfigChangeIssues(setsOnly.state, base, null, written.slice(1)))).toEqual([
+      'memory.agent.provider',
+      'memory.agent.model',
+    ]);
+  });
+
+  it('judges the stored document on its own tombstones, unless the change lifted them', () => {
+    const stored = {
+      overrides: { memory: { agent: { provider: 'openAI', model: 'gpt-4o' } } },
+      tombstones: ['memory.agent.id'],
+    };
+    const { state } = applyConfigChanges(
+      { overrides: stored.overrides, tombstones: stored.tombstones },
+      [{ op: 'set', segments: ['memory', 'agent', 'id'], value: 'agent_other' }],
+    );
+    const written = [['memory', 'agent', 'id']];
+
+    expect(paths(getConfigChangeIssues(state, base, stored, written))).toEqual([
+      'memory.agent.provider',
+      'memory.agent.model',
+    ]);
+    expect(getConfigChangeIssues(state, base, stored, written, ['memory.agent.id'])).toEqual([]);
+  });
+
+  it('refuses an unset that brings back an inherited value the stored fields conflict with', () => {
+    const stored = {
+      overrides: { memory: { agent: { provider: 'openAI', model: 'gpt-4o' } } },
+      tombstones: ['memory.agent.id'],
+    };
+    const { state } = applyConfigChanges(
+      { overrides: stored.overrides, tombstones: stored.tombstones },
+      [{ op: 'unset', segments: ['memory', 'agent', 'id'] }],
+    );
+
+    expect(state.tombstones).toEqual([]);
+    expect(paths(getConfigChangeIssues(state, base, stored, [['memory', 'agent', 'id']]))).toEqual([
+      'memory.agent.provider',
+      'memory.agent.model',
+    ]);
+  });
+
+  it('leaves issues the stored document already had to merge time unless the batch touches them', () => {
+    const stored = { overrides: { balance: { startBalance: 'many' }, interface: {} } };
+    const candidate = {
+      overrides: { balance: { startBalance: 'many' }, interface: { customWelcome: 'hi' } },
+      tombstones: [],
+    };
+
+    expect(getConfigChangeIssues(candidate, {}, stored, [['interface', 'customWelcome']])).toEqual(
+      [],
+    );
+    expect(paths(getConfigChangeIssues(candidate, {}, stored, [['balance']]))).toEqual([
+      'balance.startBalance',
+    ]);
+  });
+
+  it('matches existing issues of entries by key, so removing one entry does not blame the ones it shifts', () => {
+    const entry = (name: string, extra: Record<string, unknown> = {}) => ({
+      name,
+      baseURL: `https://${name}.example.com/v1`,
+      ...extra,
+    });
+    const stored = {
+      overrides: {
+        endpoints: {
+          custom: [
+            entry('first'),
+            entry('legacy', { baseURL: 42 }),
+            { baseURL: 'https://keyless.example.com' },
+            entry('last'),
+          ],
+        },
+      },
+    };
+    const remove = (key: string) =>
+      applyConfigChanges(toConfigOverrideState(stored), [
+        { op: 'removeEntry', segments: ['endpoints', 'custom'], key },
+      ]).state;
+
+    expect(paths(getConfigChangeIssues(stored, {}, null, []))).toEqual([
+      'endpoints.custom.2',
+      'endpoints.custom.1.baseURL',
+    ]);
+    expect(getConfigChangeIssues(remove('first'), {}, stored, [])).toEqual([]);
+    expect(getConfigChangeIssues(remove('last'), {}, stored, [])).toEqual([]);
+    expect(getConfigChangeIssues(remove('legacy'), {}, stored, [])).toEqual([]);
+
+    const renamed = applyConfigChanges(remove('first'), [
+      { op: 'rename', segments: ['endpoints', 'custom'], from: 'last', to: 'legacy-2' },
+      {
+        op: 'upsertEntry',
+        segments: ['endpoints', 'custom'],
+        entry: entry('fresh', { baseURL: 7 }),
+      },
+    ]).state;
+    expect(paths(getConfigChangeIssues(renamed, {}, stored, []))).toEqual([
+      'endpoints.custom.3.baseURL',
+    ]);
+  });
+
+  it('tells apart record keys that contain dots from the nested path their dots spell', () => {
+    const stored = {
+      overrides: { endpoints: { bedrock: { inferenceProfiles: { 'us.a.b': 5 } } } },
+    };
+    const candidate = {
+      overrides: {
+        endpoints: { bedrock: { inferenceProfiles: { 'us.a.b': 5, 'eu.a.b': 6 } } },
+      },
+      tombstones: [],
+    };
+    const written = [['endpoints', 'bedrock', 'inferenceProfiles', 'eu.a.b']];
+
+    expect(getConfigChangeIssues(candidate, {}, stored, written)).toEqual([
+      {
+        path: 'endpoints.bedrock.inferenceProfiles.eu.a.b',
+        segments: ['endpoints', 'bedrock', 'inferenceProfiles', 'eu.a.b'],
+        code: 'invalid_type',
+      },
+    ]);
+  });
+});
+
+describe('getIndexedMergeKeyIssues', () => {
+  it('reports a write inside a merged-by-key array by position, not one of the whole array', () => {
+    expect(getIndexedMergeKeyIssues([['endpoints', 'custom', '0', 'name']])).toEqual([
+      {
+        path: 'endpoints.custom',
+        segments: ['endpoints', 'custom'],
+        code: 'indexed_merge_key_write',
+      },
+    ]);
+    expect(getIndexedMergeKeyIssues([['endpoints', 'custom']])).toEqual([]);
+    expect(getIndexedMergeKeyIssues([['modelSpecs', 'list', '0', 'name']])).toEqual([]);
+  });
+});
+
+describe('getConfigArrayMergeKey', () => {
+  it('names the key field of merged-by-key arrays in override (YAML) paths only', () => {
+    expect(getConfigArrayMergeKey(['endpoints', 'custom'])).toBe('name');
+    expect(getConfigArrayMergeKey(['endpoints'])).toBeUndefined();
+    expect(getConfigArrayMergeKey(['modelSpecs', 'list'])).toBeUndefined();
+    expect(getConfigArrayMergeKey(['endpoints.custom'])).toBeUndefined();
+    expect(getConfigArrayMergeKey([])).toBeUndefined();
+  });
+});
+
+describe('isConfigRecordPath', () => {
+  it('accepts records whose keys are operator-chosen names, through unions and wrappers', () => {
+    expect(isConfigRecordPath(['mcpServers'])).toBe(true);
+    expect(isConfigRecordPath(['mcpServers', 'github', 'headers'])).toBe(true);
+    expect(isConfigRecordPath(['endpoints', 'bedrock', 'inferenceProfiles'])).toBe(true);
+  });
+
+  it('refuses fixed-shape objects, arrays, leaves and unknown sections', () => {
+    expect(isConfigRecordPath(['interface'])).toBe(false);
+    expect(isConfigRecordPath(['webSearch'])).toBe(false);
+    expect(isConfigRecordPath(['speech', 'tts'])).toBe(false);
+    expect(isConfigRecordPath(['endpoints', 'custom'])).toBe(false);
+    expect(isConfigRecordPath(['mcpServers', 'github', 'url'])).toBe(false);
+    expect(isConfigRecordPath(['paths'])).toBe(false);
+    expect(isConfigRecordPath([])).toBe(false);
+  });
+});
+
+describe('isConfigArrayItemPath', () => {
+  it('names paths that continue past an array: an element, or a path inside one', () => {
+    expect(isConfigArrayItemPath(['endpoints', 'custom', '0'])).toBe(true);
+    expect(isConfigArrayItemPath(['endpoints', 'custom', '0', 'baseURL'])).toBe(true);
+    expect(isConfigArrayItemPath(['endpoints', 'custom', 'yaml-endpoint'])).toBe(true);
+    expect(isConfigArrayItemPath(['modelSpecs', 'list', '0', 'preset'])).toBe(true);
+    expect(isConfigArrayItemPath(['mcpServers', 'local', 'args', '0'])).toBe(true);
+  });
+
+  it('takes an index below a field the schema cannot see into to name an array element', () => {
+    expect(isConfigArrayItemPath(['interface', 'futureList', '0'])).toBe(true);
+    expect(isConfigArrayItemPath(['interface', 'futureList', '0', 'name'])).toBe(true);
+    expect(isConfigArrayItemPath(['endpoints', 'azureOpenAI', 'groups', '0'])).toBe(true);
+    expect(isConfigArrayItemPath(['endpoints', 'azureOpenAI', 'groups', '1', 'models'])).toBe(true);
+    expect(
+      isConfigArrayItemPath(['webSearch', 'firecrawlOptions', 'changeTrackingOptions', 'schema']),
+    ).toBe(false);
+    expect(isConfigArrayItemPath(['interface', 'futureList'])).toBe(false);
+    expect(isConfigArrayItemPath(['interface', 'futureMap', 'key'])).toBe(false);
+    expect(isConfigArrayItemPath(['endpoints', 'azureOpenAI', 'groups'])).toBe(false);
+  });
+
+  it('accepts whole arrays, objects, records and paths the schema does not define', () => {
+    expect(isConfigArrayItemPath(['endpoints', 'custom'])).toBe(false);
+    expect(isConfigArrayItemPath(['modelSpecs', 'list'])).toBe(false);
+    expect(isConfigArrayItemPath(['memory', 'agent', 'id'])).toBe(false);
+    expect(isConfigArrayItemPath(['mcpServers', 'github', 'headers', 'X-Token'])).toBe(false);
+    expect(isConfigArrayItemPath(['paths', 'uploads', '0'])).toBe(false);
+    expect(isConfigArrayItemPath([])).toBe(false);
+  });
+});
+
+describe('isAcceptedOverrideSection', () => {
+  it('accepts exactly the top-level sections configSchema defines', () => {
+    for (const section of ['interface', 'mcpServers', 'endpoints', 'memory', 'filters']) {
+      expect(isAcceptedOverrideSection(section)).toBe(true);
+    }
+    for (const key of ['paths', 'config', 'availableTools', 'interfaceConfig', 'mcpConfig']) {
+      expect(isAcceptedOverrideSection(key)).toBe(false);
+    }
+    for (const key of ['', 'toString', 'constructor', '__proto__']) {
+      expect(isAcceptedOverrideSection(key)).toBe(false);
+    }
   });
 });
