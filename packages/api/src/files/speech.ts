@@ -1,4 +1,4 @@
-import { scopedCacheKey } from '@librechat/data-schemas';
+import { logger, scopedCacheKey } from '@librechat/data-schemas';
 import { Time, getSpeechText, findLastSeparatorIndex } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 
@@ -16,6 +16,13 @@ export interface SpeechMessageCache {
 
 /** Default cap on the text one text-to-speech request may synthesize. */
 export const DEFAULT_TTS_MAX_INPUT_CHARS = 20_000;
+
+/** Lengths only: the text itself may be private. */
+function warnSpeechCapped(length: number, maxInputChars: number): void {
+  logger.warn(
+    `[TTS] Text of ${length} characters exceeds speech.tts.maxInputChars (${maxInputChars}); reading the first ${maxInputChars}`,
+  );
+}
 
 /**
  * Polls a message for the next text to stream as speech. Each call returns the chunks
@@ -44,6 +51,7 @@ export function createSpeechChunkProcessor({
   let notFoundCount = 0;
   let noChangeCount = 0;
   let processedText = '';
+  let warnedCap = false;
   const cacheKey = scopedCacheKey(messageId);
 
   return async function processChunks() {
@@ -68,6 +76,10 @@ export function createSpeechChunkProcessor({
     /** A message longer than the cap is read up to the cap, as if it ended there. */
     const capped = fullText.length >= maxInputChars;
     const text = capped ? fullText.slice(0, maxInputChars) : fullText;
+    if (fullText.length > maxInputChars && !warnedCap) {
+      warnedCap = true;
+      warnSpeechCapped(fullText.length, maxInputChars);
+    }
     const complete =
       capped ||
       (typeof message !== 'string' && (!('complete' in message) || message.complete !== false));
@@ -109,5 +121,9 @@ export function capSpeechInput(input: unknown, ttsConfig?: { maxInputChars?: num
     return '';
   }
   const maxInputChars = ttsConfig?.maxInputChars ?? DEFAULT_TTS_MAX_INPUT_CHARS;
-  return input.length > maxInputChars ? input.slice(0, maxInputChars) : input;
+  if (input.length <= maxInputChars) {
+    return input;
+  }
+  warnSpeechCapped(input.length, maxInputChars);
+  return input.slice(0, maxInputChars);
 }

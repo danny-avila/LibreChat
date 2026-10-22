@@ -1007,7 +1007,7 @@ export class MCPOAuthHandler {
           ...(!sendResourceParameter && { sendResourceParameter: false }),
           ...(allowedDomains !== undefined && { allowedDomains }),
           ...(allowedAddresses !== undefined && { allowedAddresses }),
-          ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
+          oauthHeaders,
           ...(tenantId && { tenantId }),
         };
 
@@ -1219,7 +1219,7 @@ export class MCPOAuthHandler {
         ...(!sendResourceParameter && { sendResourceParameter: false }),
         ...(allowedDomains !== undefined && { allowedDomains }),
         ...(allowedAddresses !== undefined && { allowedAddresses }),
-        ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
+        oauthHeaders,
         ...(reusedStoredClient && { reusedStoredClient }),
         ...(reusedClientCredentialSetId && { reusedClientCredentialSetId }),
         ...(tenantId && { tenantId }),

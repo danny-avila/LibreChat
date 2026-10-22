@@ -3201,6 +3201,7 @@ class AgentClient extends BaseClient {
         logger,
         mcpManager,
         configServers,
+        user: this.options.req.user,
         runContext,
         ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
         /** The anchor's MCP instructions are added by `applyTurnContext`. */
@@ -5783,6 +5784,7 @@ class AgentClient extends BaseClient {
               logger,
               mcpManager: resumeMcpManager,
               configServers: resumeConfigServers,
+              user: this.options.req.user,
               runContext: { agentFiles: scopedContext },
               ephemeralAgent:
                 agent === this.options.agent ? this.options.req.body.ephemeralAgent : undefined,
@@ -5899,6 +5901,7 @@ class AgentClient extends BaseClient {
                   logger,
                   mcpManager: resumeMcpManager,
                   configServers: resumeConfigServers,
+                  user: this.options.req.user,
                   runContext: { agentFiles: scopedContext },
                 });
                 assertModelBoundContent({

@@ -1198,6 +1198,18 @@ export function getSubagentThread(
   return request.get(endpoints.subagentThread(parentConversationId, threadId, taskId, cursor));
 }
 
+export function getSubagentTaskContent(
+  parentConversationId: string,
+  threadId: string,
+  taskId: string,
+  afterSequence?: number,
+  cursor?: string,
+): Promise<t.SubagentTaskContentResponse> {
+  return request.get(
+    endpoints.subagentTaskContent(parentConversationId, threadId, taskId, afterSequence, cursor),
+  );
+}
+
 export function controlSubagentTask(
   parentConversationId: string,
   threadId: string,
