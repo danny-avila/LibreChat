@@ -167,6 +167,18 @@ export const subagentThread = (
   return cursor == null ? endpoint : `${endpoint}?cursor=${encodeURIComponent(cursor)}`;
 };
 
+export const subagentTaskContent = (
+  parentConversationId: string,
+  threadId: string,
+  taskId: string,
+  afterSequence?: number,
+  cursor?: string,
+) => {
+  const endpoint = `${parentSubagents(parentConversationId)}/${encodeURIComponent(threadId)}/tasks/${encodeURIComponent(taskId)}/content`;
+  if (cursor != null) return `${endpoint}?cursor=${encodeURIComponent(cursor)}`;
+  return afterSequence == null ? endpoint : `${endpoint}?afterSequence=${afterSequence}`;
+};
+
 export const subagentControl = (parentConversationId: string, threadId: string) =>
   `${conversationsRoot}/${encodeURIComponent(parentConversationId)}/subagents/${encodeURIComponent(threadId)}/control`;
 

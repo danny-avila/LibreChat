@@ -44,6 +44,7 @@ jest.mock('axios', () => {
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
+    warn: jest.fn(),
     debug: jest.fn(),
     error: jest.fn(),
   },
@@ -82,6 +83,7 @@ import { decryptConfigSecret, isEncryptedSecretPayload } from '~/admin/secrets';
 import { logAxiosError } from '~/utils/axios';
 import { readFileAsBuffer } from '~/utils/files';
 import { loadServiceKey } from '~/utils/key';
+import { outboundTimeoutMessage } from '~/utils/timeouts';
 import {
   uploadDocumentToMistral,
   uploadAzureMistralOCR,
@@ -271,6 +273,7 @@ describe('MistralOCR Service', () => {
           maxRedirects: 0,
           httpAgent: expect.anything(),
           httpsAgent: expect.anything(),
+          timeout: 300_000,
         }),
       );
       expect(result).toEqual(mockResponse.data);
@@ -525,6 +528,25 @@ describe('MistralOCR Service', () => {
       });
       expect(JSON.stringify(jest.mocked(mockLogger.error).mock.calls)).not.toContain('PRIVATE');
     });
+
+    it('keeps the budget hint when a protected OCR call times out', async () => {
+      const timeoutErrorMessage = outboundTimeoutMessage('ocrMs', 300_000);
+      mockAxios.post!.mockRejectedValueOnce({
+        code: 'ECONNABORTED',
+        message: timeoutErrorMessage,
+        config: { timeoutErrorMessage },
+      });
+
+      await expect(
+        performOCR({
+          apiKey: 'test-api-key',
+          url: 'https://document-url.com',
+          contentProtected: true,
+        }),
+      ).rejects.toThrow('Error performing OCR.');
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(`Error performing OCR. ${timeoutErrorMessage}`);
+    });
   });
 
   describe('uploadMistralOCR', () => {
@@ -644,6 +666,7 @@ describe('MistralOCR Service', () => {
             baseURL: '${OCR_BASEURL}',
             mistralModel: 'mistral-medium',
           },
+          timeouts: { ocrMs: 120_000 },
         },
       } as unknown as ServerRequest;
 
@@ -677,6 +700,9 @@ describe('MistralOCR Service', () => {
         text: expect.stringContaining('# PAGE 1'),
         images: ['base64image1', 'base64image2'],
       });
+      for (const call of [...mockAxios.post!.mock.calls, ...mockAxios.get!.mock.calls]) {
+        expect(call[call.length - 1]).toMatchObject({ timeout: 120_000 });
+      }
     });
 
     it('should process OCR for an image file and use image_url type', async () => {

@@ -123,7 +123,7 @@ test.describe('activity fold', () => {
     await expect(header).toHaveClass(/font-semibold/);
     await expect(header).toHaveClass(/text-text-primary/);
     const rail = messagesView(page).getByTestId('activity-phase-panel').locator('> div').first();
-    await expect(rail).toHaveClass(/pl-6/);
+    await expect(rail).toHaveClass(/ps-6/);
     /** Only the group holding the failure opened; its sibling groups stay
      *  folded under the phase. The slow echo shares that batch. */
     expect(await messagesView(page).locator('[data-testid="tool-call"]').count()).toBe(2);
