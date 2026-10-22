@@ -1846,6 +1846,7 @@ const initializeClientWithProvider = async ({
           },
           {
             completionWakeups: completionWakeupsEnabled,
+            requestScopedConnections: getMCPRequestContext(req, res),
             scheduleMCPIdentity: getScheduleMCPExecution(getMCPRequestContext(req, res))?.identity,
           },
         )

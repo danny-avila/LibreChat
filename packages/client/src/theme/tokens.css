@@ -366,3 +366,32 @@
     @slot;
   }
 }
+
+/* Mirrors by the element's own direction, so an LTR island inside an RTL page stays unmirrored,
+ * which Tailwind's `rtl:` (it also matches `[dir='rtl'] *`) does not. A browser without `:dir()`
+ * (Chrome and Edge before 120) drops that rule and reads `--dir-fallback` instead: it inherits
+ * from the nearest `dir` attribute, and a container style query reads it off the parent, so the
+ * nearest direction wins at any nesting depth, as `:dir()` resolves it. */
+[dir='rtl'] {
+  --dir-fallback: rtl;
+}
+
+[dir='ltr'] {
+  --dir-fallback: ltr;
+}
+
+@custom-variant dir-rtl {
+  &:dir(rtl) {
+    @slot;
+  }
+  @supports not selector(:dir(rtl)) {
+    &[dir='rtl'] {
+      @slot;
+    }
+    @container style(--dir-fallback: rtl) {
+      &:not([dir='ltr']) {
+        @slot;
+      }
+    }
+  }
+}

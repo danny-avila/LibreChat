@@ -1,13 +1,29 @@
-import { INTERFACE_PERMISSION_FIELDS, PermissionTypes } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
+import {
+  PermissionTypes,
+  SearchProviders,
+  INTERFACE_PERMISSION_FIELDS,
+} from 'librechat-data-provider';
+import type { TCustomConfig, TWebSearchConfigInput } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
 import {
+  isConfigRecordPath,
+  getConfigMergeRules,
   mergeConfigOverrides,
+  isConfigArrayItemPath,
+  isAcceptedOverrideSection,
   getConfigFieldIssues,
   applyConfigTombstones,
+  getConfigChangeIssues,
+  getConfigArrayMergeKey,
+  getDottedSectionIssues,
   getConfigOverrideIssues,
+  getIndexedMergeKeyIssues,
 } from './resolution';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
+import { toConfigOverrideState } from './mutations';
+import { applyConfigChanges } from './changes';
+import { loadWebSearchConfig } from './web';
+import logger from '~/config/winston';
 
 function fakeConfig(
   overrides: Record<string, unknown>,
@@ -189,6 +205,10 @@ describe('mergeConfigOverrides', () => {
 
     const removed = read([fakeConfig({}, 10, ['endpoints.agents.pullRequests.host'])]);
     expect(removed.host).toBe('ghe.example.com');
+
+    for (const ancestor of ['endpoints', 'endpoints.agents', 'endpoints.agents.pullRequests']) {
+      expect(read([fakeConfig({}, 10, [ancestor])])).toEqual({ host: 'ghe.example.com' });
+    }
 
     const unset = { endpoints: { agents: { pullRequests: {} } } } as unknown as AppConfig;
     const added = mergeConfigOverrides(unset, [
@@ -1011,6 +1031,107 @@ describe('mergeConfigOverrides', () => {
   });
 });
 
+/**
+ * Record-key tombstones are how a profile removes one inherited key from an MCP server's record
+ * maps without replacing the whole map: deep merge cannot drop a lower layer's key, and atomic
+ * record merging would change what every stored partial map means.
+ */
+describe('mergeConfigOverrides: removing inherited MCP record keys', () => {
+  const github = {
+    type: 'streamable-http',
+    url: 'https://github.example.com/mcp',
+    headers: { Authorization: 'Bearer {{PAT}}', 'X-Team': 'core' },
+    oauth_headers: { 'X-Client': 'librechat', 'X-Keep': 'yes' },
+    requestHeaders: { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}', 'X-Static': 'on' },
+    customUserVars: {
+      PAT: { title: 'Token', description: 'Personal access token' },
+      ORG: { title: 'Org', description: 'Organization' },
+    },
+  };
+  const base = { mcpConfig: { github } } as unknown as AppConfig;
+
+  function mergedGithub(configs: IConfig[]): Record<string, unknown> {
+    const merged = mergeConfigOverrides(base, configs) as unknown as {
+      mcpConfig: Record<string, Record<string, unknown>>;
+    };
+    return merged.mcpConfig.github;
+  }
+
+  it.each([
+    ['headers', 'Authorization', { 'X-Team': 'core' }],
+    ['oauth_headers', 'X-Client', { 'X-Keep': 'yes' }],
+    ['requestHeaders', 'X-Conversation', { 'X-Static': 'on' }],
+    ['customUserVars', 'PAT', { ORG: github.customUserVars.ORG }],
+  ])('removes only the tombstoned %s key %s', (record, key, remaining) => {
+    const server = mergedGithub([fakeConfig({}, 10, [`mcpServers.github.${record}.${key}`])]);
+
+    expect(server[record]).toEqual(remaining);
+    expect(server.url).toBe(github.url);
+    expect(base.mcpConfig?.github).toEqual(github);
+  });
+
+  it('keeps the tombstone when the same profile writes a sibling key', () => {
+    const server = mergedGithub([
+      fakeConfig({ mcpServers: { github: { headers: { 'X-Extra': 'added' } } } }, 10, [
+        'mcpServers.github.headers.Authorization',
+      ]),
+    ]);
+
+    expect(server.headers).toEqual({ 'X-Team': 'core', 'X-Extra': 'added' });
+  });
+
+  it('lets a higher-priority profile supply the removed key again', () => {
+    const server = mergedGithub([
+      fakeConfig({}, 10, ['mcpServers.github.headers.Authorization']),
+      fakeConfig(
+        { mcpServers: { github: { headers: { Authorization: 'Bearer {{SCOPED}}' } } } },
+        20,
+        undefined,
+        'other',
+      ),
+    ]);
+
+    expect(server.headers).toEqual({ Authorization: 'Bearer {{SCOPED}}', 'X-Team': 'core' });
+  });
+
+  it('removes the whole record when the record itself is tombstoned', () => {
+    const server = mergedGithub([fakeConfig({}, 10, ['mcpServers.github.headers'])]);
+
+    expect(server).not.toHaveProperty('headers');
+    expect(server.oauth_headers).toEqual(github.oauth_headers);
+  });
+
+  it('ignores a key tombstone on a process-backed server', () => {
+    const local = {
+      type: 'stdio',
+      command: 'node',
+      args: ['x.js'],
+      env: { DEBUG: '1', KEEP: '2' },
+    };
+    const merged = mergeConfigOverrides({ mcpConfig: { local } } as unknown as AppConfig, [
+      fakeConfig({}, 10, ['mcpServers.local.env.DEBUG']),
+    ]) as unknown as { mcpConfig: Record<string, unknown> };
+
+    expect(merged.mcpConfig.local).toEqual(local);
+  });
+
+  it('validates writes on the same base the merge produces', () => {
+    const yaml = { mcpServers: { github } } as unknown as Partial<TCustomConfig>;
+    const tombstoned = applyConfigTombstones(yaml, ['mcpServers.github.headers.Authorization']);
+
+    expect(
+      (tombstoned.mcpServers as Record<string, { headers?: Record<string, string> }>).github
+        .headers,
+    ).toEqual({ 'X-Team': 'core' });
+    expect(
+      getConfigOverrideIssues(
+        { mcpServers: { github: { headers: { 'X-Extra': 'added' } } } } as Partial<TCustomConfig>,
+        tombstoned,
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe('mergeConfigOverrides: filtered MCP servers', () => {
   it('does not let a filtered process-backed server shape a later partial', () => {
     const merged = mergeConfigOverrides({} as AppConfig, [
@@ -1047,6 +1168,28 @@ describe('mergeConfigOverrides: invalid stored overrides', () => {
       oauthStateTtlMs: 600_000,
       allowedDomains: ['override.com'],
     });
+  });
+
+  it('ignores a stored dotted key at a fixed-shape position and merges dotted record keys', () => {
+    const profile = 'us.anthropic.claude-sonnet-4-6';
+    const arn = 'arn:aws:bedrock:us-east-1:1:inference-profile/x';
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig(
+        {
+          'registration.allowedDomains': ['dotted.com'],
+          registration: { 'oauthStateTtlMs.x': 1, allowedDomains: ['override.com'] },
+          endpoints: { bedrock: { inferenceProfiles: { [profile]: arn } } },
+        },
+        10,
+      ),
+    ]) as unknown as Record<string, Record<string, unknown>>;
+
+    expect(merged['registration.allowedDomains']).toBeUndefined();
+    expect(merged.registration).toEqual({
+      oauthStateTtlMs: 600_000,
+      allowedDomains: ['override.com'],
+    });
+    expect(merged.endpoints.bedrock).toEqual({ inferenceProfiles: { [profile]: arn } });
   });
 
   it('drops only the invalid field of a merged array item', () => {
@@ -1224,6 +1367,178 @@ describe('mergeConfigOverrides: invalid stored overrides', () => {
   });
 });
 
+describe('mergeConfigOverrides: web search keys follow the layer that set their URL', () => {
+  type WebSearch = Record<string, string | number | undefined>;
+  const yaml = {
+    searchProvider: SearchProviders.KEENABLE,
+    keenableApiUrl: 'https://keenable.operator.example.com',
+    keenableApiKey: 'kn-yaml-literal-0001',
+  } satisfies TWebSearchConfigInput;
+  const base = {
+    config: { webSearch: yaml },
+    webSearch: loadWebSearchConfig(yaml),
+  } as unknown as AppConfig;
+
+  function baseProfile(webSearch: WebSearch, tombstones?: string[]): IConfig {
+    return fakeConfig({ webSearch }, 0, tombstones, BASE_CONFIG_PRINCIPAL_ID);
+  }
+
+  function roleProfile(webSearch: WebSearch, tombstones?: string[]): IConfig {
+    return fakeConfig({ webSearch }, 10, tombstones, 'ADMIN');
+  }
+
+  function mergedWebSearch(...configs: IConfig[]): WebSearch {
+    return mergeConfigOverrides(base, configs).webSearch as WebSearch;
+  }
+
+  let warn: jest.SpyInstance;
+  beforeEach(() => {
+    warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  it('drops a key stored in the base profile when a role profile sets only its URL', () => {
+    const webSearch = mergedWebSearch(
+      baseProfile({
+        searxngInstanceUrl: 'https://searx.operator.example.com',
+        searxngApiKey: 'sx-base-secret-0001',
+      }),
+      roleProfile({ searxngInstanceUrl: 'https://capture.example.com' }),
+    );
+
+    expect(webSearch.searxngInstanceUrl).toBe('https://capture.example.com');
+    expect(webSearch).not.toHaveProperty('searxngApiKey');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `webSearch.searxngApiKey from role/${BASE_CONFIG_PRINCIPAL_ID}: webSearch.searxngInstanceUrl is set by role/ADMIN`,
+      ),
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('sx-base-secret-0001');
+  });
+
+  it('drops a librechat.yaml key when an override sets its URL', () => {
+    const webSearch = mergedWebSearch(
+      baseProfile({ keenableApiUrl: 'https://capture.example.com' }),
+    );
+
+    expect(webSearch.keenableApiUrl).toBe('https://capture.example.com');
+    expect(webSearch).not.toHaveProperty('keenableApiKey');
+  });
+
+  it('drops a key a layer stores for a URL it inherits', () => {
+    const webSearch = mergedWebSearch(roleProfile({ keenableApiKey: 'kn-role-0001' }));
+
+    expect(webSearch.keenableApiUrl).toBe(yaml.keenableApiUrl);
+    expect(webSearch).not.toHaveProperty('keenableApiKey');
+  });
+
+  it('keeps a key stored in the same layer as its URL', () => {
+    expect(mergedWebSearch(roleProfile({ safeSearch: 0 }))).toMatchObject({
+      keenableApiUrl: yaml.keenableApiUrl,
+      keenableApiKey: yaml.keenableApiKey,
+    });
+    expect(
+      mergedWebSearch(
+        baseProfile({
+          searxngInstanceUrl: 'https://searx.operator.example.com',
+          searxngApiKey: 'sx-base-secret-0001',
+        }),
+        roleProfile({
+          keenableApiUrl: 'https://keenable.role.example.com',
+          keenableApiKey: 'kn-role-0001',
+        }),
+      ),
+    ).toMatchObject({
+      searxngInstanceUrl: 'https://searx.operator.example.com',
+      searxngApiKey: 'sx-base-secret-0001',
+      keenableApiUrl: 'https://keenable.role.example.com',
+      keenableApiKey: 'kn-role-0001',
+    });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: 'points it at an environment variable', url: '${OTHER_SERVICE_URL}' },
+    { name: 'blanks it', url: '' },
+  ])('drops a base profile key when a role profile $name', ({ url }) => {
+    const webSearch = mergedWebSearch(
+      baseProfile({
+        searxngInstanceUrl: 'https://searx.operator.example.com',
+        searxngApiKey: 'sx-base-secret-0001',
+      }),
+      roleProfile({ searxngInstanceUrl: url }),
+    );
+
+    expect(webSearch.searxngInstanceUrl).toBe(url);
+    expect(webSearch).not.toHaveProperty('searxngApiKey');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('webSearch.searxngInstanceUrl is set by role/ADMIN'),
+    );
+  });
+
+  it('drops a librechat.yaml key when an override points its URL at the environment', () => {
+    const webSearch = mergedWebSearch(
+      baseProfile({ keenableApiUrl: '${KEENABLE_API_URL}' }),
+      roleProfile({ firecrawlApiUrl: 'https://firecrawl.role.example.com' }),
+    );
+
+    expect(webSearch.keenableApiUrl).toBe('${KEENABLE_API_URL}');
+    expect(webSearch).not.toHaveProperty('keenableApiKey');
+    expect(webSearch.searxngApiKey).toBe('${SEARXNG_API_KEY}');
+  });
+
+  it('drops the key when a later layer tombstones its URL', () => {
+    const webSearch = mergedWebSearch(roleProfile({}, ['webSearch.keenableApiUrl']));
+
+    expect(webSearch).not.toHaveProperty('keenableApiUrl');
+    expect(webSearch).not.toHaveProperty('keenableApiKey');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'webSearch.keenableApiKey from the base config: webSearch.keenableApiUrl is removed by role/ADMIN',
+      ),
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(yaml.keenableApiKey);
+  });
+
+  it('keeps a key a profile stores over an environment URL it inherits', () => {
+    expect(
+      mergedWebSearch(
+        baseProfile({ firecrawlApiKey: 'fc-base-0001' }),
+        roleProfile({ safeSearch: 0 }),
+      ),
+    ).toMatchObject({ firecrawlApiUrl: '${FIRECRAWL_API_URL}', firecrawlApiKey: 'fc-base-0001' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('keeps a key the same profile stores beside its own tombstone of the URL', () => {
+    const webSearch = mergedWebSearch(
+      roleProfile({ keenableApiKey: 'kn-role-0001' }, ['webSearch.keenableApiUrl']),
+    );
+
+    expect(webSearch).not.toHaveProperty('keenableApiUrl');
+    expect(webSearch.keenableApiKey).toBe('kn-role-0001');
+  });
+
+  it('keeps a key a later profile stores with the URL a lower profile removed', () => {
+    const webSearch = mergedWebSearch(
+      baseProfile({}, ['webSearch']),
+      roleProfile({
+        keenableApiUrl: 'https://keenable.role.example.com',
+        keenableApiKey: 'kn-role-0001',
+      }),
+    );
+
+    expect(webSearch).toMatchObject({
+      keenableApiUrl: 'https://keenable.role.example.com',
+      keenableApiKey: 'kn-role-0001',
+    });
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
 describe('INTERFACE_PERMISSION_FIELDS', () => {
   it('contains all expected permission fields', () => {
     const expected = [
@@ -1384,6 +1699,80 @@ describe('getConfigOverrideIssues', () => {
     ).toEqual([expect.objectContaining({ segments: ['mcpServers', 'team.prod', 'timeout'] })]);
   });
 
+  it('reports a dotted key where the schema has a fixed shape', () => {
+    const issues = getConfigOverrideIssues({
+      'webSearch.serperApiKey': 'x',
+      registration: { 'socialLogins.0': 'github' },
+      interface: { theme: { 'modes.light': { colors: {} } } },
+      endpoints: {
+        azureOpenAI: {
+          groups: [{ group: 'g', apiKey: 'k', models: { 'gpt-4.1': true }, 'models.x': {} }],
+        },
+      },
+    });
+    expect(issues.filter((issue) => issue.code === 'dotted_key')).toEqual([
+      { path: 'webSearch.serperApiKey', segments: ['webSearch.serperApiKey'], code: 'dotted_key' },
+      {
+        path: 'registration.socialLogins.0',
+        segments: ['registration', 'socialLogins.0'],
+        code: 'dotted_key',
+      },
+      {
+        path: 'interface.theme.modes.light',
+        segments: ['interface', 'theme', 'modes.light'],
+        code: 'dotted_key',
+      },
+      {
+        path: 'endpoints.azureOpenAI.groups.0.models.x',
+        segments: ['endpoints', 'azureOpenAI', 'groups', '0', 'models.x'],
+        code: 'dotted_key',
+      },
+    ]);
+  });
+
+  it('keeps dotted keys where the schema has a record', () => {
+    expect(
+      getConfigOverrideIssues({
+        endpoints: {
+          bedrock: {
+            inferenceProfiles: {
+              'us.anthropic.claude-sonnet-4-6': 'arn:aws:bedrock:us-east-1:1:inference-profile/x',
+            },
+          },
+          azureOpenAI: {
+            groups: [
+              {
+                group: 'eastus',
+                apiKey: '${AZURE_KEY}',
+                instanceName: 'east',
+                models: { 'gpt-4.1': true, 'gpt-4.1-mini': { deploymentName: 'mini' } },
+                addParams: { 'reasoning.effort': 'high' },
+              },
+            ],
+          },
+          custom: [
+            {
+              name: 'gateway',
+              apiKey: 'k',
+              baseURL: 'https://gw',
+              models: { default: ['gpt-4.1'] },
+              headers: { 'x-portkey.config': 'cfg' },
+              tokenConfig: { 'gpt-4.1': { prompt: 1, completion: 2, context: 1000 } },
+            },
+          ],
+        },
+        fileConfig: {
+          defaultLLMDeliveryPath: {
+            overrides: {
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'text',
+            },
+          },
+        },
+        mcpServers: { 'team.prod': { url: 'https://mcp.example.com', headers: { 'X-A.B': 'v' } } },
+      }),
+    ).toEqual([]);
+  });
+
   it('accepts keys the schema does not define and stored secret shapes', () => {
     expect(
       getConfigOverrideIssues({ unknownSection: 5, registration: { enabled: false } }),
@@ -1410,6 +1799,29 @@ describe('getConfigOverrideIssues', () => {
     expect(getConfigOverrideIssues(['stray'])).toEqual([
       { path: '', segments: [], code: 'invalid_document' },
     ]);
+  });
+});
+
+describe('getDottedSectionIssues', () => {
+  it('reports only top-level keys holding a dot', () => {
+    expect(getDottedSectionIssues({ 'filters.x': 1, registration: { 'a.b': 1 } })).toEqual([
+      { path: 'filters.x', segments: ['filters.x'], code: 'dotted_key' },
+    ]);
+    expect(getDottedSectionIssues(['stray'])).toEqual([]);
+  });
+});
+
+describe('getConfigMergeRules', () => {
+  it('names merge paths by their override (YAML) keys', () => {
+    expect(getConfigMergeRules()).toEqual({
+      arrayMergeKeys: { 'endpoints.custom': 'name' },
+      atomicMergePaths: ['interface.theme'],
+      overrideKeyMap: {
+        mcpServers: 'mcpConfig',
+        interface: 'interfaceConfig',
+        turnstile: 'turnstileConfig',
+      },
+    });
   });
 });
 
@@ -1470,6 +1882,20 @@ describe('getConfigFieldIssues', () => {
     expect(
       getConfigFieldIssues({ 'registration.oauthStateTtlMs': 5 }).map((issue) => issue.path),
     ).toEqual(['registration.oauthStateTtlMs']);
+  });
+
+  it('checks segment writes, which address keys that contain dots', () => {
+    const profile = ['endpoints', 'bedrock', 'inferenceProfiles', 'us.anthropic.claude-sonnet-4-5'];
+    const stored = {
+      overrides: { endpoints: { bedrock: { inferenceProfiles: { 'eu.x': 'a' } } } },
+    };
+
+    expect(getConfigFieldIssues([{ segments: profile, value: 'arn:aws:x' }], {}, stored)).toEqual(
+      [],
+    );
+    expect(getConfigFieldIssues([{ segments: profile, value: 5 }], {}, stored)).toEqual([
+      expect.objectContaining({ segments: profile }),
+    ]);
   });
 
   it('applies a record refinement to a single written key', () => {
@@ -1590,6 +2016,26 @@ describe('getConfigFieldIssues', () => {
     expect(getConfigFieldIssues({ 'registration.unknownField.foo': 1 })).toEqual([]);
   });
 
+  it('refuses an index past the end of a stored array before building anything', () => {
+    const stored = { overrides: { endpoints: { agents: { capabilities: ['tools'] } } } };
+    const started = performance.now();
+
+    expect(() =>
+      getConfigFieldIssues({ 'endpoints.agents.capabilities.10000000': 'tools' }, {}, stored),
+    ).toThrow(expect.objectContaining({ code: 'CONFIG_PATH_INVALID', reason: 'array_index' }));
+    expect(() =>
+      getConfigFieldIssues(
+        [{ segments: ['endpoints', 'agents', 'capabilities', '1'.repeat(400)], value: 'x' }],
+        {},
+        stored,
+      ),
+    ).toThrow(expect.objectContaining({ reason: 'array_index' }));
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(
+      getConfigFieldIssues({ 'endpoints.agents.capabilities.1': 'actions' }, {}, stored),
+    ).toEqual([]);
+  });
+
   it('rejects an indexed write into a merged-by-name array', () => {
     expect(
       getConfigFieldIssues({ 'endpoints.custom.0.models': { default: ['m'] } }).map(
@@ -1620,5 +2066,264 @@ describe('getConfigFieldIssues', () => {
         stored,
       ),
     ).toEqual([]);
+  });
+});
+
+describe('getConfigFieldIssues: tombstones a write clears', () => {
+  const unionBase = {
+    memory: { agent: { id: 'agent_yaml' } },
+  } as unknown as Partial<TCustomConfig>;
+
+  it('lets a write replace a hidden field with its own value, as sequential clients do', () => {
+    const stored = {
+      overrides: { memory: { agent: { provider: 'openAI', model: 'gpt-4o' } } },
+      tombstones: ['memory.agent.id'],
+    };
+
+    expect(getConfigFieldIssues({ 'memory.agent.id': 'agent_other' }, unionBase, stored)).toEqual(
+      [],
+    );
+  });
+
+  it('reports stored fields that conflict with an inherited value a deeper write brings back', () => {
+    const stored = {
+      overrides: { memory: { agent: { provider: 'openAI', model: 'gpt-4o' } } },
+      tombstones: ['memory.agent'],
+    };
+
+    expect(
+      getConfigFieldIssues({ 'memory.agent.enabled': true }, unionBase, stored).map(
+        (issue) => issue.path,
+      ),
+    ).toEqual(['memory.agent.provider', 'memory.agent.model']);
+  });
+});
+
+describe('getConfigChangeIssues', () => {
+  const base = {
+    memory: { agent: { id: 'agent_yaml' } },
+  } as unknown as Partial<TCustomConfig>;
+
+  const paths = (issues: Array<{ path: string }>) => issues.map((issue) => issue.path);
+
+  it('judges a batch in its end state: a tombstone plus the fields that replace it pass', () => {
+    const changes = [
+      { op: 'tombstone' as const, segments: ['memory', 'agent', 'id'] },
+      { op: 'set' as const, segments: ['memory', 'agent', 'provider'], value: 'openAI' },
+      { op: 'set' as const, segments: ['memory', 'agent', 'model'], value: 'gpt-4o' },
+    ];
+    const { state } = applyConfigChanges({ overrides: {}, tombstones: [] }, changes);
+    const written = changes.map((change) => change.segments);
+
+    expect(getConfigChangeIssues(state, base, null, written)).toEqual([]);
+
+    const setsOnly = applyConfigChanges({ overrides: {}, tombstones: [] }, changes.slice(1));
+    expect(paths(getConfigChangeIssues(setsOnly.state, base, null, written.slice(1)))).toEqual([
+      'memory.agent.provider',
+      'memory.agent.model',
+    ]);
+  });
+
+  it('judges the stored document on its own tombstones, unless the change lifted them', () => {
+    const stored = {
+      overrides: { memory: { agent: { provider: 'openAI', model: 'gpt-4o' } } },
+      tombstones: ['memory.agent.id'],
+    };
+    const { state } = applyConfigChanges(
+      { overrides: stored.overrides, tombstones: stored.tombstones },
+      [{ op: 'set', segments: ['memory', 'agent', 'id'], value: 'agent_other' }],
+    );
+    const written = [['memory', 'agent', 'id']];
+
+    expect(paths(getConfigChangeIssues(state, base, stored, written))).toEqual([
+      'memory.agent.provider',
+      'memory.agent.model',
+    ]);
+    expect(getConfigChangeIssues(state, base, stored, written, ['memory.agent.id'])).toEqual([]);
+  });
+
+  it('refuses an unset that brings back an inherited value the stored fields conflict with', () => {
+    const stored = {
+      overrides: { memory: { agent: { provider: 'openAI', model: 'gpt-4o' } } },
+      tombstones: ['memory.agent.id'],
+    };
+    const { state } = applyConfigChanges(
+      { overrides: stored.overrides, tombstones: stored.tombstones },
+      [{ op: 'unset', segments: ['memory', 'agent', 'id'] }],
+    );
+
+    expect(state.tombstones).toEqual([]);
+    expect(paths(getConfigChangeIssues(state, base, stored, [['memory', 'agent', 'id']]))).toEqual([
+      'memory.agent.provider',
+      'memory.agent.model',
+    ]);
+  });
+
+  it('leaves issues the stored document already had to merge time unless the batch touches them', () => {
+    const stored = { overrides: { balance: { startBalance: 'many' }, interface: {} } };
+    const candidate = {
+      overrides: { balance: { startBalance: 'many' }, interface: { customWelcome: 'hi' } },
+      tombstones: [],
+    };
+
+    expect(getConfigChangeIssues(candidate, {}, stored, [['interface', 'customWelcome']])).toEqual(
+      [],
+    );
+    expect(paths(getConfigChangeIssues(candidate, {}, stored, [['balance']]))).toEqual([
+      'balance.startBalance',
+    ]);
+  });
+
+  it('matches existing issues of entries by key, so removing one entry does not blame the ones it shifts', () => {
+    const entry = (name: string, extra: Record<string, unknown> = {}) => ({
+      name,
+      baseURL: `https://${name}.example.com/v1`,
+      ...extra,
+    });
+    const stored = {
+      overrides: {
+        endpoints: {
+          custom: [
+            entry('first'),
+            entry('legacy', { baseURL: 42 }),
+            { baseURL: 'https://keyless.example.com' },
+            entry('last'),
+          ],
+        },
+      },
+    };
+    const remove = (key: string) =>
+      applyConfigChanges(toConfigOverrideState(stored), [
+        { op: 'removeEntry', segments: ['endpoints', 'custom'], key },
+      ]).state;
+
+    expect(paths(getConfigChangeIssues(stored, {}, null, []))).toEqual([
+      'endpoints.custom.2',
+      'endpoints.custom.1.baseURL',
+    ]);
+    expect(getConfigChangeIssues(remove('first'), {}, stored, [])).toEqual([]);
+    expect(getConfigChangeIssues(remove('last'), {}, stored, [])).toEqual([]);
+    expect(getConfigChangeIssues(remove('legacy'), {}, stored, [])).toEqual([]);
+
+    const renamed = applyConfigChanges(remove('first'), [
+      { op: 'rename', segments: ['endpoints', 'custom'], from: 'last', to: 'legacy-2' },
+      {
+        op: 'upsertEntry',
+        segments: ['endpoints', 'custom'],
+        entry: entry('fresh', { baseURL: 7 }),
+      },
+    ]).state;
+    expect(paths(getConfigChangeIssues(renamed, {}, stored, []))).toEqual([
+      'endpoints.custom.3.baseURL',
+    ]);
+  });
+
+  it('tells apart record keys that contain dots from the nested path their dots spell', () => {
+    const stored = {
+      overrides: { endpoints: { bedrock: { inferenceProfiles: { 'us.a.b': 5 } } } },
+    };
+    const candidate = {
+      overrides: {
+        endpoints: { bedrock: { inferenceProfiles: { 'us.a.b': 5, 'eu.a.b': 6 } } },
+      },
+      tombstones: [],
+    };
+    const written = [['endpoints', 'bedrock', 'inferenceProfiles', 'eu.a.b']];
+
+    expect(getConfigChangeIssues(candidate, {}, stored, written)).toEqual([
+      {
+        path: 'endpoints.bedrock.inferenceProfiles.eu.a.b',
+        segments: ['endpoints', 'bedrock', 'inferenceProfiles', 'eu.a.b'],
+        code: 'invalid_type',
+      },
+    ]);
+  });
+});
+
+describe('getIndexedMergeKeyIssues', () => {
+  it('reports a write inside a merged-by-key array by position, not one of the whole array', () => {
+    expect(getIndexedMergeKeyIssues([['endpoints', 'custom', '0', 'name']])).toEqual([
+      {
+        path: 'endpoints.custom',
+        segments: ['endpoints', 'custom'],
+        code: 'indexed_merge_key_write',
+      },
+    ]);
+    expect(getIndexedMergeKeyIssues([['endpoints', 'custom']])).toEqual([]);
+    expect(getIndexedMergeKeyIssues([['modelSpecs', 'list', '0', 'name']])).toEqual([]);
+  });
+});
+
+describe('getConfigArrayMergeKey', () => {
+  it('names the key field of merged-by-key arrays in override (YAML) paths only', () => {
+    expect(getConfigArrayMergeKey(['endpoints', 'custom'])).toBe('name');
+    expect(getConfigArrayMergeKey(['endpoints'])).toBeUndefined();
+    expect(getConfigArrayMergeKey(['modelSpecs', 'list'])).toBeUndefined();
+    expect(getConfigArrayMergeKey(['endpoints.custom'])).toBeUndefined();
+    expect(getConfigArrayMergeKey([])).toBeUndefined();
+  });
+});
+
+describe('isConfigRecordPath', () => {
+  it('accepts records whose keys are operator-chosen names, through unions and wrappers', () => {
+    expect(isConfigRecordPath(['mcpServers'])).toBe(true);
+    expect(isConfigRecordPath(['mcpServers', 'github', 'headers'])).toBe(true);
+    expect(isConfigRecordPath(['endpoints', 'bedrock', 'inferenceProfiles'])).toBe(true);
+  });
+
+  it('refuses fixed-shape objects, arrays, leaves and unknown sections', () => {
+    expect(isConfigRecordPath(['interface'])).toBe(false);
+    expect(isConfigRecordPath(['webSearch'])).toBe(false);
+    expect(isConfigRecordPath(['speech', 'tts'])).toBe(false);
+    expect(isConfigRecordPath(['endpoints', 'custom'])).toBe(false);
+    expect(isConfigRecordPath(['mcpServers', 'github', 'url'])).toBe(false);
+    expect(isConfigRecordPath(['paths'])).toBe(false);
+    expect(isConfigRecordPath([])).toBe(false);
+  });
+});
+
+describe('isConfigArrayItemPath', () => {
+  it('names paths that continue past an array: an element, or a path inside one', () => {
+    expect(isConfigArrayItemPath(['endpoints', 'custom', '0'])).toBe(true);
+    expect(isConfigArrayItemPath(['endpoints', 'custom', '0', 'baseURL'])).toBe(true);
+    expect(isConfigArrayItemPath(['endpoints', 'custom', 'yaml-endpoint'])).toBe(true);
+    expect(isConfigArrayItemPath(['modelSpecs', 'list', '0', 'preset'])).toBe(true);
+    expect(isConfigArrayItemPath(['mcpServers', 'local', 'args', '0'])).toBe(true);
+  });
+
+  it('takes an index below a field the schema cannot see into to name an array element', () => {
+    expect(isConfigArrayItemPath(['interface', 'futureList', '0'])).toBe(true);
+    expect(isConfigArrayItemPath(['interface', 'futureList', '0', 'name'])).toBe(true);
+    expect(isConfigArrayItemPath(['endpoints', 'azureOpenAI', 'groups', '0'])).toBe(true);
+    expect(isConfigArrayItemPath(['endpoints', 'azureOpenAI', 'groups', '1', 'models'])).toBe(true);
+    expect(
+      isConfigArrayItemPath(['webSearch', 'firecrawlOptions', 'changeTrackingOptions', 'schema']),
+    ).toBe(false);
+    expect(isConfigArrayItemPath(['interface', 'futureList'])).toBe(false);
+    expect(isConfigArrayItemPath(['interface', 'futureMap', 'key'])).toBe(false);
+    expect(isConfigArrayItemPath(['endpoints', 'azureOpenAI', 'groups'])).toBe(false);
+  });
+
+  it('accepts whole arrays, objects, records and paths the schema does not define', () => {
+    expect(isConfigArrayItemPath(['endpoints', 'custom'])).toBe(false);
+    expect(isConfigArrayItemPath(['modelSpecs', 'list'])).toBe(false);
+    expect(isConfigArrayItemPath(['memory', 'agent', 'id'])).toBe(false);
+    expect(isConfigArrayItemPath(['mcpServers', 'github', 'headers', 'X-Token'])).toBe(false);
+    expect(isConfigArrayItemPath(['paths', 'uploads', '0'])).toBe(false);
+    expect(isConfigArrayItemPath([])).toBe(false);
+  });
+});
+
+describe('isAcceptedOverrideSection', () => {
+  it('accepts exactly the top-level sections configSchema defines', () => {
+    for (const section of ['interface', 'mcpServers', 'endpoints', 'memory', 'filters']) {
+      expect(isAcceptedOverrideSection(section)).toBe(true);
+    }
+    for (const key of ['paths', 'config', 'availableTools', 'interfaceConfig', 'mcpConfig']) {
+      expect(isAcceptedOverrideSection(key)).toBe(false);
+    }
+    for (const key of ['', 'toString', 'constructor', '__proto__']) {
+      expect(isAcceptedOverrideSection(key)).toBe(false);
+    }
   });
 });
