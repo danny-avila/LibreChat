@@ -1175,16 +1175,15 @@ describe('jsonTruncateFormat structured events', () => {
       message: 'request failed',
       [LEVEL]: 'error',
       [SPLAT_SYMBOL]: [{ requestId: 'request-123' }],
-    } as winston.Logform.TransformableInfo;
+    } satisfies winston.Logform.TransformableInfo;
 
     const output = format.transform(info, format.options);
     if (typeof output !== 'object') {
       throw new Error('Expected jsonTruncateFormat to preserve the log record');
     }
 
-    const symbols = output as unknown as Record<symbol, unknown>;
-    expect(symbols[LEVEL]).toBe('error');
-    expect(symbols[SPLAT_SYMBOL]).toEqual([{ requestId: 'request-123' }]);
+    expect(output[LEVEL]).toBe('error');
+    expect(output[SPLAT_SYMBOL]).toEqual([{ requestId: 'request-123' }]);
     expect(output.level).toBe('error');
   });
 });
