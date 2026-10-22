@@ -27,6 +27,7 @@ import {
   preserveStreamedContentIdentity,
 } from '~/utils';
 import { startupConfigKey, queueTitleGeneration } from '~/data-provider';
+import { withFileSearchPreference } from '~/hooks/Files/search';
 import { getConvoTitle } from './turns';
 
 /** Settles a finished turn: the final messages, the conversation it belongs to, and an early abort that restores the draft. */
@@ -317,7 +318,10 @@ export default function useFinalHandler(ctx: EventHandlerContext) {
             applyAgentTemplate({
               targetId: conversation.conversationId,
               sourceId: submissionConvo.conversationId,
-              ephemeralAgent: submission.ephemeralAgent,
+              ephemeralAgent: withFileSearchPreference(
+                conversation.conversationId,
+                submission.ephemeralAgent,
+              ),
               specName: submission.conversation?.spec,
               startupConfig: queryClient.getQueryData<TStartupConfig>(startupConfigKey(true)),
             });
