@@ -1872,6 +1872,20 @@ describe('getConfigFieldIssues', () => {
     ).toEqual(['registration.oauthStateTtlMs']);
   });
 
+  it('checks segment writes, which address keys that contain dots', () => {
+    const profile = ['endpoints', 'bedrock', 'inferenceProfiles', 'us.anthropic.claude-sonnet-4-5'];
+    const stored = {
+      overrides: { endpoints: { bedrock: { inferenceProfiles: { 'eu.x': 'a' } } } },
+    };
+
+    expect(getConfigFieldIssues([{ segments: profile, value: 'arn:aws:x' }], {}, stored)).toEqual(
+      [],
+    );
+    expect(getConfigFieldIssues([{ segments: profile, value: 5 }], {}, stored)).toEqual([
+      expect.objectContaining({ segments: profile }),
+    ]);
+  });
+
   it('applies a record refinement to a single written key', () => {
     const base = {
       endpoints: {
@@ -1988,6 +2002,26 @@ describe('getConfigFieldIssues', () => {
       getConfigFieldIssues({ 'interface.contextCost.foo': true }).map((issue) => issue.path),
     ).toEqual(['interface.contextCost']);
     expect(getConfigFieldIssues({ 'registration.unknownField.foo': 1 })).toEqual([]);
+  });
+
+  it('refuses an index past the end of a stored array before building anything', () => {
+    const stored = { overrides: { endpoints: { agents: { capabilities: ['tools'] } } } };
+    const started = performance.now();
+
+    expect(() =>
+      getConfigFieldIssues({ 'endpoints.agents.capabilities.10000000': 'tools' }, {}, stored),
+    ).toThrow(expect.objectContaining({ code: 'CONFIG_PATH_INVALID', reason: 'array_index' }));
+    expect(() =>
+      getConfigFieldIssues(
+        [{ segments: ['endpoints', 'agents', 'capabilities', '1'.repeat(400)], value: 'x' }],
+        {},
+        stored,
+      ),
+    ).toThrow(expect.objectContaining({ reason: 'array_index' }));
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(
+      getConfigFieldIssues({ 'endpoints.agents.capabilities.1': 'actions' }, {}, stored),
+    ).toEqual([]);
   });
 
   it('rejects an indexed write into a merged-by-name array', () => {

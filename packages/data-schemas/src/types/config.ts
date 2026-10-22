@@ -24,6 +24,8 @@ export type Config = {
   isActive: boolean;
   /** Version number for cache invalidation, auto-increments on overrides change */
   configVersion: number;
+  /** Storage detail of the Mongoose binding: set when `overrides` keys are stored encoded */
+  keyEncoding?: number;
   /** Tenant identifier for multi-tenancy isolation */
   tenantId?: string;
   /** When this config was created */
@@ -32,22 +34,7 @@ export type Config = {
   updatedAt?: Date;
 };
 
-/**
- * A write that applies only to the document the caller read: its
- * `configVersion` then, or `null` when the principal had no document. A write
- * whose precondition no longer holds changes nothing and resolves to `null`.
- */
-export type ConfigWritePrecondition = {
-  expectedVersion?: number | null;
-};
-
 export type IConfig = Config &
   Document & {
     _id: Types.ObjectId;
   };
-
-/** The parts of a config profile that name its principal and its tombstones. */
-export type ConfigTombstones = Pick<
-  Config,
-  'principalType' | 'principalId' | 'tenantId' | 'tombstones'
->;

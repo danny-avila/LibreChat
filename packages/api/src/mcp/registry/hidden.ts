@@ -228,9 +228,10 @@ export function findStoredMCPTombstones(
  * their fields. Profiles could store them before the registry honoured them, so an upgrade can
  * withdraw servers from whole roles or groups; this names them so an operator can review them.
  * `listProfiles` receives the `mcpServers` path and returns only the active profiles with a
- * tombstone at or below it, projected to {@link StoredMCPProfile}, so the read stays small however
- * many profiles exist. It runs in the system tenant scope, because the report covers every tenant
- * and startup has no tenant of its own, which strict tenant isolation would reject.
+ * tombstone at or below it, projected to {@link StoredMCPProfile}; it reads through the portable
+ * config store, so it filters in application code, once, off the startup path. It runs in the
+ * system tenant scope, because the report covers every tenant and startup has no tenant of its
+ * own, which strict tenant isolation would reject.
  * Never rejects: a failed read is logged and startup continues.
  */
 export async function reportStoredMCPTombstones(
