@@ -26,6 +26,8 @@ import {
   getConfigRevision,
 } from './store';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
+import { toConfigOverrideState } from './mutations';
+import { applyConfigChanges } from './changes';
 
 export interface ConfigStoreHarness {
   readonly name: string;
@@ -454,6 +456,103 @@ export function describeConfigStoreConformance(harness: ConfigStoreHarness): voi
         });
         expect(shown.tombstones).toEqual(['memory.agent']);
         expect(shown.configVersion).toBe(4);
+      });
+
+      it('lists the active documents tombstoned at or below a path, in store order, without overrides', async () => {
+        const operations = createConfigOperations(store);
+        const tombstone = (principalId: string, fieldPath: string, priority?: number) =>
+          operations.tombstoneFields(role(principalId), PrincipalModel.ROLE, fieldPath, priority);
+        await operations.setFields(
+          role('hides'),
+          PrincipalModel.ROLE,
+          { 'mcpServers.docs.title': 'Docs', 'balance.enabled': true },
+          20,
+        );
+        await tombstone('hides', 'mcpServers.github');
+        await tombstone('section', 'mcpServers', 10);
+        await tombstone('field', 'mcpServers.github.headers', 30);
+        await tombstone('other', 'webSearch', 5);
+        await tombstone('prefix', 'mcpServersArchive', 5);
+        await tombstone('off', 'mcpServers.github', 5);
+        await operations.setActive(role('off'), false);
+
+        expect(await operations.listTombstones('mcpServers')).toEqual([
+          { principalType: PrincipalType.ROLE, principalId: 'section', tombstones: ['mcpServers'] },
+          {
+            principalType: PrincipalType.ROLE,
+            principalId: 'hides',
+            tombstones: ['mcpServers.github'],
+          },
+          {
+            principalType: PrincipalType.ROLE,
+            principalId: 'field',
+            tombstones: ['mcpServers.github.headers'],
+          },
+        ]);
+        expect(await operations.listTombstones('mcpServers.docs')).toEqual([]);
+      });
+
+      it('stores a batch of changes, renames and awkward keys included, as one write', async () => {
+        const headers = keyedObject(2);
+        const created = await store.write(
+          role('batch'),
+          draft({
+            endpoints: {
+              custom: [{ name: 'old', apiKey: 'v3:cipher', baseURL: 'https://old.example.com' }],
+            },
+            mcpServers: { a: { url: 'https://a.example.com', headers } },
+          }),
+          ABSENT_CONFIG_REVISION,
+        );
+
+        const { state, changed } = applyConfigChanges(toConfigOverrideState(created), [
+          { op: 'rename', segments: ['endpoints', 'custom'], from: 'old', to: 'new' },
+          { op: 'rename', segments: ['mcpServers'], from: 'a', to: 'b' },
+          {
+            op: 'set',
+            segments: ['mcpServers', 'b', 'headers', '$set'],
+            value: { 'x.y': '$', 'ünï.cödé': 1 },
+          },
+          {
+            op: 'set',
+            segments: [
+              'endpoints',
+              'bedrock',
+              'inferenceProfiles',
+              'us.anthropic.claude-sonnet-4-5',
+            ],
+            value: 'arn:aws:bedrock:us-east-1:1:inference-profile/x',
+          },
+          { op: 'tombstone', segments: ['memory', 'agent'] },
+          { op: 'unset', segments: ['mcpServers', 'missing'] },
+        ]);
+        expect(changed).toEqual([true, true, true, true, true, false]);
+
+        const written = await store.write(
+          role('batch'),
+          draft(state.overrides as Record<string, unknown>, { tombstones: state.tombstones }),
+          getConfigRevision(created),
+        );
+
+        expect(written.configVersion).toBe(2);
+        const stored = await store.read(role('batch'));
+        expect(stored?.overrides).toEqual({
+          endpoints: {
+            custom: [{ name: 'new', apiKey: 'v3:cipher', baseURL: 'https://old.example.com' }],
+            bedrock: {
+              inferenceProfiles: {
+                'us.anthropic.claude-sonnet-4-5': 'arn:aws:bedrock:us-east-1:1:inference-profile/x',
+              },
+            },
+          },
+          mcpServers: {
+            b: {
+              url: 'https://a.example.com',
+              headers: { ...headers, $set: { 'x.y': '$', 'ünï.cödé': 1 } },
+            },
+          },
+        });
+        expect(stored?.tombstones).toEqual(['memory.agent']);
       });
 
       it('surfaces a conflict when a caller-supplied revision is stale', async () => {

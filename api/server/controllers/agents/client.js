@@ -3120,6 +3120,7 @@ class AgentClient extends BaseClient {
         logger,
         mcpManager,
         configServers,
+        user: this.options.req.user,
         sharedRunContext: agentRunContextParts.filter(Boolean).join('\n\n'),
         ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
       });
@@ -5663,6 +5664,7 @@ class AgentClient extends BaseClient {
               logger,
               mcpManager: resumeMcpManager,
               configServers: resumeConfigServers,
+              user: this.options.req.user,
               sharedRunContext: scopedContext ?? '',
               ephemeralAgent:
                 agent === this.options.agent ? this.options.req.body.ephemeralAgent : undefined,
@@ -5765,6 +5767,7 @@ class AgentClient extends BaseClient {
                   logger,
                   mcpManager: resumeMcpManager,
                   configServers: resumeConfigServers,
+                  user: this.options.req.user,
                   sharedRunContext: scopedContext ?? '',
                 });
                 assertModelBoundContent({

@@ -1803,6 +1803,13 @@ describe('createAdminConfigHandlers', () => {
         body: { isActive: false },
       },
     },
+    {
+      name: 'applyConfigChanges',
+      reqOverrides: {
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { ops: [{ op: 'set', fieldPath: 'interface.modelSelect', value: false }] },
+      },
+    },
   ];
 
   describe('upsertConfigOverrides: scope-lifecycle auth (ASSIGN_CONFIGS)', () => {

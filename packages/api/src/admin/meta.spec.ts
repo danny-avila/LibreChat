@@ -1,4 +1,5 @@
 import { join } from 'path';
+import mongoose from 'mongoose';
 import { readFileSync } from 'fs';
 import mongoSanitize from 'express-mongo-sanitize';
 import {
@@ -32,11 +33,14 @@ import type {
   ConfigDraft,
   AppConfig,
 } from '@librechat/data-schemas';
+import type { MCPOptions } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { AdminConfigDeps } from './config';
 import { createRequestSanitizer, rejectUnsafeConfigKeys } from '~/middleware/sanitize';
 import { redactConfigSecrets, encryptConfigSecretFields } from './secrets';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+import { createMCPPolicyResolver } from '~/mcp/registry/policy';
 import { createAppConfigService } from '~/app/service';
 import { createAdminConfigHandlers } from './config';
 import { ADMIN_CONFIG_FEATURES } from './meta';
@@ -135,6 +139,20 @@ function setIn(target: Doc, segments: string[], value: unknown): Doc {
   return { ...target, [head]: rest.length === 0 ? value : setIn(parent, rest, value) };
 }
 
+/** Config operations over one in-memory document, so a probe runs the real store path. */
+function memoryConfigOperations(initial: ConfigRecord): {
+  operations: ReturnType<typeof createConfigOperations>;
+  current: () => ConfigRecord;
+} {
+  let record = initial;
+  const store = {
+    read: async () => record,
+    write: async (_principal: unknown, draft: ConfigDraft) =>
+      (record = { ...record, ...draft, configVersion: record.configVersion + 1 }),
+  } as Partial<ConfigStore> as ConfigStore;
+  return { operations: createConfigOperations(store), current: () => record };
+}
+
 /** Lets every pending promise settle, so a handler runs until it waits on something unresolved. */
 function settle(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
@@ -180,14 +198,20 @@ describe('GET /api/admin/config/meta', () => {
     expect(Object.keys(meta.versions)).toEqual(['librechat', 'dataProvider', 'configSchema']);
     expect(Object.keys(meta.features).sort()).toEqual([
       'awaitedInvalidation',
+      'changesBatch',
       'dottedKeys',
       'expectedRevision',
       'prunesEmptyParents',
       'readFilteredWriteResponses',
       'sectionAllowlist',
       'webSearchStoredKeys',
+      'yamlMcpHide',
     ]);
-    expect(meta.limits).toEqual({ maxPatchEntries: 100, overrideCacheTtlMs: 60_000 });
+    expect(meta.limits).toEqual({
+      maxPatchEntries: 100,
+      maxChangeOps: 1000,
+      overrideCacheTtlMs: 60_000,
+    });
     expect(Object.keys(meta.rules).sort()).toEqual([
       'acceptedSections',
       'arrayMergeKeys',
@@ -454,17 +478,13 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     );
   },
   async prunesEmptyParents() {
-    let record: ConfigRecord = storedConfig({
-      balance: { startBalance: 5 },
-      interface: { theme: { name: 'x' } },
-      endpoints: { custom: [{ name: 'gw', headers: { A: 'a' } }] },
-    });
-    const store = {
-      read: async () => record,
-      write: async (_principal: unknown, draft: ConfigDraft) =>
-        (record = { ...record, ...draft, configVersion: record.configVersion + 1 }),
-    } as Partial<ConfigStore> as ConfigStore;
-    const operations = createConfigOperations(store);
+    const { operations, current } = memoryConfigOperations(
+      storedConfig({
+        balance: { startBalance: 5 },
+        interface: { theme: { name: 'x' } },
+        endpoints: { custom: [{ name: 'gw', headers: { A: 'a' } }] },
+      }),
+    );
     const principal = { principalType: PrincipalType.ROLE, principalId: 'r1' };
 
     await operations.unsetFields(principal, [
@@ -472,6 +492,7 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
       'endpoints.custom.0.headers.A',
     ]);
     await operations.tombstoneFields(principal, PrincipalModel.ROLE, 'interface.theme.name');
+    const record = current();
     return (
       JSON.stringify(record.overrides) ===
         JSON.stringify({ endpoints: { custom: [{ name: 'gw' }] } }) &&
@@ -530,6 +551,117 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     const dropsStaleMerge = getApplicableConfigs.mock.calls.length === 2;
 
     return held && res.statusCode === 200 && bypassed && dropsStaleMerge;
+  },
+  async changesBatch() {
+    const writeConfigDocument = jest.fn(
+      async (_type: string, _id: string, draft: ConfigDraft): Promise<ConfigRecord> => ({
+        ...storedConfig(draft.overrides ?? {}),
+        tombstones: draft.tombstones ?? [],
+        configVersion: 2,
+      }),
+    );
+    const deps = {
+      findConfigByPrincipal: jest
+        .fn()
+        .mockResolvedValue(storedConfig({ interface: { customWelcome: 'v1' } })),
+      writeConfigDocument,
+    };
+    const send = async (ops: unknown[]) => {
+      const res = mockRes();
+      await createHandlers(deps).applyConfigChanges(
+        mockReq({ params: { principalType: 'role', principalId: 'r1' }, body: { ops } }),
+        res,
+      );
+      return res;
+    };
+
+    const tooMany = await send(
+      Array.from({ length: 1001 }, (_, i) => ({
+        op: 'set',
+        fieldPath: `interface.customWelcome${i}`,
+        value: 'x',
+      })),
+    );
+    const refused = await send([
+      { op: 'set', fieldPath: 'interface.customWelcome', value: 'v2' },
+      { op: 'set', fieldPath: 'interface.modelSelect', value: 'yes' },
+    ]);
+    const writesAfterRefusal = writeConfigDocument.mock.calls.length;
+    const applied = await send([
+      { op: 'set', fieldPath: 'interface.customWelcome', value: 'v2' },
+      { op: 'tombstone', fieldPath: 'interface.privacyPolicy' },
+    ]);
+    const [, , draft] = writeConfigDocument.mock.calls[0] ?? [];
+    return (
+      tooMany.statusCode === 400 &&
+      tooMany.body?.code === 'TOO_MANY_OPS' &&
+      refused.statusCode === 400 &&
+      writesAfterRefusal === 0 &&
+      applied.statusCode === 200 &&
+      writeConfigDocument.mock.calls.length === 1 &&
+      getIn(draft?.overrides ?? {}, 'interface.customWelcome') === 'v2' &&
+      (draft?.tombstones ?? []).includes('interface.privacyPolicy')
+    );
+  },
+  async yamlMcpHide() {
+    const docs: MCPOptions = { type: 'streamable-http', url: 'https://docs.example.com/mcp' };
+    const local: MCPOptions = { type: 'stdio', command: 'node', args: ['tools.js'] };
+    const yaml = { docs, local };
+    const principal = { id: 'u1', role: 'USER' };
+
+    const stored = memoryConfigOperations(storedConfig({}));
+    const written = mockRes();
+    await createHandlers({
+      tombstoneConfigField: (type, id, model, paths, priority, _session, options) =>
+        stored.operations.tombstoneFields(
+          { principalType: type, principalId: id },
+          model,
+          paths,
+          priority,
+          options,
+        ),
+    }).tombstoneConfigField(
+      mockReq({
+        params: { principalType: 'role', principalId: 'r1' },
+        body: { fieldPath: 'mcpServers.docs' },
+      }),
+      written,
+    );
+    const record = stored.current();
+    const storesTombstone =
+      written.statusCode === 200 && record.tombstones.includes('mcpServers.docs');
+
+    const merged = mergeConfigOverrides(
+      { config: { mcpServers: yaml }, mcpConfig: yaml } as Partial<AppConfig> as AppConfig,
+      [{ ...record, tombstones: [...record.tombstones, 'mcpServers.local'] }],
+    );
+    const registry = new MCPServersRegistry(
+      mongoose,
+      null,
+      null,
+      createMCPPolicyResolver(jest.fn().mockResolvedValue(merged)),
+    );
+    registry.setYamlServerOptions(yaml);
+    await registry.addServerStub('docs', docs, 'CACHE');
+    const appLevel = await registry.getServerConfig('docs');
+    const withheld =
+      appLevel !== undefined &&
+      (await registry.getServerConfig('docs', principal.id, undefined, principal.role)) ===
+        undefined;
+    const refusesCheckout =
+      appLevel !== undefined && (await registry.isHiddenFromPrincipal('docs', appLevel, principal));
+    const hidden = await registry.resolveHiddenServerNames({ userId: principal.id, role: 'USER' });
+
+    const unreadable = new MCPServersRegistry(
+      mongoose,
+      null,
+      null,
+      jest.fn().mockRejectedValue(new Error('config read failed')),
+    );
+    unreadable.setYamlServerOptions(yaml);
+    const failsClosed = (await unreadable.resolveHiddenServerNames({ userId: 'u2' })).has('docs');
+
+    return storesTombstone && withheld && refusesCheckout && !hidden.has('local') && failsClosed;
   },
 };
 

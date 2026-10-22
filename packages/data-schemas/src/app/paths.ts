@@ -26,6 +26,8 @@ export type ConfigPathErrorReason =
   | 'array_index'
   /** The path ends on an array element, which a removal would leave as `null`. */
   | 'array_element'
+  /** A tombstone names an array element or a path inside one; only whole arrays can be hidden. */
+  | 'inside_array'
   /** A tombstone (or another dotted-path consumer) would have to split a segment with a dot. */
   | 'dotted_segment'
   /** A segment starts with `$` or names a reserved key (`__*`, `constructor`, `prototype`). */
