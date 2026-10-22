@@ -1,4 +1,5 @@
 import { join } from 'path';
+import mongoose from 'mongoose';
 import { readFileSync } from 'fs';
 import mongoSanitize from 'express-mongo-sanitize';
 import {
@@ -32,11 +33,14 @@ import type {
   ConfigDraft,
   AppConfig,
 } from '@librechat/data-schemas';
+import type { MCPOptions } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { AdminConfigDeps } from './config';
 import { createRequestSanitizer, rejectUnsafeConfigKeys } from '~/middleware/sanitize';
 import { redactConfigSecrets, encryptConfigSecretFields } from './secrets';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+import { createMCPPolicyResolver } from '~/mcp/registry/policy';
 import { createAppConfigService } from '~/app/service';
 import { createAdminConfigHandlers } from './config';
 import { ADMIN_CONFIG_FEATURES } from './meta';
@@ -135,6 +139,20 @@ function setIn(target: Doc, segments: string[], value: unknown): Doc {
   return { ...target, [head]: rest.length === 0 ? value : setIn(parent, rest, value) };
 }
 
+/** Config operations over one in-memory document, so a probe runs the real store path. */
+function memoryConfigOperations(initial: ConfigRecord): {
+  operations: ReturnType<typeof createConfigOperations>;
+  current: () => ConfigRecord;
+} {
+  let record = initial;
+  const store = {
+    read: async () => record,
+    write: async (_principal: unknown, draft: ConfigDraft) =>
+      (record = { ...record, ...draft, configVersion: record.configVersion + 1 }),
+  } as Partial<ConfigStore> as ConfigStore;
+  return { operations: createConfigOperations(store), current: () => record };
+}
+
 /** Lets every pending promise settle, so a handler runs until it waits on something unresolved. */
 function settle(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
@@ -187,6 +205,7 @@ describe('GET /api/admin/config/meta', () => {
       'readFilteredWriteResponses',
       'sectionAllowlist',
       'webSearchStoredKeys',
+      'yamlMcpHide',
     ]);
     expect(meta.limits).toEqual({
       maxPatchEntries: 100,
@@ -459,17 +478,13 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     );
   },
   async prunesEmptyParents() {
-    let record: ConfigRecord = storedConfig({
-      balance: { startBalance: 5 },
-      interface: { theme: { name: 'x' } },
-      endpoints: { custom: [{ name: 'gw', headers: { A: 'a' } }] },
-    });
-    const store = {
-      read: async () => record,
-      write: async (_principal: unknown, draft: ConfigDraft) =>
-        (record = { ...record, ...draft, configVersion: record.configVersion + 1 }),
-    } as Partial<ConfigStore> as ConfigStore;
-    const operations = createConfigOperations(store);
+    const { operations, current } = memoryConfigOperations(
+      storedConfig({
+        balance: { startBalance: 5 },
+        interface: { theme: { name: 'x' } },
+        endpoints: { custom: [{ name: 'gw', headers: { A: 'a' } }] },
+      }),
+    );
     const principal = { principalType: PrincipalType.ROLE, principalId: 'r1' };
 
     await operations.unsetFields(principal, [
@@ -477,6 +492,7 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
       'endpoints.custom.0.headers.A',
     ]);
     await operations.tombstoneFields(principal, PrincipalModel.ROLE, 'interface.theme.name');
+    const record = current();
     return (
       JSON.stringify(record.overrides) ===
         JSON.stringify({ endpoints: { custom: [{ name: 'gw' }] } }) &&
@@ -586,6 +602,66 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
       getIn(draft?.overrides ?? {}, 'interface.customWelcome') === 'v2' &&
       (draft?.tombstones ?? []).includes('interface.privacyPolicy')
     );
+  },
+  async yamlMcpHide() {
+    const docs: MCPOptions = { type: 'streamable-http', url: 'https://docs.example.com/mcp' };
+    const local: MCPOptions = { type: 'stdio', command: 'node', args: ['tools.js'] };
+    const yaml = { docs, local };
+    const principal = { id: 'u1', role: 'USER' };
+
+    const stored = memoryConfigOperations(storedConfig({}));
+    const written = mockRes();
+    await createHandlers({
+      tombstoneConfigField: (type, id, model, paths, priority, _session, options) =>
+        stored.operations.tombstoneFields(
+          { principalType: type, principalId: id },
+          model,
+          paths,
+          priority,
+          options,
+        ),
+    }).tombstoneConfigField(
+      mockReq({
+        params: { principalType: 'role', principalId: 'r1' },
+        body: { fieldPath: 'mcpServers.docs' },
+      }),
+      written,
+    );
+    const record = stored.current();
+    const storesTombstone =
+      written.statusCode === 200 && record.tombstones.includes('mcpServers.docs');
+
+    const merged = mergeConfigOverrides(
+      { config: { mcpServers: yaml }, mcpConfig: yaml } as Partial<AppConfig> as AppConfig,
+      [{ ...record, tombstones: [...record.tombstones, 'mcpServers.local'] }],
+    );
+    const registry = new MCPServersRegistry(
+      mongoose,
+      null,
+      null,
+      createMCPPolicyResolver(jest.fn().mockResolvedValue(merged)),
+    );
+    registry.setYamlServerOptions(yaml);
+    await registry.addServerStub('docs', docs, 'CACHE');
+    const appLevel = await registry.getServerConfig('docs');
+    const withheld =
+      appLevel !== undefined &&
+      (await registry.getServerConfig('docs', principal.id, undefined, principal.role)) ===
+        undefined;
+    const refusesCheckout =
+      appLevel !== undefined && (await registry.isHiddenFromPrincipal('docs', appLevel, principal));
+    const hidden = await registry.resolveHiddenServerNames({ userId: principal.id, role: 'USER' });
+
+    const unreadable = new MCPServersRegistry(
+      mongoose,
+      null,
+      null,
+      jest.fn().mockRejectedValue(new Error('config read failed')),
+    );
+    unreadable.setYamlServerOptions(yaml);
+    const failsClosed = (await unreadable.resolveHiddenServerNames({ userId: 'u2' })).has('docs');
+
+    return storesTombstone && withheld && refusesCheckout && !hidden.has('local') && failsClosed;
   },
 };
 

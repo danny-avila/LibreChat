@@ -458,6 +458,40 @@ export function describeConfigStoreConformance(harness: ConfigStoreHarness): voi
         expect(shown.configVersion).toBe(4);
       });
 
+      it('lists the active documents tombstoned at or below a path, in store order, without overrides', async () => {
+        const operations = createConfigOperations(store);
+        const tombstone = (principalId: string, fieldPath: string, priority?: number) =>
+          operations.tombstoneFields(role(principalId), PrincipalModel.ROLE, fieldPath, priority);
+        await operations.setFields(
+          role('hides'),
+          PrincipalModel.ROLE,
+          { 'mcpServers.docs.title': 'Docs', 'balance.enabled': true },
+          20,
+        );
+        await tombstone('hides', 'mcpServers.github');
+        await tombstone('section', 'mcpServers', 10);
+        await tombstone('field', 'mcpServers.github.headers', 30);
+        await tombstone('other', 'webSearch', 5);
+        await tombstone('prefix', 'mcpServersArchive', 5);
+        await tombstone('off', 'mcpServers.github', 5);
+        await operations.setActive(role('off'), false);
+
+        expect(await operations.listTombstones('mcpServers')).toEqual([
+          { principalType: PrincipalType.ROLE, principalId: 'section', tombstones: ['mcpServers'] },
+          {
+            principalType: PrincipalType.ROLE,
+            principalId: 'hides',
+            tombstones: ['mcpServers.github'],
+          },
+          {
+            principalType: PrincipalType.ROLE,
+            principalId: 'field',
+            tombstones: ['mcpServers.github.headers'],
+          },
+        ]);
+        expect(await operations.listTombstones('mcpServers.docs')).toEqual([]);
+      });
+
       it('stores a batch of changes, renames and awkward keys included, as one write', async () => {
         const headers = keyedObject(2);
         const created = await store.write(

@@ -229,6 +229,7 @@ describe('request-scoped MCP lifecycle integration', () => {
     manager = createManager();
     jest.spyOn(MCPServersRegistry, 'getInstance').mockReturnValue({
       isAppServerConfig: jest.fn().mockResolvedValue(false),
+      isHiddenFromPrincipal: jest.fn().mockResolvedValue(false),
       resolveAllowlists: jest.fn(async () => ({
         allowedDomains: null,
         allowedAddresses: null,
@@ -582,6 +583,7 @@ describe('operator requestHeaders integration', () => {
       })),
       getServerConfig: jest.fn(async () => createRequestHeadersConfig(server.url)),
       isAppServerConfig: jest.fn(async () => false),
+      isHiddenFromPrincipal: jest.fn(async () => false),
     } as unknown as MCPServersRegistry);
   });
 
