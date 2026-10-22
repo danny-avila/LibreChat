@@ -653,10 +653,15 @@ export class Chat {
         }
       }
     } catch (error) {
-      outcome =
-        handling && !signal.aborted
-          ? getApplyFailure(handling, error)
-          : this.toOutcome(error, active);
+      if (signal.aborted) {
+        outcome = this.toOutcome(error, active);
+      } else if (handling) {
+        outcome = getApplyFailure(handling, error);
+      } else {
+        /** The stream failed before a terminal frame, as one that ends early does: a disconnect. */
+        const failure = error instanceof Error ? error : new Error(String(error));
+        outcome = { kind: 'error', error: failure, disconnect: true };
+      }
     } finally {
       stream.close();
     }

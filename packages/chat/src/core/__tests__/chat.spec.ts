@@ -914,6 +914,28 @@ describe('Chat attachments and reported conversations', () => {
     expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isDisconnect: false }));
   });
 
+  it('reports a stream that fails while it is read as a disconnect', async () => {
+    const failing = {
+      streamId: 'convo-1',
+      generationCreatedAt: 100,
+      close: jest.fn(),
+      async *[Symbol.asyncIterator]() {
+        yield stepEvent;
+        throw new Error('The body could not be read');
+      },
+    };
+    const { chat, onFinish } = setup(
+      {},
+      { sendMessages: jest.fn(async () => ({ status: 'stream' as const, stream: failing })) },
+    );
+
+    await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+
+    expect(onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({ isError: true, isDisconnect: true }),
+    );
+  });
+
   it('reports the conversation a first turn was created under on its finish', async () => {
     const { chat, stream, onFinish } = setup({
       id: 'new',
