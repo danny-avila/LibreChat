@@ -98,6 +98,7 @@ import {
   redactConfigSecrets,
 } from './secrets';
 import {
+  getBatchReentryIssues,
   getPatchReentryIssues,
   isWebSearchBindingPath,
   getRemovalReentryIssues,
@@ -1429,7 +1430,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     logPrefix: '[adminConfig]',
   });
 
-  const meta = buildAdminConfigMeta({ maxPatchEntries: MAX_PATCH_ENTRIES, overrideCacheTtlMs });
+  const meta = buildAdminConfigMeta({
+    maxPatchEntries: MAX_PATCH_ENTRIES,
+    maxChangeOps: MAX_CONFIG_CHANGE_OPS,
+    overrideCacheTtlMs,
+  });
 
   function readStoredConfig(
     principalType: PrincipalType,
@@ -2581,6 +2586,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       type ChangesStop =
         | { kind: 'issues'; issues: ConfigOverrideIssue[] }
+        | { kind: 'reentry'; issues: SecretReentryIssue[] }
         | { kind: 'change'; failure: ChangeFailure };
       type ChangesResult = { report: ChangesReport; stop?: never } | { stop: ChangesStop };
 
@@ -2666,6 +2672,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           if (issues.length > 0) {
             return { draft: null, result: { stop: { kind: 'issues', issues } } };
           }
+          /** Judged on the values the request sent: a secret a set kept from the stored
+           *  document was not entered again. */
+          const requested = report.appliedChanges.flatMap((change) =>
+            change.op === 'set' && !change.paths
+              ? [{ segments: change.target.segments, value: change.value }]
+              : [],
+          );
+          const reentry = getBatchReentryIssues(stored, requested, state);
+          if (reentry.length > 0) {
+            return { draft: null, result: { stop: { kind: 'reentry', issues: reentry } } };
+          }
         }
         if (dryRun) {
           return { draft: null, result: { report } };
@@ -2700,6 +2717,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const result = outcome.result as ChangesResult;
       if (result.stop?.kind === 'change') {
         return res.status(400).json(result.stop.failure);
+      }
+      if (result.stop?.kind === 'reentry') {
+        return secretReentryResponse(res, result.stop.issues);
       }
       if (result.stop) {
         return invalidOverrideResponse(res, result.stop.issues, { skipped });

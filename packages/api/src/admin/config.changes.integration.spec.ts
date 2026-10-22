@@ -502,6 +502,80 @@ describe('POST …/changes: secrets', () => {
   });
 });
 
+describe('POST …/changes: a stored web search key and the URL it is sent to', () => {
+  const URL_FIELD = 'webSearch.searxngInstanceUrl';
+  const KEY_FIELD = 'webSearch.searxngApiKey';
+  const REENTRY = {
+    path: URL_FIELD,
+    segments: ['webSearch', 'searxngInstanceUrl'],
+    code: 'secret_reentry_required',
+    secretPath: KEY_FIELD,
+  };
+
+  async function storeSearxng() {
+    const params = nextParams();
+    const { status } = await send(
+      {
+        ops: [
+          { op: 'set', fieldPath: URL_FIELD, value: 'https://search.example.com' },
+          { op: 'set', fieldPath: KEY_FIELD, value: 'searxng-secret-key' },
+        ],
+      },
+      params,
+    );
+    expect(status).toBe(200);
+    return { params, before: await storedDocument(params.principalId) };
+  }
+
+  it.each([
+    ['sets a new URL', [{ op: 'set', fieldPath: URL_FIELD, value: 'https://other.example.com' }]],
+    ['resets the URL to the inherited one', [{ op: 'unset', fieldPath: URL_FIELD }]],
+    ['tombstones the URL', [{ op: 'tombstone', fieldPath: URL_FIELD }]],
+    [
+      'replaces webSearch without the key',
+      [
+        {
+          op: 'set',
+          fieldPath: 'webSearch',
+          value: { searxngInstanceUrl: 'https://other.example.com' },
+        },
+      ],
+    ],
+  ])('refuses a batch that %s beside the stored key, writing nothing', async (_label, ops) => {
+    const { params, before } = await storeSearxng();
+
+    for (const dryRun of [true, false]) {
+      const { status, body } = await send({ ops, dryRun }, params);
+      expect(status).toBe(400);
+      expect(body).toEqual({
+        error: expect.any(String),
+        code: 'CONFIG_SECRET_REENTRY_REQUIRED',
+        issues: [REENTRY],
+      });
+    }
+    expect(await storedDocument(params.principalId)).toEqual(before);
+  });
+
+  it('stores a new URL entered together with the key', async () => {
+    const { params } = await storeSearxng();
+
+    const { status } = await send(
+      {
+        ops: [
+          { op: 'set', fieldPath: URL_FIELD, value: 'https://other.example.com' },
+          { op: 'set', fieldPath: KEY_FIELD, value: 'other-secret-key' },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(200);
+    const after = await storedDocument(params.principalId);
+    expect(after!.overrides.webSearch.searxngInstanceUrl).toBe('https://other.example.com');
+    expect(decryptV3(after!.overrides.webSearch.searxngApiKey)).toBe('other-secret-key');
+  });
+});
+
 describe('POST …/changes: entries librechat.yaml owns', () => {
   it('refuses to rename a YAML entry or to take its name', async () => {
     const params = nextParams();
