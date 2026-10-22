@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { logger } from '@librechat/data-schemas';
 import { getCodeBaseURL } from '@librechat/agents';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   FileSources,
   getCodeEnvRefs,
@@ -88,6 +88,11 @@ export interface CodeEnvReferenceSetResult {
   codeEnvRefs?: CodeEnvRefMap;
 }
 
+export interface StoredFileDigest {
+  sha256: string;
+  bytes: number;
+}
+
 export interface ProvisionService {
   loadCodeApiKey: (userId: string) => Promise<string | undefined>;
   provisionToCodeEnv: (params: {
@@ -111,6 +116,13 @@ export interface ProvisionService {
     existingStream?: Readable;
     signal?: AbortSignal;
   }) => Promise<{ embedded: boolean; fileUpdate: ProvisionFileUpdate | null }>;
+  /** SHA-256 and length of the stored bytes, the same bytes a code-environment upload sends;
+   *  null when the file's storage cannot be streamed. */
+  digestFile: (params: {
+    req: ServerRequest;
+    file: TFile;
+    signal?: AbortSignal;
+  }) => Promise<StoredFileDigest | null>;
   checkSessionsAlive: (params: {
     files: TFile[];
     apiKey?: string;
@@ -617,10 +629,41 @@ export function createProvisionService({
     await Promise.allSettled(sessionChecks);
     return aliveFileIds;
   }
+  async function digestFile({
+    req,
+    file,
+    signal,
+  }: {
+    req: ServerRequest;
+    file: TFile;
+    signal?: AbortSignal;
+  }): Promise<StoredFileDigest | null> {
+    const stream = await getStorageStream(file, req, signal);
+    if (stream == null) {
+      return null;
+    }
+    const hash = createHash('sha256');
+    let bytes = 0;
+    const abort = () => stream.destroy(signal?.reason instanceof Error ? signal.reason : undefined);
+    signal?.addEventListener('abort', abort, { once: true });
+    try {
+      for await (const chunk of stream) {
+        const buffer: Buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+        hash.update(buffer);
+        bytes += buffer.byteLength;
+      }
+    } finally {
+      signal?.removeEventListener('abort', abort);
+    }
+    signal?.throwIfAborted();
+    return { sha256: hash.digest('hex'), bytes };
+  }
+
   return {
     loadCodeApiKey,
     provisionToCodeEnv,
     provisionToVectorDB,
+    digestFile,
     checkSessionsAlive,
   };
 }

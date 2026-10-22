@@ -10,6 +10,7 @@ const {
   resolveInitializationProjectContext,
   initializeAgent,
   primeInvokedSkillsForProfiles,
+  primeWorkspaceAttachments,
   validateAgentModel,
   extractManualSkills,
   GenerationJobManager,
@@ -100,6 +101,7 @@ const {
   provisionToCodeEnv,
   provisionToVectorDB,
   checkSessionsAlive,
+  digestFile,
 } = require('~/server/services/Files/provision');
 const { createProvisionFilesCallback } = require('~/server/services/Files/provisionCallback');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
@@ -2030,6 +2032,20 @@ const initializeClientWithProvider = async ({
   toolExecuteOptions.provisionFiles = runFileBindings.wrapProvision(
     toolExecuteOptions.provisionFiles,
   );
+  await primeWorkspaceAttachments({
+    agents: [primaryConfig, ...agentConfigs.values()],
+    toolContexts: agentToolContexts,
+    provisionFiles: toolExecuteOptions.provisionFiles,
+    signal,
+    deps: {
+      userId: req.user.id,
+      conversationId,
+      getAuthHeaders: (workerId) => getCodeApiAuthHeaders(req, workerId),
+      digestFile: (file, digestSignal) => digestFile({ req, file, signal: digestSignal }),
+      recordImport: db.recordFileWorkspaceImport,
+      codeApiMaxRetryWaitMs: appConfig?.endpoints?.agents?.codeApiMaxRetryWaitMs,
+    },
+  });
 
   const eventHandlers = getDefaultHandlers({
     res,

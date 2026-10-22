@@ -66,6 +66,7 @@ import type { ResolvedChatProjectContext } from '../projects/context';
 import type { TextContentFragment } from '../protection/types';
 import type { CheckAccessParams } from '../middleware/access';
 import type { GetProjectFiles } from '../projects/resources';
+import type { CodeContextEntry } from '~/files/code/priming';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { CodeExecutionContext } from './execution';
 import type { AgentExecutionContext } from './runtime';
@@ -879,6 +880,9 @@ export type InitializedAgent = Agent & {
    * call #1 the sandbox can't see the files at all.
    */
   primedCodeFiles?: import('@librechat/agents').CodeEnvFile[];
+  /** Files the primed code-file note described on an attached workspace, so the note can be
+   *  rebuilt once attachments are copied in (`primeWorkspaceAttachments`). */
+  codeContextEntries?: CodeContextEntry[];
   /**
    * Resolved token/pricing config for this agent's endpoint (admin static
    * `tokenConfig` and/or fetched custom-endpoint config). Surfaced from the
@@ -965,6 +969,8 @@ export interface InitializeAgentParams {
      * artifacts don't reach the sandbox.
      */
     primedCodeFiles?: import('@librechat/agents').CodeEnvFile[];
+    /** Structured form of the primed code-file note on an attached workspace. */
+    codeContextEntries?: CodeContextEntry[];
     /** Live workspace binding resolved by the execution-side loader. */
     codeExecutionContext?: CodeExecutionContext;
     repositoryInstructionSource?: RepositoryInstructionSource;
@@ -2214,6 +2220,7 @@ export async function initializeAgent(
     oauthActionToolNames,
     tools: structuredTools,
     primedCodeFiles,
+    codeContextEntries,
     codeExecutionContext: loadedCodeExecutionContext,
     repositoryInstructionSource,
   } = loadToolsResult ?? {
@@ -2230,6 +2237,7 @@ export async function initializeAgent(
     actionsEnabled: undefined,
     oauthActionToolNames: undefined,
     primedCodeFiles: undefined,
+    codeContextEntries: undefined,
     codeExecutionContext: undefined,
     repositoryInstructionSource: undefined,
   };
@@ -2842,6 +2850,7 @@ export async function initializeAgent(
         ? maxContextTokens
         : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO))),
     primedCodeFiles,
+    codeContextEntries,
     endpointTokenConfig: options.endpointTokenConfig,
     instructionsPromptFacts,
   };

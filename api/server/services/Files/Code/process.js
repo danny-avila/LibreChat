@@ -686,6 +686,7 @@ const getReuploadFailureCategory = (error) => {
  * @returns {Promise<{
  * files: Array<{ id: string; session_id: string; name: string }>,
  * toolContext: string,
+ * contextFiles?: import('@librechat/api').CodeContextEntry[],
  * }>}
  */
 const primeFiles = async (options) => {
@@ -745,6 +746,8 @@ const primeFiles = async (options) => {
   /** All stale-file reuploads in this prime share one live-turn wait cap. */
   const uploadRateLimitBudget = createCodeApiRateLimitBudget(uploadOptions.retryWaitMs);
   let toolContext = '';
+  /** An attached workspace rebuilds this note once attachments are copied in. */
+  const contextFiles = codeFileLocation === 'programmatic' ? [] : undefined;
 
   const { selected, skippedNoRef, skippedSuperseded } = await selectCodeFiles({
     files: dbFiles,
@@ -782,11 +785,24 @@ const primeFiles = async (options) => {
     const pushFile = (overrideSessionId, overrideId, destination = sandboxName) => {
       /* The sandbox holds the converted name, not the record's, so the mount path has
        * to follow the same rule provisioning uploaded under. */
-      toolContext = appendCodeFileContextLine(
-        toolContext,
-        getCodeFileContextLine(file, agentResourceIds, destination, codeFileLocation),
+      const contextLine = getCodeFileContextLine(
+        file,
+        agentResourceIds,
+        destination,
         codeFileLocation,
       );
+      toolContext = appendCodeFileContextLine(toolContext, contextLine, codeFileLocation);
+      if (contextFiles && contextLine) {
+        contextFiles.push({
+          file,
+          destination,
+          agentScoped: agentResourceIds.has(file.file_id),
+          source: {
+            storage_session_id: overrideSessionId ?? session_id,
+            file_id: overrideId ?? id,
+          },
+        });
+      }
       /* `id` is the storage file_id (drives codeapi's upload-key
        * existence check), `resource_id` is the entity that owns
        * the storage session (drives sessionKey re-derivation). For
@@ -958,7 +974,7 @@ const primeFiles = async (options) => {
     });
   }
 
-  return { files, toolContext };
+  return { files, toolContext, ...(contextFiles?.length ? { contextFiles } : {}) };
 };
 
 /**

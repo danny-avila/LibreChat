@@ -3795,6 +3795,30 @@ describe('Code Process', () => {
       expect(result.toolContext).not.toContain('/mnt/data');
       expect(result.toolContext).not.toContain('tool environment:');
       expect(result.files).toHaveLength(1);
+      expect(result.contextFiles).toEqual([
+        {
+          file: expect.objectContaining({ file_id: 'fid-ready' }),
+          destination: 'data-ready.xlsx',
+          agentScoped: true,
+          source: {
+            storage_session_id: result.files[0].storage_session_id,
+            file_id: result.files[0].id,
+          },
+        },
+      ]);
+    });
+
+    it('returns no structured entries on a sandbox route', async () => {
+      setupSessionInfoOk();
+      getFiles.mockResolvedValue([makeFile({ status: 'ready' })]);
+
+      const result = await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: { execute_code: { file_ids: ['fid-ready'], files: [] } },
+        agentId: 'agent-id',
+      });
+
+      expect(result.contextFiles).toBeUndefined();
     });
 
     it('annotates a pending file with "(preview not yet generated)"', async () => {
