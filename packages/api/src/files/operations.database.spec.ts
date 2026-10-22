@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
-import { FileContext } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { FileContext, FileSources } from 'librechat-data-provider';
 import { createMethods, createModels } from '@librechat/data-schemas';
-import type { FileProvisionCommit, IMongoFile } from '@librechat/data-schemas';
+import type { CodeFileCommitData, FileProvisionCommit, IMongoFile } from '@librechat/data-schemas';
 import { createFileProvisionRecovery, withFileProvisioning, withFileDeletion } from './operations';
 
 let mongo: MongoMemoryServer;
@@ -245,7 +245,7 @@ it('never clears a newer deletion token or its pending intent when retrying rele
 
 it('keeps regenerated output writes fenced until their complete record is committed', async () => {
   const storage = { ...methods, recovery: createFileProvisionRecovery() };
-  const output = {
+  const output: CodeFileCommitData = {
     file_id: file.file_id,
     user: scope.userId,
     tenantId: scope.tenantId,
@@ -253,9 +253,9 @@ it('keeps regenerated output writes fenced until their complete record is commit
     filepath: '/uploads/notes.txt',
     type: 'text/plain',
     bytes: 8,
-    object: 'file' as const,
+    object: 'file',
     usage: 2,
-    source: 'local',
+    source: FileSources.local,
     context: FileContext.execute_code,
     conversationId: 'conversation',
     metadata: { codeEnvRefs: { default: ref } },
