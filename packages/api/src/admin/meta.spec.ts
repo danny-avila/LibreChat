@@ -5,6 +5,7 @@ import { mergeConfigOverrides, getConfigOverrideIssues } from '@librechat/data-s
 import {
   Constants,
   configSchema,
+  EModelEndpoint,
   PERMISSION_SUB_KEYS,
   BASE_ONLY_CONFIG_PATHS,
   BASE_ONLY_CONFIG_SECTIONS,
@@ -23,6 +24,7 @@ import type { Request, Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { AdminConfigDeps } from './config';
 import { createRequestSanitizer, rejectUnsafeConfigKeys } from '~/middleware/sanitize';
+import { resolveTitleConfig } from '~/endpoints/config';
 import { createAdminConfigHandlers } from './config';
 import { redactConfigSecrets } from './secrets';
 import { ADMIN_CONFIG_FEATURES } from './meta';
@@ -207,7 +209,17 @@ describe('meta rules equal the rules the server applies', () => {
       runtimeFields: [...RUNTIME_CONFIG_INTERFACE_FIELDS],
       permissionSubKeys: [...PERMISSION_SUB_KEYS],
     });
-    expect(meta.rules.titleResolution).toBe('block');
+  });
+
+  it('reports per-field title resolution exactly when titles resolve endpoints.all per field', () => {
+    const { titleModel } = resolveTitleConfig({
+      appConfig: {
+        endpoints: { all: { streamRate: 1 }, openAI: { titleModel: 'x' } },
+      } as Partial<AppConfig> as AppConfig,
+      endpoint: EModelEndpoint.openAI,
+    });
+    expect(meta.rules.titleResolution).toBe(titleModel === 'x' ? 'field' : 'block');
+    expect(meta.rules.titleResolution).toBe('field');
   });
 
   it('lists exactly the secret fields reads withhold, with their preview companions', () => {
