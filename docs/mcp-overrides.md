@@ -20,8 +20,10 @@ hidden server is an access boundary, not only a catalog filter. For those princi
 
 - it is missing from `GET /api/mcp/servers`, MCP tool lists, connection status and the agent
   builder;
-- registry lookups by name return nothing, so the reinitialize, auth-value and OAuth callback
-  routes answer as they do for an unknown server;
+- registry lookups by name return nothing, so the reinitialize, auth-value, OAuth initiation and
+  OAuth callback routes answer as they do for an unknown server;
+- an OAuth sign-in started before the hide goes no further: initiation does not redirect to the
+  authorization server, and the callback does not exchange the code;
 - checkout refuses it, including a configuration resolved before the hide took effect, so a
   persisted agent, a scheduled run or an MCP App that references the server cannot connect to it;
 - tools from it are dropped when an agent loads, and its `serverInstructions` are left out of the
@@ -113,9 +115,10 @@ those principals get it as a failed configuration, inspected again every 5 minut
 back to the `librechat.yaml` definition, which still has the value. A change that removes nothing
 (such as a new `timeout`) still falls back to `librechat.yaml` while its inspection fails.
 
-Removing `oauth_headers` keys, or the whole field, also covers OAuth sign-in. The callback that
-completes a sign-in sends the headers the principal's config had when the sign-in started, and sends
-none when that config had none left.
+Removing `oauth_headers` keys, or the whole field, also covers OAuth sign-in. A sign-in sends the
+headers the principal's config had when it started, and none when that config had none left, never
+the `librechat.yaml` headers. A sign-in started before the removal goes no further, because the
+server's definition changed; signing in again uses the remaining headers.
 
 Removing a `customUserVars` key that a header still references as `{{VAR}}` leaves that placeholder
 unresolved for those principals; remove or change the header too.
