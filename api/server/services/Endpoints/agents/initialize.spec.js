@@ -1434,22 +1434,30 @@ describe('initializeClient — subagent loading', () => {
       endpointOption: makeEndpointOption(),
     });
     const existingConfig = agentClientArgs.subagentTasks;
-    const hasTasksSpy = jest.spyOn(existingConfig.store, 'hasTasks').mockResolvedValueOnce(true);
+    const subagentThreadTaskStore = require('./subagentThreadStore');
+    const hasTasksSpy = jest.spyOn(subagentThreadTaskStore, 'hasTasks').mockResolvedValueOnce(true);
     mockInitializeAgent.mockResolvedValue(makePrimaryConfig({}));
     const changedReq = makeSubagentReq();
     changedReq.config.endpoints.agents.capabilities.push('run_in_background');
 
-    await initializeClient({
-      req: changedReq,
-      res: {},
-      signal: new AbortController().signal,
-      endpointOption: makeEndpointOption(),
-    });
+    try {
+      await initializeClient({
+        req: changedReq,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      });
 
-    expect(agentClientArgs.subagentTasks).toEqual(existingConfig);
-    expect(capturedToolExecuteOptions.subagentTasks).toEqual(existingConfig);
-    expect(agentClientArgs.agent.subagents).toBeUndefined();
-    hasTasksSpy.mockRestore();
+      const currentConfig = agentClientArgs.subagentTasks;
+      expect(hasTasksSpy).toHaveBeenCalledWith(existingConfig.scopeId);
+      expect(currentConfig.scopeId).toBe(existingConfig.scopeId);
+      expect(currentConfig.completionDelivery).toBe(existingConfig.completionDelivery);
+      expect(currentConfig.store).not.toBe(existingConfig.store);
+      expect(capturedToolExecuteOptions.subagentTasks).toBe(currentConfig);
+      expect(agentClientArgs.agent.subagents).toBeUndefined();
+    } finally {
+      hasTasksSpy.mockRestore();
+    }
   });
 
   it('disables every nested subagent path at the durable child-thread depth limit', async () => {
