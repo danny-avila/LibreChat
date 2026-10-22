@@ -75,6 +75,8 @@ function harness(
     capabilities?: string[];
     parentSubagents?: AgentSubagentsConfig;
     maxFiles?: number;
+    hasEntityEmbeddings?: jest.Mock;
+    adoptLegacySearchEmbeddings?: jest.Mock;
   } = {},
 ) {
   const input = options.inputs ?? [file('input')];
@@ -215,6 +217,8 @@ function harness(
       updateCodeEnvRef,
       updateFile: jest.fn(async () => undefined),
       addEmbeddedEntity,
+      hasEntityEmbeddings: options.hasEntityEmbeddings,
+      adoptLegacySearchEmbeddings: options.adoptLegacySearchEmbeddings,
     },
   });
   const deps = spy.mock.calls[spy.mock.calls.length - 1][0];
@@ -403,6 +407,50 @@ describe('run file execution host', () => {
       h.contexts.get('worker')?.tool_resources?.execute_code?.files?.map((entry) => entry.file_id),
     ).toEqual(['historical']);
   });
+
+  it.each([false, true])(
+    'confirms an unrecorded setup embedding instead of embedding it again, graph-only=%s',
+    async (graphOnly) => {
+      /* A worker's File Search setup file embedded before namespaces were tracked already has
+       * vectors in the worker's namespace; a shared-file run must not store a second copy. */
+      const hasEntityEmbeddings = jest.fn().mockResolvedValue(true);
+      const adoptLegacySearchEmbeddings = jest.fn().mockResolvedValue(['worker-setup']);
+      const h = harness({
+        setup: [file('worker-setup', { context: FileContext.agents, embedded: true })],
+        hasEntityEmbeddings,
+        adoptLegacySearchEmbeddings,
+        ...(graphOnly && {
+          capabilities: [AgentCapabilities.context, AgentCapabilities.subagent_graphs],
+          parentSubagents: {
+            enabled: false,
+            graphsEnabled: true,
+            shareFiles: true,
+            allowSelf: false,
+            graphs: [
+              {
+                type: 'team',
+                name: 'Team',
+                description: 'Work',
+                agent_ids: ['worker'],
+                edges: [],
+                entry_agent_id: 'worker',
+                result_agent_id: 'worker',
+              },
+            ],
+          },
+        }),
+      });
+      await h.prepare();
+      await h.host.provision(['file_search'], 'worker', h.signal, identity());
+
+      expect(hasEntityEmbeddings).toHaveBeenCalledWith(
+        expect.objectContaining({ file_id: 'worker-setup', entity_id: 'worker' }),
+      );
+      expect(h.provisionToVectorDB.mock.calls.map(([params]) => params.file.file_id)).not.toContain(
+        'worker-setup',
+      );
+    },
+  );
 
   it('retains only admitted advertised paths when preparing isolated child queues', async () => {
     const current = file('input', { filename: 'data.csv' });

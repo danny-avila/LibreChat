@@ -67,7 +67,10 @@ describe('loadCustomEndpointsConfig: host-implied reasoning support', () => {
   it.each([['reasoning_effort'], ['reasoning']])(
     'does not advertise reasoning that dropParams %j removes',
     (...dropParams) => {
-      expect(load({ baseURL: 'https://openrouter.ai/api/v1', dropParams })).toBeUndefined();
+      expect(load({ baseURL: 'https://openrouter.ai/api/v1', dropParams })).toEqual({
+        defaultParamsEndpoint: 'openrouter',
+        reasoningFormat: ReasoningParameterFormat.disabled,
+      });
     },
   );
 
@@ -123,13 +126,13 @@ describe('loadCustomEndpointsConfig: host-implied reasoning support', () => {
       },
     );
 
-    it('leaves an endpoint that disables reasoning unmarked', () => {
+    it('keeps the OpenRouter cache profile when reasoning is disabled', () => {
       const params = load({
         baseURL: 'https://openrouter.ai/api/v1',
         customParams: { reasoningFormat: ReasoningParameterFormat.disabled },
       });
 
-      expect(params?.defaultParamsEndpoint).toBeUndefined();
+      expect(params?.defaultParamsEndpoint).toBe('openrouter');
       expect(params?.reasoningFormat).toBe(ReasoningParameterFormat.disabled);
     });
 
@@ -143,10 +146,13 @@ describe('loadCustomEndpointsConfig: host-implied reasoning support', () => {
       expect(load({ baseURL: 'user_provided' })).toBeUndefined();
     });
 
-    it('does not mark an endpoint that drops the effort', () => {
+    it('keeps the cache profile while dropping the effort', () => {
       expect(
         load({ baseURL: 'https://openrouter.ai/api/v1', dropParams: ['reasoning_effort'] }),
-      ).toBeUndefined();
+      ).toEqual({
+        defaultParamsEndpoint: 'openrouter',
+        reasoningFormat: ReasoningParameterFormat.disabled,
+      });
     });
 
     it('keeps an administrator-defined reasoning_effort authoritative', () => {
@@ -307,6 +313,13 @@ describe('usesOpenRouterCatalog', () => {
       false,
     );
   });
+
+  it.each([['reasoning'], ['reasoning_effort']])(
+    'does not read the catalogue when reasoning is dropped: %j',
+    (...dropParams) => {
+      expect(uses({ dropParams })).toBe(false);
+    },
+  );
 
   it('is false for a native provider endpoint', () => {
     expect(uses({ provider: EModelEndpoint.anthropic })).toBe(false);

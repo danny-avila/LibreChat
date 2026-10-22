@@ -39,7 +39,7 @@
     },
     "api": {
       "name": "@librechat/backend",
-      "version": "0.8.8",
+      "version": "0.8.9-rc1",
       "dependencies": {
         "@anthropic-ai/vertex-sdk": "^0.16.0",
         "@aws-sdk/client-bedrock-runtime": "^3.1013.0",
@@ -150,7 +150,7 @@
     },
     "client": {
       "name": "@librechat/frontend",
-      "version": "0.8.8",
+      "version": "0.8.9-rc1",
       "dependencies": {
         "@ariakit/react": "^0.4.29",
         "@ariakit/react-components": "^0.1.2",
@@ -292,7 +292,7 @@
     },
     "packages/api": {
       "name": "@librechat/api",
-      "version": "1.7.52",
+      "version": "1.7.53",
       "dependencies": {
         "@langchain/langgraph-checkpoint": "^1.1.2",
         "@langchain/langgraph-checkpoint-mongodb": "^1.4.0",
@@ -362,6 +362,7 @@
         "@smithy/node-http-handler": "^4.4.5",
         "ai-tokenizer": "^1.0.6",
         "axios": "^1.16.0",
+        "bcryptjs": "^2.4.3",
         "connect-redis": "^8.1.0",
         "dedent": "^1.5.3",
         "eventsource": "^3.0.2",
@@ -401,7 +402,7 @@
     },
     "packages/client": {
       "name": "@librechat/client",
-      "version": "0.4.82",
+      "version": "0.4.83",
       "devDependencies": {
         "@babel/core": "^7.28.5",
         "@babel/preset-env": "^7.29.5",
@@ -484,7 +485,7 @@
     },
     "packages/data-provider": {
       "name": "librechat-data-provider",
-      "version": "0.8.527",
+      "version": "0.8.528",
       "dependencies": {
         "axios": "^1.16.0",
         "dayjs": "^1.11.13",
@@ -515,7 +516,7 @@
     },
     "packages/data-schemas": {
       "name": "@librechat/data-schemas",
-      "version": "0.0.74",
+      "version": "0.0.75",
       "dependencies": {
         "mdast-util-directive": "^3.0.0",
         "mdast-util-from-markdown": "^2.0.1",

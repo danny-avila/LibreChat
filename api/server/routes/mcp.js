@@ -34,6 +34,7 @@ const {
   readMCPRecoveryGenerationAround,
   prepareMCPAuthorizationMutation,
   persistMCPAuthorizationTransaction,
+  resolveMCPOAuthTarget,
 } = require('@librechat/api');
 const {
   createMCPServerController,
@@ -106,6 +107,13 @@ const canAccessOAuthFlow = (flowId, userId) => {
   }
   return parsed.userId === userId || parsed.userId === 'system';
 };
+
+/** What `resolveMCPOAuthTarget` reads: the principal's resolved servers and its config. */
+const getOAuthTargetDeps = () => ({
+  getAppConfig,
+  getServerConfigs: (principal) => resolveAllMcpConfigs(principal.userId, principal),
+  registry: getMCPServersRegistry(),
+});
 
 const checkMCPUsePermissions = generateCheckAccess({
   permissionType: PermissionTypes.MCP_SERVERS,
@@ -194,6 +202,25 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
       return res.status(400).json({ error: 'Invalid flow state' });
     }
 
+    const target = await resolveMCPOAuthTarget(
+      {
+        serverName,
+        flow: flowState.metadata ?? {},
+        principal: { userId: user.id, role: user.role, idOnTheSource: user.idOnTheSource },
+      },
+      getOAuthTargetDeps(),
+    );
+    if (!target.ok) {
+      logger.warn('[MCP OAuth] Refusing initiation for a server the user cannot use', {
+        flowId,
+        serverName,
+        reason: target.error.code,
+      });
+      return target.error.code === 'server_not_found'
+        ? res.status(404).json({ error: 'MCP server not found' })
+        : res.status(400).json({ error: 'Invalid flow state' });
+    }
+
     if (typeof storedAuthorizationUrl === 'string' && storedAuthorizationUrl.length > 0) {
       logger.debug('[MCP OAuth] Reusing stored authorization URL', {
         serverName,
@@ -209,8 +236,6 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
       return res.status(400).json({ error: 'Invalid flow state' });
     }
 
-    const configServers = await resolveConfigServers(req);
-    const oauthHeaders = await getOAuthHeaders(serverName, userId, configServers);
     const registry = getMCPServersRegistry();
     const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
       userId,
@@ -224,7 +249,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
       serverName,
       serverUrl,
       userId,
-      oauthHeaders,
+      target.value.oauthHeaders,
       oauthConfig,
       allowedDomains,
       undefined,
@@ -238,12 +263,11 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
     if (typeof oldState === 'string') {
       await MCPOAuthHandler.deleteStateMapping(oldState, flowManager);
     }
-    const effectiveConfig = (await resolveAllMcpConfigs(userId))?.[serverName];
     const metadataWithUrl = {
       ...flowMetadata,
       authorizationUrl,
       tenantId: getTenantId(),
-      ...(effectiveConfig && { serverGeneration: getMCPServerGeneration(effectiveConfig) }),
+      serverGeneration: getMCPServerGeneration(target.value.config),
     };
     await flowManager.initFlow(oauthFlowId, 'mcp_oauth', metadataWithUrl);
     await MCPOAuthHandler.storeStateMapping(flowMetadata.state, oauthFlowId, flowManager);
@@ -430,30 +454,19 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     };
 
     await runWithTenant(async () => {
-      const oauthHeaders =
-        flowState.oauthHeaders ?? (await getOAuthHeaders(serverName, flowState.userId));
-      let recoveryPolicy;
-      const resolveActiveServer = async () => {
-        const [configs, appConfig] = await Promise.all([
-          resolveAllMcpConfigs(flowState.userId),
-          getAppConfig({ userId: flowState.userId, tenantId: getTenantId() }),
-        ]);
-        recoveryPolicy = appConfig?.mcpSettings?.catalogRecovery;
-        const activeConfig =
-          configs?.[serverName] ??
-          appConfig?.mcpConfig?.[serverName] ??
-          (await getMCPServersRegistry().getServerConfig(serverName, flowState.userId));
-        if (!activeConfig) {
-          return false;
-        }
-        if (flowState.serverGeneration) {
-          return getMCPServerGeneration(activeConfig) === flowState.serverGeneration;
-        }
-        return activeConfig.url === flowState.serverUrl;
-      };
-      if (!(await resolveActiveServer())) {
-        throw new Error(`MCP server ${serverName} was deleted during OAuth authorization`);
+      const resolveTarget = () =>
+        resolveMCPOAuthTarget(
+          { serverName, flow: flowState, principal: { userId: flowState.userId } },
+          getOAuthTargetDeps(),
+        );
+      const isServerActive = async () => (await resolveTarget()).ok;
+      const target = await resolveTarget();
+      if (!target.ok) {
+        throw new Error(
+          `MCP server ${serverName} is not available to this OAuth flow (${target.error.code})`,
+        );
       }
+      const { oauthHeaders, recoveryPolicy } = target.value;
       const rollbackStoredTokens = async (storedTokens) => {
         const storedMetadata = MCPOAuthHandler.buildStoredClientMetadata(
           flowState.metadata,
@@ -549,7 +562,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                   })) ?? candidateTokens,
               },
               {
-                ensureServerActive: resolveActiveServer,
+                ensureServerActive: isServerActive,
                 inactiveServerError: () =>
                   new Error(`MCP server ${serverName} was deleted during OAuth authorization`),
                 invalidateRecoveryGeneration: invalidateCachedTools,
@@ -938,6 +951,8 @@ router.post(
         serverName,
         user.id,
         configServers,
+        req.user.role,
+        { idOnTheSource: req.user.idOnTheSource },
       );
       if (!serverConfig) {
         return res.status(404).json({
@@ -1056,7 +1071,12 @@ router.get('/connection/status', requireJwtAuth, configMiddleware, async (req, r
 
     const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
       user.id,
-      { role: user.role, tenantId: getTenantId(), appConfig: req.config },
+      {
+        role: user.role,
+        idOnTheSource: user.idOnTheSource,
+        tenantId: getTenantId(),
+        appConfig: req.config,
+      },
     );
     const runtimeContext = createMCPStatusRuntimeContext(user, mcpConfig, Object.keys(mcpConfig));
     const connectionStatus = Object.fromEntries(
@@ -1128,7 +1148,12 @@ router.get('/connection/status/:serverName', requireJwtAuth, configMiddleware, a
 
     const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
       user.id,
-      { role: user.role, tenantId: getTenantId(), appConfig: req.config },
+      {
+        role: user.role,
+        idOnTheSource: user.idOnTheSource,
+        tenantId: getTenantId(),
+        appConfig: req.config,
+      },
     );
 
     if (!mcpConfig[serverName]) {
@@ -1195,6 +1220,8 @@ router.get('/:serverName/auth-values', requireJwtAuth, checkMCPUsePermissions, a
       serverName,
       user.id,
       configServers,
+      user.role,
+      { idOnTheSource: user.idOnTheSource },
     );
     if (!serverConfig) {
       return res.status(404).json({
@@ -1233,15 +1260,6 @@ router.get('/:serverName/auth-values', requireJwtAuth, checkMCPUsePermissions, a
     res.status(500).json({ error: 'Failed to check auth value flags' });
   }
 });
-
-async function getOAuthHeaders(serverName, userId, configServers) {
-  const serverConfig = await getMCPServersRegistry().getServerConfig(
-    serverName,
-    userId,
-    configServers,
-  );
-  return serverConfig?.oauth_headers ?? {};
-}
 
 /**
 MCP Server CRUD Routes (User-Managed MCP Servers)
