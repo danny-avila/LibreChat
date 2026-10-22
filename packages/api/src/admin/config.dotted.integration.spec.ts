@@ -137,7 +137,10 @@ describe('admin config writes keep dotted record keys (real sanitizer, handlers 
       { fieldPath: 'endpoints.bedrock.inferenceProfiles', value: profiles },
     ]).expect(200);
 
-    expect(findDottedKey((await readRaw(role))?.overrides)).toBeUndefined();
+    /** Stored raw where the engine accepts dotted names, as servers before the key encoding read them. */
+    expect(
+      getIn((await readRaw(role))?.overrides, ['endpoints', 'bedrock', 'inferenceProfiles']),
+    ).toEqual(profiles);
     const read = await getOverrides(role);
     expect(getIn(read, ['endpoints', 'bedrock', 'inferenceProfiles'])).toEqual(profiles);
     expect(getIn(merge(read), ['endpoints', 'bedrock', 'inferenceProfiles'])).toEqual(profiles);
@@ -155,7 +158,7 @@ describe('admin config writes keep dotted record keys (real sanitizer, handlers 
     }).expect(201);
 
     const path = ['endpoints', 'azureOpenAI', 'groups', '0', 'models'];
-    expect(findDottedKey((await readRaw(role))?.overrides)).toBeUndefined();
+    expect(getIn((await readRaw(role))?.overrides, path)).toEqual(models);
     expect(getIn(await getOverrides(role), path)).toEqual(models);
   });
 
@@ -199,7 +202,7 @@ describe('admin config writes keep dotted record keys (real sanitizer, handlers 
     expect(JSON.stringify(response.body)).not.toContain(API_KEY);
 
     const [stored] = getIn((await readRaw(role))?.overrides, ['endpoints', 'custom']) as Doc[];
-    expect(findDottedKey(stored)).toBeUndefined();
+    expect(stored.headers).toEqual({ 'x-portkey.config': 'cfg' });
     expect(stored.apiKey).toMatch(/^v3:/);
     expect(decryptV3(stored.apiKey as string)).toBe(API_KEY);
     const [read] = getIn(await getOverrides(role), ['endpoints', 'custom']) as Doc[];

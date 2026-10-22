@@ -123,7 +123,7 @@ afterAll(async () => {
 }, LIFECYCLE_TIMEOUT_MS);
 
 describe('admin config handlers on the portable store (real Config collection)', () => {
-  it('round-trips dotted record keys through PATCH and GET, encoded at rest', async () => {
+  it('round-trips dotted record keys through PATCH and GET, stored raw where the engine accepts them', async () => {
     const handlers = createHandlers();
     const params = nextParams();
     const profiles = {
@@ -143,9 +143,10 @@ describe('admin config handlers on the portable store (real Config collection)',
     });
     const stored = await raw().findOne({ principalId: params.principalId });
     expect(Object.keys(stored!.overrides.endpoints.bedrock.inferenceProfiles)).toEqual([
-      'us%2Eanthropic%2Eclaude-sonnet-4-5',
-      'eu%2Emeta%2Ellama3-70b',
+      'us.anthropic.claude-sonnet-4-5',
+      'eu.meta.llama3-70b',
     ]);
+    expect(stored!.keyEncoding).toBeUndefined();
 
     const [applied] = await methods.getApplicableConfigs([
       { principalType: 'role', principalId: params.principalId },
@@ -397,7 +398,7 @@ describe('admin config handlers on the portable store (real Config collection)',
     expect(await raw().countDocuments({ principalId: params.principalId })).toBe(0);
   });
 
-  it('reads a legacy document verbatim and re-encodes it on the next write', async () => {
+  it('reads a legacy document verbatim and keeps its keys raw on the next write', async () => {
     const handlers = createHandlers();
     const params = nextParams();
     await raw().insertOne({
@@ -429,8 +430,8 @@ describe('admin config handlers on the portable store (real Config collection)',
     });
 
     const stored = await raw().findOne({ principalId: params.principalId });
-    expect(stored!.keyEncoding).toBe(1);
-    expect(stored!.overrides.fileConfig).toEqual({ 'a%2Eb': 1 });
+    expect(stored!.keyEncoding).toBeUndefined();
+    expect(stored!.overrides.fileConfig).toEqual({ 'a.b': 1 });
     expect(configOf(await call(handlers.getConfig, { params })).overrides).toEqual({
       endpoints: { azureOpenAI: { titleModel: 'gpt-4.1' } },
       fileConfig: { 'a.b': 1 },
@@ -464,8 +465,8 @@ describe('segment addressing on the field routes', () => {
     });
     const stored = await raw().findOne({ principalId: params.principalId });
     expect(Object.keys(stored!.overrides.endpoints.bedrock.inferenceProfiles)).toEqual([
-      'eu%2Emeta%2Ellama',
-      'us%2Eanthropic%2Eclaude-sonnet-4-5',
+      'eu.meta.llama',
+      'us.anthropic.claude-sonnet-4-5',
     ]);
 
     const removed = await call(handlers.deleteConfigField, {

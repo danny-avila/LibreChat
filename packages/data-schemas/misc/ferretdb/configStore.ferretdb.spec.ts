@@ -6,9 +6,10 @@ import { createConfigModel } from '~/models/config';
 
 /**
  * The portable config store contract against a live engine: FerretDB (PostgreSQL + DocumentDB
- * extension), or any MongoDB-compatible server for parity. The binding encodes every override
- * key, so the engine never sees a dotted or `$`-prefixed field name; this run proves that holds
- * on an engine stricter than mongod.
+ * extension), or any MongoDB-compatible server for parity. The binding stores override keys raw
+ * where the engine accepts them and encoded where it refuses a dotted or `$`-prefixed field name,
+ * so no engine ever holds a name it cannot store; this run proves the round trip on an engine
+ * stricter than mongod.
  *
  * Run against FerretDB (see docker-compose.ferretdb.yml):
  *   FERRETDB_URI="mongodb://ferretdb:ferretdb@127.0.0.1:27020/config_store_test" \
@@ -18,8 +19,8 @@ import { createConfigModel } from '~/models/config';
  *   FERRETDB_URI="mongodb://127.0.0.1:27017/config_store_test" \
  *     npx jest --config misc/ferretdb/jest.ferretdb.config.mjs configStore.ferretdb
  *
- * AWS DocumentDB and Azure Cosmos DB (MongoDB API) restrict field names the same way and are
- * covered by the same encoding; they cannot be run locally.
+ * AWS DocumentDB and Azure Cosmos DB (MongoDB API) may restrict field names the same way and are
+ * covered by the same fallback; they cannot be run locally.
  *
  * Destructive: the run deletes every document in the database's `configs` collection before each
  * case and drops the collection at teardown. Point `FERRETDB_URI` at a throwaway database, never

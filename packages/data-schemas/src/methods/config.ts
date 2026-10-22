@@ -11,6 +11,7 @@ import type {
   ConfigWriteOptions,
   ConfigLifecycleOptions,
 } from '~/app/store';
+import type { StoredKeyForm } from './encoding';
 import type { IConfig } from '~/types';
 import {
   ABSENT_CONFIG_REVISION,
@@ -19,7 +20,14 @@ import {
   getConfigRevision,
   parseConfigRevision,
 } from '~/app/store';
-import { CONFIG_KEY_ENCODING_VERSION, decodeStoredKeys, encodeStoredKeys } from './encoding';
+import {
+  toStoredKeys,
+  readStoredKeys,
+  getStoredKeyForms,
+  CONFIG_KEY_ENCODING_VERSION,
+} from './encoding';
+import { isFieldNameRejection } from '~/utils/fields';
+import logger from '~/config/winston';
 
 /** A config document as MongoDB returns it, before the binding decodes it. */
 interface StoredConfig {
@@ -49,10 +57,7 @@ function toRecord(document: StoredConfig): ConfigRecord {
     principalId: document.principalId.toString(),
     principalModel: document.principalModel,
     priority: document.priority,
-    overrides:
-      document.keyEncoding === CONFIG_KEY_ENCODING_VERSION
-        ? decodeStoredKeys(overrides)
-        : overrides,
+    overrides: readStoredKeys(overrides, document.keyEncoding === CONFIG_KEY_ENCODING_VERSION),
     tombstones: Array.isArray(document.tombstones) ? document.tombstones : [],
     isActive: document.isActive === true,
     configVersion: document.configVersion ?? 0,
@@ -105,14 +110,48 @@ function revisionFilter(
   };
 }
 
+/** Override keys in the form one write stores them, and whether that form carries the marker. */
+interface StoredKeys {
+  overrides: Partial<TCustomConfig>;
+  encoded: boolean;
+}
+
 /**
- * The Mongoose engine for the portable config store. It encodes override keys on every write
- * and decodes them on read (see `./encoding`), so any write also re-encodes a legacy document.
- * Queries run through the `Config` model, so the tenant-isolation plugin scopes every read and
- * write.
+ * The Mongoose engine for the portable config store. Override keys are stored raw where the
+ * engine accepts them and encoded where it refuses them (see `./encoding`), and every read
+ * decodes them. Queries run through the `Config` model, so the tenant-isolation plugin scopes
+ * every read and write.
  */
 export function createConfigStore(mongoose: typeof import('mongoose')): ConfigStore {
   const model = () => mongoose.models.Config as Model<IConfig>;
+  /** Set once the engine refuses a raw key name, so later writes encode without asking again. */
+  let refusesRawKeys = false;
+
+  /**
+   * Runs `write` with the overrides raw, or encoded when a raw read could not return them
+   * unchanged. When the engine refuses a raw key name, the refused write changed nothing, so it
+   * runs once more encoded, under the same precondition.
+   */
+  async function storeKeys<T>(
+    overrides: Partial<TCustomConfig>,
+    write: (keys: StoredKeys) => Promise<T>,
+  ): Promise<T> {
+    const [form, fallback] = getStoredKeyForms(overrides, refusesRawKeys);
+    const run = (next: StoredKeyForm) =>
+      write({ overrides: toStoredKeys(overrides, next), encoded: next === 'encoded' });
+    try {
+      return await run(form);
+    } catch (error) {
+      if (!fallback || !isFieldNameRejection(error)) {
+        throw error;
+      }
+      refusesRawKeys = true;
+      logger.warn(
+        '[configStore] The database refused a raw key name in config overrides; storing override keys encoded from now on',
+      );
+      return run(fallback);
+    }
+  }
 
   async function read(principal: ConfigPrincipal): Promise<ConfigRecord | null> {
     const document = await model().findOne(principalFilter(principal)).lean<StoredConfig>();
@@ -184,25 +223,35 @@ export function createConfigStore(mongoose: typeof import('mongoose')): ConfigSt
     draft: ConfigDraft,
     expected: ConfigRevision,
   ): Promise<ConfigRecord> {
-    const fields = {
+    const fields = (keys: StoredKeys): Record<string, unknown> => ({
       principalModel: draft.principalModel,
       priority: draft.priority,
-      overrides: encodeStoredKeys(draft.overrides ?? {}),
+      overrides: keys.overrides,
       tombstones: [...draft.tombstones],
       isActive: draft.isActive,
-      keyEncoding: CONFIG_KEY_ENCODING_VERSION,
-    };
+      ...(keys.encoded ? { keyEncoding: CONFIG_KEY_ENCODING_VERSION } : {}),
+    });
     if (expected === ABSENT_CONFIG_REVISION) {
-      return create(principal, fields);
+      return storeKeys(draft.overrides ?? {}, (keys) => create(principal, fields(keys)));
     }
     const filter = revisionFilter(principal, expected);
     if (!filter) {
       throw new ConfigRevisionConflictError();
     }
     const configVersion = (parseConfigRevision(expected)?.configVersion ?? 0) + 1;
-    const updated = await model()
-      .findOneAndUpdate(filter, { $set: { ...fields, configVersion } }, { new: true })
-      .lean<StoredConfig>();
+    const updated = await storeKeys(draft.overrides ?? {}, (keys) =>
+      model()
+        .findOneAndUpdate(
+          filter,
+          {
+            $set: { ...fields(keys), configVersion },
+            /** A raw write clears a marker an earlier encoded write left. */
+            ...(keys.encoded ? {} : { $unset: { keyEncoding: '' } }),
+          },
+          { new: true },
+        )
+        .lean<StoredConfig>(),
+    );
     if (!updated) {
       throw new ConfigRevisionConflictError();
     }
@@ -234,22 +283,24 @@ export function createConfigStore(mongoose: typeof import('mongoose')): ConfigSt
     return toRecord(deleted);
   }
 
-  /** `snapshot` is a decoded record, as `read` and `remove` return it; it is encoded once here. */
+  /** `snapshot` is a decoded record, as `read` and `remove` return it; it is stored like a write. */
   async function restore(snapshot: ConfigRecord): Promise<boolean> {
     const { _id, overrides, ...rest } = snapshot;
     const principalId = snapshot.principalId.toString();
-    const result = await model().updateOne(
-      { principalType: snapshot.principalType, principalId },
-      {
-        $setOnInsert: {
-          ...rest,
-          principalId,
-          _id: toObjectId(_id),
-          overrides: encodeStoredKeys(overrides ?? {}),
-          keyEncoding: CONFIG_KEY_ENCODING_VERSION,
+    const result = await storeKeys(overrides ?? {}, (keys) =>
+      model().updateOne(
+        { principalType: snapshot.principalType, principalId },
+        {
+          $setOnInsert: {
+            ...rest,
+            principalId,
+            _id: toObjectId(_id),
+            overrides: keys.overrides,
+            ...(keys.encoded ? { keyEncoding: CONFIG_KEY_ENCODING_VERSION } : {}),
+          },
         },
-      },
-      { upsert: true, timestamps: false },
+        { upsert: true, timestamps: false },
+      ),
     );
     return result.upsertedCount > 0;
   }
