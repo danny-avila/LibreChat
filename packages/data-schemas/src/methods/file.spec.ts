@@ -1785,9 +1785,12 @@ describe('File Methods', () => {
           FileStorageConflictError,
         );
         expect(await fileMethods.commitCodeFile(output, 200)).toBe(false);
-        await expect(fileMethods.createFile(output, true)).rejects.toBeInstanceOf(
-          FileStorageConflictError,
-        );
+        await expect(
+          fileMethods.createFile(
+            { ...output, user: new mongoose.Types.ObjectId(input.user) },
+            true,
+          ),
+        ).rejects.toBeInstanceOf(FileStorageConflictError);
         expect(await File.findOne({ file_id: input.file_id }).lean()).toEqual(before);
         expect(await File.countDocuments()).toBe(1);
       },
