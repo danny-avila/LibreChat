@@ -441,12 +441,13 @@ const finalizePreview = async ({
   category,
   file_id,
   previewRevision,
+  extractionService,
 }) => {
   let text = null;
   let previewError;
   try {
     text = await withTimeout(
-      extractCodeArtifactText(buffer, leafName, mimeType, category),
+      extractCodeArtifactText(buffer, leafName, mimeType, category, { extractionService }),
       PREVIEW_FINALIZE_TIMEOUT_MS,
       `Preview extraction exceeded ${PREVIEW_FINALIZE_TIMEOUT_MS}ms`,
     );

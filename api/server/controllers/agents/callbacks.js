@@ -1166,6 +1166,7 @@ function createToolEndCallback({
           bridgeWorkerId: metadata.codeExecutionContext?.bridgeWorkerId,
           preparedBuffer,
           downloadFallback,
+          signal,
         });
         const fileMetadata = addStatefulWorkspaceChange(
           result?.file ?? null,
@@ -1541,6 +1542,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises, s
           bridgeWorkerId: metadata.codeExecutionContext?.bridgeWorkerId,
           preparedBuffer,
           downloadFallback,
+          signal,
         });
         const fileMetadata = addStatefulWorkspaceChange(
           result?.file ?? null,

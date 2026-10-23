@@ -117,7 +117,10 @@ async function main() {
   console.log('Real processor rejection remains a safe client failure');
   await cancellationProbe();
 }
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+module.exports = { cancellablePdf };
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

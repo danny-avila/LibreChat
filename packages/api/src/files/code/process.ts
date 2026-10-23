@@ -7,7 +7,12 @@ import {
   inferMimeType,
   mergeCodeEnvRef,
 } from 'librechat-data-provider';
-import type { CodeEnvRef, FileSources, getEndpointFileConfig } from 'librechat-data-provider';
+import type {
+  ExtractionServiceConfig,
+  CodeEnvRef,
+  FileSources,
+  getEndpointFileConfig,
+} from 'librechat-data-provider';
 import type { CodeFileCommitData } from '@librechat/data-schemas';
 import type {
   CodeOutputResult,
@@ -38,11 +43,12 @@ export type CodeOutputProcessorInput = Omit<
   freshClaimAfter?: number;
   downloadFallback?: boolean;
   publication?: CodeOutputPublication;
+  signal?: AbortSignal;
 };
 
 type DownloadInput = Pick<
   CodeOutputProcessorInput,
-  'req' | 'id' | 'session_id' | 'codeApiBaseUrl' | 'executionProfile' | 'bridgeWorkerId'
+  'req' | 'id' | 'session_id' | 'codeApiBaseUrl' | 'executionProfile' | 'bridgeWorkerId' | 'signal'
 > & { maxBytes: number };
 
 type DownloadFallbackInput = Pick<
@@ -100,6 +106,7 @@ export interface CodeOutputProcessorDeps {
     category: CodeArtifactCategory;
     file_id: string;
     previewRevision?: string | null;
+    extractionService?: ExtractionServiceConfig;
   }) => Promise<CodeOutputStoredFile | null>;
   hasOfficeHtmlPath: typeof hasOfficeHtmlPath;
   sanitizeArtifactPath: typeof sanitizeArtifactPath;
@@ -133,6 +140,7 @@ export async function processCodeOutput(
     preparedBuffer,
     downloadFallback,
     publication,
+    signal,
   }: CodeOutputProcessorInput,
   {
     getCodeOutputFileSettings,
@@ -156,6 +164,10 @@ export async function processCodeOutput(
     logger,
   }: CodeOutputProcessorDeps,
 ): Promise<CodeOutputResult | null> {
+  const ownerSignal =
+    signal && publication?.signal && signal !== publication.signal
+      ? AbortSignal.any([signal, publication.signal])
+      : (signal ?? publication?.signal);
   const appConfig = req.config;
   const currentDate = new Date();
   const fileExt = path.extname(name).toLowerCase();
@@ -164,6 +176,7 @@ export async function processCodeOutput(
   const { endpointFileConfig, fileSizeLimit } = getCodeOutputFileSettings(req);
 
   try {
+    ownerSignal?.throwIfAborted();
     const formattedDate = currentDate.toISOString();
     if (downloadFallback === true) {
       return {
@@ -192,7 +205,9 @@ export async function processCodeOutput(
         codeApiBaseUrl,
         executionProfile,
         bridgeWorkerId,
+        signal: ownerSignal,
       }));
+    ownerSignal?.throwIfAborted();
 
     // Enforce file size limit
     if (buffer.length > fileSizeLimit) {
@@ -273,6 +288,7 @@ export async function processCodeOutput(
       tenantId: req.user.tenantId,
       sourceDispatchedAt,
     });
+    ownerSignal?.throwIfAborted();
     const file_id = claimed.file_id;
     const isUpdate = file_id !== newFileId;
 
@@ -427,6 +443,36 @@ export async function processCodeOutput(
       const NAME_MAX = 255;
       const flatName = flattenArtifactPath(safeName, NAME_MAX - file_id.length - 2);
       const fileName = `${file_id}__${flatName}`;
+      /* `classifyCodeArtifact` and `extractCodeArtifactText` make
+       * extension/bare-name decisions on the input string. With the
+       * path-preserving sanitizer they can now receive a nested path like
+       * `reports.v1/Makefile`, which the classifier's `extensionOf` reads
+       * as `v1/Makefile` (the slice after the dot in the directory name)
+       * and the bare-name branch rejects because it sees a `.` anywhere in
+       * the string. Result: extensionless artifacts under dotted folders
+       * (Makefile, Dockerfile, etc.) get misclassified as `other` and
+       * skip text extraction. Pass the basename so classification matches
+       * what it would have gotten with the old flat-name flow. */
+      const leafName = path.basename(safeName);
+      const category = classifyCodeArtifact(leafName, mimeType);
+
+      /* Office-bucket files (DOCX/XLSX/XLS/ODS/CSV/PPTX) route through
+       * `bufferToOfficeHtml` which is CPU-heavy. Persist the record now
+       * with `status: 'pending'` and `text: null` so the agent's response
+       * isn't blocked, then return a `finalize` thunk the caller can run
+       * in the background. Non-office files have cheap or no extraction
+       * — run it inline so the caller gets a fully-resolved record
+       * without juggling a finalize step. */
+      const expectsPreview = hasOfficeHtmlPath(leafName, mimeType);
+
+      const text = expectsPreview
+        ? null
+        : await extractCodeArtifactText(buffer, leafName, mimeType, category, {
+            extractionService: appConfig.fileConfig?.extractionService,
+            signal: ownerSignal,
+          });
+      ownerSignal?.throwIfAborted();
+
       onUploadStart();
       const filepath = await saveBuffer({
         userId: req.user.id,
@@ -451,28 +497,6 @@ export async function processCodeOutput(
         conversationId,
         source: appConfig.fileStrategy,
       });
-
-      /* `classifyCodeArtifact` and `extractCodeArtifactText` make
-       * extension/bare-name decisions on the input string. With the
-       * path-preserving sanitizer they can now receive a nested path like
-       * `reports.v1/Makefile`, which the classifier's `extensionOf` reads
-       * as `v1/Makefile` (the slice after the dot in the directory name)
-       * and the bare-name branch rejects because it sees a `.` anywhere in
-       * the string. Result: extensionless artifacts under dotted folders
-       * (Makefile, Dockerfile, etc.) get misclassified as `other` and
-       * skip text extraction. Pass the basename so classification matches
-       * what it would have gotten with the old flat-name flow. */
-      const leafName = path.basename(safeName);
-      const category = classifyCodeArtifact(leafName, mimeType);
-
-      /* Office-bucket files (DOCX/XLSX/XLS/ODS/CSV/PPTX) route through
-       * `bufferToOfficeHtml` which is CPU-heavy. Persist the record now
-       * with `status: 'pending'` and `text: null` so the agent's response
-       * isn't blocked, then return a `finalize` thunk the caller can run
-       * in the background. Non-office files have cheap or no extraction
-       * — run it inline so the caller gets a fully-resolved record
-       * without juggling a finalize step. */
-      const expectsPreview = hasOfficeHtmlPath(leafName, mimeType);
 
       const baseFile: CodeOutputStoredFile = {
         file_id,
@@ -530,16 +554,14 @@ export async function processCodeOutput(
               category,
               file_id: file.file_id,
               previewRevision: file.previewRevision,
+              extractionService: appConfig.fileConfig?.extractionService,
             }),
           ),
           previewRevision: file.previewRevision,
         };
       }
 
-      /* Non-office path: extraction is cheap (utf8 decode, parseDocument
-       * for PDF/ODT, or null for binaries). Run inline and return a
-       * fully-resolved record — no `finalize` needed. */
-      const text = await extractCodeArtifactText(buffer, leafName, mimeType, category);
+      /* Non-office cache text was bounded before byte storage. */
       /* `textFormat` accompanies `text` so the client can gate
        * office-HTML-bucket routing on a trusted signal — clients MUST
        * NOT inject `text` into the iframe as HTML unless `textFormat ===
@@ -570,8 +592,12 @@ export async function processCodeOutput(
       }
       return { file: Object.assign(file, { messageId, toolCallId, agentId }) };
     };
-    if (publication) return await writeOutput(() => undefined);
-    return await withFileProvisioning({
+    if (publication) {
+      const value = await writeOutput(() => undefined);
+      ownerSignal?.throwIfAborted();
+      return value;
+    }
+    const value = await withFileProvisioning({
       file: { file_id, user: req.user.id, tenantId: req.user.tenantId },
       userId: req.user.id,
       storage: fileStorage,
@@ -591,7 +617,10 @@ export async function processCodeOutput(
         };
       },
     });
+    ownerSignal?.throwIfAborted();
+    return value;
   } catch (error) {
+    ownerSignal?.throwIfAborted();
     if (freshClaimAfter != null && error instanceof FileProvisionPersistenceError) return null;
     if (
       error != null &&

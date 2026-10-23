@@ -346,6 +346,287 @@ describe('Code Process', () => {
     determineFileType.mockResolvedValue({ mime: 'text/plain' });
   });
 
+  describe('isolated PDF cache ownership', () => {
+    it.each(['document', 'other'])(
+      'caches exact PDF text through only the configured socket with inspection disabled (category=%s)',
+      async (category) => {
+        const {
+          fixture,
+          reply,
+          capabilities,
+          result,
+        } = require('../../../../../packages/api/src/files/extraction/fixture.helper');
+        const bytes = Buffer.from('PDF cache input');
+        let posts = 0;
+        const processor = await fixture((req, res) => {
+          req.resume();
+          if (req.method === 'GET') return reply(res, capabilities);
+          posts++;
+          reply(res, result(bytes));
+        });
+        const req = {
+          ...mockReq,
+          config: {
+            ...mockReq.config,
+            fileConfig: {
+              extractionService: { socketPath: processor.socketPath, deadlineMs: 500 },
+            },
+          },
+        };
+        mockExtractCodeArtifactText.mockImplementationOnce(
+          jest.requireActual('@librechat/api').extractCodeArtifactText,
+        );
+        mockClassifyCodeArtifact.mockReturnValueOnce(category);
+        determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
+        try {
+          const output = await processCodeOutput({
+            ...baseParams,
+            req,
+            name: 'cache.pdf',
+            preparedBuffer: bytes,
+          });
+          expect(output.file).toMatchObject({ text: '你好!', textFormat: 'text' });
+          expect(posts).toBe(1);
+          expect(mockExtractCodeArtifactInspectionText).not.toHaveBeenCalled();
+          expect(mockCommitCodeFile).toHaveBeenCalledWith(
+            expect.objectContaining({ text: '你好!' }),
+            undefined,
+          );
+        } finally {
+          await processor.close();
+        }
+      },
+    );
+  });
+
+  describe('PDF cache transport lifetime', () => {
+    it.each(['foreground', 'publication', 'combined'])(
+      'drains a cancelled %s cache operation before any byte or cache commit',
+      async (mode) => {
+        const {
+          fixture,
+          reply,
+          capabilities,
+        } = require('../../../../../packages/api/src/files/extraction/fixture.helper');
+        let ready;
+        let stopped;
+        const admitted = new Promise((resolve) => {
+          ready = resolve;
+        });
+        const closed = new Promise((resolve) => {
+          stopped = resolve;
+        });
+        const processor = await fixture((req, res) => {
+          req.resume();
+          if (req.method === 'GET') return reply(res, capabilities);
+          res.once('close', stopped);
+          ready();
+        });
+        const foreground = new AbortController();
+        const publicationOwner = new AbortController();
+        const saveBuffer = jest.fn(async () => '/uploads/attempt.pdf');
+        const publish = jest.fn();
+        const req = {
+          ...mockReq,
+          aborted: mode !== 'foreground',
+          res: { destroyed: true, writableFinished: false },
+          config: {
+            ...mockReq.config,
+            fileConfig: {
+              extractionService: { socketPath: processor.socketPath, deadlineMs: 5000 },
+            },
+          },
+        };
+        getStrategyFunctions.mockReturnValue({ saveBuffer });
+        determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
+        mockExtractCodeArtifactText.mockImplementationOnce(
+          jest.requireActual('@librechat/api').extractCodeArtifactText,
+        );
+        const publication =
+          mode === 'foreground'
+            ? undefined
+            : {
+                signal: publicationOwner.signal,
+                scope: {
+                  userId: 'user-123',
+                  conversationId: baseParams.conversationId,
+                  runId: 'run',
+                  executionId: 'execution',
+                  agentId: 'agent',
+                  sourceFileId: 'source',
+                },
+                provenance: {},
+                publish,
+                find: jest.fn(async () => null),
+                discard: jest.fn(async () => undefined),
+              };
+        try {
+          const pending = processCodeOutput({
+            ...baseParams,
+            req,
+            name: 'cancel.pdf',
+            preparedBuffer: Buffer.from('PDF cache input'),
+            signal: mode === 'publication' ? undefined : foreground.signal,
+            publication,
+          });
+          const outcome = pending.catch((error) => error);
+          await admitted;
+          (mode === 'foreground' ? foreground : publicationOwner).abort();
+          let timeout;
+          try {
+            await expect(
+              Promise.race([
+                outcome,
+                new Promise((_resolve, reject) => {
+                  timeout = setTimeout(
+                    () => reject(new Error('Owner cancellation did not drain cache transport')),
+                    1000,
+                  );
+                }),
+              ]),
+            ).resolves.toMatchObject({ name: 'AbortError' });
+          } finally {
+            clearTimeout(timeout);
+          }
+          await closed;
+          expect(saveBuffer).not.toHaveBeenCalled();
+          expect(mockCommitCodeFile).not.toHaveBeenCalled();
+          expect(mockCommitFileProvision).not.toHaveBeenCalled();
+          expect(publish).not.toHaveBeenCalled();
+          if (mode === 'foreground') expect(mockReleaseFileProvision).toHaveBeenCalledTimes(1);
+        } finally {
+          await processor.close();
+        }
+      },
+    );
+
+    it('uses configured limits and keeps ordinary non-cancellation cache failures safe', async () => {
+      const {
+        fixture,
+        reply,
+        capabilities,
+        result,
+      } = require('../../../../../packages/api/src/files/extraction/fixture.helper');
+      const bytes = Buffer.from('PDF input');
+      const processor = await fixture((req, res) => {
+        req.resume();
+        reply(res, req.method === 'GET' ? capabilities : result(bytes));
+      });
+      const req = {
+        ...mockReq,
+        config: {
+          ...mockReq.config,
+          fileConfig: {
+            extractionService: { socketPath: processor.socketPath, maxTextBytes: 1 },
+          },
+        },
+      };
+      determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
+      mockExtractCodeArtifactText.mockImplementationOnce(
+        jest.requireActual('@librechat/api').extractCodeArtifactText,
+      );
+      try {
+        const output = await processCodeOutput({
+          ...baseParams,
+          req,
+          name: 'limit.pdf',
+          preparedBuffer: bytes,
+        });
+        expect(output.file.text).toBeNull();
+        expect(mockCommitCodeFile).toHaveBeenCalledWith(
+          expect.objectContaining({ text: null }),
+          undefined,
+        );
+      } finally {
+        await processor.close();
+      }
+    });
+
+    it('applies the configured cache deadline and drains the processor before a safe null cache result', async () => {
+      const {
+        fixture,
+        reply,
+        capabilities,
+      } = require('../../../../../packages/api/src/files/extraction/fixture.helper');
+      let stopped;
+      const closed = new Promise((resolve) => {
+        stopped = resolve;
+      });
+      const processor = await fixture((req, res) => {
+        req.resume();
+        if (req.method === 'GET') return reply(res, capabilities);
+        res.once('close', stopped);
+      });
+      const guard = new AbortController();
+      const timeout = setTimeout(() => guard.abort(), 1500);
+      const req = {
+        ...mockReq,
+        config: {
+          ...mockReq.config,
+          fileConfig: { extractionService: { socketPath: processor.socketPath, deadlineMs: 30 } },
+        },
+      };
+      determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
+      mockExtractCodeArtifactText.mockImplementationOnce(
+        jest.requireActual('@librechat/api').extractCodeArtifactText,
+      );
+      try {
+        const output = await processCodeOutput({
+          ...baseParams,
+          req,
+          name: 'deadline.pdf',
+          preparedBuffer: Buffer.from('PDF input'),
+          signal: guard.signal,
+        });
+        await closed;
+        expect(output.file.text).toBeNull();
+        expect(guard.signal.aborted).toBe(false);
+      } finally {
+        clearTimeout(timeout);
+        await processor.close();
+      }
+    });
+
+    it('keeps detached harvest cache independent of the old HTTP connection', async () => {
+      const {
+        fixture,
+        reply,
+        capabilities,
+        result,
+      } = require('../../../../../packages/api/src/files/extraction/fixture.helper');
+      const bytes = Buffer.from('PDF input');
+      const processor = await fixture((req, res) => {
+        req.resume();
+        reply(res, req.method === 'GET' ? capabilities : result(bytes));
+      });
+      const req = {
+        ...mockReq,
+        aborted: true,
+        res: { destroyed: true, writableFinished: false },
+        config: {
+          ...mockReq.config,
+          fileConfig: { extractionService: { socketPath: processor.socketPath } },
+        },
+      };
+      determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
+      mockExtractCodeArtifactText.mockImplementationOnce(
+        jest.requireActual('@librechat/api').extractCodeArtifactText,
+      );
+      try {
+        const output = await processCodeOutput({
+          ...baseParams,
+          req,
+          name: 'detached.pdf',
+          preparedBuffer: bytes,
+          freshClaimAfter: Date.now(),
+        });
+        expect(output.file.text).toBe('你好!');
+      } finally {
+        await processor.close();
+      }
+    });
+  });
+
   describe('code output inspection preflight', () => {
     it('derives file content from downloaded bytes without persisting anything', async () => {
       const buffer = Buffer.from('safe raw content');
@@ -661,12 +942,12 @@ describe('Code Process', () => {
       );
     });
 
-    it('cleans a stored publication attempt when classification fails before metadata commit', async () => {
+    it('does not store a publication attempt when classification fails before cache extraction', async () => {
       const { createRunArtifactPublisher } = jest.requireActual('@librechat/api');
       const discard = jest.fn(async () => undefined);
       const publishRunArtifactFile = jest.fn();
       mockClassifyCodeArtifact.mockImplementationOnce(() => {
-        throw new Error('Classification failed after storage');
+        throw new Error('Classification failed before storage');
       });
       const publish = createRunArtifactPublisher({
         claimRunArtifactFile: async () => ({ file_id: 'published-id' }),
@@ -685,14 +966,8 @@ describe('Code Process', () => {
         }),
       ).rejects.toThrow('durable storage');
       expect(publishRunArtifactFile).not.toHaveBeenCalled();
-      expect(discard).toHaveBeenCalledWith(
-        expect.objectContaining({
-          file_id: 'mock-uuid-1234',
-          filepath: '/uploads/mock-file-path.txt',
-          metadata: undefined,
-        }),
-      );
-      expect(discard).toHaveBeenCalledTimes(1);
+      expect(discard).not.toHaveBeenCalled();
+      expect(getStrategyFunctions.mock.results.at(-1).value.saveBuffer).not.toHaveBeenCalled();
     });
 
     it('cleans a generated image cancelled after conversion without publishing it', async () => {
@@ -1202,6 +1477,7 @@ describe('Code Process', () => {
           'Makefile',
           expect.any(String),
           expect.any(String),
+          expect.any(Object),
         );
       });
 
@@ -1243,6 +1519,7 @@ describe('Code Process', () => {
           'note.txt',
           'text/plain',
           'utf8-text',
+          expect.any(Object),
         );
         expect(result.text).toBe('hello world\n');
         expect(mockCommitCodeFile).toHaveBeenCalledWith(

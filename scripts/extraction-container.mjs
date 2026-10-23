@@ -20,6 +20,7 @@ const composeFile = join(scratch, 'compose.json');
 const compose = (...args) => docker('compose', '-p', project, '-f', composeFile, ...args);
 let imageBuilt = false;
 let callerProcess;
+let callerName = caller;
 try {
   const deployment = yaml.load(readFileSync(join(root, 'docker-compose.yml'), 'utf8'));
   assert.deepEqual(deployment.services.api.group_add, ['10001']);
@@ -37,18 +38,36 @@ try {
     }),
   );
   process.env.EXTRACTION_IMAGE = image;
+  const loggerFixture = join(scratch, 'logger.cjs');
+  writeFileSync(
+    loggerFixture,
+    'exports.logger = { debug() {}, warn() {}, error() {}, info() {} };',
+  );
   await build({
-    entry: [
-      join(root, 'packages/api/src/files/extraction/client.ts'),
-      join(root, 'packages/api/src/files/extraction/upload.ts'),
-    ],
+    entry: {
+      client: join(root, 'packages/api/src/files/extraction/client.ts'),
+      upload: join(root, 'packages/api/src/files/extraction/upload.ts'),
+      process: join(root, 'packages/api/src/files/code/process.ts'),
+      extract: join(root, 'packages/api/src/files/code/extract.ts'),
+      operations: join(root, 'packages/api/src/files/operations.ts'),
+      classify: join(root, 'packages/api/src/files/code/classify.ts'),
+    },
     config: false,
     outDir: scratch,
     clean: false,
     format: 'cjs',
     platform: 'node',
     dts: false,
-    deps: { alwaysBundle: ['librechat-data-provider', 'zod'], onlyBundle: false },
+    deps: { alwaysBundle: [/.*/], onlyBundle: false },
+    // Only logging is replaced; the cache producer, processor, client and transport are real.
+    plugins: [
+      {
+        name: 'qualification-logger',
+        resolveId(source) {
+          return source === '@librechat/data-schemas' ? loggerFixture : null;
+        },
+      },
+    ],
   });
   imageBuilt = true;
   compose('up', '-d', '--wait', '--wait-timeout', '30', 'extraction');
@@ -114,34 +133,35 @@ try {
     '/client.cjs',
   ];
 
-  let ready;
-  const cancellationReady = new Promise((resolve) => {
-    ready = resolve;
-  });
-  callerProcess = spawn('docker', callerArgs, { cwd: root, stdio: ['pipe', 'pipe', 'inherit'] });
-  let progress = '';
-  callerProcess.stdout.on('data', (bytes) => {
-    process.stdout.write(bytes);
-    progress += bytes;
-    if (progress.includes('CANCEL_PROBE_READY')) ready();
-  });
-  const callerExit = new Promise((resolve, reject) => {
-    callerProcess.once('error', reject);
-    callerProcess.once('exit', resolve);
-  });
-  await Promise.race([
-    cancellationReady,
-    callerExit.then((code) => {
-      throw new Error(`Caller exited before cancellation probe (${code})`);
-    }),
-  ]);
-  // Freeze a real parser worker so cancellation, not a naturally fast parse, must retire it.
-  const worker = output(
-    'exec',
-    id,
-    'node',
-    '-e',
-    `
+  async function qualifyCancellation(args, marker) {
+    let ready;
+    const cancellationReady = new Promise((resolve) => {
+      ready = resolve;
+    });
+    callerProcess = spawn('docker', args, { cwd: root, stdio: ['pipe', 'pipe', 'inherit'] });
+    let progress = '';
+    callerProcess.stdout.on('data', (bytes) => {
+      process.stdout.write(bytes);
+      progress += bytes;
+      if (progress.includes(marker)) ready();
+    });
+    const callerExit = new Promise((resolve, reject) => {
+      callerProcess.once('error', reject);
+      callerProcess.once('exit', resolve);
+    });
+    await Promise.race([
+      cancellationReady,
+      callerExit.then((code) => {
+        throw new Error(`Caller exited before cancellation probe (${code})`);
+      }),
+    ]);
+    // Freeze a real parser worker so cancellation, not a naturally fast parse, must retire it.
+    const worker = output(
+      'exec',
+      id,
+      'node',
+      '-e',
+      `
     const fs=require('node:fs');
     (async()=>{for(let attempt=0;attempt<300;attempt++){
       for(const pid of fs.readdirSync('/proc').filter(p=>/^\\d+$/.test(p))){
@@ -153,25 +173,56 @@ try {
       await new Promise(resolve=>setTimeout(resolve,10));
     }throw new Error('No live PDF worker observed');})().catch(e=>{console.error(e.message);process.exitCode=1});
   `,
-  );
-  assert.match(worker, /^\d+$/);
-  callerProcess.stdin.end('cancel\n');
-  assert.equal(await callerExit, 0);
-  docker(
-    'exec',
-    id,
-    'node',
-    '-e',
-    `
+    );
+    assert.match(worker, /^\d+$/);
+    callerProcess.stdin.end('cancel\n');
+    let timeout;
+    try {
+      const code = await Promise.race([
+        callerExit,
+        new Promise((_resolve, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error('Owner cancellation did not settle within 3s')),
+            3000,
+          );
+        }),
+      ]);
+      assert.equal(code, 0);
+    } finally {
+      clearTimeout(timeout);
+    }
+    docker(
+      'exec',
+      id,
+      'node',
+      '-e',
+      `
     const fs=require('node:fs');
     (async()=>{for(let attempt=0;attempt<200;attempt++){
       if(!fs.existsSync('/proc/${worker}')&&fs.readdirSync('/jobs').length===0){
-        console.log('Observed parser worker termination and scratch cleanup after caller disconnect');return;
+        console.log('Observed parser worker termination and scratch cleanup after owner cancellation');return;
       }
       await new Promise(resolve=>setTimeout(resolve,10));
     }throw new Error('Cancelled worker or scratch survived');})().catch(e=>{console.error(e.message);process.exitCode=1});
   `,
+    );
+  }
+  await qualifyCancellation(callerArgs, 'CANCEL_PROBE_READY');
+  callerName = `${caller}-cache`;
+  const cacheArgs = callerArgs.map((arg) =>
+    arg === caller
+      ? callerName
+      : arg === '/client.cjs'
+        ? '/cache-client.cjs'
+        : arg.replace('dst=/socket,readonly', 'dst=/cache-socket,readonly'),
   );
+  cacheArgs.splice(
+    cacheArgs.indexOf('--entrypoint'),
+    0,
+    '--mount',
+    `type=bind,src=${join(root, 'scripts/extraction-cache-client.cjs')},dst=/cache-client.cjs,readonly`,
+  );
+  await qualifyCancellation(cacheArgs, 'CACHE_CANCEL_PROBE_READY');
   docker(
     'exec',
     id,
@@ -181,7 +232,7 @@ try {
   );
 } finally {
   try {
-    if (callerProcess?.exitCode === null) docker('rm', '-f', caller);
+    if (callerProcess?.exitCode === null) docker('rm', '-f', callerName);
     compose('down', '-v', '--remove-orphans');
     if (imageBuilt && output('images', '-q', image)) docker('image', 'rm', image);
   } finally {
