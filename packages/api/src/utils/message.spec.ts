@@ -6,6 +6,9 @@ import {
   getThreadData,
   isPreliminaryMessageId,
   isUnpersistedPreliminaryParent,
+  getPreliminaryResponseMessageId,
+  isValidMessageId,
+  MAX_MESSAGE_ID_LENGTH,
 } from './message';
 
 /** Cast to string for type compatibility with ThreadMessage */
@@ -630,4 +633,59 @@ describe('getThreadData', () => {
       expect(endTime - startTime).toBeLessThan(100);
     });
   });
+});
+
+describe('bounded turn message identities', () => {
+  it.each([
+    '550e8400-e29b-41d4-a716-446655440000',
+    'nanoid_-.123',
+    'steer-recovery:turn:user',
+    'message__',
+    'a'.repeat(MAX_MESSAGE_ID_LENGTH),
+  ])('accepts supported identifier %s', (messageId) => {
+    expect(isValidMessageId(messageId)).toBe(true);
+  });
+
+  it.each([
+    undefined,
+    null,
+    '',
+    42,
+    {},
+    [],
+    'a b',
+    'a/b',
+    'a\n',
+    'a\0',
+    'é',
+    'a'.repeat(MAX_MESSAGE_ID_LENGTH + 1),
+    '_'.repeat(80_000) + 'X',
+  ])('rejects malformed or oversized identities', (messageId) => {
+    expect(isValidMessageId(messageId)).toBe(false);
+    expect(getPreliminaryResponseMessageId({ messageId })).toBeNull();
+  });
+
+  it.each([
+    ['message', 'message_'],
+    ['message_', 'message_'],
+    ['message___', 'message_'],
+    ['_', '_'],
+    ['____', '_'],
+    ['_'.repeat(MAX_MESSAGE_ID_LENGTH - 1) + 'X', '_'.repeat(MAX_MESSAGE_ID_LENGTH - 1) + 'X_'],
+  ])('normalizes trailing underscores without backtracking', (messageId, expected) => {
+    expect(getPreliminaryResponseMessageId({ messageId })).toBe(expected);
+  });
+
+  it('uses a valid explicit response identity', () => {
+    expect(
+      getPreliminaryResponseMessageId({ messageId: 'user', responseMessageId: 'response' }),
+    ).toBe('response');
+  });
+
+  it.each(['', {}, '_'.repeat(80_000) + 'X'])(
+    'rejects an invalid explicit response identity',
+    (responseMessageId) => {
+      expect(getPreliminaryResponseMessageId({ messageId: 'user', responseMessageId })).toBeNull();
+    },
+  );
 });

@@ -256,6 +256,9 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  getPreliminaryResponseMessageId: jest.requireActual(
+    '../../../../../packages/api/src/utils/message',
+  ).getPreliminaryResponseMessageId,
   savePrivateTextMessage: (save, _req, ...args) => save(...args),
   savePrivateTextErrorTurn: (...args) =>
     jest.requireActual('@librechat/api').savePrivateTextErrorTurn(...args),
@@ -3822,6 +3825,30 @@ describe('ResumableAgentController resume metadata', () => {
         expect(mockStampConvoLastResponse).not.toHaveBeenCalled();
       },
     );
+
+    it('does not persist an oversized raw identity after a post-ack initialization failure', async () => {
+      const req = createFailedRequest({
+        conversationId: undefined,
+        messageId: '_'.repeat(80_000) + 'X',
+      });
+      const res = createResumableResponse();
+      const initializeClient = jest.fn(async () => {
+        expect(res.json).toHaveBeenCalled();
+        throw new Error('The model "gpt-4o" is not available.');
+      });
+
+      await AgentController(req, res, jest.fn(), initializeClient, null);
+
+      expect(initializeClient).toHaveBeenCalledTimes(1);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        expect.any(String),
+        'The model "gpt-4o" is not available.',
+        1000,
+        expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
+      );
+      expect(mockSaveMessage).not.toHaveBeenCalled();
+      expect(mockSaveConvo).not.toHaveBeenCalled();
+    });
 
     it('persists an initialization failure before terminal error publication', async () => {
       const events = [];

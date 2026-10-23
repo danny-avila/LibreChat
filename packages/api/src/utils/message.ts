@@ -1,6 +1,39 @@
 import { Constants } from 'librechat-data-provider';
 import type { TFile, TMessage } from 'librechat-data-provider';
 
+/** Protocol bound for UUIDs, nanoids, and derived turn identities, not a deployment setting. */
+export const MAX_MESSAGE_ID_LENGTH = 256;
+
+export function isValidMessageId(messageId: unknown): messageId is string {
+  return (
+    typeof messageId === 'string' &&
+    messageId.length > 0 &&
+    messageId.length <= MAX_MESSAGE_ID_LENGTH &&
+    !/[^A-Za-z0-9_:.-]/.test(messageId)
+  );
+}
+
+export function getPreliminaryResponseMessageId({
+  messageId,
+  responseMessageId,
+}: {
+  messageId?: unknown;
+  responseMessageId?: unknown;
+}): string | null {
+  if (responseMessageId != null) {
+    return isValidMessageId(responseMessageId) ? responseMessageId : null;
+  }
+  if (!isValidMessageId(messageId)) {
+    return null;
+  }
+
+  let end = messageId.length;
+  while (end > 0 && messageId.charCodeAt(end - 1) === 95) {
+    end--;
+  }
+  return `${messageId.slice(0, end)}_`;
+}
+
 /** Minimal shape for request file entries (from `req.body.files`) */
 type RequestFile = { file_id?: string };
 
