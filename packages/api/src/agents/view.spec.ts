@@ -87,6 +87,40 @@ const createRequest = (
   }) as ServerRequest;
 
 describe('subagent thread parent-scoped view', () => {
+  it('preserves every accepted identity and withdrawal target while budgeting Unicode message bodies', async () => {
+    const input = message('task-1:user', 'running', true);
+    input.subagentTask!.controlReceipts = Array.from({ length: 8 }, (_, index) => ({
+      invocationId: `pending-${index}`,
+      fingerprint: 'private',
+      controlId: `withdraw-${index}`,
+      action: 'queue',
+      status: 'accepted',
+      createdAt: new Date('2026-10-23T00:00:00Z'),
+      updatedAt: new Date('2026-10-23T00:00:01Z'),
+      message: '界'.repeat(4096),
+    }));
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+      getMessagesForSubagentThreadView: jest.fn().mockResolvedValue([input]),
+    });
+    const { response, json } = createResponse();
+    await handler(createRequest({}, { taskId: 'task-1' }), response);
+    const body = json.mock.calls[0][0];
+    expect(body.controlReceipts.map((receipt: { controlId: string }) => receipt.controlId)).toEqual(
+      Array.from({ length: 8 }, (_, index) => `withdraw-${index}`),
+    );
+    expect(
+      body.controlReceipts.some(
+        (receipt: { messageTruncated?: boolean }) => receipt.messageTruncated,
+      ),
+    ).toBe(true);
+    expect(body.controlReceiptsTruncated).not.toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(body), 'utf8')).toBeLessThanOrEqual(
+      SUBAGENT_THREAD_VIEW_LIMITS.responseBytes,
+    );
+  });
+
   it('keeps complete stored Unicode control messages and omits whole old receipts to fit the budget', async () => {
     const input = message('task-1:user', 'running', true);
     input.subagentTask!.controlReceipts = Array.from({ length: 32 }, (_, index) => ({

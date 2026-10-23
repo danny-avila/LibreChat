@@ -269,6 +269,7 @@ test.describe('subagent chat retained-history parity', () => {
       let coldContext: BrowserContext | undefined;
       let activePage = page;
       let activityRequests = 0;
+      let primaryError: unknown;
       page.on('request', (request) => {
         if (ACTIVITY_PATH.test(new URL(request.url()).pathname)) activityRequests++;
       });
@@ -505,13 +506,16 @@ test.describe('subagent chat retained-history parity', () => {
           contentType: 'application/json',
           body: JSON.stringify({ mode, hydrateMs, detailsMs, historicalCalls: history.CALL_COUNT }),
         });
+      } catch (error) {
+        primaryError = error;
+        throw error;
       } finally {
         try {
           await gates.release();
-          if (await gates.has('ready')) {
+          if (primaryError == null && (await gates.has('ready'))) {
             await gates.wait('done', { timeoutMs: 10_000 });
-            await rm(gates.directory, { recursive: true, force: true });
           }
+          if (await gates.has('done')) await rm(gates.directory, { recursive: true, force: true });
         } finally {
           try {
             for (const agentId of createdAgentIds.reverse()) {

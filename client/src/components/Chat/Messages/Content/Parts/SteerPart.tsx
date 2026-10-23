@@ -30,8 +30,12 @@ const SteerPart = memo(function SteerPart({
   createdAt,
   isSubmitting = false,
   receiptState = 'applied',
+  hasMore = false,
+  onExpand,
 }: {
   steer: string;
+  hasMore?: boolean;
+  onExpand?: () => void;
   files?: TMessage['files'];
   /** Quoted excerpts steered with the message; rendered as the same reference
    *  blocks a user bubble shows for `message.quotes`. */
@@ -76,6 +80,9 @@ const SteerPart = memo(function SteerPart({
     () => hydratedFiles?.filter((file) => !usesImagePreview(file)) ?? [],
     [hydratedFiles],
   );
+  useEffect(() => {
+    if (hasMore && !collapseLongUserMessages) onExpand?.();
+  }, [hasMore, collapseLongUserMessages, onExpand]);
   const [selectedFile, setSelectedFile] = useState<Partial<TFile> | null>(null);
   const handlePreviewClose = useCallback((open: boolean) => {
     if (!open) {
@@ -148,7 +155,11 @@ const SteerPart = memo(function SteerPart({
               )}
             </div>
           )}
-          <CollapsibleText enabled={collapseLongUserMessages}>
+          <CollapsibleText
+            enabled={collapseLongUserMessages || hasMore}
+            hasMore={hasMore}
+            onExpand={onExpand}
+          >
             <div
               className={cn(
                 'markdown prose message-content light w-full break-words',

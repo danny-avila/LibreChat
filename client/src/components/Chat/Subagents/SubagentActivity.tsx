@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useContext, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Alert, Button } from '@librechat/client';
 import { Maximize2, Minimize2 } from 'lucide-react';
-import { ContentTypes } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
+import { ContentTypes, QueryKeys, dataService } from 'librechat-data-provider';
 import type { SearchResultData, TMessageContentParts } from 'librechat-data-provider';
 import type { ToolContentQuery } from '~/components/Chat/Messages/Content/disclosure';
 import type { SteerReceiptState } from '~/components/Chat/Steering/Receipt';
+import type { TaskContentScope } from '~/data-provider/Subagents/content';
 import type { ChildActivity, ChildActivityItem } from './adapters';
 import type { TranslationKeys } from '~/hooks';
 import {
@@ -16,6 +18,7 @@ import {
 } from './status';
 import { ToolContentQueryContext } from '~/components/Chat/Messages/Content/disclosure';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
+import { TaskContentScopeContext } from '~/data-provider/Subagents/content';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import SteerPart from '~/components/Chat/Messages/Content/Parts/SteerPart';
@@ -54,6 +57,81 @@ const CONTROL_REASON_LABELS: Record<string, TranslationKeys> = {
   withdrawn: 'com_ui_subagent_control_reason_withdrawn',
 };
 
+type ControlMessageProps = {
+  control: NonNullable<ChildActivity['controls']>[number];
+  receiptState: SteerReceiptState;
+  pending: boolean;
+};
+
+function RetainedControlMessage({
+  control,
+  receiptState,
+  pending,
+  scope,
+}: ControlMessageProps & { scope: TaskContentScope }) {
+  const localize = useLocalize();
+  const [expanded, setExpanded] = useState(false);
+  const reveal = useCallback(() => setExpanded(true), []);
+  const query = useQuery(
+    [
+      QueryKeys.subagentControlReceipt,
+      scope.parentConversationId,
+      scope.threadId,
+      scope.taskId,
+      control.invocationId,
+    ],
+    async () => {
+      const response = await dataService.getSubagentControlReceipt(
+        scope.parentConversationId,
+        scope.threadId,
+        scope.taskId,
+        control.invocationId,
+      );
+      if (response.receipt.invocationId !== control.invocationId)
+        throw new Error('subagent_control_identity_mismatch');
+      return response;
+    },
+    { enabled: expanded, retry: 1, staleTime: Infinity, refetchOnWindowFocus: false },
+  );
+  return (
+    <>
+      <SteerPart
+        steer={query.data?.receipt.message ?? control.message ?? ''}
+        steerId={control.controlId ?? control.invocationId}
+        createdAt={Date.parse(control.createdAt)}
+        receiptState={receiptState}
+        isSubmitting={pending}
+        hasMore={query.data == null}
+        onExpand={reveal}
+      />
+      {query.isFetching && <span role="status">{localize('com_ui_loading')}</span>}
+      {query.isError && (
+        <Alert variant="error">
+          <span>{localize('com_ui_conversation_load_error')}</span>
+          <Button variant="ghost" size="sm" onClick={() => void query.refetch()}>
+            {localize('com_ui_retry')}
+          </Button>
+        </Alert>
+      )}
+    </>
+  );
+}
+
+function ControlMessage(props: ControlMessageProps) {
+  const scope = useContext(TaskContentScopeContext);
+  if (props.control.messageTruncated === true && scope != null)
+    return <RetainedControlMessage {...props} scope={scope} />;
+  return (
+    <SteerPart
+      steer={props.control.message ?? ''}
+      steerId={props.control.controlId ?? props.control.invocationId}
+      createdAt={Date.parse(props.control.createdAt)}
+      receiptState={props.receiptState}
+      isSubmitting={props.pending}
+    />
+  );
+}
+
 function SubagentControlHistory({
   controls,
   onCancelControl,
@@ -74,6 +152,12 @@ function SubagentControlHistory({
         left.control.createdAt.localeCompare(right.control.createdAt) || left.index - right.index,
     )
     .map(({ control }) => control);
+  const legacyGuidance = new Map<string, number>();
+  for (const part of content) {
+    if (part?.type === ContentTypes.STEER && part.steerId == null) {
+      legacyGuidance.set(part.steer, (legacyGuidance.get(part.steer) ?? 0) + 1);
+    }
+  }
   return (
     <section aria-label={localize('com_ui_subagent_control_history')} className="mb-3 space-y-2">
       {chronologicalControls.map((control) => {
@@ -88,9 +172,11 @@ function SubagentControlHistory({
         ) {
           return null;
         }
-        const legacyInlineGuidance =
-          control.status === 'applied' &&
-          content.some((part) => part?.type === ContentTypes.STEER && part.steerId == null);
+        const legacyMatches =
+          control.message == null ? 0 : (legacyGuidance.get(control.message) ?? 0);
+        const legacyInlineGuidance = control.status === 'applied' && legacyMatches > 0;
+        if (legacyInlineGuidance && control.message != null)
+          legacyGuidance.set(control.message, legacyMatches - 1);
         const pending = control.status === 'submitted' || control.status === 'accepted';
         let receiptState: SteerReceiptState | undefined;
         if (control.action !== 'cancel' && control.action !== 'cancel_message') {
@@ -105,12 +191,10 @@ function SubagentControlHistory({
             className={cn('group flex flex-col items-end text-sm', pending && 'opacity-60')}
           >
             {!legacyInlineGuidance && control.message != null && control.message !== '' && (
-              <SteerPart
-                steer={control.message}
-                steerId={control.controlId ?? control.invocationId}
-                createdAt={Date.parse(control.createdAt)}
+              <ControlMessage
+                control={control}
                 receiptState={receiptState ?? 'delivered'}
-                isSubmitting={pending}
+                pending={pending}
               />
             )}
             <div className="text-text-secondary flex flex-wrap items-center justify-end gap-2 text-xs">

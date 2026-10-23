@@ -277,3 +277,71 @@ export function createSubagentControlHandler(deps: Dependencies) {
     }
   };
 }
+
+/** Reads one retained body through its parent without mutating or replaying the control. */
+export function createSubagentControlReceiptHandler(deps: Omit<Dependencies, 'store'>) {
+  return async (req: ServerRequest, res: Response): Promise<void> => {
+    const userId = req.user?.id;
+    const tenantId = req.user?.tenantId || undefined;
+    const { parentConversationId, threadId, taskId, invocationId } = req.params;
+    if (
+      !userId ||
+      !validId(parentConversationId) ||
+      !validId(threadId) ||
+      parentConversationId === threadId ||
+      !validId(taskId, MAX_TASK_ID_BYTES) ||
+      !validId(invocationId, MAX_INVOCATION_ID_BYTES)
+    ) {
+      res.status(400).json({ error: 'Invalid subagent control request' });
+      return;
+    }
+    try {
+      const [parent, child, seed] = await Promise.all([
+        deps.getConvoOwnership(userId, parentConversationId, tenantId ?? null),
+        deps.getSubagentThreadForParent({
+          user: userId,
+          parentConversationId,
+          conversationId: threadId,
+          tenantId,
+        }),
+        deps.getMessages(
+          {
+            user: userId,
+            conversationId: threadId,
+            messageId: `${taskId}:user`,
+            ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+            $or: [{ expiredAt: null }, { expiredAt: { $gt: new Date() } }],
+          },
+          'messageId',
+          { limit: 1 },
+        ),
+      ]);
+      if (
+        parent == null ||
+        child?.subagentThread?.parentConversationId !== parentConversationId ||
+        parent.tenantId !== tenantId ||
+        child.tenantId !== tenantId ||
+        seed.length === 0
+      ) {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+      const receipt = await deps.getSubagentTaskControlReceipt({
+        userId,
+        conversationId: threadId,
+        taskId,
+        invocationId,
+        tenantId,
+      });
+      if (receipt == null || receipt.status === 'reserved') {
+        res.status(404).json({ error: 'Control not found' });
+        return;
+      }
+      res
+        .status(200)
+        .json({ receipt: publicStoredReceipt(receipt) } satisfies SubagentControlResponse);
+    } catch {
+      res.status(503).json({ error: 'Subagent content unavailable' });
+    }
+  };
+}

@@ -1,9 +1,11 @@
 import React from 'react';
 import { ContentTypes } from 'librechat-data-provider';
-import { act, fireEvent, render as rtlRender, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import type { TMessageContentParts, Agents } from 'librechat-data-provider';
 import type { ChildActivity } from './adapters';
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
+import { TaskContentScopeContext } from '~/data-provider/Subagents/content';
 import { ChatSurfaceHarness } from 'test/harness';
 
 const Wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -11,6 +13,17 @@ const Wrapper = ({ children }: { children: React.ReactNode }) => (
 );
 const render = (ui: React.ReactElement) => rtlRender(ui, { wrapper: Wrapper });
 
+const mockReadControl = jest.fn();
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    dataService: {
+      ...actual.dataService,
+      getSubagentControlReceipt: (...args: unknown[]) => mockReadControl(...args),
+    },
+  };
+});
 const mockContentParts = jest.fn();
 let mockAutoExpandTools = false;
 
@@ -27,9 +40,24 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/components/Chat/Messages/Content/Parts/SteerPart', () => ({
   __esModule: true,
-  default: ({ steer, receiptState }: { steer: string; receiptState?: string }) => (
+  default: ({
+    steer,
+    receiptState,
+    hasMore,
+    onExpand,
+  }: {
+    steer: string;
+    receiptState?: string;
+    hasMore?: boolean;
+    onExpand?: () => void;
+  }) => (
     <div data-testid="shared-steer-part" data-receipt={receiptState}>
       {steer}
+      {hasMore && (
+        <button type="button" onClick={onExpand}>
+          Show more
+        </button>
+      )}
     </div>
   ),
 }));
@@ -787,4 +815,101 @@ it('renders applied controls inline once instead of repeating them below all cur
     part,
     { type: ContentTypes.TEXT, text: 'Work after guidance.' },
   ]);
+});
+
+it('keeps retained applied guidance that a partial legacy transcript does not contain', () => {
+  render(
+    <SubagentActivity
+      activity={{
+        ...base,
+        activityTruncated: true,
+        content: [
+          { type: ContentTypes.STEER, steer: 'Guidance present in the transcript.' },
+          { type: ContentTypes.TEXT, text: 'Continued work.' },
+        ],
+        controls: [
+          {
+            invocationId: 'retained',
+            controlId: 'retained-control',
+            action: 'steer',
+            status: 'applied',
+            message: 'Different retained guidance outside this transcript prefix.',
+            createdAt: '2026-10-23T00:00:00Z',
+            updatedAt: '2026-10-23T00:00:01Z',
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByTestId('shared-steer-part')).toHaveTextContent(
+    'Different retained guidance outside this transcript prefix.',
+  );
+});
+
+it('suppresses only the corresponding number of legacy guidance bodies and does not invent identities', () => {
+  const receipt = {
+    action: 'steer' as const,
+    status: 'applied' as const,
+    message: 'Repeated guidance.',
+    createdAt: '2026-10-23T00:00:00Z',
+    updatedAt: '2026-10-23T00:00:01Z',
+  };
+  render(
+    <SubagentActivity
+      activity={{
+        ...base,
+        activityTruncated: true,
+        content: [{ type: ContentTypes.STEER, steer: 'Repeated guidance.' }],
+        controls: [
+          { ...receipt, invocationId: 'one', controlId: 'one' },
+          { ...receipt, invocationId: 'two', controlId: 'two' },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getAllByTestId('shared-steer-part')).toHaveLength(1);
+  expect(screen.getByTestId('shared-steer-part')).toHaveTextContent('Repeated guidance.');
+  expect(mockContentParts.mock.calls.at(-1)?.[0].content).toEqual([
+    { type: ContentTypes.STEER, steer: 'Repeated guidance.' },
+  ]);
+});
+
+it('loads a budgeted retained body only after expansion while keeping Withdraw actionable', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const full = 'Full retained guidance. '.repeat(80);
+  const control = {
+    invocationId: 'budgeted',
+    controlId: 'pending-control',
+    action: 'queue' as const,
+    status: 'accepted' as const,
+    createdAt: '2026-10-23T00:00:00Z',
+    updatedAt: '2026-10-23T00:00:01Z',
+    message: 'Budgeted prefix',
+    messageTruncated: true,
+  };
+  mockReadControl.mockResolvedValueOnce({
+    receipt: { ...control, message: full, messageTruncated: false },
+  });
+  const withdraw = jest.fn();
+  const { unmount } = render(
+    <QueryClientProvider client={client}>
+      <TaskContentScopeContext.Provider
+        value={{ parentConversationId: 'parent', threadId: 'child', taskId: 'task' }}
+      >
+        <SubagentActivity activity={{ ...base, controls: [control] }} onCancelControl={withdraw} />
+      </TaskContentScopeContext.Provider>
+    </QueryClientProvider>,
+  );
+  expect(mockReadControl).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+  await waitFor(() =>
+    expect(screen.getByTestId('shared-steer-part')).toHaveTextContent(full.trim()),
+  );
+  expect(mockReadControl).toHaveBeenCalledTimes(1);
+  expect(mockReadControl).toHaveBeenCalledWith('parent', 'child', 'task', 'budgeted');
+  fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_control_withdraw' }));
+  expect(withdraw).toHaveBeenCalledWith('pending-control');
+  expect(screen.queryByText('Message shortened for display.')).not.toBeInTheDocument();
+  unmount();
+  client.clear();
 });

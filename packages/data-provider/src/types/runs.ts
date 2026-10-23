@@ -540,7 +540,7 @@ export const reconcileContextUsageFromEvent = (
   cacheWrite: finiteNonNegativeInteger(event.input_token_details?.cache_creation) ?? 0,
 });
 
-/** Lifecycle phase carried on subagent-progress envelopes (mirrors SDK SubagentUpdatePhase). */
+/** SDK lifecycle phases plus host-authored applied-guidance boundaries. */
 export type SubagentUpdatePhase =
   | 'start'
   | 'run_step'

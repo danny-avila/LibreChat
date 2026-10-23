@@ -110,6 +110,7 @@ export enum QueryKeys {
   parentSubagents = 'parentSubagents',
   subagentThread = 'subagentThread',
   subagentTaskContent = 'subagentTaskContent',
+  subagentControlReceipt = 'subagentControlReceipt',
   backgroundTasks = 'backgroundTasks',
   conversationPullRequest = 'conversationPullRequest',
   pullRequestConnection = 'pullRequestConnection',

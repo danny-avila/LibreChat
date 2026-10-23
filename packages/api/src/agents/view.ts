@@ -171,13 +171,27 @@ const publicControlReceipts = (
         ...(receipt.messageTruncated === true ? { messageTruncated: true } : {}),
       };
     });
-  // Keep whole messages: omit older terminal receipts rather than clip a visible bubble.
+  // Keep pending identities actionable. Budgeted pending bodies hydrate on expansion.
   let bytes = Buffer.byteLength(JSON.stringify(retained), 'utf8');
   while (bytes > MAX_PUBLIC_CONTROL_BYTES && retained.length > 0) {
     let index = retained.findIndex((receipt) => receipt.status !== 'accepted');
-    if (index < 0) index = 0;
-    const removed = retained.splice(index, 1)[0];
-    bytes -= Buffer.byteLength(JSON.stringify(removed), 'utf8') + 1;
+    if (index >= 0) {
+      const removed = retained.splice(index, 1)[0];
+      bytes -= Buffer.byteLength(JSON.stringify(removed), 'utf8') + 1;
+      continue;
+    }
+    index = retained.findIndex(
+      (receipt) => receipt.message != null && Buffer.byteLength(receipt.message, 'utf8') > 512,
+    );
+    if (index < 0) break;
+    const receipt = retained[index];
+    const before = Buffer.byteLength(JSON.stringify(receipt), 'utf8');
+    retained[index] = {
+      ...receipt,
+      message: truncateUtf8(receipt.message!, 512).text,
+      messageTruncated: true,
+    };
+    bytes += Buffer.byteLength(JSON.stringify(retained[index]), 'utf8') - before;
   }
   return {
     receipts: retained,
