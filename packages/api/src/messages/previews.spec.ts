@@ -399,6 +399,45 @@ describe('JSON numbers in previews', () => {
     expect(parsed).toMatchObject({ a: 1.5, b: 1.5, c: 0, d: 9007199254740991, e: '1e400' });
   });
 
+  it.each([20_000, 40_000, 80_000])(
+    'previews a finite decimal with %i internal zeros without stalling',
+    (zeros) => {
+      const output = `{"n":1.${'0'.repeat(zeros)}1}`;
+      const part = toolPart({ output, args: output });
+      const messages = [{ content: [part] }];
+      const budget = { outputChars: 512, argsChars: 512 };
+      expect(JSON.parse(output)).toEqual({ n: 1 });
+
+      const start = performance.now();
+      const [message] = previewMessagesToolCalls(messages, budget);
+      const elapsed = performance.now() - start;
+
+      expect(message.content[0].tool_call).toMatchObject({
+        output: previewOutputText(output, budget.outputChars),
+        outputTruncated: true,
+        outputLength: output.length,
+        args: output.slice(0, budget.argsChars),
+        argsTruncated: true,
+        argsLength: output.length,
+      });
+      expect(part.tool_call.output).toBe(output);
+      expect(part.tool_call.args).toBe(output);
+      // Generous headroom for CI; the suffix regex takes seconds on this input.
+      expect(elapsed).toBeLessThan(1_000);
+    },
+  );
+
+  it.each([
+    ['1.', '', 1],
+    ['-1.', 'e+3', -1_000],
+    ['0.', '', 0],
+  ])('keeps exact values with long trailing zeros (%s…%s)', (prefix, suffix, value) => {
+    const output = `{"n":${prefix}${'0'.repeat(80_000)}${suffix}}`;
+    const preview = previewToolCall(toolPart({ output, args: output }).tool_call, limits);
+    expect(JSON.parse(preview.output as string)).toEqual({ n: value });
+    expect(JSON.parse(preview.args as string)).toEqual({ n: value });
+  });
+
   it('sends a background-task result whole rather than as unparseable text', () => {
     const output = `{"status":"completed","task_id":"task_1","bytes":9007199254740993,"output":"${pad}"}`;
     const check = toolPart({ name: 'check_background_task', output }).tool_call;
