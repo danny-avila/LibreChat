@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { Constants } from 'librechat-data-provider';
+import { Constants, PromptGroupSources } from 'librechat-data-provider';
 import type { IPromptGroupDocument } from '~/types';
 
 const promptGroupSchema: Schema<IPromptGroupDocument> = new Schema<IPromptGroupDocument>(
@@ -26,7 +26,7 @@ const promptGroupSchema: Schema<IPromptGroupDocument> = new Schema<IPromptGroupD
       type: Schema.Types.ObjectId,
       ref: 'Prompt',
       required: function (this: IPromptGroupDocument) {
-        return (this.source ?? 'native') === 'native';
+        return (this.source ?? PromptGroupSources.native) === PromptGroupSources.native;
       },
       index: true,
     },
@@ -63,28 +63,28 @@ const promptGroupSchema: Schema<IPromptGroupDocument> = new Schema<IPromptGroupD
      */
     source: {
       type: String,
-      enum: ['native', 'langfuse'],
-      default: 'native',
+      enum: Object.values(PromptGroupSources),
+      default: PromptGroupSources.native,
     },
     /** Name of the prompt in its Langfuse project. */
     sourcePromptName: {
       type: String,
       required: function (this: IPromptGroupDocument) {
-        return this.source === 'langfuse';
+        return this.source === PromptGroupSources.langfuse;
       },
     },
     /** Langfuse project ID the prompt was mirrored from. */
     sourceProjectId: {
       type: String,
       required: function (this: IPromptGroupDocument) {
-        return this.source === 'langfuse';
+        return this.source === PromptGroupSources.langfuse;
       },
     },
     /** Tenant's Langfuse destination key (e.g. `eu`) the prompt was mirrored from. */
     sourceDestination: {
       type: String,
       required: function (this: IPromptGroupDocument) {
-        return this.source === 'langfuse';
+        return this.source === PromptGroupSources.langfuse;
       },
     },
     tenantId: {

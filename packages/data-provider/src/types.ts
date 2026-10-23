@@ -1117,7 +1117,12 @@ export type TPrompt = {
   _id?: string;
 };
 
-export type TPromptGroupSource = 'native' | 'langfuse';
+export const PromptGroupSources = {
+  native: 'native',
+  langfuse: 'langfuse',
+} as const;
+
+export type TPromptGroupSource = (typeof PromptGroupSources)[keyof typeof PromptGroupSources];
 
 export type TPromptGroup = {
   name: string;

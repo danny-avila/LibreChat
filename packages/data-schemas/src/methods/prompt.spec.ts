@@ -975,6 +975,65 @@ describe('PromptGroup source identity', () => {
     expect(unchangedLangfuseGroup.source).toBe('langfuse');
   });
 
+  it.each([
+    ['missing', {}],
+    ['null', { source: null }],
+    ['native', { source: 'native' }],
+  ])('reuses an unfinished group with %s source', async (label, sourceFields) => {
+    const name = `Unfinished ${label} Source Group`;
+    const { insertedId } = await PromptGroup.collection.insertOne({
+      name,
+      author: new ObjectId(String(testUsers.owner._id)),
+      authorName: testUsers.owner.name,
+      productionId: null,
+      ...sourceFields,
+    });
+    const storedBefore = await PromptGroup.collection.findOne({ _id: insertedId });
+    if (label === 'missing') {
+      expect(storedBefore).not.toHaveProperty('source');
+    }
+
+    const { group, prompt } = await methods.createPromptGroup({
+      prompt: { prompt: 'Native prompt text', type: 'text' },
+      group: { name },
+      author: String(testUsers.owner._id),
+      authorName: testUsers.owner.name ?? '',
+    });
+
+    expect(String(group._id)).toBe(String(insertedId));
+    expect(prompt).not.toBeNull();
+    expect(String(prompt!.groupId)).toBe(String(insertedId));
+    const storedAfter = await PromptGroup.collection.findOne({ _id: insertedId });
+    expect(String(storedAfter?.productionId)).toBe(String(prompt!._id));
+    expect(await PromptGroup.collection.countDocuments({ name })).toBe(1);
+  });
+
+  it('does not attach a native prompt to an unknown external source', async () => {
+    const name = 'Unknown External Source Group';
+    const { insertedId } = await PromptGroup.collection.insertOne({
+      name,
+      author: new ObjectId(String(testUsers.owner._id)),
+      authorName: testUsers.owner.name,
+      source: 'external-catalog',
+    });
+    const storedBefore = await PromptGroup.collection.findOne({ _id: insertedId });
+
+    const { group, prompt } = await methods.createPromptGroup({
+      prompt: { prompt: 'Native prompt text', type: 'text' },
+      group: { name },
+      author: String(testUsers.owner._id),
+      authorName: testUsers.owner.name ?? '',
+    });
+
+    expect(String(group._id)).not.toBe(String(insertedId));
+    expect(group.source).toBe('native');
+    expect(prompt).not.toBeNull();
+    expect(String(prompt!.groupId)).toBe(String(group._id));
+    expect(String(group.productionId)).toBe(String(prompt!._id));
+    expect(await PromptGroup.collection.findOne({ _id: insertedId })).toEqual(storedBefore);
+    expect(await PromptGroup.collection.countDocuments({ name })).toBe(2);
+  });
+
   it('allows two native groups with the same name', async () => {
     const first = await PromptGroup.create({
       name: 'Duplicate Name Group',

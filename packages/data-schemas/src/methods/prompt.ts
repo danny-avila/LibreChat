@@ -4,6 +4,7 @@ import {
   PermissionBits,
   ResourceType,
   SystemCategories,
+  PromptGroupSources,
   Time,
 } from 'librechat-data-provider';
 import type { Model, Types } from 'mongoose';
@@ -527,11 +528,16 @@ export function createPromptMethods(
 
       let newPromptGroup = await PromptGroup.findOneAndUpdate(
         /**
-         * `productionId: null` also matches a langfuse-sourced group with the same
-         * author/authorName/name, since langfuse groups never have a productionId. Exclude
-         * langfuse groups from the filter so a native create cannot match or overwrite one.
+         * Only reuse native groups, including legacy groups with no source. Mirrored
+         * groups can also lack a productionId, but must not receive a native prompt.
          */
-        { ...group, author, authorName, productionId: null, source: { $ne: 'langfuse' } },
+        {
+          ...group,
+          author,
+          authorName,
+          productionId: null,
+          source: { $in: [PromptGroupSources.native, null] },
+        },
         { $setOnInsert: { ...group, author, authorName, productionId: null } },
         { new: true, upsert: true },
       )
