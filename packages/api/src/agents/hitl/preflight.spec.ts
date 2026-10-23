@@ -1,5 +1,6 @@
 import {
   FileSources,
+  AgentCapabilities,
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_GRAPH_SUBAGENT_MEMBERS,
 } from 'librechat-data-provider';
@@ -375,11 +376,16 @@ describe('graph-member preflight', () => {
     result_agent_id: id,
   });
   const policy = {
-    endpoints: { agents: { capabilities: ['subagents', 'subagent_graphs'] } },
+    config: {},
+    fileStrategy: FileSources.local,
+    imageOutputType: 'webp',
+    endpoints: {
+      agents: { capabilities: [AgentCapabilities.subagents, AgentCapabilities.subagent_graphs] },
+    },
     filters: {
       agentInstructions: { pii: { fields: ['instructions'], starterPatterns: ['sk_prefix'] } },
     },
-  } as PreflightResumeContentInput['appConfig'];
+  } satisfies NonNullable<PreflightResumeContentInput['appConfig']>;
 
   it.each(['safe', 'blocked', 'missing', 'revoked', 'over-budget', 'inert'])(
     'enforces the exact member boundary through content-policy preflight: %s',
