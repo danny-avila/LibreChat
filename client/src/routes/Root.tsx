@@ -208,7 +208,7 @@ function RootLayout() {
                       /** Focus target of last resort when the drawer closes on a
                        *  route that renders no opener. Not in the tab order. */
                       tabIndex={-1}
-                      className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden focus:outline-hidden"
+                      className="relative isolate flex h-full max-w-full flex-1 flex-col overflow-hidden focus:outline-hidden"
                       /** Keep the live conversation out of the drawer's compositor animation. */
                       /** Recoil's flip is deferred past the opening frames and
                        *  the closing transition outlives it at the other end, so

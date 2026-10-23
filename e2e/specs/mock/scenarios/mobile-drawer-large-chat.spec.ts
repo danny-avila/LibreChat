@@ -65,11 +65,35 @@ for (const { strip, direction } of [
           },
         };
       });
+      await pane.evaluate((element) => {
+        // Model an in-pane Versions panel at the drawer's z-index.
+        const panel = document.createElement('div');
+        panel.dataset.testid = 'pane-overlay';
+        Object.assign(panel.style, {
+          position: 'absolute',
+          zIndex: '110',
+          top: '100px',
+          bottom: '100px',
+          insetInline: '0',
+        });
+        element.append(panel);
+      });
       await opener.click();
       const drawer = page.locator('#mobile-drawer');
       await expect(drawer.getByTestId('close-sidebar-button')).toBeVisible();
       await expect(drawer).not.toHaveAttribute('inert');
       await expect(pane).toHaveAttribute('inert');
+      const coveredByDrawer = await drawer.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return (
+          document
+            .elementFromPoint(box.x + box.width / 2, box.y + 200)
+            ?.closest('#mobile-drawer') != null
+        );
+      });
+      expect(coveredByDrawer).toBe(true);
+      await expect(pane).toHaveCSS('isolation', 'isolate');
+      await pane.getByTestId('pane-overlay').evaluate((element) => element.remove());
       await drawer.getByTestId('close-sidebar-button').click();
       await expect(drawer).toHaveCSS('visibility', 'hidden');
       await expect(pane).not.toHaveAttribute('inert');
