@@ -22,10 +22,12 @@ export function getPreliminaryResponseMessageId({
   compact,
   messageId,
   responseMessageId,
+  liveResponseMessageId,
 }: {
   messageId?: unknown;
   responseMessageId?: unknown;
   compact?: boolean;
+  liveResponseMessageId?: unknown;
 }): string | null {
   if (responseMessageId != null) {
     return isValidMessageId(responseMessageId, MAX_RESPONSE_MESSAGE_ID_LENGTH)
@@ -41,6 +43,13 @@ export function getPreliminaryResponseMessageId({
   let end = messageId.length;
   while (end > 0 && messageId.charCodeAt(end - 1) === 95) {
     end--;
+  }
+  /** A full-length compaction anchor leaves no room for the suffix. */
+  if (end >= MAX_RESPONSE_MESSAGE_ID_LENGTH) {
+    return isValidMessageId(liveResponseMessageId, MAX_RESPONSE_MESSAGE_ID_LENGTH) &&
+      liveResponseMessageId !== messageId
+      ? liveResponseMessageId
+      : null;
   }
   return `${messageId.slice(0, end)}_`;
 }

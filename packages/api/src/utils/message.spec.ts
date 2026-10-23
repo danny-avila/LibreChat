@@ -698,6 +698,43 @@ describe('bounded turn message identities', () => {
     ).toBeNull();
   });
 
+  it('uses the live response when a compaction suffix would exceed the bound', () => {
+    const messageId = 'a'.repeat(MAX_MESSAGE_ID_LENGTH + 1);
+    expect(
+      getPreliminaryResponseMessageId({
+        compact: true,
+        messageId,
+        liveResponseMessageId: 'allocated-response',
+      }),
+    ).toBe('allocated-response');
+    for (const liveResponseMessageId of [undefined, '', messageId, 'b'.repeat(258), 'invalid/id']) {
+      expect(
+        getPreliminaryResponseMessageId({ compact: true, messageId, liveResponseMessageId }),
+      ).toBeNull();
+    }
+  });
+
+  it('keeps generated identities within the response contract across compaction retries', () => {
+    for (let length = 1; length <= MAX_MESSAGE_ID_LENGTH + 1; length++) {
+      for (const suffix of ['', '_', '___']) {
+        let messageId = `${'a'.repeat(length - 1)}X${suffix}`.slice(0, MAX_MESSAGE_ID_LENGTH + 1);
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const response = getPreliminaryResponseMessageId({
+            compact: true,
+            messageId,
+            liveResponseMessageId: `allocated-${attempt}`,
+          });
+          expect(response).not.toBeNull();
+          expect(isValidMessageId(response, MAX_MESSAGE_ID_LENGTH + 1)).toBe(true);
+          if (response == null) {
+            throw new Error('Missing compaction response identity');
+          }
+          messageId = response;
+        }
+      }
+    }
+  });
+
   it('uses a valid explicit response identity', () => {
     expect(
       getPreliminaryResponseMessageId({ messageId: 'user', responseMessageId: 'response' }),

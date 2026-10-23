@@ -413,6 +413,7 @@ async function saveErrorTurn(
       errorMessageId = getPreliminaryResponseMessageId({
         compact: true,
         messageId: liveUserMessage.messageId,
+        liveResponseMessageId,
       });
       errorParentMessageId = liveUserMessage.messageId;
     } else if (isRegenerate) {

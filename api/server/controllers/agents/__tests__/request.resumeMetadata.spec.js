@@ -3983,41 +3983,116 @@ describe('ResumableAgentController resume metadata', () => {
       );
     });
 
-    it('persists a failed compaction without overwriting a maximum-length preliminary anchor', async () => {
-      const anchorId = 'a'.repeat(256) + '_';
+    it.each(['a'.repeat(256) + '_', 'a'.repeat(257)])(
+      'persists a failed compaction without overwriting a maximum-length anchor',
+      async (anchorId) => {
+        mockGetMessages.mockImplementation(async ({ messageId }) =>
+          messageId === anchorId ? [{ _id: 'persisted-anchor' }] : [],
+        );
+        const client = {
+          options: {},
+          sendMessage: jest.fn(async (_text, options) => {
+            options.onStart(
+              { messageId: anchorId, conversationId, text: '' },
+              'compaction-response',
+            );
+            throw new Error('compaction failed');
+          }),
+        };
+
+        await AgentController(
+          createFailedRequest({ compact: true, messageId: anchorId, parentMessageId: anchorId }),
+          createResumableResponse(),
+          jest.fn(),
+          jest.fn().mockResolvedValue({ client }),
+          null,
+        );
+        await flushBackgroundGeneration();
+
+        expect(client.sendMessage).toHaveBeenCalledTimes(1);
+        expect(mockSaveMessage).toHaveBeenCalledWith(
+          expect.objectContaining({ userId: 'user-123' }),
+          expect.objectContaining({
+            messageId: 'compaction-response',
+            parentMessageId: anchorId,
+            error: true,
+          }),
+          expect.any(Object),
+        );
+        expect(mockSaveMessage.mock.calls.map(([, message]) => message.messageId)).not.toContain(
+          anchorId,
+        );
+        const { validateChatMessageIds } = jest.requireActual(
+          '../../../../../packages/api/src/middleware/messageIds',
+        );
+        const responseId = mockSaveMessage.mock.calls.find(([, message]) => message.error)[1]
+          .messageId;
+        const next = jest.fn();
+        const res = createResumableResponse();
+        validateChatMessageIds(
+          { body: { compact: true, messageId: responseId, parentMessageId: responseId } },
+          res,
+          next,
+        );
+        expect(next).toHaveBeenCalledTimes(1);
+        expect(res.status).not.toHaveBeenCalledWith(400);
+      },
+    );
+
+    it('keeps repeated failed compactions admissible without rewriting their anchors', async () => {
+      let anchorId = 'a'.repeat(257);
+      const rows = new Map([[anchorId, { _id: 'original-anchor', messageId: anchorId }]]);
       mockGetMessages.mockImplementation(async ({ messageId }) =>
-        messageId === anchorId ? [{ _id: 'persisted-anchor' }] : [],
+        rows.has(messageId) ? [rows.get(messageId)] : [],
       );
-      const client = {
-        options: {},
-        sendMessage: jest.fn(async (_text, options) => {
-          options.onStart({ messageId: anchorId, conversationId, text: '' }, 'compaction-response');
-          throw new Error('compaction failed');
-        }),
-      };
-
-      await AgentController(
-        createFailedRequest({ compact: true, messageId: anchorId, parentMessageId: anchorId }),
-        createResumableResponse(),
-        jest.fn(),
-        jest.fn().mockResolvedValue({ client }),
-        null,
+      mockSaveMessage.mockImplementation(async (_ctx, message) => {
+        rows.set(message.messageId, message);
+        return message;
+      });
+      const { validateChatMessageIds } = jest.requireActual(
+        '../../../../../packages/api/src/middleware/messageIds',
       );
-      await flushBackgroundGeneration();
 
-      expect(client.sendMessage).toHaveBeenCalledTimes(1);
-      expect(mockSaveMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'user-123' }),
-        expect.objectContaining({
-          messageId: 'compaction-response',
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const originalAnchor = rows.get(anchorId);
+        const request = createFailedRequest({
+          compact: true,
+          messageId: anchorId,
           parentMessageId: anchorId,
-          error: true,
-        }),
-        expect.any(Object),
-      );
-      expect(mockSaveMessage.mock.calls.map(([, message]) => message.messageId)).not.toContain(
-        anchorId,
-      );
+        });
+        const res = createResumableResponse();
+        const next = jest.fn();
+        validateChatMessageIds(request, res, next);
+        expect(next).toHaveBeenCalledTimes(1);
+        const client = {
+          options: {},
+          sendMessage: jest.fn(async (_text, options) => {
+            options.onStart(
+              { messageId: anchorId, conversationId, text: '' },
+              `compaction-response-${attempt}`,
+            );
+            throw new Error('compaction failed');
+          }),
+        };
+        await AgentController(
+          request,
+          res,
+          jest.fn(),
+          jest.fn().mockResolvedValue({ client }),
+          null,
+        );
+        await flushBackgroundGeneration();
+
+        const saved = mockSaveMessage.mock.calls.at(-1)[1];
+        expect(mockSaveMessage).toHaveBeenCalledTimes(attempt + 1);
+        expect(saved.messageId).not.toBe(anchorId);
+        expect(saved.messageId.length).toBeLessThanOrEqual(257);
+        expect(saved.parentMessageId).toBe(anchorId);
+        expect(rows.get(anchorId)).toBe(originalAnchor);
+        anchorId = saved.messageId;
+      }
+      expect(mockDecrementPendingRequest).toHaveBeenCalledTimes(3);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledTimes(3);
     });
 
     it('uses the live user identity after generation starts', async () => {
