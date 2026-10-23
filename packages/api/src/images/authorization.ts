@@ -127,18 +127,18 @@ function parseImagePath(originalUrl: string, basePath: string): ImagePath | null
     return null;
   }
 
-  let decodedUrl: string;
+  const rawPath = originalUrl.split(/[?#]/, 1)[0];
+  let decodedPath: string;
   try {
-    decodedUrl = decodeURIComponent(originalUrl);
+    decodedPath = decodeURIComponent(rawPath);
   } catch {
     return null;
   }
 
-  if (decodedUrl.includes('\0')) {
+  if (decodedPath.includes('\0')) {
     return null;
   }
 
-  const cleanPath = decodedUrl.split(/[?#]/, 1)[0];
   let decodedBasePath: string;
   try {
     decodedBasePath = decodeURIComponent(basePath);
@@ -147,9 +147,9 @@ function parseImagePath(originalUrl: string, basePath: string): ImagePath | null
   }
   const imagesPath = `${decodedBasePath}/images`;
   const imagesPrefix = `${imagesPath}/`;
-  const normalizedPath = cleanPath.startsWith(imagesPrefix)
-    ? `${imagesPrefix}${cleanPath.slice(imagesPrefix.length).replace(/^\/+/, '')}`
-    : cleanPath;
+  const normalizedPath = decodedPath.startsWith(imagesPrefix)
+    ? `${imagesPrefix}${decodedPath.slice(imagesPrefix.length).replace(/^\/+/, '')}`
+    : decodedPath;
   const match = normalizedPath.match(
     new RegExp(`^${escapeRegExp(imagesPath)}/([a-f0-9]{24})/([^/]+)$`, 'i'),
   );
@@ -164,7 +164,7 @@ function parseImagePath(originalUrl: string, basePath: string): ImagePath | null
   return {
     ownerId,
     filename,
-    canonicalPath: `/images/${ownerId}/${filename}`,
+    canonicalPath: `/images/${ownerId}/${encodeURIComponent(filename)}`,
     agentId: filename.match(AGENT_AVATAR_PATTERN)?.[1],
   };
 }
@@ -486,6 +486,8 @@ export function createImageAuthorizationMiddleware(
         return;
       }
 
+      // Static serving must receive the same single-decoded pathname that was authorized.
+      req.url = imagePath.canonicalPath.slice('/images'.length);
       res.locals.privateImageCache = true;
       let auth = await authPromise;
       let viewer: ImageUser | null = null;
