@@ -111,6 +111,12 @@ const checkResourcePermissionAccess = (requiredPermission) =>
           requiredPermission,
           resourceIdParam: 'resourceId',
         });
+      } else if (resourceType === ResourceType.CHAT_PROJECT) {
+        middleware = canAccessResource({
+          resourceType: ResourceType.CHAT_PROJECT,
+          requiredPermission,
+          resourceIdParam: 'resourceId',
+        });
       } else {
         return res.status(400).json({
           error: 'Bad Request',
