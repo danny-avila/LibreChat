@@ -145,11 +145,11 @@ import {
   isWebSearchBindingPath,
   getWebSearchReentryIssues,
 } from './binding';
+import { buildAdminConfigMeta, CATALOG_MODELS_TTL_MS } from './meta';
 import { createAdminAuditEmitter, configTarget } from './audit';
 import { DEFAULT_OVERRIDE_CACHE_TTL } from '~/app/service';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { mergeOverrideLayers } from '~/app/overrides';
-import { buildAdminConfigMeta } from './meta';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
@@ -688,7 +688,7 @@ const CONFIG_PRINCIPAL_TYPES = new Set([
   PrincipalType.ROLE,
 ]);
 
-function validatePrincipalType(value: string): value is PrincipalType {
+export function validatePrincipalType(value: string): value is PrincipalType {
   return CONFIG_PRINCIPAL_TYPES.has(value as PrincipalType);
 }
 
@@ -702,7 +702,7 @@ function invalidPriorityResponse(res: Response): Response {
   return res.status(400).json({ error: INVALID_PRIORITY_ERROR, code: 'INVALID_PRIORITY' });
 }
 
-function principalNotFoundResponse(res: Response): Response {
+export function principalNotFoundResponse(res: Response): Response {
   return res.status(404).json({ error: 'Principal not found', code: 'PRINCIPAL_NOT_FOUND' });
 }
 
@@ -724,7 +724,7 @@ function principalModel(type: PrincipalType): PrincipalModel {
   }
 }
 
-function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
+export function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
   if (!req.user) {
     return null;
   }
@@ -770,7 +770,7 @@ const APP_CONFIG_FIELD_TO_SECTION: Readonly<Record<string, string>> = {
   mcpConfig: 'mcpServers',
 };
 
-type ReadableSections = { broad: boolean; sections: ReadonlySet<string> };
+export type ReadableSections = { broad: boolean; sections: ReadonlySet<string> };
 
 /** Every section `configSchema` defines: a write resolves read access to all of them before it commits. */
 const CONFIG_SCHEMA_SECTIONS = Object.keys(configSchema.shape) as ConfigSection[];
@@ -778,12 +778,12 @@ const FULL_READ_ACCESS: ReadableSections = { broad: true, sections: new Set() };
 /** Shows no section: an assign-only write stores an empty document. */
 const NO_READ_ACCESS: ReadableSections = { broad: false, sections: new Set() };
 
-function canReadSection(readable: ReadableSections, section: string): boolean {
+export function canReadSection(readable: ReadableSections, section: string): boolean {
   return readable.broad || readable.sections.has(section);
 }
 
 /** Strips every top-level key not in `preserveKeys` that `canRead` rejects. */
-function filterSectionsByReadAccess<T extends Record<string, unknown>>(
+export function filterSectionsByReadAccess<T extends Record<string, unknown>>(
   obj: T,
   canRead: (section: string) => boolean,
   preserveKeys: Set<string> = new Set(),
@@ -797,7 +797,7 @@ function filterSectionsByReadAccess<T extends Record<string, unknown>>(
   return result as T;
 }
 
-function filterConfigDocForReadAccess<T extends ConfigRecord>(
+export function filterConfigDocForReadAccess<T extends ConfigRecord>(
   config: T,
   readable: ReadableSections,
 ): T {
@@ -840,7 +840,7 @@ function filterAppConfigForReadAccess(appConfig: AppConfig, readable: ReadableSe
 }
 
 /** All section names a config document's overrides/tombstones could reference. */
-function collectConfigSections(config: ConfigRecord): string[] {
+export function collectConfigSections(config: ConfigRecord): string[] {
   return [
     ...Object.keys(config.overrides ?? {}),
     ...(config.tombstones ?? []).map(getTopLevelSection),
@@ -859,7 +859,7 @@ function collectAppConfigSections(appConfig: AppConfig): string[] {
 type ConfigResponse = ConfigRecord & { revision: ConfigRevision };
 
 /** The document as the admin API returns it: secrets redacted, with its revision. */
-function redactConfigForResponse(config: ConfigRecord): ConfigResponse {
+export function redactConfigForResponse(config: ConfigRecord): ConfigResponse {
   const safeConfig = JSON.parse(JSON.stringify(config)) as ConfigRecord;
   if (safeConfig.overrides) {
     safeConfig.overrides = withoutStoredSecretBindings(safeConfig.overrides);
@@ -1907,6 +1907,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     maxPatchEntries: MAX_PATCH_ENTRIES,
     maxChangeOps: MAX_CONFIG_CHANGE_OPS,
     overrideCacheTtlMs,
+    catalogModelsTtlMs: CATALOG_MODELS_TTL_MS,
   });
 
   function readStoredConfig(

@@ -1,5 +1,6 @@
 import { getConfigMergeRules } from '@librechat/data-schemas';
 import {
+  Time,
   Constants,
   configSchema,
   PERMISSION_SUB_KEYS,
@@ -13,6 +14,12 @@ import {
 } from 'librechat-data-provider';
 import type { AdminConfigFeatures, AdminConfigMeta } from '@librechat/data-schemas';
 import { getConfigSecretRules } from './secrets';
+
+/**
+ * How long `GET /catalog` reuses a scope's model lists while its endpoint config is unchanged:
+ * the two minutes a provider's model list is cached for (`fetchModels`).
+ */
+export const CATALOG_MODELS_TTL_MS = Time.TWO_MINUTES;
 
 /**
  * The admin config behaviours this server has. A change flips its own flag when it wires the
@@ -39,6 +46,9 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   yamlSecretPreview: true,
   envAllowlist: true,
   secretRebinding: true,
+  resolvedApi: true,
+  catalogApi: true,
+  envStatus: true,
 };
 
 /**

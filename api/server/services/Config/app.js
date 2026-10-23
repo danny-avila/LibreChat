@@ -71,8 +71,13 @@ const appConfigService = createAppConfigService({
     });
   },
 });
-const { getAppConfig, clearAppConfigCache, clearOverrideCache, overrideCacheTtl } =
-  appConfigService;
+const {
+  getAppConfig,
+  resolveConfigLayers,
+  clearAppConfigCache,
+  clearOverrideCache,
+  overrideCacheTtl,
+} = appConfigService;
 
 // Config owns the reader; models never import this module to obtain it.
 db.initializeMessageBudget(getAppConfig);
@@ -108,6 +113,7 @@ function invalidateConfigCaches(tenantId) {
 
 module.exports = {
   getAppConfig,
+  resolveConfigLayers,
   overrideCacheTtl,
   invalidateConfigCaches,
   getCodeEnvironmentRegistry,

@@ -1330,6 +1330,29 @@ export type TLangfuseConnectionStatus = {
   updatedAt?: string;
 };
 
+/**
+ * Why a deployment offers no Langfuse connection settings, from its environment:
+ * - `tracing_disabled`: `LANGFUSE_TRACING_ENABLED=false`, or `LANGFUSE_SAMPLE_RATE` is 0;
+ * - `env_credentials`: a single-tenant deployment traces with `LANGFUSE_PUBLIC_KEY` and
+ *   `LANGFUSE_SECRET_KEY`, which take the place of a stored connection;
+ * - `fanout_disabled`: traces route per tenant (`TENANT_ISOLATION_STRICT`) but the fanout
+ *   collector is off (`LANGFUSE_FANOUT_ENABLED` with `LANGFUSE_FANOUT_COLLECTOR_URL`);
+ * - `tenant_export_disabled`: the fanout collector runs, but
+ *   `LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED=true` stops the export to tenants' own projects.
+ */
+export type TLangfuseUnavailableReason =
+  | 'tracing_disabled'
+  | 'env_credentials'
+  | 'fanout_disabled'
+  | 'tenant_export_disabled';
+
+/** 404 from the admin Langfuse connection routes on a deployment that offers no connection. */
+export type TLangfuseUnavailableResponse = {
+  error: string;
+  code: 'LANGFUSE_UNAVAILABLE';
+  reason: TLangfuseUnavailableReason;
+};
+
 export type TLangfuseDestinationOption = {
   key: string;
   baseUrl: string;

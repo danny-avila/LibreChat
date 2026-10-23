@@ -25,6 +25,10 @@ const mockDb = {
   deleteConfig: jest.fn(),
   toggleConfigActiveTracked: jest.fn(),
   recordAuditEntry: jest.fn(),
+  principalExists: jest.fn(async () => true),
+  findPartitionUser: jest.fn(async () => null),
+  getUserPrincipals: jest.fn(async () => []),
+  getApplicableConfigs: jest.fn(async () => []),
 };
 
 jest.mock('~/server/middleware', () => ({ requireJwtAuth: mockRequireJwtAuth }));
@@ -39,9 +43,16 @@ jest.mock('~/server/middleware/roles/capabilities', () => ({
 
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(async () => ({ config: {} })),
+  resolveConfigLayers: jest.fn(async () => ({ yaml: {}, merged: {}, resolved: {}, layers: [] })),
+  getEndpointsConfig: jest.fn(async () => ({})),
+  loadDefaultModels: jest.fn(async () => ({})),
+  loadConfigModels: jest.fn(async () => ({})),
+  getCachedTools: jest.fn(async () => ({})),
   overrideCacheTtl: 15_000,
   invalidateConfigCaches: jest.fn(async () => undefined),
 }));
+
+jest.mock('~/app/clients/tools', () => ({ availableTools: [], toolkits: [] }));
 
 jest.mock('~/models', () => mockDb);
 
@@ -75,6 +86,7 @@ describe('admin config routes', () => {
 
   beforeEach(() => {
     hasAdminAccess = true;
+    mockDb.listAllConfigs.mockResolvedValue([]);
     mockDb.findConfigByPrincipal.mockResolvedValue(null);
     mockDb.writeConfigDocument.mockImplementation(async (principalType, principalId, draft) => ({
       _id: 'c1',
@@ -162,6 +174,52 @@ describe('admin config routes', () => {
       maxPatchEntries: 100,
       maxChangeOps: 1000,
       overrideCacheTtlMs: 15_000,
+      catalogModelsTtlMs: 120_000,
     });
+  });
+
+  it.each([
+    '/api/admin/config/catalog',
+    '/api/admin/config/env-status',
+    '/api/admin/config/resolved/role/USER',
+    '/api/admin/config/effective?userId=0123456789abcdef01234567',
+  ])('serves the read view %s behind the same auth', async (path) => {
+    const anonymous = await request(app).get(path);
+    hasAdminAccess = false;
+    const withoutAccess = await request(app).get(path).set('authorization', 'Bearer admin');
+
+    expect(anonymous.status).toBe(401);
+    expect(withoutAccess.status).toBe(403);
+  });
+
+  it('serves the catalog to a client that sends no User-Agent', async () => {
+    const response = await request(app)
+      .get('/api/admin/config/catalog?principalType=role&principalId=USER')
+      .set('authorization', 'Bearer admin')
+      .unset('User-Agent')
+      .expect(200);
+
+    expect(response.body).toMatchObject({ principalType: 'role', principalId: 'USER' });
+    expect(response.body.endpoints).toBeDefined();
+  });
+
+  it('routes the resolved, effective and env status views to their handlers', async () => {
+    const auth = (path) => request(app).get(path).set('authorization', 'Bearer admin');
+
+    const resolved = await auth('/api/admin/config/resolved/role/USER').expect(200);
+    expect(resolved.body).toEqual({
+      principalType: 'role',
+      principalId: 'USER',
+      yaml: {},
+      layers: [],
+      resolved: {},
+    });
+
+    const effective = await auth('/api/admin/config/effective?userId=0123456789abcdef01234567');
+    expect(effective.status).toBe(404);
+    expect(effective.body.code).toBe('USER_NOT_FOUND');
+
+    const envStatus = await auth('/api/admin/config/env-status').expect(200);
+    expect(envStatus.body.vars).toBeDefined();
   });
 });

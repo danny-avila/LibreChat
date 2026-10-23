@@ -1,6 +1,10 @@
 process.env.CREDS_KEY =
   process.env.CREDS_KEY ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
+import type {
+  TLangfuseUnavailableReason,
+  TLangfuseUnavailableResponse,
+} from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 
@@ -123,6 +127,15 @@ function rehydrate(fields: Record<string, unknown>): Record<string, unknown> {
   return langfuse;
 }
 
+/** The 404 a deployment without Langfuse connection settings answers, naming why. */
+function unavailable(reason: TLangfuseUnavailableReason): TLangfuseUnavailableResponse {
+  return {
+    error: 'Langfuse connection settings are not available',
+    code: 'LANGFUSE_UNAVAILABLE',
+    reason,
+  };
+}
+
 describe('createAdminLangfuseHandlers', () => {
   describe('connection availability gate', () => {
     it('rejects connection reads when deployment fanout is disabled', async () => {
@@ -133,7 +146,7 @@ describe('createAdminLangfuseHandlers', () => {
       await handlers.getConnection(mockReq(), res);
 
       expect(res.statusCode).toBe(404);
-      expect(res.body).toEqual({ error: 'Langfuse connection settings are not available' });
+      expect(res.body).toEqual(unavailable('fanout_disabled'));
       expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
     });
 
@@ -148,7 +161,7 @@ describe('createAdminLangfuseHandlers', () => {
       );
 
       expect(res.statusCode).toBe(404);
-      expect(res.body).toEqual({ error: 'Langfuse connection settings are not available' });
+      expect(res.body).toEqual(unavailable('fanout_disabled'));
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
@@ -160,7 +173,7 @@ describe('createAdminLangfuseHandlers', () => {
       await handlers.getConnection(mockReq(), res);
 
       expect(res.statusCode).toBe(404);
-      expect(res.body).toEqual({ error: 'Langfuse connection settings are not available' });
+      expect(res.body).toEqual(unavailable('fanout_disabled'));
       expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
     });
 
@@ -176,7 +189,7 @@ describe('createAdminLangfuseHandlers', () => {
       );
 
       expect(res.statusCode).toBe(404);
-      expect(res.body).toEqual({ error: 'Langfuse connection settings are not available' });
+      expect(res.body).toEqual(unavailable('fanout_disabled'));
       expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
       expect(global.fetch).not.toHaveBeenCalled();
     });
@@ -189,7 +202,7 @@ describe('createAdminLangfuseHandlers', () => {
       await handlers.getConnection(mockReq(), res);
 
       expect(res.statusCode).toBe(404);
-      expect(res.body).toEqual({ error: 'Langfuse connection settings are not available' });
+      expect(res.body).toEqual(unavailable('tenant_export_disabled'));
       expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
     });
 
@@ -217,17 +230,22 @@ describe('createAdminLangfuseHandlers', () => {
       await handlers.getConnection(mockReq(), res);
 
       expect(res.statusCode).toBe(404);
+      expect(res.body).toEqual(unavailable('env_credentials'));
       expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
     });
 
-    it('rejects settings when tracing is disabled', async () => {
-      process.env.LANGFUSE_TRACING_ENABLED = 'false';
+    it.each([
+      ['LANGFUSE_TRACING_ENABLED', 'false'],
+      ['LANGFUSE_SAMPLE_RATE', '0'],
+    ])('rejects settings when tracing is off (%s=%s)', async (key, value) => {
+      process.env[key] = value;
       const { handlers, deps } = createHandlers();
       const res = mockRes();
 
       await handlers.getConnection(mockReq(), res);
 
       expect(res.statusCode).toBe(404);
+      expect(res.body).toEqual(unavailable('tracing_disabled'));
       expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
     });
   });

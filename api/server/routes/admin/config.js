@@ -1,5 +1,10 @@
 const express = require('express');
-const { createAdminConfigHandlers, rejectUnsafeConfigKeys } = require('@librechat/api');
+const {
+  rejectUnsafeConfigKeys,
+  createAdminConfigHandlers,
+  createAdminConfigReadHandlers,
+  createAdminConfigCatalogHandlers,
+} = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
   hasCapability,
@@ -10,9 +15,15 @@ const {
 } = require('~/server/middleware/roles/capabilities');
 const {
   getAppConfig,
+  getCachedTools,
   overrideCacheTtl,
+  loadConfigModels,
+  loadDefaultModels,
+  getEndpointsConfig,
+  resolveConfigLayers,
   invalidateConfigCaches,
 } = require('~/server/services/Config');
+const { availableTools, toolkits } = require('~/app/clients/tools');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
 
@@ -41,11 +52,43 @@ const handlers = createAdminConfigHandlers({
   overrideEnvAllowlist: process.env.CONFIG_OVERRIDE_ENV_ALLOWLIST,
 });
 
+const readHandlers = createAdminConfigReadHandlers({
+  findConfigByPrincipal: db.findConfigByPrincipal,
+  hasAnyConfigReadAccess,
+  getReadableConfigSections,
+  hasCapability,
+  resolveConfigLayers,
+  principalExists: db.principalExists,
+  findPartitionUser: db.findPartitionUser,
+  getUserPrincipals: db.getUserPrincipals,
+  getApplicableConfigs: db.getApplicableConfigs,
+});
+
+const catalogHandlers = createAdminConfigCatalogHandlers({
+  hasAnyConfigReadAccess,
+  getReadableConfigSections,
+  hasConfigCapability,
+  getAppConfig,
+  getEndpointsConfig,
+  loadDefaultModels,
+  loadConfigModels,
+  getCachedTools,
+  toolManifest: availableTools,
+  toolkits,
+  principalExists: db.principalExists,
+  listAllConfigs: db.listAllConfigs,
+  overrideEnvAllowlist: process.env.CONFIG_OVERRIDE_ENV_ALLOWLIST,
+});
+
 router.use(requireJwtAuth, requireAdminAccess, rejectUnsafeConfigKeys);
 
 router.get('/', handlers.listConfigs);
 router.get('/meta', handlers.getConfigMeta);
 router.get('/base', handlers.getBaseConfig);
+router.get('/catalog', catalogHandlers.getConfigCatalog);
+router.get('/env-status', catalogHandlers.getEnvStatus);
+router.get('/effective', readHandlers.getEffectiveConfig);
+router.get('/resolved/:principalType/:principalId', readHandlers.getResolvedConfig);
 router.get('/:principalType/:principalId', handlers.getConfig);
 router.put('/:principalType/:principalId', handlers.upsertConfigOverrides);
 router.patch('/:principalType/:principalId/fields', handlers.patchConfigField);
