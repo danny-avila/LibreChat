@@ -9,6 +9,7 @@ import {
   canAgentGraphPause,
   copyToolApprovalAdmissionMetadata,
 } from './admission';
+import { MAX_TOOL_OPTION_ENTRIES, MAX_TOOL_OPTION_KEY_BYTES } from '../options';
 import { loadToolDefinitions } from '~/tools/definitions';
 import { formatMCPServerTools } from '~/mcp/tools';
 import { mapToolApprovalPolicy } from './policy';
@@ -1373,4 +1374,114 @@ test('long mixed-case upstream prefixes use actual literal matcher spellings wit
       resolvedProgrammaticHooks: [hook],
     }),
   ).toBe(false);
+});
+
+describe('bounded approval admission', () => {
+  const policy = { enabled: true, mode: 'bypass' as const };
+  const oversized = { ['q' + '_mcp_z'.repeat(4000)]: { approval_mode: 'ask' as const } };
+
+  test.each(['lazySubagentConfigs', 'subagentGraphMemberMetadata'] as const)(
+    '%s skips unrelated options for an explicitly empty surface',
+    (placement) => {
+      const stringify = jest.spyOn(JSON, 'stringify');
+      expect(
+        canAgentGraphPause({
+          policy,
+          agents: [{ [placement]: [{ tools: [], tool_options: oversized }] }],
+        }),
+      ).toBe(false);
+      expect(stringify).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([undefined, ['other_mcp_unknown'], ['mcp_all_mcp_unknown']])(
+    'rejects oversized legacy options before expansion with tools=%j',
+    (tools) => {
+      const stringify = jest.spyOn(JSON, 'stringify');
+      expect(() =>
+        canAgentGraphPause({
+          policy,
+          agents: [{ lazySubagentConfigs: [{ tools, tool_options: oversized }] }],
+        }),
+      ).toThrow(RangeError);
+      expect(stringify).not.toHaveBeenCalled();
+    },
+  );
+
+  test('rejects oversized legacy records before normalizing or copying metadata', () => {
+    for (const tool_options of [
+      oversized,
+      Object.fromEntries(
+        Array.from({ length: MAX_TOOL_OPTION_ENTRIES + 1 }, (_, i) => [
+          `${i}`,
+          { approval_mode: 'ask' as const },
+        ]),
+      ),
+      Object.fromEntries(
+        Array.from({ length: 129 }, (_, i) => [
+          `${i}`.padEnd(256, 'é'),
+          { approval_mode: 'ask' as const },
+        ]),
+      ),
+    ]) {
+      expect(() => copyToolApprovalAdmissionMetadata({}, { tools: [], tool_options })).toThrow(
+        RangeError,
+      );
+      expect(() =>
+        canAgentGraphPause({ policy, agents: [{ lazySubagentConfigs: [{ tool_options }] }] }),
+      ).toThrow(RangeError);
+    }
+  });
+
+  test('bounds aggregate serialized expansion for otherwise valid delimiter-rich keys', () => {
+    const key = 'q' + '_mcp_z'.repeat(80);
+    const tool_options = Object.fromEntries(
+      Array.from({ length: 100 }, (_, i) => [`${i}_${key}`, { approval_mode: 'ask' as const }]),
+    );
+    expect(
+      Object.keys(tool_options).reduce((sum, name) => sum + Buffer.byteLength(name), 0),
+    ).toBeLessThan(MAX_TOOL_OPTION_KEY_BYTES);
+    const stringify = JSON.stringify;
+    let serializedBytes = 0;
+    jest.spyOn(JSON, 'stringify').mockImplementation((value) => {
+      const result = stringify(value);
+      serializedBytes += result?.length ?? 0;
+      return result;
+    });
+    const descriptor = copyToolApprovalAdmissionMetadata(
+      {},
+      { tools: ['other_mcp_unknown'], tool_options },
+    );
+    expect(() =>
+      canAgentGraphPause({ policy, agents: [{ lazySubagentConfigs: [descriptor] }] }),
+    ).toThrow('safety work limit');
+    expect(serializedBytes).toBeGreaterThan(0);
+    expect(serializedBytes).toBeLessThan(2 * 1024 * 1024);
+  });
+
+  test('shares the expansion budget across lazy children, not per option or agent', () => {
+    const name = 'q' + '_mcp_z'.repeat(80);
+    const child = {
+      tools: ['other_mcp_unknown'],
+      tool_options: { [name]: { approval_mode: 'ask' as const } },
+    };
+    expect(canAgentGraphPause({ policy, agents: [{ lazySubagentConfigs: [child] }] })).toBe(false);
+    expect(() =>
+      canAgentGraphPause({
+        policy,
+        agents: [{ lazySubagentConfigs: Array.from({ length: 40 }, () => ({ ...child })) }],
+      }),
+    ).toThrow('safety work limit');
+  });
+
+  test('bounds delimiter expansion in unresolved hook spellings too', () => {
+    const name = 'q' + '_mcp_z'.repeat(4000);
+    expect(() =>
+      canAgentGraphPause({
+        policy,
+        agents: [{ lazySubagentConfigs: [{}] }],
+        resolvedProgrammaticHooks: [{ hook: askHook, toolNames: [name] }],
+      }),
+    ).toThrow('safety work limit');
+  });
 });
