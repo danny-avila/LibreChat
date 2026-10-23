@@ -30,6 +30,7 @@ import {
   isTwoFactorPolicyProvider,
   resolveEndpointType,
   webSearchSchema,
+  isSafeLinkUrl,
 } from './config';
 
 describe('independent browser replay opt-in', () => {
@@ -254,6 +255,30 @@ describe('repository instruction configuration', () => {
       expect(
         agentsEndpointSchema.safeParse({ repositoryInstructions: { timeoutMs } }).success,
       ).toBe(false);
+    }
+  });
+});
+
+describe('workspace attachment configuration', () => {
+  it('defaults the copy budget to ten seconds and bounds operator overrides', () => {
+    expect(agentsEndpointSchema.parse({}).workspaceAttachments).toBeUndefined();
+    expect(agentsEndpointSchema.parse({ workspaceAttachments: {} }).workspaceAttachments).toEqual({
+      timeoutMs: 10_000,
+      concurrency: 3,
+    });
+    expect(
+      agentsEndpointSchema.parse({ workspaceAttachments: { timeoutMs: 30_000 } })
+        .workspaceAttachments,
+    ).toEqual({ timeoutMs: 30_000, concurrency: 3 });
+    for (const concurrency of [0, 17, 1.5]) {
+      expect(
+        agentsEndpointSchema.safeParse({ workspaceAttachments: { concurrency } }).success,
+      ).toBe(false);
+    }
+    for (const timeoutMs of [0, 999, 120_001, 1.5]) {
+      expect(agentsEndpointSchema.safeParse({ workspaceAttachments: { timeoutMs } }).success).toBe(
+        false,
+      );
     }
   });
 });
@@ -2765,6 +2790,120 @@ describe('interface theme config', () => {
       false,
     );
     expect(chatProjectsConfigSchema.safeParse({ maxDescriptionLength: 10001 }).success).toBe(false);
+  });
+});
+
+describe('policy link URLs', () => {
+  const scriptUrls = [
+    'javascript:alert(document.domain)',
+    'JavaScript:alert(1)',
+    ' javascript:alert(1)',
+    '\u0001javascript:alert(1)',
+    'java\tscript:alert(1)',
+    'java\nscript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'vbscript:msgbox(1)',
+    'file:///etc/passwd',
+    'blob:https://example.com/0b1c',
+  ];
+  /** Unicode white space the URL parser keeps but `String.prototype.trim()` strips. */
+  const trimmedScriptUrls = ['\u00a0', '\ufeff', '\u2028', '\u3000'].map(
+    (space) => `${space}javascript:alert(document.domain)${space}`,
+  );
+  const linkUrls = [
+    'https://example.com/privacy',
+    'HTTP://example.com/terms',
+    'https://example.com/privacy policy',
+    '\u00a0https://example.com/privacy',
+    'mailto:privacy@example.com',
+    'tel:+15555550100',
+    '/privacy',
+    'legal/terms.html',
+    './privacy',
+    '//example.com/privacy',
+    '#privacy',
+    '?doc=privacy',
+    '',
+    '   ',
+    '\u3000',
+  ];
+  const linkProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+  const parseInterface = (value: Record<string, unknown>) =>
+    configSchema.safeParse({ version: '1.3.0', interface: value });
+
+  it.each([...scriptUrls, ...trimmedScriptUrls])(
+    'refuses %j, which a browser would not open as a web page, mail or phone link',
+    (url) => {
+      expect(isSafeLinkUrl(url)).toBe(false);
+    },
+  );
+
+  it.each(linkUrls)('accepts %j, an http(s), mailto:, tel:, relative or blank link', (url) => {
+    expect(isSafeLinkUrl(url)).toBe(true);
+  });
+
+  it('keeps accepting a malformed http(s) link, which a browser does not open at all', () => {
+    expect(isSafeLinkUrl('https://exa mple.com')).toBe(true);
+    expect(isSafeLinkUrl('http://')).toBe(true);
+  });
+
+  it('reads the scheme the URL parser reads, before and after the trim a client applies', () => {
+    const base = 'https://chat.example.com/c/new';
+    for (const url of [...scriptUrls, ...trimmedScriptUrls, ...linkUrls]) {
+      const readable = [url, url.trim()].every((read) =>
+        linkProtocols.has(new URL(read, base).protocol),
+      );
+      expect([isSafeLinkUrl(url), url]).toEqual([readable, url]);
+    }
+  });
+
+  it('refuses a scheme behind any mix of control characters and Unicode white space', () => {
+    expect(isSafeLinkUrl('\u0001\u00a0javascript:alert(1)')).toBe(false);
+    expect(isSafeLinkUrl('\u00a0\t\u0001\ufeffJAVASCRIPT:alert(1)')).toBe(false);
+  });
+
+  it('judges a link with long white-space runs in time that grows linearly with its length', () => {
+    const run = 100_000;
+    const cases: [string, boolean][] = [
+      [`https://example.com/${' '.repeat(run)}x`, true],
+      [`https://example.com/${'\u00a0\t'.repeat(run / 2)}x`, true],
+      [`${' '.repeat(run)}x`, true],
+      [`${'\u3000'.repeat(run)}${'a'.repeat(run)}`, true],
+      [`${' \u00a0\u0001'.repeat(run / 3)}javascript:alert(1)${' '.repeat(run)}x`, false],
+      [`java${'\t'.repeat(run)}script:alert(1)`, false],
+    ];
+    for (const [url, safe] of cases) {
+      const started = performance.now();
+      const decision = isSafeLinkUrl(url);
+      const elapsed = performance.now() - started;
+      expect([decision, elapsed < 100]).toEqual([safe, true]);
+    }
+  });
+
+  it('rejects a script URL in either policy link and points at the field', () => {
+    for (const field of ['privacyPolicy', 'termsOfService']) {
+      const result = parseInterface({ [field]: { externalUrl: 'javascript:alert(1)' } });
+      expect(result.success).toBe(false);
+      expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toEqual([
+        ['interface', field, 'externalUrl'],
+      ]);
+    }
+  });
+
+  it('accepts http(s), mailto:, relative and blank policy links with their other settings', () => {
+    const result = parseInterface({
+      privacyPolicy: { externalUrl: 'https://example.com/privacy', openNewTab: true },
+      termsOfService: { externalUrl: '/terms', modalAcceptance: true, modalContent: '# Terms' },
+    });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.interface.privacyPolicy).toEqual({
+      externalUrl: 'https://example.com/privacy',
+      openNewTab: true,
+    });
+    expect(parseInterface({ privacyPolicy: { externalUrl: '' } }).success).toBe(true);
+    expect(
+      parseInterface({ privacyPolicy: { externalUrl: 'mailto:privacy@example.com' } }).success,
+    ).toBe(true);
   });
 });
 

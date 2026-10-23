@@ -1150,6 +1150,22 @@ describe('updateUsersRoleByIds', () => {
       `${AUTH_USER_DOC_BY_ID_PREFIX}:${bob._id.toString()}`,
     );
   });
+
+  it('with fromRole, changes only the users still on that role', async () => {
+    const [alice, bob] = await User.create([
+      { name: 'Alice', email: 'alice@test.com', role: 'writer', username: 'alice' },
+      { name: 'Bob', email: 'bob@test.com', role: 'viewer', username: 'bob' },
+    ]);
+
+    await updateUsersRoleByIds([alice._id.toString(), bob._id.toString()], 'editor', {
+      fromRole: 'writer',
+    });
+
+    const roles = await User.find({ _id: { $in: [alice._id, bob._id] } })
+      .sort({ username: 1 })
+      .lean();
+    expect(roles.map((user) => user.role)).toEqual(['editor', 'viewer']);
+  });
 });
 
 describe('countUsersByRole', () => {

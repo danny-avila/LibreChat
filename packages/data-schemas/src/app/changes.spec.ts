@@ -5,6 +5,9 @@ import {
   isConfigEntryError,
   applyConfigChanges,
   isSameConfigValue,
+  toConfigIdentityPath,
+  renameConfigIdentityPath,
+  resolveConfigIdentityPath,
   getConfigBatchWrittenPaths,
   getConfigChangeWrittenPaths,
 } from './changes';
@@ -640,6 +643,55 @@ describe('getConfigBatchWrittenPaths', () => {
         { op: 'removeEntry', segments: CUSTOM, key: 'a' },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('config identity paths', () => {
+  const doc = {
+    endpoints: { custom: [{ name: 'Good' }, { name: 'Ollama', headers: { K: 'v' } }, { x: 1 }] },
+    mcpServers: { draft: { url: 'u' } },
+  };
+
+  it('names an entry of a merged-by-key array by its key, anything else by segment', () => {
+    expect(toConfigIdentityPath(doc, ['endpoints', 'custom', '1', 'headers', 'K'])).toEqual([
+      'endpoints',
+      'custom',
+      { entry: 'Ollama' },
+      'headers',
+      'K',
+    ]);
+    expect(toConfigIdentityPath(doc, ['endpoints', 'custom', '2', 'x'])).toEqual(
+      at('endpoints.custom.2.x'),
+    );
+  });
+
+  it('finds an entry where another document holds it, under a folded spelling too', () => {
+    const path = toConfigIdentityPath(doc, ['endpoints', 'custom', '1', 'headers', 'K']);
+
+    expect(
+      resolveConfigIdentityPath({ endpoints: { custom: [{ name: 'ollama' }] } }, path),
+    ).toEqual(at('endpoints.custom.0.headers.K'));
+    expect(resolveConfigIdentityPath({ endpoints: { custom: [{ name: 'Good' }] } }, path)).toBe(
+      null,
+    );
+  });
+
+  it('follows a rename of the record key or entry the path passes through, and nothing else', () => {
+    const server = toConfigIdentityPath(doc, at('mcpServers.draft.url'));
+    const entry = toConfigIdentityPath(doc, at('endpoints.custom.1.headers.K'));
+
+    expect(renameConfigIdentityPath(server, ['mcpServers'], 'draft', 'tools')).toEqual(
+      at('mcpServers.tools.url'),
+    );
+    expect(renameConfigIdentityPath(server, ['mcpServers'], 'other', 'tools')).toEqual(server);
+    expect(renameConfigIdentityPath(entry, CUSTOM, 'OLLAMA', 'Renamed')).toEqual([
+      ...CUSTOM,
+      { entry: 'Renamed' },
+      'headers',
+      'K',
+    ]);
+    expect(renameConfigIdentityPath(entry, CUSTOM, 'Good', 'x')).toEqual(entry);
+    expect(renameConfigIdentityPath(entry, ['mcpServers'], 'Ollama', 'x')).toEqual(entry);
   });
 });
 

@@ -113,7 +113,10 @@ export function isTwoFactorPolicyProvider(provider: string | null | undefined): 
 /** How long a started social login may take to return to its callback before its `state` expires. */
 export const DEFAULT_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
-export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox'] as const;
+/** Sections only librechat.yaml sets: no config document, Base included, can change or remove
+ * them. `turnstile` stays here until the server verifies Turnstile tokens: until then a stored
+ * site key adds no protection, and a wrong one locks users out of sign-in and registration. */
+export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox', 'turnstile'] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
@@ -710,6 +713,13 @@ export const azureGroupSchema = z
     models: z.record(z.string(), modelConfigSchema),
   })
   .required()
+  .extend({
+    /**
+     * Masked preview of the group's `apiKey`, set by the admin config API when it stores the key
+     * encrypted. Read-only: writes to it are rejected.
+     */
+    apiKeyPreview: z.string().optional(),
+  })
   .and(azureBaseSchema);
 
 export const azureGroupConfigsSchema = z.array(azureGroupSchema).min(1);
@@ -1606,6 +1616,15 @@ export const agentsEndpointSchema = baseEndpointSchema
       repositoryInstructions: z
         .object({
           timeoutMs: z.number().int().min(100).max(30_000).optional().default(2000),
+        })
+        .optional(),
+      /** How long a turn on an attached workspace may spend copying chat attachments into it
+       * before the model runs; unfinished copies fall back to a note and retry next turn. */
+      workspaceAttachments: z
+        .object({
+          timeoutMs: z.number().int().min(1_000).max(120_000).optional().default(10_000),
+          /** Workspace requests in flight for the turn, across every agent it primes. */
+          concurrency: z.number().int().min(1).max(16).optional().default(3),
         })
         .optional(),
       /** Budget and cache configuration for resolving an agent's linked prompt-group
@@ -2635,8 +2654,42 @@ export enum EImageOutputType {
   JPEG = 'jpeg',
 }
 
+/** Schemes a configured link may use: web pages, and the mail and phone links that run no script. */
+const LINK_SCHEMES = new Set(['http', 'https', 'mailto', 'tel']);
+/**
+ * A link's scheme as a reader finds it. It skips what either reader strips from the front: the
+ * WHATWG URL parser strips C0 controls and spaces, and `String.prototype.trim()` (which clients
+ * apply first) strips Unicode white space such as U+00A0, U+FEFF, U+2028 and U+3000; skipping
+ * both at once covers either reader, and either order. Inside the scheme it allows the tabs and
+ * newlines the URL parser removes. Only the front of a link decides its scheme, so the match is
+ * anchored there and ends with the scheme: the skipped characters cannot start a scheme, so a
+ * failed match gives each one back once, and nothing after the scheme is read at all.
+ */
+// eslint-disable-next-line no-control-regex
+const URL_SCHEME = /^[\u0000-\u0020\s]*([a-z][a-z\d+.\t\n\r-]*):/i;
+const URL_TAB_OR_NEWLINE = /[\t\n\r]/g;
+
+/**
+ * Whether a configured link, such as a privacy policy or terms of service `externalUrl`, may be
+ * rendered as an `href` on the app's pages, the signed-out sign-in page included: an http(s),
+ * `mailto:` or `tel:` URL, a URL relative to the app (which keeps the page's http(s) scheme),
+ * or a blank value, which publishes no link. The scheme is read the way the URL parser browsers
+ * use reads it, after the trimming clients apply, so letter case, white space (Unicode white
+ * space included) and control characters cannot disguise one that runs script, such as
+ * `javascript:` or `data:`. Only the scheme is judged: a malformed http(s) URL is not opened by
+ * a browser at all, so it stays accepted as it always was.
+ */
+export function isSafeLinkUrl(url: string): boolean {
+  const scheme = URL_SCHEME.exec(url)?.[1];
+  return scheme == null || LINK_SCHEMES.has(scheme.replace(URL_TAB_OR_NEWLINE, '').toLowerCase());
+}
+
+const linkUrlSchema = z
+  .string()
+  .refine(isSafeLinkUrl, { message: 'must be an http(s), mailto: or tel: URL, or a relative URL' });
+
 const termsOfServiceSchema = z.object({
-  externalUrl: z.string().optional(),
+  externalUrl: linkUrlSchema.optional(),
   openNewTab: z.boolean().optional(),
   modalAcceptance: z.boolean().optional(),
   modalTitle: z.string().optional(),
@@ -2878,7 +2931,7 @@ export const interfaceSchema = z
     theme: deploymentThemeSchema.optional(),
     privacyPolicy: z
       .object({
-        externalUrl: z.string().optional(),
+        externalUrl: linkUrlSchema.optional(),
         openNewTab: z.boolean().optional(),
       })
       .optional(),

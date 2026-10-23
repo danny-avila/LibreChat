@@ -24,6 +24,8 @@ const {
   resolveCodeEnvironmentTransitionVersion,
   loadConversationListLimits,
   resolvePullRequestCapabilities,
+  resolvePreLoginAppConfig,
+  withSafePolicyLinks,
 } = require('@librechat/api');
 const {
   DEFAULT_MCP_APP_CSP_LIMITS,
@@ -31,7 +33,7 @@ const {
   defaultSocialLogins,
   resolveMCPAppsPolicy,
 } = require('librechat-data-provider');
-const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
+const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability, hasConfigCapability } = require('~/server/middleware/roles/capabilities');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getRumConfig } = require('~/server/services/Config/rum');
@@ -231,8 +233,7 @@ router.get('/', async function (req, res) {
     const publicSharePayload = buildPublicSharePayload();
 
     if (!req.user) {
-      const tenantId = getTenantId();
-      const baseConfig = await getAppConfig(tenantId ? { tenantId } : { baseOnly: true });
+      const baseConfig = await resolvePreLoginAppConfig(getAppConfig);
 
       /** @type {Partial<TStartupConfig>} */
       const payload = {
@@ -310,7 +311,7 @@ router.get('/', async function (req, res) {
       sharedLinksSnapshotFilesEnabled: sharedLinksEnabled && isFileSnapshotEnabled(appConfig),
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       projects: appConfig?.projects,
-      interface: appConfig?.interfaceConfig,
+      interface: withSafePolicyLinks(appConfig?.interfaceConfig),
       titleGenerationTiming: resolveTitleTiming({
         appConfig,
         endpoint: EModelEndpoint.agents,

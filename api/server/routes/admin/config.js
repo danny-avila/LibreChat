@@ -24,10 +24,11 @@ const handlers = createAdminConfigHandlers({
   listAllConfigs: db.listAllConfigs,
   findConfigByPrincipal: db.findConfigByPrincipal,
   writeConfigDocument: db.writeConfigDocument,
-  tombstoneConfigField: db.tombstoneConfigField,
   unsetConfigField: db.unsetConfigField,
   deleteConfig: db.deleteConfig,
   toggleConfigActiveTracked: db.toggleConfigActiveTracked,
+  setConfigPriority: db.setConfigPriority,
+  principalExists: db.principalExists,
   hasAnyConfigReadAccess,
   getReadableConfigSections,
   hasConfigCapability,
@@ -37,6 +38,7 @@ const handlers = createAdminConfigHandlers({
   recordAuditEntry: db.recordAuditEntry,
   auditFailClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
   overrideCacheTtlMs: overrideCacheTtl,
+  overrideEnvAllowlist: process.env.CONFIG_OVERRIDE_ENV_ALLOWLIST,
 });
 
 router.use(requireJwtAuth, requireAdminAccess, rejectUnsafeConfigKeys);
@@ -52,5 +54,6 @@ router.delete('/:principalType/:principalId/fields', handlers.deleteConfigField)
 router.post('/:principalType/:principalId/changes', handlers.applyConfigChanges);
 router.delete('/:principalType/:principalId', handlers.deleteConfigOverrides);
 router.patch('/:principalType/:principalId/active', handlers.toggleConfig);
+router.patch('/:principalType/:principalId/priority', handlers.updateConfigPriority);
 
 module.exports = router;

@@ -768,7 +768,11 @@ export function redactServerSecrets(
   }
 
   if (config.oauth) {
-    const { client_secret: _secret, ...safeOAuth } = config.oauth;
+    const {
+      client_secret: _secret,
+      client_secretPreview: _secretPreview,
+      ...safeOAuth
+    } = config.oauth;
     safe.oauth = safeOAuth;
   }
 
