@@ -1,6 +1,7 @@
 import { Constants } from 'librechat-data-provider';
 import { createToolPolicyHook } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
+import type { GenericTool } from '@librechat/agents';
 import type { PluginHookSource } from '~/agents/hooks/source';
 import type { ToolApprovalAdmissionAgent } from './admission';
 import type { ToolApprovalHook } from './hooks';
@@ -9,9 +10,11 @@ import {
   canAgentGraphPause,
   copyToolApprovalAdmissionMetadata,
 } from './admission';
+import { buildToolClassification, aliasMCPToolOptions } from '~/tools/classification';
 import { MAX_TOOL_OPTION_ENTRIES, MAX_TOOL_OPTION_KEY_BYTES } from '../options';
 import { loadToolDefinitions } from '~/tools/definitions';
 import { formatMCPServerTools } from '~/mcp/tools';
+import { agentUpdateSchema } from '../validation';
 import { mapToolApprovalPolicy } from './policy';
 
 const askHook: ToolApprovalHook = async () => ({ decision: 'ask' });
@@ -1430,6 +1433,78 @@ describe('bounded approval admission', () => {
       expect(() =>
         canAgentGraphPause({ policy, agents: [{ lazySubagentConfigs: [{ tool_options }] }] }),
       ).toThrow(RangeError);
+    }
+  });
+
+  test.each([
+    { definitionsOnly: false, count: 513, nameLength: 0 },
+    { definitionsOnly: true, count: 513, nameLength: 0 },
+    { definitionsOnly: false, count: 64, nameLength: 512 },
+    { definitionsOnly: true, count: 64, nameLength: 512 },
+  ])(
+    'applies authoring limits before aliases (definitionsOnly=$definitionsOnly count=$count nameLength=$nameLength)',
+    async ({ definitionsOnly, count, nameLength }) => {
+      const names = Array.from({ length: count }, (_, i) => `read_${i}`.padEnd(nameLength, 'x'));
+      const tool_options = agentUpdateSchema.parse({
+        tool_options: Object.fromEntries(
+          names.map((name) => [`db_${name}_mcp_db`, { approval_mode: 'ask' }]),
+        ),
+      }).tool_options!;
+      const result = await buildToolClassification({
+        userId: 'user',
+        agentId: 'child',
+        definitionsOnly,
+        agentToolOptions: tool_options,
+        loadedTools: names.map((name) => ({
+          name: `${name}_mcp_db`,
+          mcp: true,
+          mcpRawServerName: 'db',
+          mcpServerToolName: `db_${name}`,
+          mcpJsonSchema: { type: 'object', properties: {} },
+        })) as unknown as GenericTool[],
+      });
+      expect(Object.keys(tool_options)).toHaveLength(count * 2);
+      const agent = {
+        tools: ['mcp_all_mcp_db'],
+        tool_options,
+        toolRegistry: result.toolRegistry,
+        toolDefinitions: result.toolDefinitions,
+        mcpToolAliases: result.mcpToolAliases,
+      };
+      expect(canAgentGraphPause({ policy, agents: [agent] })).toBe(true);
+      expect(canAgentGraphPause({ policy: { ...policy, deny: ['*'] }, agents: [agent] })).toBe(
+        false,
+      );
+      const projected = copyToolApprovalAdmissionMetadata({ id: 'child' }, agent);
+      expect(canAgentGraphPause({ policy, agents: [{ lazySubagentConfigs: [projected] }] })).toBe(
+        true,
+      );
+      // Provenance belongs to the trusted enrichment, not arbitrary over-limit records.
+      expect(() =>
+        canAgentGraphPause({
+          policy,
+          agents: [{ ...agent, tool_options: { ...tool_options } }],
+        }),
+      ).toThrow(RangeError);
+    },
+  );
+
+  test('rejects oversized persisted options before any runtime alias is added', () => {
+    for (const tool_options of [
+      { query_mcp_db: { approval_mode: 'ask' as const }, ...oversized },
+      Object.fromEntries(
+        Array.from({ length: MAX_TOOL_OPTION_ENTRIES + 1 }, (_, i) => [
+          `query_${i}_mcp_db`,
+          { approval_mode: 'ask' as const },
+        ]),
+      ),
+    ]) {
+      const before = { ...tool_options };
+      const aliasName = Object.keys(tool_options)[0];
+      expect(() => aliasMCPToolOptions([{ name: 'new_mcp_db', aliasName }], tool_options)).toThrow(
+        RangeError,
+      );
+      expect(tool_options).toEqual(before);
     }
   });
 

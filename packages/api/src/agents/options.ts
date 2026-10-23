@@ -1,3 +1,5 @@
+import type { AgentToolOptions } from 'librechat-data-provider';
+
 // Security ceilings, not tunable quotas: legacy reads and authoring must share the same bounds.
 export const MAX_TOOL_OPTION_KEY_LENGTH = 1024;
 export const MAX_TOOL_OPTION_ENTRIES = 1024;
@@ -25,4 +27,18 @@ export function getToolOptionsLimitError(options?: object): string | undefined {
 export function assertToolOptionsWithinLimits(options?: object): void {
   const error = getToolOptionsLimitError(options);
   if (error) throw new RangeError(error);
+}
+
+const persistedToolOptions = new WeakMap<AgentToolOptions, AgentToolOptions>();
+
+/** Runtime aliases do not count toward persisted authoring limits. */
+export function getPersistedToolOptions(options?: AgentToolOptions): AgentToolOptions | undefined {
+  return options && (persistedToolOptions.get(options) ?? options);
+}
+
+/** Capture the bounded persisted view before the first in-place alias is added. */
+export function capturePersistedToolOptions(options: AgentToolOptions): void {
+  if (persistedToolOptions.has(options)) return;
+  assertToolOptionsWithinLimits(options);
+  persistedToolOptions.set(options, { ...options });
 }

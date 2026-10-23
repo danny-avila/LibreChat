@@ -19,7 +19,11 @@ import {
   isToolBlockedByApprovalPolicy,
   healToolApprovalPolicy,
 } from './policy';
-import { assertToolOptionsWithinLimits, MAX_TOOL_OPTION_KEY_LENGTH } from '../options';
+import {
+  assertToolOptionsWithinLimits,
+  MAX_TOOL_OPTION_KEY_LENGTH,
+  getPersistedToolOptions,
+} from '../options';
 import { selectSkillPrimesForTurn, unionPrimeAllowedTools } from '~/agents/skills';
 import { isMCPAllPlaceholder, normalizeAgentToolKeys } from '~/mcp/utils';
 import { ASK_USER_QUESTION_TOOL_NAME } from './askUserQuestionTool';
@@ -94,7 +98,8 @@ export function copyToolApprovalAdmissionMetadata<T extends object>(
   context: AdmissionProjectionContext = {},
 ): T {
   const surface = readAdmissionSurface(source);
-  assertToolOptionsWithinLimits(surface.tool_options);
+  const persistedOptions = getPersistedToolOptions(surface.tool_options);
+  assertToolOptionsWithinLimits(persistedOptions);
   const selectedTools: string[] | undefined = surface.tools == null ? undefined : [];
   for (const tool of surface.tools ?? []) {
     const name = typeof tool === 'string' ? tool : tool.name;
@@ -119,7 +124,7 @@ export function copyToolApprovalAdmissionMetadata<T extends object>(
             (name) => isActionTool(name) || !name.includes(Constants.mcp_delimiter),
           )
         : effectiveTools,
-    toolOptions: surface.tool_options,
+    toolOptions: persistedOptions,
     rawServerNames: context.rawMcpServerNames ?? surface.rawMcpServerNames ?? [],
   });
   admissionSurfaces.set(target, {
@@ -413,7 +418,9 @@ export function canAgentGraphPause({
     }
     // A closed empty surface cannot review a tool, regardless of unrelated persisted options.
     const sourceOptions =
-      surface.tools != null && reachable.size === 0 ? undefined : surface.tool_options;
+      surface.tools != null && reachable.size === 0
+        ? undefined
+        : getPersistedToolOptions(surface.tool_options);
     assertToolOptionsWithinLimits(sourceOptions);
     const options = { ...sourceOptions };
     aliasMCPToolOptions(surface.mcpToolAliases ?? [], options);
