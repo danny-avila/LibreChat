@@ -17,8 +17,18 @@ for (const strip of [false, true]) {
     const id = randomUUID();
     const email = getE2EUser().email;
     const title = 'Current mobile chat';
+    const now = Date.now();
+    const olderChats = Array.from({ length: 30 }, (_, index) => ({
+      conversationId: randomUUID(),
+      title: `Older mobile chat ${index}`,
+      updatedAt: new Date(now - (index + 1) * 60_000),
+    }));
+    const fixtureIds = [id, ...olderChats.map((chat) => chat.conversationId)];
     try {
-      await seedConversations(email, [{ conversationId: id, title }]);
+      await seedConversations(email, [
+        { conversationId: id, title, updatedAt: new Date(now) },
+        ...olderChats,
+      ]);
       await seedMessages(email, id, [
         {
           messageId: `${id}-user`,
@@ -79,7 +89,7 @@ for (const strip of [false, true]) {
       await firstRow?.dispose();
     } finally {
       await deleteMessagesByConversation([id]);
-      await deleteConversations([id]);
+      await deleteConversations(fixtureIds);
     }
   });
 }
