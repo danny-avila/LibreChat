@@ -242,10 +242,10 @@ test('reads rounding and other math functions over angles in a hue triplet', () 
   assert.deepEqual(literals('a { --brand: 255 sign(90deg) 0; }'), ['255 sign(90deg) 0']);
   assert.deepEqual(literals('a { --brand: 255 sign(-4px) 0; }'), ['255 sign(-4px) 0']);
   assert.deepEqual(literals('a { --h: calc(90deg + 1px) 50% 50%; }'), []);
-  assert.deepEqual(literals('a { --brand: 255 calc(90deg / 1deg) 0; }'), [
-    '255 calc(90deg / 1deg) 0',
-  ]);
-  assert.deepEqual(literals('a { --brand: 0 calc(45deg * 2) 0; }'), ['0 calc(45deg * 2) 0']);
+  assert.deepEqual(literals('a { --orientation: 0 calc(90deg) 0; }'), []);
+  assert.deepEqual(literals('a { --orientation: 0 round(to-zero, 90deg, 1deg) 0; }'), []);
+  assert.deepEqual(literals('a { --orientation: 0 0 atan(1); }'), []);
+  assert.deepEqual(literals('a { --h: calc(90deg) 50% 50%; }'), ['calc(90deg) 50% 50%']);
   assert.deepEqual(literals('a { --h: atan2(calc(1px + 1px), 1px) 50% 50%; }'), [
     'atan2(calc(1px + 1px), 1px) 50% 50%',
   ]);

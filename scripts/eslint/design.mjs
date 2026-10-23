@@ -554,13 +554,22 @@ function recipeReader(context) {
     return argument.type === 'ObjectExpression' ? argument.properties.flatMap(entryKeys) : [];
   };
 
-  /** Whether a later entry of the same map can overwrite `property`: a spread, or a key it sets. */
+  /** A spread whose keys are not known statically: anything but an object literal, or an object
+   *  literal that itself spreads one. */
+  const unknownSpread = (property) => {
+    if (property.type !== 'SpreadElement') return false;
+    const argument = unwrap(property.argument);
+    return argument.type !== 'ObjectExpression' || argument.properties.some(unknownSpread);
+  };
+
+  /** Whether a later entry of the same map can overwrite `property`: an unknown spread, or an
+   *  entry or known spread that sets one of its keys. */
   const overwritten = (property) => {
     const { properties } = property.parent;
     const keys = new Set(entryKeys(property));
     return properties
       .slice(properties.indexOf(property) + 1)
-      .some((later) => later.type === 'SpreadElement' || keys.has(entryKeys(later)[0]));
+      .some((later) => unknownSpread(later) || entryKeys(later).some((key) => keys.has(key)));
   };
 
   /** A class-map entry that is always on, names a covering recipe, and is not overwritten. */
