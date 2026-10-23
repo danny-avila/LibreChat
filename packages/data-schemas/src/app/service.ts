@@ -208,6 +208,7 @@ export const AppService = async (params?: {
     paths,
     config,
     memory,
+    prompts: config.prompts as AppConfig['prompts'],
     speech,
     actions,
     balance,
