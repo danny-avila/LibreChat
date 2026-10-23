@@ -532,13 +532,18 @@ describe('previewMessagesToolCalls', () => {
   it('looks up each distinct scope once rather than scanning it for every reused child id', () => {
     const scopes = Array.from({ length: 300 }, (_, i) => ({ agentId: `agent_${i}` }));
     let visits = 0;
-    scopes[Symbol.iterator] = function* () {
-      for (let i = 0; i < this.length; i++) {
-        if (++visits > this.length) {
+    const originalIterator = scopes[Symbol.iterator].bind(scopes);
+    scopes[Symbol.iterator] = () => {
+      const iterator = originalIterator();
+      const next = iterator.next.bind(iterator);
+      iterator.next = () => {
+        const entry = next();
+        if (!entry.done && ++visits > scopes.length) {
           throw new Error('Attachment scope scanned more than once');
         }
-        yield this[i];
-      }
+        return entry;
+      };
+      return iterator;
     };
     const subagent = toolPart({
       name: 'subagent',

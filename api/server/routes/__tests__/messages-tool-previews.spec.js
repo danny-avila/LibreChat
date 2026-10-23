@@ -134,6 +134,7 @@ describe('tool-call previews on the message routes', () => {
       req.user = { id: req.headers['x-user'] ?? OWNER };
       next();
     });
+    app.get('/health', (_req, res) => res.sendStatus(200));
     app.use('/api/messages', messagesRouter);
   });
 
@@ -230,7 +231,11 @@ describe('tool-call previews on the message routes', () => {
     expect(saved.status).toBe(201);
 
     const started = performance.now();
-    const response = await request(app).get(`/api/messages/${conversationId}?toolPreviews=1`);
+    const [response, health] = await Promise.all([
+      request(app).get(`/api/messages/${conversationId}?toolPreviews=1`),
+      new Promise((resolve) => setTimeout(resolve, 25)).then(() => request(app).get('/health')),
+    ]);
+    expect(health.status).toBe(200);
     expect(response.status).toBe(200);
     const preview = response.body.find((message) => message.messageId === messageId);
     expect(preview.content[0].tool_call).toMatchObject({
