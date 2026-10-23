@@ -1,6 +1,11 @@
 import { useForm, FormProvider } from 'react-hook-form';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { EModelEndpoint, AgentCapabilities, Tools } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  AgentCapabilities,
+  Tools,
+  resolveSubagents,
+} from 'librechat-data-provider';
 import type {
   AgentSubagentsConfig,
   TAgentsEndpoint,
@@ -522,3 +527,46 @@ test('terminal graph descendants cannot enable the attached-approval warning', (
   );
   expect(screen.queryByRole('note')).toBeNull();
 });
+
+test.each(
+  [undefined, false, true].flatMap((graphsEnabled) =>
+    [false, true].flatMap((enabled) =>
+      [false, true].flatMap((shareFiles) =>
+        [false, true].map((last) => ({ graphsEnabled, enabled, shareFiles, last })),
+      ),
+    ),
+  ),
+)(
+  'removal clears only the final graph activation and preserves sharing and ordinary settings: %j',
+  ({ graphsEnabled, enabled, shareFiles, last }) => {
+    const other = { ...team, type: 'other' };
+    const subagents = {
+      enabled,
+      ...(graphsEnabled == null ? {} : { graphsEnabled }),
+      allowSelf: false,
+      agent_ids: ['child'],
+      shareFiles,
+      graphs: last ? [team] : [team, other],
+    };
+    render(<Harness subagents={subagents} />);
+    fireEvent.click(screen.getAllByRole('button', { name: 'com_ui_agent_graphs_remove' })[0]);
+    const saved = mockGetValues('subagents');
+    expect(saved).toEqual({
+      ...subagents,
+      ...(last ? { graphsEnabled: false } : {}),
+      graphs: last ? [] : [other],
+    });
+    const projected = resolveSubagents(saved, mockAgentsConfig.capabilities);
+    expect(projected?.enabled).toBe(enabled || (!last && (graphsEnabled ?? enabled)));
+    expect(projected?.allowSelf).toBe(false);
+    expect(projected?.agent_ids).toEqual(enabled ? ['child'] : []);
+    expect(projected?.shareFiles).toBe(shareFiles);
+    expect(projected?.graphs).toEqual(!last && (graphsEnabled ?? enabled) ? [other] : []);
+    expect(screen.queryByRole('switch', { name: 'com_ui_agent_graphs_enable' }) != null).toBe(
+      !last,
+    );
+    expect(mockGetValues('edges')).toEqual([
+      { from: 'parent', to: 'handoff', edgeType: 'handoff' },
+    ]);
+  },
+);

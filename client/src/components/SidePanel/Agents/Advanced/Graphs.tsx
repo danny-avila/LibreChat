@@ -270,12 +270,10 @@ export default function Graphs({ currentAgentId }: { currentAgentId: string }) {
                   variant="ghost"
                   size="icon"
                   aria-label={localize('com_ui_agent_graphs_remove', { 0: team.name })}
-                  onClick={() =>
-                    write(
-                      graphs.filter((_, i) => i !== index),
-                      undefined,
-                    )
-                  }
+                  onClick={() => {
+                    const next = graphs.filter((_, i) => i !== index);
+                    write(next, next.length === 0 ? false : undefined);
+                  }}
                 >
                   <X className="h-4 w-4" aria-hidden="true" />
                 </Button>

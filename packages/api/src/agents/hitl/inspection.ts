@@ -195,7 +195,9 @@ export async function getResumeAgentSnapshot({
           throw new ContentTraversalLimitError();
         }
         if (loaded && (!canAccessAgent || (await canAccessAgent(loaded)))) {
-          if (byId.size >= MAX_SUBAGENT_GRAPH_NODES) throw new ContentTraversalLimitError();
+          if (byId.size - roots.length >= MAX_SUBAGENT_GRAPH_NODES) {
+            throw new ContentTraversalLimitError();
+          }
           child = { ...loaded, subagentAgentConfigs: [] };
           byId.set(id, child);
         } else {

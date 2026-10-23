@@ -35,6 +35,7 @@ export default function OrchestrationHub({ currentAgentId, tool }: Orchestration
             field={field}
             currentAgentId={currentAgentId}
             maxSubagents={agentsConfig.maxSubagents ?? MAX_SUBAGENTS}
+            capabilities={agentsConfig.capabilities}
             fileSharingEnabled={agentsConfig.fileSharing?.enabled === true}
           />
         )}

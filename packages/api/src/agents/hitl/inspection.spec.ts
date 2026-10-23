@@ -1,6 +1,12 @@
-import { Constants } from 'librechat-data-provider';
+import {
+  Constants,
+  MAX_SUBAGENT_GRAPH_NODES,
+  MAX_GRAPH_SUBAGENT_MEMBERS,
+  getSubagentGraphMemberCount,
+} from 'librechat-data-provider';
+import type { Agent, AgentSubagentGraph } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { getResumeContentInspection } from './inspection';
+import { getResumeContentInspection, getResumeAgentSnapshot } from './inspection';
 
 const strictExtractedTextConfig = {
   filters: {
@@ -161,4 +167,119 @@ describe('resume file inspection trust boundary', () => {
     expect(result.storedMessages).toEqual([]);
     expect(getMessages).not.toHaveBeenCalled();
   });
+});
+
+describe('resume agent snapshot budget', () => {
+  const agent = (id: string, graphs: AgentSubagentGraph[] = []): Agent => ({
+    id,
+    name: id,
+    description: null,
+    created_at: 0,
+    avatar: null,
+    provider: 'openAI',
+    model: 'test',
+    model_parameters: {
+      temperature: null,
+      maxContextTokens: null,
+      max_context_tokens: null,
+      max_output_tokens: null,
+      top_p: null,
+      frequency_penalty: null,
+      presence_penalty: null,
+    },
+    subagents: { enabled: false, graphsEnabled: true, graphs },
+  });
+  const teams = (count: number): AgentSubagentGraph[] => {
+    const graphs: AgentSubagentGraph[] = [];
+    for (let start = 0; start < count; start += MAX_GRAPH_SUBAGENT_MEMBERS) {
+      const ids = Array.from(
+        { length: Math.min(MAX_GRAPH_SUBAGENT_MEMBERS, count - start) },
+        (_, index) => `member-${start + index}`,
+      );
+      graphs.push({
+        type: `team-${start}`,
+        name: 'Team',
+        description: 'Work',
+        agent_ids: ids,
+        entry_agent_id: ids[0],
+        result_agent_id: ids[ids.length - 1],
+        edges: ids.slice(1).map((id, index) => ({ from: ids[index], to: id, edgeType: 'direct' })),
+      });
+    }
+    return graphs;
+  };
+
+  it.each([0, 2])(
+    'excludes %s additional roots and deduplicates shared members at the exact budget',
+    async (rootCount) => {
+      const graphs = teams(MAX_SUBAGENT_GRAPH_NODES);
+      const primaryAgent = agent('primary', [...graphs, { ...graphs[0], type: 'shared' }]);
+      expect(getSubagentGraphMemberCount({ graphs: primaryAgent.subagents?.graphs })).toBe(
+        MAX_SUBAGENT_GRAPH_NODES,
+      );
+      const additionalRoots = Array.from({ length: rootCount }, (_, index) =>
+        agent(`root-${index}`, graphs),
+      );
+      const getAgent = jest.fn(async ({ id }: { id: string }) => agent(id));
+      const canAccessAgent = jest.fn(async () => true);
+      const snapshots = await getResumeAgentSnapshot({
+        primaryAgent,
+        additionalRoots: [...additionalRoots, ...additionalRoots],
+        capabilities: ['subagent_graphs'],
+        getAgent,
+        canAccessAgent,
+      });
+      expect(snapshots).toHaveLength(1 + rootCount + MAX_SUBAGENT_GRAPH_NODES);
+      expect(new Set(snapshots.map(({ id }) => id)).size).toBe(snapshots.length);
+      expect(getAgent).toHaveBeenCalledTimes(MAX_SUBAGENT_GRAPH_NODES);
+      expect(canAccessAgent).toHaveBeenCalledTimes(MAX_SUBAGENT_GRAPH_NODES);
+      for (let index = 0; index < MAX_SUBAGENT_GRAPH_NODES; index++) {
+        expect(getAgent).toHaveBeenCalledWith({ id: `member-${index}` });
+      }
+      expect(primaryAgent.subagents?.graphs).toHaveLength(graphs.length + 1);
+    },
+  );
+
+  it.each([0, 2])('rejects budget +1 even with %s additional roots', async (rootCount) => {
+    const graphs = teams(MAX_SUBAGENT_GRAPH_NODES + 1);
+    const getAgent = jest.fn(async ({ id }: { id: string }) => agent(id));
+    await expect(
+      getResumeAgentSnapshot({
+        primaryAgent: agent('primary', graphs),
+        additionalRoots: Array.from({ length: rootCount }, (_, index) =>
+          agent(`root-${index}`, graphs),
+        ),
+        capabilities: ['subagent_graphs'],
+        getAgent,
+        canAccessAgent: async () => true,
+      }),
+    ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+    expect(getAgent).toHaveBeenCalledTimes(MAX_SUBAGENT_GRAPH_NODES + 1);
+  });
+
+  it.each(['missing', 'revoked', 'unavailable'])(
+    'fails closed when the last boundary member is %s',
+    async (reason) => {
+      const last = `member-${MAX_SUBAGENT_GRAPH_NODES - 1}`;
+      const getAgent = jest.fn(async ({ id }: { id: string }) => {
+        if (id === last && reason === 'unavailable') throw new Error('unavailable');
+        return id === last && reason === 'missing' ? null : agent(id);
+      });
+      const canAccessAgent = jest.fn(async ({ id }: Agent) => id !== last || reason !== 'revoked');
+      await expect(
+        getResumeAgentSnapshot({
+          primaryAgent: agent('primary', teams(MAX_SUBAGENT_GRAPH_NODES)),
+          additionalRoots: [agent('additional')],
+          capabilities: ['subagent_graphs'],
+          getAgent,
+          canAccessAgent,
+        }),
+      ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+      expect(getAgent).toHaveBeenCalledWith({ id: last });
+      expect(getAgent).toHaveBeenCalledTimes(MAX_SUBAGENT_GRAPH_NODES);
+      expect(canAccessAgent).toHaveBeenCalledTimes(
+        MAX_SUBAGENT_GRAPH_NODES - (reason === 'revoked' ? 0 : 1),
+      );
+    },
+  );
 });
