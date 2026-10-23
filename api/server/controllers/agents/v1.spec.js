@@ -261,15 +261,13 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         app.patch('/api/agents/:id', updateAgentHandler);
 
         for (const response of [
-          await request(app)
-            .post('/api/agents')
-            .send({
-              name: 'Rejected',
-              provider: 'openai',
-              model: 'gpt-4',
-              tools: [],
-              tool_options,
-            }),
+          await request(app).post('/api/agents').send({
+            name: 'Rejected',
+            provider: 'openai',
+            model: 'gpt-4',
+            tools: [],
+            tool_options,
+          }),
           await request(app)
             .patch(`/api/agents/${existing.id}`)
             .send({ name: 'Rejected', tool_options }),
