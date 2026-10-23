@@ -34,6 +34,11 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   priorityRoute: true,
   principalCheck: true,
   roleRenameMovesProfile: true,
+  recordSecrets: true,
+  azureGroupSecrets: true,
+  yamlSecretPreview: true,
+  envAllowlist: true,
+  secretRebinding: true,
 };
 
 /**

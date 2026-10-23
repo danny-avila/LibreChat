@@ -1,24 +1,28 @@
 import { createHash } from 'node:crypto';
 import {
+  logger,
+  getTenantId,
+  loadDefaultInterface,
+  tenantStorage,
+  BASE_CONFIG_PRINCIPAL_ID,
+  SYSTEM_TENANT_ID,
+} from '@librechat/data-schemas';
+import {
   PrincipalType,
   materializeModelSpecEndpoints,
   getConfigDefaults,
   normalizeEndpointName,
   setMaxSubagents,
 } from 'librechat-data-provider';
-import {
-  logger,
-  getTenantId,
-  mergeConfigOverrides,
-  loadDefaultInterface,
-  tenantStorage,
-  BASE_CONFIG_PRINCIPAL_ID,
-  SYSTEM_TENANT_ID,
-} from '@librechat/data-schemas';
 import type { AppConfig, ConfigOverrideLayer } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
+import type { EnvReferencePolicy } from './allowlist';
 import type { CustomConfigLoadMode } from './loader';
+import type { SecretRebinding } from './rebinding';
+import { createEnvReferencePolicy, parseEnvAllowlist } from './allowlist';
+import { resolveRuntimeConfigSecrets } from '~/admin/secrets';
 import { normalizeEndpointReferences } from './references';
+import { mergeOverrideLayers } from './overrides';
 import { checkAppConfigTheme } from './theme';
 
 const BASE_CONFIG_KEY = '_BASE_';
@@ -250,6 +254,12 @@ export interface AppConfigServiceDeps {
   }) => Promise<AppConfig>;
   /** TTL in ms for per-user/role merged config caches. Defaults to 60 000. */
   overrideCacheTtl?: number;
+  /**
+   * Extra env names override values may reference (`CONFIG_OVERRIDE_ENV_ALLOWLIST`: names
+   * separated by commas or whitespace), beyond those librechat.yaml references and the built-in
+   * endpoint credentials.
+   */
+  overrideEnvAllowlist?: string;
 }
 
 export interface GetAppConfigOptions {
@@ -359,6 +369,38 @@ export function createMessageBudgetReader(): {
   };
 }
 
+/** Most distinct rebinding warnings remembered before the record starts over. */
+const MAX_REBINDING_WARNINGS = 1000;
+
+/**
+ * Logs each secret a layer drops for being sent somewhere other than where it was entered, and
+ * each destination it sets back, once per principal and path for the process's lifetime
+ * (bounded), since every uncached merge does it again.
+ */
+function createRebindingWarner(): (rebinding: SecretRebinding) => void {
+  const warned = new Set<string>();
+  return ({ layer, kind, path }) => {
+    const principal = `${layer.principalType}/${layer.principalId?.toString()}`;
+    const key = `${principal}:${path}`;
+    if (warned.has(key)) {
+      return;
+    }
+    if (warned.size >= MAX_REBINDING_WARNINGS) {
+      warned.clear();
+    }
+    warned.add(key);
+    if (kind === 'destination') {
+      logger.warn(
+        `[getAppConfig] Ignoring "${path}" for ${principal}: it would send a credential to a destination that was not chosen for it`,
+      );
+      return;
+    }
+    logger.warn(
+      `[getAppConfig] Dropping secret "${path}" for ${principal}: the merged config sends it somewhere other than the destination it was entered for`,
+    );
+  };
+}
+
 // ── Service factory ──────────────────────────────────────────────────
 
 export function createAppConfigService(deps: AppConfigServiceDeps): {
@@ -377,9 +419,55 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     getUserPrincipals,
     augmentConfig,
     overrideCacheTtl = DEFAULT_OVERRIDE_CACHE_TTL,
+    overrideEnvAllowlist,
   } = deps;
 
   const cache = getCache(cacheKeys.APP_CONFIG);
+  const envAllowlist = parseEnvAllowlist(overrideEnvAllowlist);
+  const envPolicies = new WeakMap<AppConfig, Map<string, EnvReferencePolicy>>();
+  const warnRebinding = createRebindingWarner();
+  const runtimeConfigs = new WeakMap<AppConfig, AppConfig>();
+
+  /**
+   * A merged config with its stored credentials decrypted for runtime readers. The override cache
+   * (shared through Redis when `APP_CONFIG` is not kept in memory) holds the config as merged,
+   * with ciphertext; each read decrypts it, once per cached object.
+   */
+  function withRuntimeSecrets(merged: AppConfig): AppConfig {
+    let resolved = runtimeConfigs.get(merged);
+    if (!resolved) {
+      resolved = resolveRuntimeConfigSecrets(merged);
+      runtimeConfigs.set(merged, resolved);
+    }
+    return resolved;
+  }
+
+  /**
+   * The env reference policy for a tenant, built once per loaded librechat.yaml and tenant from
+   * the YAML that tenant sees, so a name only another tenant's endpoint references is not
+   * allowed in this tenant's overrides.
+   */
+  function getEnvPolicy(
+    baseConfig: AppConfig,
+    scopedBaseConfig: AppConfig,
+    tenantId: string | undefined,
+  ): EnvReferencePolicy {
+    let byTenant = envPolicies.get(baseConfig);
+    if (!byTenant) {
+      byTenant = new Map();
+      envPolicies.set(baseConfig, byTenant);
+    }
+    const key = tenantId ?? '';
+    let policy = byTenant.get(key);
+    if (!policy) {
+      policy = createEnvReferencePolicy({
+        config: scopedBaseConfig.config,
+        allowlist: envAllowlist,
+      });
+      byTenant.set(key, policy);
+    }
+    return policy;
+  }
   let lastGoodBaseConfig: AppConfig | undefined;
   let baseConfigFlight: { promise: Promise<AppConfig>; generation: number } | undefined;
 
@@ -662,7 +750,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     if (cacheable && !refresh) {
       const cachedMerged = (await cache.get(cacheKey)) as AppConfig | undefined;
       if (cachedMerged) {
-        return await augment(cachedMerged);
+        return await augment(withRuntimeSecrets(cachedMerged));
       }
     }
 
@@ -670,11 +758,12 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     try {
       const configs = await getApplicableConfigs(principals);
       if (configs.length > 0) {
+        const layered = mergeOverrideLayers(scopedBaseConfig, configs, {
+          envPolicy: getEnvPolicy(baseConfig, scopedBaseConfig, effectiveTenantId),
+          onRebinding: warnRebinding,
+        });
         merged = scopeCustomEndpoints(
-          checkOverrideTheme(
-            scopedBaseConfig,
-            completeEffectiveConfig(mergeConfigOverrides(scopedBaseConfig, configs)),
-          ),
+          checkOverrideTheme(scopedBaseConfig, completeEffectiveConfig(layered)),
           effectiveTenantId,
           hiddenEndpoints,
         );
@@ -691,7 +780,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
         await cache.delete(cacheKey);
       }
     }
-    return await augment(merged);
+    return await augment(withRuntimeSecrets(merged));
   }
 
   /**

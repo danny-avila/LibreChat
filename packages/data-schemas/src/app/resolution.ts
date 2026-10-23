@@ -7,11 +7,19 @@ import {
   PERMISSION_SUB_KEYS,
   isProcessMCPServerConfig,
   normalizeEndpointName,
+  EModelEndpoint,
   configSchema,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AdminConfigMergeRules, AppConfig, Config, TWebSearchKeys } from '~/types';
+import type { AzureResolvedGroupField } from './azure';
 import type { ConfigFieldWrite } from './mutations';
+import {
+  AZURE_RESOLVED_GROUP_FIELDS,
+  lacksAzureAssistantModels,
+  narrowAzureServedModels,
+  resolveAzureGroups,
+} from './azure';
 import { isBaseConfigPrincipal, sortByConfigPrecedence } from './precedence';
 import { setConfigFields, toConfigOverrideState } from './mutations';
 import { webSearchPairedFields, unbindWebSearchKeys } from './web';
@@ -37,6 +45,48 @@ const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 /** Filters are a fail-closed security boundary even during mixed-package rollouts. */
 const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(['filters', ...BASE_ONLY_CONFIG_SECTIONS]);
 const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
+
+/** Where the resolved Azure config sits in an AppConfig. */
+const AZURE_CONFIG_PATH = `endpoints.${EModelEndpoint.azureOpenAI}`;
+
+/** The resolved Azure fields a layer's `groups` replace, as AppConfig paths. */
+const AZURE_RESOLVED_PATHS: readonly string[] = AZURE_RESOLVED_GROUP_FIELDS.map(
+  (field) => `${AZURE_CONFIG_PATH}.${field}`,
+);
+
+/** Azure `groups`, as a librechat.yaml path (the same in an AppConfig). */
+const AZURE_GROUPS_PATH = `${AZURE_CONFIG_PATH}.groups`;
+
+/**
+ * The paths a tombstone removes: its own, and for Azure `groups` every field they resolve to
+ * (`AZURE_RESOLVED_PATHS`), which the Azure clients and model lists read in their place. A
+ * tombstone removes the groups whole, as a layer's own `groups` replace them.
+ */
+function getTombstoneRemovals(path: string): readonly string[] {
+  return path === AZURE_GROUPS_PATH ? [path, ...AZURE_RESOLVED_PATHS] : [path];
+}
+
+/**
+ * `merged` with its Azure groups resolved to none, when it has an Azure endpoint: every field the
+ * groups resolve to stays, empty, so the Azure clients and model lists serve no group. Their
+ * absence would read differently: the model lists fall back to the environment's default Azure
+ * models, which the Azure client, configured by librechat.yaml, cannot map to a group.
+ */
+function withoutAzureGroups<T extends AnyObject>(merged: T): T {
+  const segments = AZURE_CONFIG_PATH.split('.');
+  const azure = getPath(merged, segments);
+  if (!isPlainObject(azure)) {
+    return merged;
+  }
+  const empty: Record<AzureResolvedGroupField, object> = {
+    groupMap: {},
+    modelGroupMap: {},
+    modelNames: [],
+    assistantModels: [],
+    assistantGroups: [],
+  };
+  return setPath(merged, segments, { ...azure, ...empty }) as T;
+}
 
 /**
  * Paths within the config tree where arrays of objects should be merged by
@@ -975,6 +1025,7 @@ export function applyConfigTombstones(
 ): Partial<TCustomConfig> {
   return (tombstones ?? [])
     .filter((path): path is string => typeof path === 'string' && !cleared.has(path))
+    .flatMap(getTombstoneRemovals)
     .reduce((current, path) => deletePath(current, path), base as AnyObject);
 }
 
@@ -1233,6 +1284,64 @@ function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
   return filtered;
 }
 
+/** One layer's step through {@link mergeConfigOverrides}, as `afterLayer` sees it. */
+export interface ConfigMergeStep {
+  layer: ConfigOverrideLayer;
+  /** The base config the merge started from, before any layer. */
+  base: AppConfig;
+  /** The merged config before this layer applied its tombstones and overrides. */
+  below: AppConfig;
+  /**
+   * What the layer's overrides contributed, under AppConfig section names (`mcpConfig`,
+   * `interfaceConfig`, ...), after invalid, base-only and filtered values were removed.
+   */
+  applied: Readonly<Record<string, unknown>>;
+  /** The merged config with this layer applied. */
+  merged: AppConfig;
+  /**
+   * The base config with only this layer applied (its tombstones, then its overrides; its Azure
+   * `groups` replacing what librechat.yaml's resolved to), as if no other layer were below it.
+   * Computed on first call.
+   */
+  alone: () => AppConfig;
+}
+
+export interface MergeConfigOverridesOptions {
+  /**
+   * Runs after each layer merges; the config it returns is what the next layer merges onto. A
+   * caller uses it to apply a policy that depends on what a layer inherited and what it changed,
+   * such as dropping an inherited credential the layer sends somewhere new.
+   */
+  afterLayer?: (step: ConfigMergeStep) => AppConfig;
+  /**
+   * Told about each stored web search key the merge withholds from the URL it was not entered
+   * for, with the layer whose write moved it: the URL's writer when it is the later layer, and
+   * otherwise the key's own. When given, it reports these instead of the merge's own warning.
+   */
+  onWebSearchKeyUnbound?: (unbound: WebSearchKeyUnbound) => void;
+}
+
+/** A stored web search key the merge withholds, and the layer whose write caused it. */
+export interface WebSearchKeyUnbound {
+  layer: ConfigOverrideLayer;
+  url: TWebSearchKeys;
+  apiKey: TWebSearchKeys;
+}
+
+/** One layer's step through {@link foldConfigLayers}, from which `ConfigMergeStep` is built. */
+interface FoldStep<T> {
+  layer: ConfigOverrideLayer;
+  below: T;
+  /** What the layer's overrides contributed, under AppConfig section names. */
+  applied: AnyObject;
+  merged: T;
+  /**
+   * What the layer removed before its overrides landed, as AppConfig paths: its tombstones that
+   * applied, and the resolved Azure fields its `groups` replace.
+   */
+  removed: readonly string[];
+}
+
 /** The override document that last set or removed a paired web search field, and its merge position. */
 interface WebSearchWriter {
   config: ConfigOverrideLayer;
@@ -1291,7 +1400,11 @@ function describeLayer(writer?: WebSearchWriter): string {
  * never sends on a key it cannot read. `writers` lists the override document
  * behind each field; unlisted fields come from the base config.
  */
-function bindWebSearchKeys(merged: AppConfig, writers: WebSearchWriters): AppConfig {
+function bindWebSearchKeys(
+  merged: AppConfig,
+  writers: WebSearchWriters,
+  onUnbound?: MergeConfigOverridesOptions['onWebSearchKeyUnbound'],
+): AppConfig {
   const { webSearch, unbound } = unbindWebSearchKeys(
     merged.webSearch,
     (field) => writers.get(field)?.order,
@@ -1301,13 +1414,25 @@ function bindWebSearchKeys(merged: AppConfig, writers: WebSearchWriters): AppCon
   }
   for (const { url, apiKey } of unbound) {
     const urlWriter = writers.get(url);
+    const keyWriter = writers.get(apiKey);
+    if (onUnbound) {
+      const cause = (urlWriter?.order ?? -1) > (keyWriter?.order ?? -1) ? urlWriter : keyWriter;
+      if (cause) {
+        onUnbound({ layer: cause.config, url, apiKey });
+      }
+      continue;
+    }
     logger.warn(
-      `[mergeConfigOverrides] Ignoring webSearch.${apiKey} from ${describeLayer(writers.get(apiKey))}: ` +
+      `[mergeConfigOverrides] Ignoring webSearch.${apiKey} from ${describeLayer(keyWriter)}: ` +
         `webSearch.${url} is ${urlWriter?.removed ? 'removed' : 'set'} by ${describeLayer(urlWriter)}. ` +
         'Store the key in the same config as the URL.',
     );
   }
   return { ...merged, webSearch };
+}
+
+function describePrincipal(config: ConfigOverrideLayer): string {
+  return `${config.principalType}/${config.principalId}`;
 }
 
 /**
@@ -1348,23 +1473,107 @@ function withAcceptedSections(config: ConfigOverrideLayer): ConfigOverrideLayer 
     return config;
   }
   logger.warn(
-    `[mergeConfigOverrides] Ignoring unknown config sections ${[...ignored].join(', ')} for ${config.principalType}/${config.principalId}`,
+    `[mergeConfigOverrides] Ignoring unknown config sections ${[...ignored].join(', ')} for ${describePrincipal(config)}`,
   );
   return { ...config, overrides, tombstones };
+}
+
+/**
+ * A layer's `endpoints` override with its Azure `groups` resolved as AppService resolves
+ * librechat.yaml's (`resolveAzureGroups`): the Azure clients read `groupMap`, `modelGroupMap` and
+ * the model lists resolved with them, never `groups`. The layer's groups replace the groups below
+ * whole, as its `groups` array does in the YAML-shaped config, so what they resolve to replaces
+ * what those resolved to (the caller removes that first); a resolved field the same layer also
+ * writes directly merges over its own groups' (objects) or replaces it. `null` when the layer
+ * writes no groups, or groups that do not resolve, which then stay unread, with a warning.
+ */
+function resolveLayerAzureGroups(
+  endpoints: unknown,
+  config: ConfigOverrideLayer,
+): AnyObject | null {
+  if (!isPlainObject(endpoints)) {
+    return null;
+  }
+  const azure = endpoints[EModelEndpoint.azureOpenAI];
+  if (!isPlainObject(azure) || !Array.isArray(azure.groups)) {
+    return null;
+  }
+  const resolved = resolveAzureGroups(azure.groups);
+  if (!resolved.isValid) {
+    logger.warn(
+      `[mergeConfigOverrides] Ignoring ${AZURE_CONFIG_PATH}.groups for ${describePrincipal(config)}: ${resolved.errors.join('; ')}`,
+    );
+    return null;
+  }
+  const next: AnyObject = { ...azure };
+  for (const field of AZURE_RESOLVED_GROUP_FIELDS) {
+    const own = azure[field];
+    const derived: unknown = resolved[field];
+    next[field] =
+      isPlainObject(own) && isPlainObject(derived) ? deepMerge(derived, own) : (own ?? derived);
+  }
+  return { ...endpoints, [EModelEndpoint.azureOpenAI]: next };
+}
+
+/**
+ * `merged` with the Azure model lists narrowed to what its groups serve
+ * (`narrowAzureServedModels`), and Azure assistants turned off when none of the models it serves
+ * supports them (`lacksAzureAssistantModels`), a combination `azureConfigSetup` refuses in
+ * librechat.yaml. A list an override writes directly, or one whose groups a later layer replaced
+ * or tombstoned, could otherwise name a model no group serves, and groups without an assistant
+ * model under an inherited `assistants: true` would leave the Azure Assistants client no model to
+ * default to. Judged on the merged result, so a later layer whose groups serve assistants keeps
+ * them on.
+ */
+function withServedAzureModels<T extends AppConfig>(
+  merged: T,
+  configs: readonly ConfigOverrideLayer[],
+): T {
+  const endpoints = merged.endpoints;
+  const azure = endpoints?.[EModelEndpoint.azureOpenAI];
+  if (!endpoints || !azure) {
+    return merged;
+  }
+  const principals = configs.map(describePrincipal).join(', ');
+  const { config: served, narrowed } = narrowAzureServedModels(azure);
+  if (narrowed.length > 0) {
+    logger.warn(
+      `[mergeConfigOverrides] Leaving out of ${narrowed.map((field) => `${AZURE_CONFIG_PATH}.${field}`).join(', ')} for ${principals} the Azure models and groups no merged group serves`,
+    );
+  }
+  const assistantsOff = lacksAzureAssistantModels(served);
+  if (assistantsOff) {
+    logger.warn(
+      `[mergeConfigOverrides] Turning off ${AZURE_CONFIG_PATH}.assistants for ${principals}: none of the Azure models they serve supports assistants`,
+    );
+  }
+  if (narrowed.length === 0 && !assistantsOff) {
+    return merged;
+  }
+  return {
+    ...merged,
+    endpoints: {
+      ...endpoints,
+      [EModelEndpoint.azureOpenAI]: assistantsOff ? { ...served, assistants: false } : served,
+    },
+  };
 }
 
 /**
  * Folds override layers, in merge precedence order (`compareConfigPrecedence`), into
  * `merged`, the served config, and `raw`, the YAML-shaped config each layer is validated on
  * before it lands (`stripInvalidOverrides`). `merged` starts as any object whose `mcpConfig`
- * is the MCP servers config of `raw`, because the process-MCP filter reads it.
+ * is the MCP servers config of `raw`, because the process-MCP filter reads it. A layer's Azure
+ * `groups` resolve into the fields the Azure clients read (`resolveLayerAzureGroups`).
  * `webSearchWriters` names the layer behind each paired web search field, by its position in
- * that order.
+ * that order. `afterLayer` runs after each layer lands, and the next layer folds onto what it
+ * returns.
  */
 function foldConfigLayers<T extends AnyObject>(
   initial: T,
   initialRaw: Partial<TCustomConfig>,
   configs: readonly ConfigOverrideLayer[],
+  afterLayer?: (step: FoldStep<T>) => T,
 ): { merged: T; raw: Partial<TCustomConfig>; webSearchWriters: WebSearchWriters } {
   const sorted = sortByConfigPrecedence(configs);
   let merged = initial;
@@ -1372,6 +1581,9 @@ function foldConfigLayers<T extends AnyObject>(
   const webSearchWriters: WebSearchWriters = new Map();
   for (let order = 0; order < sorted.length; order++) {
     const config = withAcceptedSections(sorted[order]);
+    const below = merged;
+    let contributed: AnyObject = {};
+    const removed: string[] = [];
     const isBasePrincipal = isBaseConfigPrincipal(config);
     if (Array.isArray(config.tombstones)) {
       const removal: WebSearchWriter = { config, order, removed: true };
@@ -1381,8 +1593,15 @@ function foldConfigLayers<T extends AnyObject>(
           !isBaseOnlyOverridePath(path) &&
           (isBasePrincipal || !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(path.split('.')[0]))
         ) {
-          merged = deleteConfigPath(merged, remapOverridePath(path));
-          raw = deletePath(raw as AnyObject, path) as Partial<TCustomConfig>;
+          for (const removedPath of getTombstoneRemovals(path)) {
+            const mappedPath = remapOverridePath(removedPath);
+            removed.push(mappedPath);
+            merged = deleteConfigPath(merged, mappedPath);
+            raw = deletePath(raw as AnyObject, removedPath) as Partial<TCustomConfig>;
+          }
+          if (path === AZURE_GROUPS_PATH) {
+            merged = withoutAzureGroups(merged);
+          }
           recordWebSearchTombstone(webSearchWriters, path, removal);
         }
       }
@@ -1391,6 +1610,7 @@ function foldConfigLayers<T extends AnyObject>(
     if (config.overrides && typeof config.overrides === 'object') {
       const remapped: AnyObject = {};
       const applied: AnyObject = {};
+      let replacesAzureGroups = false;
       for (const [key, value] of Object.entries(stripInvalidOverrides(config, raw))) {
         if (
           BASE_ONLY_OVERRIDE_SECTIONS.has(key) ||
@@ -1440,8 +1660,18 @@ function foldConfigLayers<T extends AnyObject>(
           if (Object.keys(filtered).length > 0) {
             remapped[mappedKey] = filtered;
           }
+        } else if (key === 'endpoints') {
+          const resolved = resolveLayerAzureGroups(value, config);
+          remapped[mappedKey] = resolved ?? value;
+          replacesAzureGroups = resolved != null;
         } else {
           remapped[mappedKey] = value;
+        }
+      }
+      if (replacesAzureGroups) {
+        for (const path of AZURE_RESOLVED_PATHS) {
+          merged = deletePath(merged, path);
+          removed.push(path);
         }
       }
       merged = deepMerge(merged, remapped);
@@ -1451,6 +1681,11 @@ function foldConfigLayers<T extends AnyObject>(
         order,
         removed: false,
       });
+      contributed = remapped;
+    }
+
+    if (afterLayer) {
+      merged = afterLayer({ layer: config, below, applied: contributed, merged, removed });
     }
   }
   return { merged, raw, webSearchWriters };
@@ -1462,17 +1697,47 @@ function foldConfigLayers<T extends AnyObject>(
  * Configs merge in precedence order (`compareConfigPrecedence`): Base first, then ascending
  * priority, then role < group < user, then document identity; the last layer wins. Each
  * config's `overrides` is deep-merged into the base config in that order. A stored web search
- * key is dropped when a layer other than its own decides the URL it is sent to.
+ * key is dropped when a layer other than its own decides the URL it is sent to, the Azure model
+ * lists name only models the merged groups serve, and Azure assistants none of those supports
+ * are turned off (`withServedAzureModels`).
  */
 export function mergeConfigOverrides(
   baseConfig: AppConfig,
   configs: readonly ConfigOverrideLayer[],
+  options: MergeConfigOverridesOptions = {},
 ): AppConfig {
   if (!configs || configs.length === 0) {
     return baseConfig;
   }
-  const folded = foldConfigLayers({ ...baseConfig }, baseConfig.config ?? {}, configs);
-  const merged = bindWebSearchKeys(folded.merged, folded.webSearchWriters);
+  const { afterLayer } = options;
+  const folded = foldConfigLayers(
+    { ...baseConfig },
+    baseConfig.config ?? {},
+    configs,
+    afterLayer &&
+      (({ layer, below, applied, merged, removed }) => {
+        let alone: AppConfig | undefined;
+        return afterLayer({
+          layer,
+          base: baseConfig,
+          below,
+          applied,
+          merged,
+          alone: () => {
+            alone ??= deepMerge(
+              removed.reduce((current, path) => deleteConfigPath(current, path), { ...baseConfig }),
+              applied,
+            );
+            return alone;
+          },
+        });
+      }),
+  );
+  const merged = bindWebSearchKeys(
+    withServedAzureModels(folded.merged, configs),
+    folded.webSearchWriters,
+    options.onWebSearchKeyUnbound,
+  );
   return preserveBaseOnlyPaths(baseConfig, preserveRuntimeStops(baseConfig, merged));
 }
 
