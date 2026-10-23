@@ -125,7 +125,7 @@ function EndpointModelItemComponent({
       <div className="flex w-full min-w-0 items-center gap-2 px-1 py-1">
         {renderAvatar()}
         <span className="truncate">{modelName}</span>
-        {isGlobal && <EarthIcon className="text-surface-submit ml-1 size-4" />}
+        {isGlobal && <EarthIcon className="text-surface-submit ms-1 size-4" />}
       </div>
       <button
         type="button"

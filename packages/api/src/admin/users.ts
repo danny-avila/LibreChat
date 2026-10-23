@@ -4,7 +4,7 @@ import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import { logger, isValidObjectIdString, buildUserSearchFilter } from '@librechat/data-schemas';
 import type {
   IUser,
-  IConfig,
+  ConfigRecord,
   AdminUserListItem,
   AdminUserSearchResult,
   UserDeleteResult,
@@ -107,7 +107,7 @@ export interface AdminUsersDeps {
   deleteConfig: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-  ) => Promise<IConfig | null>;
+  ) => Promise<ConfigRecord | null>;
   deleteAclEntries: (filter: {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;

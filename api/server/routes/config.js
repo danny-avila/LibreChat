@@ -25,6 +25,8 @@ const {
   getPromptCategoriesStartupConfig,
   loadConversationListLimits,
   resolvePullRequestCapabilities,
+  resolvePreLoginAppConfig,
+  withSafePolicyLinks,
 } = require('@librechat/api');
 const {
   DEFAULT_MCP_APP_CSP_LIMITS,
@@ -32,7 +34,7 @@ const {
   defaultSocialLogins,
   resolveMCPAppsPolicy,
 } = require('librechat-data-provider');
-const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
+const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability, hasConfigCapability } = require('~/server/middleware/roles/capabilities');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getRumConfig } = require('~/server/services/Config/rum');
@@ -230,18 +232,16 @@ router.get('/', async function (req, res) {
   try {
     const preLoginPayload = buildPreLoginPayload();
     const publicSharePayload = buildPublicSharePayload();
-    const rum = getRumConfig();
 
     if (!req.user) {
-      const tenantId = getTenantId();
-      const baseConfig = await getAppConfig(tenantId ? { tenantId } : { baseOnly: true });
+      const baseConfig = await resolvePreLoginAppConfig(getAppConfig);
 
       /** @type {Partial<TStartupConfig>} */
       const payload = {
         ...preLoginPayload,
         socialLogins: baseConfig?.registration?.socialLogins ?? defaultSocialLogins,
         turnstile: baseConfig?.turnstileConfig,
-        ...(rum ? { rum } : {}),
+        rum: getRumConfig(baseConfig?.config?.telemetry),
       };
 
       const interfaceConfig = baseConfig?.interfaceConfig;
@@ -312,7 +312,7 @@ router.get('/', async function (req, res) {
       sharedLinksSnapshotFilesEnabled: sharedLinksEnabled && isFileSnapshotEnabled(appConfig),
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       projects: appConfig?.projects,
-      interface: appConfig?.interfaceConfig,
+      interface: withSafePolicyLinks(appConfig?.interfaceConfig),
       titleGenerationTiming: resolveTitleTiming({
         appConfig,
         endpoint: EModelEndpoint.agents,
@@ -351,7 +351,7 @@ router.get('/', async function (req, res) {
       ...resolveCodeWorkspaceInheritanceCapability(process.env.CODE_ENVIRONMENT_DECISION_VERSION),
       ...(codeEnvironmentTransitionVersion != null ? { codeEnvironmentTransitionVersion } : {}),
       ...(cloudFront ? { cloudFront } : {}),
-      ...(rum ? { rum } : {}),
+      rum: getRumConfig(appConfig?.config?.telemetry),
       fileUploadSseEnabled: isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED),
       endpointsDropParamsMap: endpointsDropParamsMap,
     };

@@ -4819,6 +4819,96 @@ describe('AgentClient - titleConvo', () => {
       expect(generateTitleCall.clientOptions.model).toBe('gpt-4o-mini');
     });
 
+    it('keeps endpoint title settings when the all block sets only unrelated keys', async () => {
+      mockReq.config = {
+        endpoints: {
+          all: { streamRate: 1, headers: { 'x-gateway': 'title' } },
+          [EModelEndpoint.openAI]: {
+            titleModel: 'gpt-3.5-turbo',
+            titlePrompt: 'Endpoint title prompt',
+            titleMethod: 'structured',
+          },
+        },
+      };
+
+      await client.titleConvo({ text: 'Test', abortController: new AbortController() });
+
+      const generateTitleCall = mockRun.generateTitle.mock.calls[0][0];
+      expect(generateTitleCall.clientOptions.model).toBe('gpt-3.5-turbo');
+      expect(generateTitleCall).toEqual(
+        expect.objectContaining({
+          titleMethod: 'structured',
+          titlePrompt: 'Endpoint title prompt',
+        }),
+      );
+    });
+
+    it('resolves each title field on its own across the all and endpoint blocks', async () => {
+      mockReq.config = {
+        endpoints: {
+          all: { titlePrompt: 'All config title prompt' },
+          [EModelEndpoint.openAI]: {
+            titleModel: 'gpt-3.5-turbo',
+            titlePrompt: 'Endpoint title prompt',
+            titleMethod: 'structured',
+          },
+        },
+      };
+
+      await client.titleConvo({ text: 'Test', abortController: new AbortController() });
+
+      const generateTitleCall = mockRun.generateTitle.mock.calls[0][0];
+      expect(generateTitleCall.clientOptions.model).toBe('gpt-3.5-turbo');
+      expect(generateTitleCall).toEqual(
+        expect.objectContaining({
+          titleMethod: 'structured',
+          titlePrompt: 'All config title prompt',
+        }),
+      );
+    });
+
+    it('skips titles when the endpoint disables them beside an unrelated all block', async () => {
+      mockReq.config = {
+        endpoints: {
+          all: { streamRate: 1 },
+          [EModelEndpoint.openAI]: { titleConvo: false, titleModel: 'gpt-3.5-turbo' },
+        },
+      };
+
+      const result = await client.titleConvo({
+        text: 'Test',
+        abortController: new AbortController(),
+      });
+
+      expect(result).toBeUndefined();
+      expect(mockRun.generateTitle).not.toHaveBeenCalled();
+    });
+
+    it('does not run the endpoint titleModel on a titleEndpoint the all block names', async () => {
+      const originalApiKey = process.env.ANTHROPIC_API_KEY;
+      process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+      mockReq.config = {
+        endpoints: {
+          all: { titleEndpoint: EModelEndpoint.anthropic },
+          [EModelEndpoint.openAI]: { titleModel: 'gpt-3.5-turbo' },
+        },
+      };
+
+      try {
+        await client.titleConvo({ text: 'Test', abortController: new AbortController() });
+      } finally {
+        if (originalApiKey) {
+          process.env.ANTHROPIC_API_KEY = originalApiKey;
+        } else {
+          delete process.env.ANTHROPIC_API_KEY;
+        }
+      }
+
+      const generateTitleCall = mockRun.generateTitle.mock.calls[0][0];
+      expect(generateTitleCall.provider).toBe(Providers.ANTHROPIC);
+      expect(generateTitleCall.clientOptions.model).not.toBe('gpt-3.5-turbo');
+    });
+
     it('should use all config with titleEndpoint and verify provider switch', async () => {
       // Mock the API key for the titleEndpoint provider
       const originalApiKey = process.env.ANTHROPIC_API_KEY;
@@ -5672,7 +5762,7 @@ describe('AgentClient - titleConvo', () => {
       });
 
       // Verify formatInstructionsForContext was called with correct server names
-      expect(mockFormatInstructions).toHaveBeenCalledWith(['server1', 'server2'], {});
+      expect(mockFormatInstructions).toHaveBeenCalledWith(['server1', 'server2'], {}, mockReq.user);
 
       // Verify the instructions do NOT contain [object Promise]
       expect(client.options.agent.instructions).not.toContain('[object Promise]');
@@ -5754,6 +5844,7 @@ describe('AgentClient - titleConvo', () => {
       expect(mockFormatInstructions).toHaveBeenCalledWith(
         ['ephemeral-server1', 'ephemeral-server2'],
         {},
+        mockReq.user,
       );
 
       // Verify no [object Promise] in instructions
