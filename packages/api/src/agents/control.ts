@@ -37,6 +37,8 @@ type Dependencies = Pick<ConversationMethods, 'getConvoOwnership' | 'getSubagent
 type Params = {
   parentConversationId?: string;
   threadId?: string;
+  taskId?: string;
+  invocationId?: string;
 };
 
 const validId = (value: unknown, byteLimit = MAX_THREAD_ID_BYTES): value is string =>
@@ -283,7 +285,7 @@ export function createSubagentControlReceiptHandler(deps: Omit<Dependencies, 'st
   return async (req: ServerRequest, res: Response): Promise<void> => {
     const userId = req.user?.id;
     const tenantId = req.user?.tenantId || undefined;
-    const { parentConversationId, threadId, taskId, invocationId } = req.params;
+    const { parentConversationId, threadId, taskId, invocationId } = req.params as Params;
     if (
       !userId ||
       !validId(parentConversationId) ||
