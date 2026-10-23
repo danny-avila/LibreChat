@@ -13,6 +13,7 @@ import {
 import { buildToolClassification, aliasMCPToolOptions } from '~/tools/classification';
 import { MAX_TOOL_OPTION_ENTRIES, MAX_TOOL_OPTION_KEY_BYTES } from '../options';
 import { loadToolDefinitions } from '~/tools/definitions';
+import { normalizeAgentToolKeys } from '~/mcp/utils';
 import { formatMCPServerTools } from '~/mcp/tools';
 import { agentUpdateSchema } from '../validation';
 import { mapToolApprovalPolicy } from './policy';
@@ -1488,6 +1489,128 @@ describe('bounded approval admission', () => {
       ).toThrow(RangeError);
     },
   );
+
+  test.each([
+    { count: 1023, keyLength: 64, selected: 'web_search' },
+    { count: 1023, keyLength: 64, selected: 'mcp' },
+    { count: 1, keyLength: 1024, selected: 'mcp' },
+  ])(
+    'retains authored limits and normalized review entries (count=$count keyLength=$keyLength selected=$selected)',
+    ({ count, keyLength, selected }) => {
+      const names = Array.from(
+        { length: count },
+        (_, i) => `${`${i}`.padEnd(keyLength - 6, 'q')}_mcp_!`,
+      );
+      const tool_options = agentUpdateSchema.parse({
+        tool_options: Object.fromEntries([
+          ...names.map((name) => [name, { approval_mode: 'ask' }]),
+          ['web_search', { approval_mode: 'ask' }],
+        ]),
+      }).tool_options!;
+      const normalized = normalizeAgentToolKeys({
+        tools: [selected === 'mcp' ? names[0] : selected],
+        toolOptions: tool_options,
+        rawServerNames: ['!'],
+      });
+      const name = normalized.tools![0];
+      expect(normalized.toolOptions![name]?.approval_mode).toBe('ask');
+      // Re-submitting generated keys is still an untrusted write and must meet authoring limits.
+      expect(agentUpdateSchema.safeParse({ tool_options: normalized.toolOptions }).success).toBe(
+        false,
+      );
+      const agent = { tools: normalized.tools, tool_options: normalized.toolOptions };
+      expect(canAgentGraphPause({ policy, agents: [agent] })).toBe(true);
+      const projected = copyToolApprovalAdmissionMetadata({ id: 'child' }, agent, {
+        rawMcpServerNames: ['!'],
+      });
+      const copied = copyToolApprovalAdmissionMetadata({ id: 'child' }, projected);
+      for (const descriptor of [projected, copied]) {
+        expect(
+          canAgentGraphPause({ policy, agents: [{ lazySubagentConfigs: [descriptor] }] }),
+        ).toBe(true);
+        expect(
+          canAgentGraphPause({
+            policy: { ...policy, deny: ['*'] },
+            agents: [{ lazySubagentConfigs: [descriptor] }],
+          }),
+        ).toBe(false);
+      }
+      expect(() =>
+        canAgentGraphPause({
+          policy,
+          agents: [{ ...agent, tool_options: { ...normalized.toolOptions } }],
+        }),
+      ).toThrow(RangeError);
+      expect(Object.keys(tool_options)).toEqual([...names, 'web_search']);
+    },
+  );
+
+  test('keeps effective entries and source limits across aliasing, normalization, and projection', () => {
+    const names = Array.from({ length: 513 }, (_, i) => `read_${i}`);
+    const options = agentUpdateSchema.parse({
+      tool_options: {
+        ...Object.fromEntries(names.map((name) => [`db_${name}_mcp_db`, { approval_mode: 'ask' }])),
+        query_mcp_server_33: { approval_mode: 'allow' },
+        'query_mcp_!': { approval_mode: 'ask' },
+      },
+    }).tool_options!;
+    const aliases = names.map((name) => ({
+      name: `${name}_mcp_db`,
+      aliasName: `db_${name}_mcp_db`,
+    }));
+    aliasMCPToolOptions(aliases, options);
+    expect(Object.keys(options).length).toBeGreaterThan(MAX_TOOL_OPTION_ENTRIES);
+    const normalized = normalizeAgentToolKeys({
+      tools: ['read_0_mcp_db'],
+      toolOptions: options,
+      rawServerNames: ['!', 'db'],
+    });
+    expect(normalized.toolOptions!.query_mcp_server_33.approval_mode).toBe('allow');
+    const source = {
+      tools: normalized.tools,
+      tool_options: normalized.toolOptions,
+      mcpToolAliases: aliases,
+    };
+    const descriptor = copyToolApprovalAdmissionMetadata({ id: 'child' }, source, {
+      rawMcpServerNames: ['!', 'db'],
+    });
+    expect(canAgentGraphPause({ policy, agents: [source] })).toBe(true);
+    expect(canAgentGraphPause({ policy, agents: [{ lazySubagentConfigs: [descriptor] }] })).toBe(
+      true,
+    );
+    for (const tools of [['query_mcp_server_33'], ['query_mcp_!']]) {
+      const current = copyToolApprovalAdmissionMetadata(
+        { id: 'child' },
+        { ...source, tools },
+        { rawMcpServerNames: ['!', 'db'] },
+      );
+      expect(canAgentGraphPause({ policy, agents: [{ lazySubagentConfigs: [current] }] })).toBe(
+        false,
+      );
+    }
+  });
+
+  test('normalization cannot make oversized authored options trusted', () => {
+    for (const toolOptions of [
+      oversized,
+      Object.fromEntries(
+        Array.from({ length: MAX_TOOL_OPTION_ENTRIES + 1 }, (_, i) => [
+          `query_${i}_mcp_!`,
+          { approval_mode: 'ask' as const },
+        ]),
+      ),
+      Object.fromEntries(
+        Array.from({ length: 129 }, (_, i) => [
+          `${i}`.padEnd(256, 'é') + '_mcp_!',
+          { approval_mode: 'ask' as const },
+        ]),
+      ),
+    ]) {
+      expect(() =>
+        normalizeAgentToolKeys({ tools: [], toolOptions, rawServerNames: ['!'] }),
+      ).toThrow(RangeError);
+    }
+  });
 
   test('rejects oversized persisted options before any runtime alias is added', () => {
     for (const tool_options of [

@@ -21,8 +21,7 @@ import {
 } from './policy';
 import {
   assertToolOptionsWithinLimits,
-  MAX_TOOL_OPTION_KEY_LENGTH,
-  getPersistedToolOptions,
+  retainToolOptionsLimits,
   ToolOptionsLimitError,
 } from '../options';
 import { selectSkillPrimesForTurn, unionPrimeAllowedTools } from '~/agents/skills';
@@ -72,7 +71,7 @@ function createAdmissionWork(): AdmissionWork {
   let remaining = MAX_ADMISSION_NAME_WORK;
   return (name, copies = 1) => {
     const work = Math.max(1, name.length) * copies;
-    if (name.length > MAX_TOOL_OPTION_KEY_LENGTH || work > remaining) {
+    if (work > remaining) {
       throw new ToolOptionsLimitError('Tool approval admission exceeds the safety work limit');
     }
     remaining -= work;
@@ -99,8 +98,7 @@ export function copyToolApprovalAdmissionMetadata<T extends object>(
   context: AdmissionProjectionContext = {},
 ): T {
   const surface = readAdmissionSurface(source);
-  const persistedOptions = getPersistedToolOptions(surface.tool_options);
-  assertToolOptionsWithinLimits(persistedOptions);
+  assertToolOptionsWithinLimits(surface.tool_options);
   const selectedTools: string[] | undefined = surface.tools == null ? undefined : [];
   for (const tool of surface.tools ?? []) {
     const name = typeof tool === 'string' ? tool : tool.name;
@@ -125,22 +123,24 @@ export function copyToolApprovalAdmissionMetadata<T extends object>(
             (name) => isActionTool(name) || !name.includes(Constants.mcp_delimiter),
           )
         : effectiveTools,
-    toolOptions: persistedOptions,
+    toolOptions: surface.tool_options,
     rawServerNames: context.rawMcpServerNames ?? surface.rawMcpServerNames ?? [],
   });
+  const projectedOptions =
+    normalized.toolOptions &&
+    Object.fromEntries(
+      Object.entries(normalized.toolOptions)
+        .filter(
+          ([name]) =>
+            context.toolsAvailable !== false ||
+            isActionTool(name) ||
+            !name.includes(Constants.mcp_delimiter),
+        )
+        .map(([name, option]) => [name, { approval_mode: option.approval_mode }]),
+    );
+  if (projectedOptions) retainToolOptionsLimits(projectedOptions, normalized.toolOptions);
   admissionSurfaces.set(target, {
-    tool_options:
-      normalized.toolOptions &&
-      Object.fromEntries(
-        Object.entries(normalized.toolOptions)
-          .filter(
-            ([name]) =>
-              context.toolsAvailable !== false ||
-              isActionTool(name) ||
-              !name.includes(Constants.mcp_delimiter),
-          )
-          .map(([name, option]) => [name, { approval_mode: option.approval_mode }]),
-      ),
+    tool_options: projectedOptions,
     tools: normalized.tools,
     rawMcpServerNames: context.rawMcpServerNames?.slice() ?? surface.rawMcpServerNames,
     toolRegistry: surface.toolRegistry,
@@ -419,11 +419,10 @@ export function canAgentGraphPause({
     }
     // A closed empty surface cannot review a tool, regardless of unrelated persisted options.
     const sourceOptions =
-      surface.tools != null && reachable.size === 0
-        ? undefined
-        : getPersistedToolOptions(surface.tool_options);
+      surface.tools != null && reachable.size === 0 ? undefined : surface.tool_options;
     assertToolOptionsWithinLimits(sourceOptions);
     const options = { ...sourceOptions };
+    retainToolOptionsLimits(options, sourceOptions);
     aliasMCPToolOptions(surface.mcpToolAliases ?? [], options);
     for (const name of reachable) {
       addToolName(name, agent.id);

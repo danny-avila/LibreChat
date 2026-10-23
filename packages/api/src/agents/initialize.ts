@@ -127,7 +127,6 @@ import { assertChatProjectInstructions, ChatProjectResourcesChangedError } from 
 import { extractAgentContent, extractSkillContent } from '../protection/adapters/submissions';
 import { createConfiguredContentInspector, inspectContent } from '../protection/runtime';
 import { assertAgentAttachmentLimits, isModelBoundAttachmentFile } from './attachments';
-import { assertToolOptionsWithinLimits, getPersistedToolOptions } from './options';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { resolveAttachedWorkspaceReadFileLines } from '~/code/workspace';
 import { isValidInstructionsPromptLink } from './instructions/linked';
@@ -142,6 +141,7 @@ import { createRequestAgentExecutionContext } from './runtime';
 import { resolveTurnDeliveryRouting } from './files/delivery';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
 import { isFatalAgentInitializationError } from './errors';
+import { assertToolOptionsWithinLimits } from './options';
 import { hasActiveFilePolicy } from '../protection/files';
 import { resolveAgentCodeExecution } from '~/code/agent';
 import { hasActiveFileFieldPolicy } from '~/protection';
@@ -1242,7 +1242,7 @@ export async function initializeAgent(
   }
   const shouldUseChatProjectContext =
     useChatProjectContext ?? params.req?.chatProjectContextEnabled === true;
-  assertToolOptionsWithinLimits(getPersistedToolOptions(suppliedAgent.tool_options));
+  assertToolOptionsWithinLimits(suppliedAgent.tool_options);
   const inputAgent = restoreAgentInferenceInput(suppliedAgent);
   const agent = shouldUseChatProjectContext ? { ...inputAgent } : inputAgent;
   const { user, appConfig } = runtime;

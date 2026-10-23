@@ -35,21 +35,30 @@ export function getToolOptionsLimitError(options?: object): string | undefined {
   return undefined;
 }
 
-export function assertToolOptionsWithinLimits(options?: object): void {
-  const error = getToolOptionsLimitError(options);
+export function assertToolOptionsWithinLimits(options?: AgentToolOptions): void {
+  const error = getToolOptionsLimitError(getPersistedToolOptions(options));
   if (error) throw new ToolOptionsLimitError(error);
 }
 
 const persistedToolOptions = new WeakMap<AgentToolOptions, AgentToolOptions>();
 
-/** Runtime aliases do not count toward persisted authoring limits. */
+/** This view is for safety accounting, never runtime approval matching. */
 export function getPersistedToolOptions(options?: AgentToolOptions): AgentToolOptions | undefined {
   return options && (persistedToolOptions.get(options) ?? options);
 }
 
-/** Capture the bounded persisted view before the first in-place alias is added. */
-export function capturePersistedToolOptions(options: AgentToolOptions): void {
-  if (persistedToolOptions.has(options)) return;
-  assertToolOptionsWithinLimits(options);
-  persistedToolOptions.set(options, { ...options });
+/** Capture the bounded persisted view before runtime keys are transformed. */
+export function capturePersistedToolOptions(options: AgentToolOptions): AgentToolOptions {
+  let persisted = persistedToolOptions.get(options);
+  if (!persisted) {
+    assertToolOptionsWithinLimits(options);
+    persisted = { ...options };
+    persistedToolOptions.set(options, persisted);
+  }
+  return persisted;
+}
+
+/** Trusted copies and rewrites retain limits without replacing their effective entries. */
+export function retainToolOptionsLimits(target: AgentToolOptions, source?: AgentToolOptions): void {
+  if (source) persistedToolOptions.set(target, capturePersistedToolOptions(source));
 }

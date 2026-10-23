@@ -141,6 +141,7 @@ jest.mock('../../middleware/modelBoundContent', () => {
 import { initializeAgent } from '../initialize';
 import { primeResources } from '../resources';
 import { isFatalAgentInitializationError } from '../errors';
+import { canAgentGraphPause } from '../hitl/admission';
 
 const realUtils = jest.requireActual<typeof import('~/utils')>('~/utils');
 
@@ -5318,6 +5319,43 @@ describe('initializeAgent — run-scoped MCP tool definitions', () => {
     expect(loadTools).toHaveBeenCalledWith(
       expect.objectContaining({ accessibleMcpServerNames: accessibleNames }),
     );
+  });
+
+  it('keeps valid authored limits through symbol-only server normalization and chat admission', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      structuredTools: [{ name: 'web_search' }],
+      loadedToolDefinitions: [{ name: 'web_search' }],
+    });
+    const names = Array.from({ length: 1023 }, (_, i) => `${`${i}`.padEnd(58, 'q')}_mcp_!`);
+    agent.tools = ['web_search'];
+    agent.tool_options = Object.fromEntries([
+      ...names.map((name) => [name, { approval_mode: 'ask' as const }]),
+      ['web_search', { approval_mode: 'ask' as const }],
+    ]);
+    req.config = { mcpConfig: { '!': {} } } as NonNullable<typeof req.config>;
+    db.getAccessibleMcpServerNames = jest.fn().mockResolvedValue(['!']);
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+    expect(loadTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool_options: expect.objectContaining({
+          [names[0].replace(/!$/, 'server_33')]: { approval_mode: 'ask' },
+        }),
+      }),
+    );
+    expect(
+      canAgentGraphPause({ policy: { enabled: true, mode: 'bypass' }, agents: [result] }),
+    ).toBe(true);
   });
 
   it('threads the normalized MCP request body into tool discovery', async () => {
