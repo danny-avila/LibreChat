@@ -410,7 +410,10 @@ async function saveErrorTurn(
       if (liveUserMessage?.messageId == null) {
         return;
       }
-      errorMessageId = getPreliminaryResponseMessageId({ messageId: liveUserMessage.messageId });
+      errorMessageId = getPreliminaryResponseMessageId({
+        compact: true,
+        messageId: liveUserMessage.messageId,
+      });
       errorParentMessageId = liveUserMessage.messageId;
     } else if (isRegenerate) {
       errorMessageId =

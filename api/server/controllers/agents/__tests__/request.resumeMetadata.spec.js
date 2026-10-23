@@ -3983,6 +3983,43 @@ describe('ResumableAgentController resume metadata', () => {
       );
     });
 
+    it('persists a failed compaction without overwriting a maximum-length preliminary anchor', async () => {
+      const anchorId = 'a'.repeat(256) + '_';
+      mockGetMessages.mockImplementation(async ({ messageId }) =>
+        messageId === anchorId ? [{ _id: 'persisted-anchor' }] : [],
+      );
+      const client = {
+        options: {},
+        sendMessage: jest.fn(async (_text, options) => {
+          options.onStart({ messageId: anchorId, conversationId, text: '' }, 'compaction-response');
+          throw new Error('compaction failed');
+        }),
+      };
+
+      await AgentController(
+        createFailedRequest({ compact: true, messageId: anchorId, parentMessageId: anchorId }),
+        createResumableResponse(),
+        jest.fn(),
+        jest.fn().mockResolvedValue({ client }),
+        null,
+      );
+      await flushBackgroundGeneration();
+
+      expect(client.sendMessage).toHaveBeenCalledTimes(1);
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({
+          messageId: 'compaction-response',
+          parentMessageId: anchorId,
+          error: true,
+        }),
+        expect.any(Object),
+      );
+      expect(mockSaveMessage.mock.calls.map(([, message]) => message.messageId)).not.toContain(
+        anchorId,
+      );
+    });
+
     it('uses the live user identity after generation starts', async () => {
       const serverUserMessage = {
         messageId: 'server-user',

@@ -686,6 +686,18 @@ describe('bounded turn message identities', () => {
     ).toBeNull();
   });
 
+  it('normalizes a maximum-length preliminary response used as a compaction anchor', () => {
+    const messageId = `${'a'.repeat(MAX_MESSAGE_ID_LENGTH)}_`;
+    expect(getPreliminaryResponseMessageId({ messageId, compact: true })).toBe(messageId);
+    expect(getPreliminaryResponseMessageId({ messageId })).toBeNull();
+    expect(
+      getPreliminaryResponseMessageId({ messageId: `${messageId}_`, compact: true }),
+    ).toBeNull();
+    expect(
+      getPreliminaryResponseMessageId({ messageId: '_'.repeat(80_000) + 'X', compact: true }),
+    ).toBeNull();
+  });
+
   it('uses a valid explicit response identity', () => {
     expect(
       getPreliminaryResponseMessageId({ messageId: 'user', responseMessageId: 'response' }),

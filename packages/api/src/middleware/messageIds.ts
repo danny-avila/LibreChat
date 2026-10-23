@@ -10,7 +10,9 @@ export function validateChatMessageIds(req: Request, res: Response, next: NextFu
   for (const field of ['messageId', 'responseMessageId'] as const) {
     const value: unknown = req.body?.[field];
     const maxLength =
-      field === 'responseMessageId' ? MAX_RESPONSE_MESSAGE_ID_LENGTH : MAX_MESSAGE_ID_LENGTH;
+      field === 'responseMessageId' || req.body?.compact === true
+        ? MAX_RESPONSE_MESSAGE_ID_LENGTH
+        : MAX_MESSAGE_ID_LENGTH;
     if (value != null && !isValidMessageId(value, maxLength)) {
       res.status(400).json({
         code: 'INVALID_MESSAGE_ID',

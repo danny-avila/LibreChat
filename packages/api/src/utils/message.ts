@@ -19,18 +19,22 @@ export function isValidMessageId(
 }
 
 export function getPreliminaryResponseMessageId({
+  compact,
   messageId,
   responseMessageId,
 }: {
   messageId?: unknown;
   responseMessageId?: unknown;
+  compact?: boolean;
 }): string | null {
   if (responseMessageId != null) {
     return isValidMessageId(responseMessageId, MAX_RESPONSE_MESSAGE_ID_LENGTH)
       ? responseMessageId
       : null;
   }
-  if (!isValidMessageId(messageId)) {
+  /** Compaction uses a persisted response, not a fresh user identity. */
+  const maxLength = compact === true ? MAX_RESPONSE_MESSAGE_ID_LENGTH : MAX_MESSAGE_ID_LENGTH;
+  if (!isValidMessageId(messageId, maxLength)) {
     return null;
   }
 

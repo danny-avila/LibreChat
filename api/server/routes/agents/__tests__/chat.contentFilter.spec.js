@@ -150,9 +150,29 @@ describe('agents chat message-ID ingress', () => {
   );
 
   it.each([
+    ['fresh user', { messageId: 'a'.repeat(257) + '_' }],
+    ['fresh user at 257', { messageId: 'a'.repeat(256) + '_' }],
+    ['compaction', { messageId: 'a'.repeat(257) + '_', compact: true }],
+    ['response', { responseMessageId: 'a'.repeat(257) + '_' }],
+  ])('rejects oversized %s identities at the protocol boundary', async (_label, body) => {
+    await request(createAuthenticatedApp())
+      .post('/api/agents/chat')
+      .set('Authorization', 'Bearer test-user')
+      .send(body)
+      .expect(400);
+    expect(require('~/server/controllers/agents/request')).not.toHaveBeenCalled();
+  });
+
+  it.each([
     {},
     { messageId: null, responseMessageId: null },
     { messageId: '550e8400-e29b-41d4-a716-446655440000' },
+    {
+      compact: true,
+      conversationId: 'existing-conversation',
+      messageId: 'a'.repeat(256) + '_',
+      parentMessageId: 'a'.repeat(256) + '_',
+    },
     { messageId: 'a'.repeat(256), responseMessageId: 'a'.repeat(256) + '_', isRegenerate: true },
     { messageId: 'nanoid_-', responseMessageId: 'event-turn:assistant', isRegenerate: true },
     { messageId: 'edited-user__', responseMessageId: 'existing-response', editedContent: {} },
