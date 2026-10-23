@@ -3,11 +3,11 @@ import { logger, encryptV2 } from '@librechat/data-schemas';
 import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 import type { IToken, TokenMethods } from '@librechat/data-schemas';
 import type { AxiosError } from 'axios';
+import { logAxiosError, outboundRequestBudget, DEFAULT_OUTBOUND_TIMEOUTS_MS } from '~/utils';
 import { DEFAULT_OAUTH_TOKEN_TTL_SECONDS, normalizeExpiresIn } from './expiry';
 import { validateActionOAuthEndpoint } from './validation';
 import { decryptSensitiveValue } from '~/actions/crypto';
 import { createSSRFSafeAgents } from '~/auth';
-import { logAxiosError } from '~/utils';
 
 const actionOAuthAgents = createSSRFSafeAgents();
 const actionOAuthAgentsByAddress = new Map<string, ReturnType<typeof createSSRFSafeAgents>>();
@@ -162,6 +162,7 @@ export async function refreshAccessToken(
     encrypted_oauth_client_id,
     encrypted_oauth_client_secret,
     allowedAddresses,
+    timeout = DEFAULT_OUTBOUND_TIMEOUTS_MS.actionsMs,
   }: {
     userId: string;
     client_url: string;
@@ -171,6 +172,8 @@ export async function refreshAccessToken(
     encrypted_oauth_client_id: string;
     encrypted_oauth_client_secret: string;
     allowedAddresses?: string[] | null;
+    /** Milliseconds before the token request is abandoned. */
+    timeout?: number;
   },
   {
     findToken,
@@ -218,6 +221,7 @@ export async function refreshAccessToken(
       maxRedirects: 0,
       httpsAgent: getActionOAuthAgents(allowedAddresses).httpsAgent,
       data: params.toString(),
+      ...outboundRequestBudget(timeout, 'actionsMs'),
     });
     await processAccessTokens(
       response.data,
@@ -267,6 +271,7 @@ export async function getAccessToken(
     encrypted_oauth_client_id,
     encrypted_oauth_client_secret,
     allowedAddresses,
+    timeout = DEFAULT_OUTBOUND_TIMEOUTS_MS.actionsMs,
   }: {
     code: string;
     userId: string;
@@ -277,6 +282,8 @@ export async function getAccessToken(
     encrypted_oauth_client_id: string;
     encrypted_oauth_client_secret: string;
     allowedAddresses?: string[] | null;
+    /** Milliseconds before the token request is abandoned. */
+    timeout?: number;
   },
   {
     findToken,
@@ -325,6 +332,7 @@ export async function getAccessToken(
       maxRedirects: 0,
       httpsAgent: getActionOAuthAgents(allowedAddresses).httpsAgent,
       data: params.toString(),
+      ...outboundRequestBudget(timeout, 'actionsMs'),
     });
 
     await processAccessTokens(
