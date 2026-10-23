@@ -1,10 +1,13 @@
+import { dirname, join } from 'node:path';
+import { writeFile } from 'node:fs/promises';
 import type { FiltersConfig } from 'librechat-data-provider';
-import { createDocumentExtractor, ExtractionServiceError } from './client';
+import { createDocumentExtractor, ExtractionServiceError, readExtractionInput } from './client';
 import { prepareCodeOutputBufferForInspection } from '../code/inspection';
 import { capabilities, fixture, reply, result } from './fixture.helper';
 import { resolveUploadFallbackText } from '../upload/fallback';
 import { preflightCodeOutputBatch } from '../code/preflight';
 import { resolveUploadDocumentText } from './upload';
+import { parseDocument } from '../documents/crud';
 
 const file = {
   originalname: 'body.docx',
@@ -61,6 +64,37 @@ describe('selected remote semantic extraction callers', () => {
     });
     expect(extract).not.toHaveBeenCalled();
     expect(deps.extractDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it('routes a real disk upload through parseDocument config wiring and bounds the disk read', async () => {
+    const server = await fixture((req, res) => {
+      req.resume();
+      reply(res, req.method === 'GET' ? capabilities : result(file.buffer, 'docx'));
+    });
+    try {
+      const path = join(dirname(server.socketPath), 'upload.docx');
+      await writeFile(path, file.buffer);
+      const { buffer: _buffer, ...diskFile } = file;
+      const upload = { ...diskFile, path } as Express.Multer.File;
+      const config = { enabled: true, socketPath: server.socketPath };
+      await expect(
+        parseDocument({
+          file: upload,
+          req: { config: { fileConfig: { extractionService: config } } },
+        }),
+      ).resolves.toMatchObject({ text: '你好!', bytes: 7 });
+      await expect(
+        readExtractionInput(upload, { maxInputBytes: 2, extract: jest.fn() }),
+      ).rejects.toMatchObject({ code: 'INPUT_LIMIT' });
+      await expect(
+        readExtractionInput(
+          { ...upload, path: '/private/secret-document.docx' },
+          { maxInputBytes: 2, extract: jest.fn() },
+        ),
+      ).rejects.toThrow('Document extraction failed (INPUT_UNAVAILABLE).');
+    } finally {
+      await server.close();
+    }
   });
 
   it('flattens ordered segments only for the upload string consumer', async () => {
