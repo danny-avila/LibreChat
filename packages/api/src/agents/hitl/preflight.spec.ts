@@ -436,8 +436,60 @@ describe('graph-member preflight', () => {
           code: state === 'blocked' ? 'content_filter_block' : 'content_filter_uninspectable',
         });
       }
-      expect(dependencies.getAgent).toHaveBeenCalledTimes(state === 'inert' ? 0 : count);
-      if (state !== 'inert') expect(dependencies.getAgent).toHaveBeenCalledWith({ id: last });
+      expect(dependencies.getAgent).toHaveBeenCalledTimes(
+        state === 'inert' || state === 'over-budget' ? 0 : count,
+      );
+      if (state !== 'inert' && state !== 'over-budget')
+        expect(dependencies.getAgent).toHaveBeenCalledWith({ id: last });
+    },
+  );
+
+  it.each(['safe', 'blocked', 'missing', 'revoked', 'over-budget'])(
+    'classifies discovered handoffs before validating the member budget: %s',
+    async (state) => {
+      const count = MAX_SUBAGENT_GRAPH_NODES + (state === 'over-budget' ? 1 : 0);
+      const ids = Array.from({ length: count }, (_, index) => `member-${index}`);
+      const graphs: AgentSubagentGraph[] = [];
+      for (let start = 0; start < count; start += 25) {
+        const members = ids.slice(start, start + 25);
+        graphs.push({
+          ...graph(members[0]),
+          type: `team-${start}`,
+          agent_ids: members,
+          result_agent_id: members[members.length - 1],
+          edges: members
+            .slice(1)
+            .map((id, index) => ({ from: members[index], to: id, edgeType: 'direct' })),
+        });
+      }
+      const primary = {
+        ...agent('primary', { enabled: false, graphsEnabled: true, graphs }),
+        edges: [{ from: 'primary', to: 'handoff', edgeType: 'handoff' as const }],
+      };
+      const dependencies = createDependencies();
+      const last = ids[count - 1];
+      dependencies.getAgent = jest.fn(async ({ id }) =>
+        id === last && state === 'missing'
+          ? null
+          : {
+              ...agent(id),
+              instructions:
+                id === last && state === 'blocked' ? 'Use sk-boundary-member-secret' : '',
+            },
+      );
+      dependencies.canAccessAgent = jest.fn(async ({ id }) => id !== last || state !== 'revoked');
+      const result = preflightResumeContent(
+        createInput({ appConfig: policy, endpointOption: { agent: Promise.resolve(primary) } }),
+        dependencies,
+      );
+      if (state === 'safe') await expect(result).resolves.toBeDefined();
+      else
+        await expect(result).rejects.toMatchObject({
+          code: state === 'blocked' ? 'content_filter_block' : 'content_filter_uninspectable',
+        });
+      expect(dependencies.getAgent).toHaveBeenCalledWith({ id: 'handoff' });
+      if (state !== 'over-budget') expect(dependencies.getAgent).toHaveBeenCalledWith({ id: last });
+      expect(dependencies.getAgent).toHaveBeenCalledTimes(state === 'over-budget' ? 1 : count + 1);
     },
   );
 

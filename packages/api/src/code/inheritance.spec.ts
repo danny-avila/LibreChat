@@ -126,6 +126,38 @@ describe('resolveSubagentCodeWorkspaceInheritance', () => {
     loadSubagent.mockClear();
   });
 
+  it.each([false, true])(
+    'ignores isolated child handoffs while retaining nested spawn inheritance, reverse=%s',
+    async (reverse) => {
+      const child = 'child';
+      const leaf = 'leaf';
+      const lia = await seed(LIA, {
+        subagents: { enabled: true, agent_ids: reverse ? [REVIEWER, child] : [child, REVIEWER] },
+      });
+      await seed(child, {
+        edges: [{ from: child, to: REVIEWER, edgeType: 'handoff' }],
+        subagents: { enabled: true, agent_ids: [leaf] },
+      });
+      await seed(leaf);
+      const reviewer = await seed(REVIEWER);
+      const inherited = await resolveSubagentCodeWorkspaceInheritance({
+        selections: incident,
+        roots: [root(lia)],
+        loadSubagent,
+        environments,
+        allowEnvironmentSelection: true,
+        codeExecutionAvailable: true,
+      });
+      expect(inherited.get(REVIEWER)).toBe(LIA_RAG);
+      expect(inherited.get(leaf)).toBe(LIA_RAG);
+      expect(routeOf(reviewer, incident, inherited)).toBe(LIA_RAG);
+      expect(new Set(loadSubagent.mock.calls.map(([id]) => id))).toEqual(
+        new Set([child, leaf, REVIEWER]),
+      );
+      expect(loadSubagent).toHaveBeenCalledTimes(3);
+    },
+  );
+
   it("reproduces the PR Reviewer incident and routes the reviewer to Lia's workspace", async () => {
     const lia = await seed(LIA, { subagents: { enabled: true, agent_ids: [REVIEWER] } });
     const reviewer = await seed(REVIEWER);

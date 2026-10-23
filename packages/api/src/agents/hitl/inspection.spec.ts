@@ -240,6 +240,176 @@ describe('resume agent snapshot budget', () => {
     },
   );
 
+  it.each(['chain', 'cycle', 'diamond'])(
+    'excludes discovered %s roots from the exact member budget',
+    async (shape) => {
+      const primary = agent('primary', teams(MAX_SUBAGENT_GRAPH_NODES));
+      const first = agent('first');
+      const second = agent('second', teams(MAX_SUBAGENT_GRAPH_NODES));
+      const shared = agent('shared', [
+        {
+          ...teams(2)[0],
+          agent_ids: ['primary', 'first'],
+          entry_agent_id: 'primary',
+          result_agent_id: 'first',
+          edges: [{ from: 'primary', to: 'first', edgeType: 'direct' }],
+        },
+      ]);
+      primary.edges = [{ from: 'primary', to: 'first', edgeType: 'handoff' }];
+      first.edges = [{ from: 'first', to: 'second', edgeType: 'handoff' }];
+      second.edges = [
+        { from: 'second', to: shape === 'cycle' ? 'primary' : 'shared', edgeType: 'handoff' },
+      ];
+      if (shape === 'diamond')
+        primary.edges.push({ from: 'primary', to: 'shared', edgeType: 'handoff' });
+      const saved = new Map([first, second, shared].map((value) => [value.id, value]));
+      const getAgent = jest.fn(async ({ id }: { id: string }) => saved.get(id) ?? agent(id));
+      const snapshots = await getResumeAgentSnapshot({
+        primaryAgent: primary,
+        capabilities: ['subagent_graphs'],
+        getAgent,
+        canAccessAgent: async () => true,
+      });
+      const roots = shape === 'cycle' ? 3 : 4;
+      expect(snapshots).toHaveLength(roots + MAX_SUBAGENT_GRAPH_NODES);
+      expect(getAgent).toHaveBeenCalledTimes(roots - 1 + MAX_SUBAGENT_GRAPH_NODES);
+      expect(new Set(getAgent.mock.calls.map(([{ id }]) => id)).size).toBe(
+        getAgent.mock.calls.length,
+      );
+    },
+  );
+
+  it('ignores isolated child handoffs and legacy chains but expands its ordinary children', async () => {
+    const primary = agent('primary');
+    primary.subagents = { enabled: true, agent_ids: ['child'] };
+    const child = agent('child');
+    child.subagents = { enabled: true, agent_ids: ['leaf'] };
+    child.agent_ids = ['unused-chain'];
+    child.edges = [{ from: 'child', to: 'unused-handoff', edgeType: 'handoff' }];
+    const saved = new Map([child, agent('leaf')].map((value) => [value.id, value]));
+    const getAgent = jest.fn(async ({ id }: { id: string }) => saved.get(id) ?? null);
+    const snapshots = await getResumeAgentSnapshot({
+      primaryAgent: primary,
+      getAgent,
+      capabilities: ['subagents'],
+    });
+    expect(snapshots.map(({ id }) => id)).toEqual(['primary', 'child', 'leaf']);
+    expect(getAgent.mock.calls.map(([{ id }]) => id)).toEqual(['child', 'leaf']);
+  });
+
+  it.each(['ordinary', 'handoff'])(
+    'upgrades terminal members through an independent %s path in either root order',
+    async (path) => {
+      const graphRoot = agent('graph-root', teams(1));
+      const other = agent('other');
+      if (path === 'ordinary') other.subagents = { enabled: true, agent_ids: ['member-0'] };
+      else other.edges = [{ from: 'other', to: 'member-0', edgeType: 'handoff' }];
+      const member = agent('member-0');
+      member.subagents = { enabled: true, agent_ids: ['leaf'] };
+      member.edges = [{ from: 'member-0', to: 'unused', edgeType: 'handoff' }];
+      const leaf = agent('leaf');
+      leaf.subagents = { enabled: true, agent_ids: ['member-0'] };
+      const saved = new Map([member, leaf, agent('unused')].map((value) => [value.id, value]));
+      for (const roots of [
+        [graphRoot, other],
+        [other, graphRoot],
+      ]) {
+        const getAgent = jest.fn(async ({ id }: { id: string }) => saved.get(id) ?? null);
+        const snapshots = await getResumeAgentSnapshot({
+          primaryAgent: roots[0],
+          additionalRoots: [roots[1]],
+          getAgent,
+          capabilities: ['subagents', 'subagent_graphs'],
+        });
+        expect(new Set(snapshots.map(({ id }) => id))).toEqual(
+          new Set([
+            'graph-root',
+            'other',
+            'member-0',
+            'leaf',
+            ...(path === 'handoff' ? ['unused'] : []),
+          ]),
+        );
+        expect(getAgent).toHaveBeenCalledTimes(path === 'handoff' ? 3 : 2);
+        expect(new Set(getAgent.mock.calls.map(([{ id }]) => id)).size).toBe(
+          getAgent.mock.calls.length,
+        );
+      }
+    },
+  );
+
+  it.each([MAX_SUBAGENT_GRAPH_NODES, MAX_SUBAGENT_GRAPH_NODES + 1])(
+    'bounds handoff-chain reads at %s roots',
+    async (count) => {
+      const primary = agent('primary');
+      primary.edges = [{ from: primary.id, to: 'root-0', edgeType: 'handoff' }];
+      const getAgent = jest.fn(async ({ id }: { id: string }) => {
+        const index = Number(id.slice(5));
+        return {
+          ...agent(id),
+          edges:
+            index + 1 < count
+              ? [{ from: id, to: `root-${index + 1}`, edgeType: 'handoff' as const }]
+              : [],
+        };
+      });
+      const result = getResumeAgentSnapshot({ primaryAgent: primary, getAgent, capabilities: [] });
+      if (count === MAX_SUBAGENT_GRAPH_NODES) await expect(result).resolves.toHaveLength(count + 1);
+      else await expect(result).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+      expect(getAgent).toHaveBeenCalledTimes(MAX_SUBAGENT_GRAPH_NODES);
+    },
+  );
+
+  it('rejects oversized root fan-out before scheduling reads', async () => {
+    const primary = agent('primary');
+    primary.edges = [
+      {
+        from: primary.id,
+        to: Array.from({ length: MAX_SUBAGENT_GRAPH_NODES + 1 }, (_, index) => `root-${index}`),
+        edgeType: 'handoff',
+      },
+    ];
+    const getAgent = jest.fn(async ({ id }: { id: string }) => agent(id));
+    await expect(
+      getResumeAgentSnapshot({ primaryAgent: primary, getAgent, capabilities: [] }),
+    ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+    expect(getAgent).not.toHaveBeenCalled();
+  });
+
+  it.each(['missing', 'revoked', 'uninspectable'])(
+    'fails closed on a required graph member already probed as an unavailable root: %s',
+    async (state) => {
+      const primary = agent('primary', teams(1));
+      primary.edges = [{ from: primary.id, to: 'member-0', edgeType: 'handoff' }];
+      const getAgent = jest.fn(async ({ id }: { id: string }) => {
+        if (state === 'uninspectable') throw new Error('unavailable');
+        return state === 'missing' ? null : agent(id);
+      });
+      await expect(
+        getResumeAgentSnapshot({
+          primaryAgent: primary,
+          getAgent,
+          capabilities: ['subagent_graphs'],
+          canAccessAgent: async () => false,
+        }),
+      ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+      expect(getAgent).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('keeps capability-disabled graph members out of the member phase', async () => {
+    const primary = agent('primary', teams(MAX_SUBAGENT_GRAPH_NODES));
+    primary.edges = [{ from: primary.id, to: 'handoff', edgeType: 'handoff' }];
+    const getAgent = jest.fn(async ({ id }: { id: string }) => agent(id));
+    const snapshots = await getResumeAgentSnapshot({
+      primaryAgent: primary,
+      getAgent,
+      capabilities: ['subagents'],
+    });
+    expect(snapshots.map(({ id }) => id)).toEqual(['primary', 'handoff']);
+    expect(getAgent).toHaveBeenCalledTimes(1);
+  });
+
   it.each([0, 2])('rejects budget +1 even with %s additional roots', async (rootCount) => {
     const graphs = teams(MAX_SUBAGENT_GRAPH_NODES + 1);
     const getAgent = jest.fn(async ({ id }: { id: string }) => agent(id));
@@ -254,7 +424,7 @@ describe('resume agent snapshot budget', () => {
         canAccessAgent: async () => true,
       }),
     ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
-    expect(getAgent).toHaveBeenCalledTimes(MAX_SUBAGENT_GRAPH_NODES + 1);
+    expect(getAgent).not.toHaveBeenCalled();
   });
 
   it.each(['missing', 'revoked', 'unavailable'])(

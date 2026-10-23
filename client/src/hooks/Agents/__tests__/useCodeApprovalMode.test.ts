@@ -740,6 +740,52 @@ describe('terminal graph traversal', () => {
     edges: [{ from: 'member', to: 'handoff', edgeType: 'handoff' }],
   });
 
+  test.each([false, true])(
+    'isolated ordinary children ignore saved handoffs but keep nested spawns, reverse=%s',
+    (reverse) => {
+      const root = agent('root', {
+        subagents: {
+          enabled: true,
+          agent_ids: reverse ? ['member', 'child'] : ['child', 'member'],
+        },
+      });
+      const child = agent('child', {
+        subagents: { enabled: true, agent_ids: ['leaf'] },
+        agent_ids: ['unused-chain'],
+        edges: [
+          { from: 'child', to: 'member', edgeType: 'handoff' },
+          { from: 'child', to: 'unused-handoff', edgeType: 'handoff' },
+        ],
+      });
+      const leaf = agent('leaf', { code_environment_id: 'child' });
+      const isolated = agent('member', { code_environment_id: 'child' });
+      const result = collectReachableAgents(
+        [root],
+        { child, member: isolated, leaf },
+        ['root'],
+        capabilities,
+      );
+      expect(result.complete).toBe(true);
+      expect(new Set(result.agents.map(({ id }) => id))).toEqual(
+        new Set(['root', 'child', 'member', 'leaf']),
+      );
+      const inherited = resolveReachableCodeWorkspaceInheritance(
+        [root],
+        { child, member: isolated, leaf },
+        [
+          { id: 'mac', name: 'Mac', type: 'attached' },
+          { id: 'child', name: 'Child', type: 'attached' },
+        ],
+        true,
+        [{ environmentId: 'mac', workspaceId: 'project', agentIds: ['root'] }],
+        false,
+        capabilities,
+      );
+      expect(inherited.get('member')).toBe('mac');
+      expect(inherited.get('leaf')).toBe('mac');
+    },
+  );
+
   test('does not load missing graph descendants or lower completeness', () => {
     expect(collectReachableAgents([parent], { member }, ['parent'], capabilities)).toEqual({
       agents: [parent, member],

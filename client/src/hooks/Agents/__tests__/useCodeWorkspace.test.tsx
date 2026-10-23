@@ -271,6 +271,75 @@ describe('useCodeWorkspace', () => {
       });
     }
 
+    it.each([
+      { reverse: false, handoff: false },
+      { reverse: true, handoff: false },
+      { reverse: false, handoff: true },
+      { reverse: true, handoff: true },
+    ])('keeps isolated child handoffs out of workspace roots: %j', ({ reverse, handoff }) => {
+      enableChoices();
+      enableInheritance();
+      const primary = mockAgentPermissions().agent;
+      primary.subagents = {
+        enabled: true,
+        agent_ids: reverse ? ['reviewer', 'child'] : ['child', 'reviewer'],
+      };
+      primary.edges = handoff ? [{ from: primary.id, to: 'reviewer', edgeType: 'handoff' }] : [];
+      mockAgentsMap.mockReturnValue({
+        child: {
+          id: 'child',
+          tools: [],
+          edges: [{ from: 'child', to: 'reviewer', edgeType: 'handoff' }],
+          agent_ids: ['unexecuted-chain'],
+          subagents: { enabled: true, agent_ids: ['leaf'] },
+        },
+        reviewer: {
+          id: 'reviewer',
+          stateful_code_sessions: true,
+          tools: [Tools.execute_code],
+          code_environment_id: 'runtime-vm',
+          code_environment_ids: ['personal-vm'],
+        },
+        leaf: { id: 'leaf', tools: [] },
+      });
+      mockStatus.mockImplementation((ids: string[]) =>
+        ids.map((id) => ({
+          data: {
+            environmentId: id,
+            status: id === 'runtime-vm' ? 'offline' : 'ready',
+            workspaces: [{ id: 'project-a' }],
+          },
+        })),
+      );
+      const selections = [
+        { environmentId: 'personal-vm', workspaceId: 'project-a', agentIds: ['agent_primary'] },
+      ];
+      const { result } = renderHook(() =>
+        useCodeWorkspace({
+          ...conversation(selections),
+          conversationId: 'saved',
+          codeEnvironmentMode: 'attached',
+        }),
+      );
+      expect(result.current.canSubmit).toBe(!handoff);
+      expect(result.current.environments.map(({ environment }) => environment.id)).toEqual(
+        handoff ? ['personal-vm', 'runtime-vm'] : ['personal-vm'],
+      );
+      expect(
+        result.current.environments.find(
+          ({ environment }) => environment.id === (handoff ? 'runtime-vm' : 'personal-vm'),
+        )?.requiredBy,
+      ).toEqual(expect.arrayContaining([{ id: 'reviewer', name: undefined }]));
+      expect(result.current.resolveSubmission(selections)).toEqual(
+        handoff ? undefined : { codeEnvironmentMode: 'attached', codeWorkspaces: selections },
+      );
+      expect(mockStatus).toHaveBeenLastCalledWith(
+        handoff ? ['personal-vm', 'runtime-vm'] : ['personal-vm'],
+        true,
+        { notifyOnChangeProps: ['data', 'isLoading', 'isError'] },
+      );
+    });
+
     it('names the reviewer whose separate machine still needs a workspace', () => {
       enableChoices();
       mockAgentPermissions().agent.name = 'Lia';

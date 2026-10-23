@@ -279,6 +279,20 @@ function collectAgentTraversal(
     if (agent != null) pending.push({ agent, expand });
     else complete = false;
   };
+  const rootAgents = [...rootMap.values()];
+  for (let index = 0; index < rootAgents.length; index++) {
+    const root = rootAgents[index];
+    for (const id of getLinkedAgentIds(root)) {
+      if (!id || rootIds.has(id)) continue;
+      rootIds.add(id);
+      const linked = rootMap.get(id) ?? agentsMap?.[id];
+      if (linked) rootAgents.push(linked);
+      else complete = false;
+    }
+  }
+  for (const id of roots[0]?.agent_ids ?? []) {
+    if (id) rootIds.add(id);
+  }
   for (const id of rootIds) add(id, true);
   for (let index = 0; index < pending.length; index++) {
     const { agent, expand } = pending[index];
@@ -288,11 +302,6 @@ function collectAgentTraversal(
     }
     if (!expand || expanded.has(agent.id)) continue;
     expanded.add(agent.id);
-    for (const id of getLinkedAgentIds(agent)) {
-      if (id === agent.id) continue;
-      rootIds.add(id);
-      add(id, true);
-    }
     const subagents = resolveSubagents(agent.subagents, capabilities);
     const ids = new Set<string>();
     for (const id of subagents?.agent_ids ?? []) {
@@ -317,7 +326,7 @@ function getLinkedAgentIds(agent: Agent): string[] {
     ...(Array.isArray(edge.from) ? edge.from : [edge.from]),
     ...(Array.isArray(edge.to) ? edge.to : [edge.to]),
   ]);
-  return [...(agent.agent_ids ?? []), ...(edgeIds ?? [])];
+  return edgeIds ?? [];
 }
 
 function toCodeWorkspaceRoutingAgent(

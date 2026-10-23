@@ -326,7 +326,7 @@ const useAttachedWarnings = (enabled?: boolean) => {
 };
 
 test.each(['ordinary', 'handoff', 'ordinary-handoff', 'handoff-ordinary'])(
-  'warns for attached descendants reached through %s',
+  'warns only for executable attached descendants reached through %s',
   (path) => {
     useAttachedWarnings();
     const nested = path.includes('-');
@@ -347,7 +347,8 @@ test.each(['ordinary', 'handoff', 'ordinary-handoff', 'handoff-ordinary'])(
         }}
       />,
     );
-    expect(screen.getByRole('note')).toHaveTextContent('com_ui_agent_graphs_approvals');
+    if (path === 'ordinary-handoff') expect(screen.queryByRole('note')).toBeNull();
+    else expect(screen.getByRole('note')).toHaveTextContent('com_ui_agent_graphs_approvals');
   },
 );
 
