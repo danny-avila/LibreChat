@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const recipes = [
@@ -17,9 +17,15 @@ const recipes = [
 for (const files of recipes) {
   test(`default isolated extraction in ${files.join(' + ')}`, () => {
     const scratch = mkdtempSync(join(tmpdir(), 'extraction-compose-'));
-    const envFile = join(scratch, 'empty.env');
+    const envFile = join(scratch, '.env');
     writeFileSync(envFile, '');
     try {
+      // Render the recipes verbatim beside synthetic env files, never the application's .env.
+      for (const file of files) {
+        const staged = join(scratch, file);
+        mkdirSync(dirname(staged), { recursive: true });
+        copyFileSync(join(root, file), staged);
+      }
       const rendered = execFileSync(
         'docker',
         [
@@ -28,12 +34,11 @@ for (const files of recipes) {
           envFile,
           ...files.flatMap((file) => ['-f', file]),
           'config',
-          '--no-env-resolution',
           '--format',
           'json',
         ],
         {
-          cwd: root,
+          cwd: scratch,
           encoding: 'utf8',
           env: {
             PATH: process.env.PATH,
