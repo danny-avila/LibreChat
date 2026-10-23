@@ -16,7 +16,9 @@ import {
 import {
   logger,
   getAtPath,
+  getTenantId,
   unsetAtPath,
+  tenantStorage,
   isPlainRecord,
   isDotFreePath,
   isSegmentPrefix,
@@ -58,7 +60,9 @@ import {
   MAX_CONFIG_PATH_DEPTH,
   getDefaultConfigPriority,
   BASE_CONFIG_PRINCIPAL_ID,
+  SYSTEM_TENANT_ID,
   isConfigRevisionConflict,
+  ConfigRevisionConflictError,
   isConfigOverrideStateEmpty,
   toConfigDraft,
   toConfigIdentityPath,
@@ -89,6 +93,8 @@ import type {
   AdminConfigIgnoredSecret,
   AdminConfigChangesResponse,
   AdminConfigChangeErrorResponse,
+  AdminConfigReloadResponse,
+  AdminConfigReloadErrorResponse,
   ConfigMutationOutcome,
   ConfigMutationPlan,
   ConfigIdentityStep,
@@ -96,6 +102,7 @@ import type {
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { CapabilityUser } from '~/middleware/capabilities';
+import type { ConfigReloadReport } from '~/app/invalidation';
 import type { EnvReferencePolicy } from '~/app/allowlist';
 import type { ConfigSecretRename } from './secrets';
 import type { SecretReentryIssue } from './binding';
@@ -153,6 +160,9 @@ import { buildAdminConfigMeta } from './meta';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
+/** The audit target of a reload: the file every instance loads again. */
+const CONFIG_FILE_TARGET = 'librechat.yaml';
+const RELOAD_AUDIT_TARGET = { type: 'config', id: CONFIG_FILE_TARGET, name: CONFIG_FILE_TARGET };
 const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
 const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
 const PROCESS_MCP_CONFIG_ERROR =
@@ -662,6 +672,12 @@ export interface AdminConfigDeps {
   }) => Promise<AppConfig>;
   /** Invalidate the config caches a mutation affects; awaited before the response is sent. */
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
+  /**
+   * The same clear for `POST /reload`, then librechat.yaml loaded again on this instance and,
+   * once it loaded, the broadcast, resolving with what each step reached instead of only logging
+   * a failure, so the route can answer for it.
+   */
+  reloadConfigCaches?: (tenantId?: string) => Promise<ConfigReloadReport>;
   /** Optional audit emission for override mutations; fail-open unless `auditFailClosed`. */
   recordAuditEntry?: RecordAuditEntry;
   /** When true, a failed audit write surfaces as a 5xx after the mutation has
@@ -971,6 +987,43 @@ function unstorableKeyResponse(res: Response, operation: string): Response {
 }
 
 /**
+ * The answer to a reload that did not load librechat.yaml on this instance or did not reach
+ * every instance, or `null` when it did. A refused file is reported first, since retrying cannot
+ * fix it; its issues carry locations and zod codes only.
+ */
+function getReloadFailure(
+  report: ConfigReloadReport,
+): { status: number; body: AdminConfigReloadErrorResponse } | null {
+  const loadFailure = report.loaded?.ok === false ? report.loaded.error : undefined;
+  if (loadFailure?.code === 'CONFIG_INVALID') {
+    return {
+      status: 422,
+      body: {
+        error: 'librechat.yaml failed to load; the last good config is still served',
+        code: 'CONFIG_RELOAD_INVALID',
+        issues: loadFailure.issues.map(({ path, segments, code }) => ({ path, segments, code })),
+      },
+    };
+  }
+  if (!report.cleared || loadFailure) {
+    return {
+      status: 500,
+      body: { error: 'Failed to reload config', code: 'CONFIG_RELOAD_FAILED' },
+    };
+  }
+  if (report.broadcast !== 'failed') {
+    return null;
+  }
+  return {
+    status: 503,
+    body: {
+      error: 'Config reloaded on this instance only; the other instances could not be notified',
+      code: 'CONFIG_RELOAD_BROADCAST_FAILED',
+    },
+  };
+}
+
+/**
  * Rejects a write that would send a stored secret to a destination it was not
  * entered for. Reports only locations and stable codes, never a value; `segments`
  * names the location key by key, as other config issues do.
@@ -993,6 +1046,33 @@ function secretReentryResponse(res: Response, issues: SecretReentryIssue[]): Res
  * (`undefined` when the write read none: Base itself, or a write with nothing to validate).
  */
 type FloorOutcome<T> = ConfigMutationOutcome<T> & { base?: ConfigRecord | null };
+
+/**
+ * The tenant partitions a write to one principal's document involves. `tenantId` is the one the
+ * document merges in (`undefined`: the deployment's own, tenantless), so the write is judged on
+ * librechat.yaml as that partition resolves it and on that partition's Base. `activeTenantId` is
+ * the request's own (the caller's), where the store addresses role documents and creates a
+ * document the write makes.
+ */
+interface WriteScope {
+  tenantId: string | undefined;
+  activeTenantId: string | undefined;
+}
+
+/** The tenant partition a stored document belongs to; `null` and `''` are tenantless. */
+function getConfigPartition(record: Pick<ConfigRecord, 'tenantId'>): string | undefined {
+  return record.tenantId || undefined;
+}
+
+/**
+ * The partition the config store reads and writes role documents in for this request
+ * (`tenantPartition`): the active tenant's, or the deployment's own outside a tenant and under
+ * the system context.
+ */
+function getActivePartition(): string | undefined {
+  const tenantId = getTenantId();
+  return tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
+}
 
 /**
  * Why a planned unset or tombstone wrote nothing: no document to unset, no principal to create
@@ -1865,6 +1945,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   deleteConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
   toggleConfig: (req: ServerRequest, res: Response) => Promise<Response>;
   updateConfigPriority: (req: ServerRequest, res: Response) => Promise<Response>;
+  reloadConfig: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
   const {
     listAllConfigs,
@@ -1889,6 +1970,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     hasCapability = async () => false,
     getAppConfig,
     invalidateConfigCaches,
+    reloadConfigCaches,
     recordAuditEntry,
     auditFailClosed,
     overrideCacheTtlMs = DEFAULT_OVERRIDE_CACHE_TTL,
@@ -1914,6 +1996,53 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     principalId: string,
   ): Promise<ConfigRecord | null> {
     return findConfigByPrincipal(principalType, principalId, { includeInactive: true });
+  }
+
+  /**
+   * The partitions a write to the principal's document involves (`WriteScope`). A caller inside
+   * a tenant reaches only that tenant's documents, and a role's document is always the one in
+   * the caller's partition. A caller without a tenant addresses group and user documents by id,
+   * whichever tenant holds them, so the stored document names the partition the write is
+   * judged in: a profile merges over the Base of its own partition, not the caller's.
+   */
+  async function resolveWriteScope(
+    principalType: PrincipalType,
+    principalId: string,
+  ): Promise<WriteScope> {
+    const activeTenantId = getActivePartition();
+    if (activeTenantId || principalType === PrincipalType.ROLE) {
+      return { tenantId: activeTenantId, activeTenantId };
+    }
+    const stored = await readStoredConfig(principalType, principalId);
+    return { tenantId: stored ? getConfigPartition(stored) : undefined, activeTenantId };
+  }
+
+  /** The write's scope and librechat.yaml as the partition it is judged in resolves it. */
+  async function loadWriteScope(
+    principalType: PrincipalType,
+    principalId: string,
+  ): Promise<{ scope: WriteScope; baseConfig: AppConfig | undefined }> {
+    const scope = await resolveWriteScope(principalType, principalId);
+    return { scope, baseConfig: await getBaseAppConfig(scope.tenantId) };
+  }
+
+  /**
+   * Reads the document a write plans from, in the partition the write is judged in: the stored
+   * document's own, or the caller's for a document the write would create. A document that no
+   * longer lands there (removed and created again in another partition since the scope was
+   * resolved) answers a revision conflict rather than being judged on another partition's Base.
+   */
+  async function readScopedConfig(
+    principalType: PrincipalType,
+    principalId: string,
+    scope: WriteScope,
+  ): Promise<ConfigRecord | null> {
+    const stored = await readStoredConfig(principalType, principalId);
+    const partition = stored ? getConfigPartition(stored) : scope.activeTenantId;
+    if (partition !== scope.tenantId) {
+      throw new ConfigRevisionConflictError(stored ? getConfigRevision(stored) : null);
+    }
+    return stored;
   }
 
   /**
@@ -1995,7 +2124,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    * (`canCreateFor`), and a removal that changes where a stored credential is sent needs it
    * entered again, as a write would: a web search URL beside a stored key, an Azure group's
    * destination beside its stored key, or a field of an MCP server that keeps a stored credential
-   * (judged over librechat.yaml, as on every write). A
+   * (judged over librechat.yaml as the document's partition resolves it, as on every write). A
    * write that lands in between is re-read and re-checked, or answers 409 under
    * `expectedRevision`. An unset stops when there is no document.
    */
@@ -2005,19 +2134,19 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     target: FieldTarget,
     removal: { tombstone: true; priority?: number } | { tombstone: false },
     expectedRevision: ConfigRevision | undefined,
-    tenantId: string | undefined,
+    scope: WriteScope,
   ): Promise<ConfigMutationOutcome<RemovalStop>> {
     const paths = getRemovalPaths(target);
     const baseConfig =
       MCP_SECTIONS.has(target.segments[0]) ||
       isAzureGroupPath(target.segments) ||
       isBoundKeyPath(target.segments)
-        ? await getBaseAppConfig(tenantId)
+        ? await getBaseAppConfig(scope.tenantId)
         : undefined;
     const base: Partial<TCustomConfig> = baseConfig?.config ?? {};
     return runConfigMutation<RemovalStop>(
       {
-        read: () => readStoredConfig(principalType, principalId),
+        read: () => readScopedConfig(principalType, principalId, scope),
         write: (draft, revision) =>
           writeConfigDocument(principalType, principalId, draft, revision),
       },
@@ -2089,9 +2218,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    * always merges first), then this document. A user or group can have other profiles in
    * between, so this is what the document does over the floor. PUT, PATCH and change batches
    * report it (a dry run for the document it plans) on the Base their write was last judged on
-   * (`base`), and field removals and tombstones in a section with bound secrets read it; the
-   * base config is loaded only when the document overrides or tombstones such a section. A
-   * failure is logged and reports nothing: the write itself has committed.
+   * (`base`), and field removals and tombstones in a section with bound secrets read it, in the
+   * partition the document merges in (`tenantId`); the base config is loaded only when the
+   * document overrides or tombstones such a section. A failure is logged and reports nothing:
+   * the write itself has committed.
    */
   async function reportIgnored(
     written: ConfigOverrideLayer,
@@ -2115,7 +2245,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const isBase = isBaseConfigPrincipal(written);
       let floor: ConfigRecord | null = null;
       if (!isBase) {
-        floor = loaded?.base !== undefined ? loaded.base : await readActiveBase();
+        floor = loaded?.base !== undefined ? loaded.base : await readActiveBase(tenantId);
       }
       const ignored: AdminConfigIgnoredSecret[] = [];
       mergeOverrideLayers(baseConfig, floor ? [floor, written] : [written], {
@@ -2195,11 +2325,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   }
 
   /**
-   * The active Base document, from the caller's tenant partition (platform-level without one),
-   * as the config store addresses every role document.
+   * The active Base document of one tenant partition (`undefined`: the deployment's own). The
+   * config store addresses every role document in the active partition, so another tenant's
+   * Base is read in that tenant's context; the partition rules themselves stay the store's.
    */
-  function readActiveBase(): Promise<ConfigRecord | null> {
-    return findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID);
+  function readActiveBase(tenantId: string | undefined): Promise<ConfigRecord | null> {
+    const read = () => findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID);
+    if (tenantId === getActivePartition()) {
+      return read();
+    }
+    return tenantStorage.run({ ...tenantStorage.getStore(), tenantId }, read);
   }
 
   /**
@@ -2228,11 +2363,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    * it, and is never turned into a failure.
    */
   async function judgeOnLandedBase<T>(
+    tenantId: string | undefined,
     read: ConfigRecord | null,
     judge: (landed: ConfigRecord | null) => Promise<ConfigMutationPlan<T>>,
   ): Promise<ConfigMutationPlan<T> | null> {
     try {
-      const landed = await readActiveBase();
+      const landed = await readActiveBase(tenantId);
       if ((landed && getConfigRevision(landed)) === (read && getConfigRevision(read))) {
         return null;
       }
@@ -2251,8 +2387,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    * tombstones (the floor): `librechat.yaml` with the active Base document resolved over it,
    * exactly as the merge layers Base under every profile (Base always merges first), or
    * `librechat.yaml` alone for Base itself. The principal's other profiles vary per user and
-   * are left to the merge. Base is read from the caller's tenant partition, so a caller without
-   * a tenant validates on the platform-level Base and never on a tenant's. With `yaml` `null`
+   * are left to the merge. Base is read from the partition the document merges in
+   * (`scope.tenantId`): the caller's for a role, and for a group or user document a caller
+   * without a tenant addresses by id, the tenant that holds it, whose Base that profile merges
+   * over; each attempt reads the document in that partition only (`readScopedConfig`). `yaml` is
+   * librechat.yaml as that partition resolves it. With `yaml` `null`
    * the write does not validate on the floor, and `plan` gets an empty one. `plan` also gets the
    * Base document itself (`null` for Base, or when none is active), which binds the keys the
    * write enters to the destinations they are sent to over it (`bindPlannedSecrets`).
@@ -2271,7 +2410,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   async function runOnValidationFloor<T>(
     principalType: PrincipalType,
     principalId: string,
-    tenantId: string | undefined,
+    scope: WriteScope,
     yaml: Partial<TCustomConfig> | null,
     plan: (
       stored: ConfigRecord | null,
@@ -2292,8 +2431,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       {
         read: async () => {
           const [stored, base] = await Promise.all([
-            readStoredConfig(principalType, principalId),
-            readsBase ? readActiveBase() : null,
+            readScopedConfig(principalType, principalId, scope),
+            readsBase ? readActiveBase(scope.tenantId) : null,
           ]);
           attempt.base = base;
           return stored;
@@ -2310,7 +2449,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     if (!outcome.written) {
       return { ...outcome, base: attempt.base };
     }
-    const judged = await judgeOnLandedBase(attempt.base, (landed) => {
+    const judged = await judgeOnLandedBase(scope.tenantId, attempt.base, (landed) => {
       attempt.base = landed;
       return plan(outcome.previous, floorOver(landed), landed);
     });
@@ -2323,7 +2462,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       outcome.record,
       outcome.previous,
     );
-    await invalidateCaches(tenantId, 'withdrawn write');
+    await invalidateCaches(scope.activeTenantId, 'withdrawn write');
     return { written: false, current, result: judged.result, base: attempt.base };
   }
 
@@ -2636,8 +2775,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         }
       }
 
+      const scope = await resolveWriteScope(principalType, principalId);
       const baseConfig =
-        overrideSections.length > 0 ? await getBaseAppConfig(user.tenantId) : undefined;
+        overrideSections.length > 0 ? await getBaseAppConfig(scope.tenantId) : undefined;
       const baseYaml: Partial<TCustomConfig> = baseConfig?.config ?? {};
       const envPolicy = getEnvPolicy(baseYaml);
       const envIssues = getEnvReferenceIssues(filteredOverrides, envPolicy);
@@ -2664,7 +2804,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         outcome = await runOnValidationFloor<PutStop>(
           principalType,
           principalId,
-          user.tenantId,
+          scope,
           yaml,
           async (stored, floor, base) => {
             if (!stored && !(await canCreateFor(principalType, principalId))) {
@@ -2786,7 +2926,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         created ? 201 : 200,
         config,
         hasBroadManage ? FULL_READ_ACCESS : NO_READ_ACCESS,
-        await reportIgnored(config, user.tenantId, { baseConfig, envPolicy, base: outcome.base }),
+        await reportIgnored(config, scope.tenantId, { baseConfig, envPolicy, base: outcome.base }),
       );
     } catch (error) {
       if (isFieldNameRejection(error)) {
@@ -2941,8 +3081,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
 
-      const [baseConfig, access] = await Promise.all([
-        getBaseAppConfig(user.tenantId),
+      const [{ scope, baseConfig }, access] = await Promise.all([
+        loadWriteScope(principalType, principalId),
         resolveWriteReadAccess(user, hasBroadManage, writtenSections),
       ]);
       const baseYaml: Partial<TCustomConfig> = baseConfig?.config ?? {};
@@ -2970,7 +3110,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         outcome = await runOnValidationFloor<PatchStop>(
           principalType,
           principalId,
-          user.tenantId,
+          scope,
           baseYaml,
           async (stored, floor, base) => {
             if (!stored && !(await canCreateFor(principalType, principalId))) {
@@ -3072,7 +3212,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         200,
         config,
         access,
-        await reportIgnored(config, user.tenantId, { baseConfig, envPolicy, base: outcome.base }),
+        await reportIgnored(config, scope.tenantId, { baseConfig, envPolicy, base: outcome.base }),
       );
     } catch (error) {
       if (isFieldNameRejection(error)) {
@@ -3191,7 +3331,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           read.target,
           { tombstone: true, priority: requestedPriority },
           expected.value,
-          user.tenantId,
+          await resolveWriteScope(principalType, principalId),
         );
       } catch (error) {
         return await writeFailureResponse(res, error, principalType, principalId);
@@ -3208,7 +3348,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         metadata: { operation: 'tombstone', fieldPath },
       });
       const ignored = isBoundSecretSection(parseFieldPath(fieldPath)[0])
-        ? await reportIgnored(config, user.tenantId)
+        ? await reportIgnored(config, getConfigPartition(config))
         : [];
       return sendWrittenConfig(res, 200, config, access, ignored);
     } catch (error) {
@@ -3304,7 +3444,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             target,
             { tombstone: false },
             expected.value,
-            user.tenantId,
+            await resolveWriteScope(principalType, principalId),
           );
           if (!outcome.written) {
             return removalStopResponse(res, outcome.result);
@@ -3339,7 +3479,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         metadata: { operation: 'unset', fieldPath: describeFieldTarget(target) },
       });
       const ignored = isBoundSecretSection(target.segments[0])
-        ? await reportIgnored(config, user.tenantId)
+        ? await reportIgnored(config, getConfigPartition(config))
         : [];
       return sendWrittenConfig(res, 200, config, access, ignored);
     } catch (error) {
@@ -3466,8 +3606,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const requestedPriority = hasBroadManage ? (priority as number | undefined) : undefined;
 
       /** A dry run returns no document, so it resolves no read access: it shows only what it writes. */
-      const [baseConfig, access] = await Promise.all([
-        getBaseAppConfig(user.tenantId),
+      const [{ scope, baseConfig }, access] = await Promise.all([
+        loadWriteScope(principalType, principalId),
         dryRun
           ? toWrittenSectionsAccess(hasBroadManage, managedSections)
           : resolveWriteReadAccess(user, hasBroadManage, managedSections),
@@ -3610,7 +3750,14 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         }
         let planned = state;
         if (documentChanged) {
-          const issues = getConfigChangeIssues(state, floor, stored, written);
+          /**
+           * Only an unset reaches a section configSchema does not define (`prepareChange` refuses
+           * every other op there), and it only removes what an older server stored. What it leaves
+           * of the section is the document's own `unknown_section` issue, which the merge ignores
+           * and which must not be blamed on the removal.
+           */
+          const attributable = written.filter((segments) => isAcceptedOverrideSection(segments[0]));
+          const issues = getConfigChangeIssues(state, floor, stored, attributable);
           if (issues.length > 0) {
             return { draft: null, result: { stop: { kind: 'issues', issues } } };
           }
@@ -3664,7 +3811,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         outcome = await runOnValidationFloor<ChangesResult>(
           principalType,
           principalId,
-          user.tenantId,
+          scope,
           baseYaml,
           plan,
           expected.value,
@@ -3705,7 +3852,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             tombstones: report.planned.tombstones,
           };
       const ignoredSecrets = rebound
-        ? await reportIgnored(rebound, user.tenantId, {
+        ? await reportIgnored(rebound, scope.tenantId, {
             baseConfig,
             envPolicy,
             base: outcome.base,
@@ -3898,6 +4045,71 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   }
 
   /**
+   * POST /reload — Reload librechat.yaml on every instance without a config write.
+   *
+   * Runs the clear every committed config write runs, for every tenant: this instance drops its
+   * cached librechat.yaml, its merged configs and its MCP config-source servers. It then loads
+   * the file again here before answering, so a file the loader refuses is reported (422, with
+   * the issues' locations) instead of only logged; that instance keeps its last good config, as
+   * any reload does, and the other instances are not told. Once the file loaded, the clear is
+   * published to every other instance with Redis, which load the file on their next read. A
+   * write only logs a failed clear or publish, having committed already; here the reload is the
+   * whole operation, so the response reports it. An instance that misses the publish keeps its
+   * cached librechat.yaml, which never expires, so a 503 tells the operator to retry rather than
+   * wait. Only an admin without a tenant with broad `manage:configs` may reload: the file, the
+   * MCP servers it defines and the caches dropped belong to every tenant, and a tenant admin
+   * cannot edit the file.
+   */
+  async function reloadConfig(req: ServerRequest, res: Response): Promise<Response> {
+    try {
+      const user = getCapabilityUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+      }
+
+      if (user.tenantId) {
+        return res.status(403).json({
+          error: 'Only an admin without a tenant can reload librechat.yaml',
+          code: 'FORBIDDEN',
+        });
+      }
+
+      if (!(await hasConfigCapability(user, null, 'manage'))) {
+        return res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+      }
+
+      if (!reloadConfigCaches) {
+        return res.status(501).json({ error: 'Config reload is not configured' });
+      }
+
+      const report = await reloadConfigCaches();
+      const failure = getReloadFailure(report);
+      if (failure) {
+        await emitAudit(req, {
+          action: 'config.reloaded',
+          outcome: 'failure',
+          target: RELOAD_AUDIT_TARGET,
+          metadata: { code: failure.body.code, broadcast: report.broadcast },
+        });
+        return res.status(failure.status).json(failure.body);
+      }
+      await emitAudit(req, {
+        action: 'config.reloaded',
+        target: RELOAD_AUDIT_TARGET,
+        metadata: { broadcast: report.broadcast },
+      });
+      const body: AdminConfigReloadResponse = {
+        success: true,
+        broadcast: report.broadcast === 'sent',
+      };
+      return res.status(200).json(body);
+    } catch (error) {
+      logger.error('[adminConfig] reloadConfig error:', getSafeErrorMetadata(error));
+      return res.status(500).json({ error: 'Failed to reload config' });
+    }
+  }
+
+  /**
    * PATCH /:principalType/:principalId/active — Toggle isActive.
    */
   async function toggleConfig(req: ServerRequest, res: Response): Promise<Response> {
@@ -3998,5 +4210,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     deleteConfigOverrides,
     toggleConfig,
     updateConfigPriority,
+    reloadConfig,
   };
 }

@@ -60,6 +60,35 @@ export type AdminConfigDeleteResponse = {
   success: boolean;
 };
 
+/**
+ * 200 from POST `/reload`. `broadcast` is false when the deployment has no Redis: only the
+ * instance that answered reloaded, and any other keeps its cached librechat.yaml.
+ */
+export type AdminConfigReloadResponse = {
+  success: true;
+  broadcast: boolean;
+};
+
+/**
+ * A POST `/reload` that did not load librechat.yaml or did not reach every instance:
+ * - 422 `CONFIG_RELOAD_INVALID`: the loader refused the file (missing or, with a remote
+ *   `CONFIG_PATH`, not fetched; unparseable; or failing `configSchema`). `issues` lists the
+ *   schema failures by location and zod code, with no values, and is empty when the file could
+ *   not be read or parsed. The answering instance keeps its last good config, and the other
+ *   instances are not told to reload.
+ * - 500 `CONFIG_RELOAD_FAILED`: a clear on the answering instance failed, or the file loaded but
+ *   building the config from it failed (the last good config is kept, and nothing is broadcast).
+ * - 503 `CONFIG_RELOAD_BROADCAST_FAILED`: the answering instance reloaded, but the other
+ *   instances could not be told (Redis unreachable).
+ *
+ * The 500 and 503 are safe to retry; a 422 with `issues` needs the file fixed first.
+ */
+export type AdminConfigReloadErrorResponse = {
+  error: string;
+  code: 'CONFIG_RELOAD_INVALID' | 'CONFIG_RELOAD_FAILED' | 'CONFIG_RELOAD_BROADCAST_FAILED';
+  issues?: Array<{ path: string; segments: string[]; code: string }>;
+};
+
 /* ── Admin API request types ────────────────────────────────────────── */
 
 /**
@@ -265,7 +294,8 @@ export type AdminConfigChangeErrorResponse = {
  *   unambiguously. A database engine that cannot store a dotted key answers 422
  *   `CONFIG_KEY_NOT_STORABLE` and stores nothing.
  * - `sectionAllowlist`: writes to a top-level key `configSchema` does not define are rejected,
- *   and stored ones are ignored at merge.
+ *   and stored ones are ignored at merge. Removing what an older server stored under one, whole
+ *   or in part (DELETE `/fields`, or an `unset` in `POST …/changes`), is still allowed.
  * - `readFilteredWriteResponses`: write responses are filtered by the caller's read access.
  * - `preAuthBaseOverrides`: Base (`__base__`) overrides apply before sign-in: the signed-out
  *   `GET /api/config` serves Base `registration.socialLogins` and the pre-login interface fields,
@@ -316,7 +346,11 @@ export type AdminConfigChangeErrorResponse = {
  *   user 100; Base 0), and a write that omits `priority` keeps the stored one, so a PUT no
  *   longer resets it. A profile write validates on `librechat.yaml` with the active Base
  *   document resolved over it, as the merge applies it; when Base changes before the write
- *   commits, the write is judged on that Base, and taken back (400) when it fails there.
+ *   commits, the write is judged on that Base, and taken back (400) when it fails there. Both are
+ *   the ones of the tenant partition the profile merges in: a group or user profile an admin
+ *   without a tenant writes for a tenant's principal is judged on that tenant's librechat.yaml
+ *   scope and Base, and answers 409 `CONFIG_VERSION_CONFLICT` if it moves to another partition
+ *   while the write runs.
  * - `priorityRoute`: PATCH `/:principalType/:principalId/priority` `{ priority,
  *   expectedRevision? }` sets only the priority (overrides, tombstones and `isActive` stay),
  *   for broad `manage:configs` only. No document answers 404 `CONFIG_NOT_FOUND`, an invalid
@@ -421,6 +455,23 @@ export type AdminConfigChangeErrorResponse = {
  *   reference librechat.yaml uses beside a new destination keeps it, so for allowlisted names
  *   (`envAllowlist`) the rule stops a destination change that leaves the reference out, not one
  *   that restates it. Header maps are not covered.
+ * - `reloadRoute`: `POST /reload` reloads librechat.yaml on every instance without a config
+ *   write. It is for an admin without a tenant who holds broad `manage:configs` (otherwise 403
+ *   `FORBIDDEN`), since it reaches every tenant. The answering instance drops its cached
+ *   librechat.yaml, every merged config and its MCP config-source servers, then loads the file
+ *   again before it answers. When the file loaded, it tells every other instance (with Redis) to
+ *   do the same; each of them loads the file on its next read, keeping its last good config if
+ *   that fails. It answers 200 `{ success: true, broadcast }` (`AdminConfigReloadResponse`), with
+ *   `broadcast: false` when there is no Redis to publish on. When the loader refuses the file it
+ *   answers 422 `CONFIG_RELOAD_INVALID` with `issues` by location, keeps the last good config and
+ *   broadcasts nothing; a failed clear, or a failure to build the config from a file that loaded,
+ *   answers 500 `CONFIG_RELOAD_FAILED`; a failed publish after this instance reloaded answers 503
+ *   `CONFIG_RELOAD_BROADCAST_FAILED` (`AdminConfigReloadErrorResponse`). An instance that misses
+ *   the broadcast (the publish failed, or its subscription was down) keeps its old
+ *   librechat.yaml, which never expires, until a later reload or config write reaches it or it
+ *   restarts. Every reload that runs is audited as `config.reloaded` with `metadata.broadcast`, a
+ *   failed one with outcome `failure` and its `code`. A committed config write still reloads the
+ *   file too, on the next read.
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'
@@ -441,7 +492,8 @@ export type AdminConfigFeatureFlag =
   | 'azureGroupSecrets'
   | 'yamlSecretPreview'
   | 'envAllowlist'
-  | 'secretRebinding';
+  | 'secretRebinding'
+  | 'reloadRoute';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
 
@@ -598,6 +650,8 @@ export const AUDIT_ACTIONS = [
   'config.updated',
   'config.deleted',
   'config.toggled',
+  /** librechat.yaml reloaded without a config write; target `{ type: 'config', id: 'librechat.yaml' }`. */
+  'config.reloaded',
   /** Account lifecycle; `role_changed` covers IdP-driven role assignment. */
   'user.deleted',
   'user.role_changed',
@@ -644,6 +698,7 @@ export const AUDIT_ACTION_CATEGORY: Record<AuditAction, AuditCategory> = {
   'config.updated': 'config',
   'config.deleted': 'config',
   'config.toggled': 'config',
+  'config.reloaded': 'config',
   'user.deleted': 'user',
   'user.role_changed': 'user',
   'acl.granted': 'acl',

@@ -3727,6 +3727,7 @@ describe('write guards on every handler that changes a document', () => {
     toggleConfig: 'switches the document on or off; the merge judges the layers it brings in',
     updateConfigPriority:
       'sets only the priority, keeping overrides and tombstones; the merge judges the order it brings in',
+    reloadConfig: 'clears the config caches; no document is read or written',
   };
 
   it('lists every handler', () => {

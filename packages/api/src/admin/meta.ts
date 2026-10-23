@@ -39,6 +39,7 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   yamlSecretPreview: true,
   envAllowlist: true,
   secretRebinding: true,
+  reloadRoute: true,
 };
 
 /**
