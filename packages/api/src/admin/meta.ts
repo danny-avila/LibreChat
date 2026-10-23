@@ -23,12 +23,22 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   dottedKeys: true,
   sectionAllowlist: true,
   readFilteredWriteResponses: true,
+  preAuthBaseOverrides: true,
   webSearchStoredKeys: true,
   expectedRevision: true,
   prunesEmptyParents: true,
   awaitedInvalidation: true,
   changesBatch: true,
   yamlMcpHide: true,
+  deterministicPrecedence: true,
+  priorityRoute: true,
+  principalCheck: true,
+  roleRenameMovesProfile: true,
+  recordSecrets: true,
+  azureGroupSecrets: true,
+  yamlSecretPreview: true,
+  envAllowlist: true,
+  secretRebinding: true,
 };
 
 /**

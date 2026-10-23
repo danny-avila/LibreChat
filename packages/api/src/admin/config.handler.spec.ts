@@ -104,9 +104,6 @@ function createHandlers(overrides = {}) {
       async (principalType: string, principalId: string, draft: ConfigDraft, expected: string) =>
         writtenDocument(principalType, principalId, draft, expected),
     ),
-    tombstoneConfigField: jest
-      .fn()
-      .mockResolvedValue({ _id: 'c1', tombstones: ['mcpServers.github'] }),
     unsetConfigField: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
     deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
     toggleConfigActiveTracked: jest
@@ -719,7 +716,7 @@ describe('createAdminConfigHandlers', () => {
     });
 
     it('encrypts custom endpoint API keys on full override writes and redacts responses', async () => {
-      const { handlers, deps } = createHandlers();
+      const { handlers, deps } = createHandlers({ overrideEnvAllowlist: 'OPENROUTER_KEY' });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
         body: {
@@ -1033,6 +1030,18 @@ describe('createAdminConfigHandlers', () => {
   });
 
   describe('tombstoneConfigField', () => {
+    const storedAdmin = {
+      _id: '64b000000000000000000001',
+      principalType: 'role',
+      principalId: 'admin',
+      principalModel: 'Role',
+      priority: 7,
+      configVersion: 3,
+      isActive: false,
+      overrides: { mcpServers: { github: { url: 'https://example.com/mcp' } } },
+      tombstones: ['memory'],
+    };
+
     it('writes an explicit tombstone for a valid field path', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
@@ -1044,33 +1053,55 @@ describe('createAdminConfigHandlers', () => {
       await handlers.tombstoneConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
-        'role',
-        'admin',
-        expect.anything(),
-        ['mcpServers.github'],
-        undefined,
-        undefined,
-        { expectedRevision: undefined },
-      );
+      expect(deps.writeConfigDocument).toHaveBeenCalledTimes(1);
+      expect(deps.writeConfigDocument.mock.calls[0].slice(0, 2)).toEqual(['role', 'admin']);
+      expect(deps.writeConfigDocument.mock.calls[0][3]).toBe('absent');
+      expect(writtenDraft(deps)).toEqual({
+        principalModel: 'Role',
+        priority: 10,
+        overrides: {},
+        tombstones: ['mcpServers.github'],
+        isActive: true,
+      });
     });
 
-    it('lets the store keep the existing priority when priority is omitted', async () => {
-      const { handlers, deps } = createHandlers();
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { fieldPath: 'mcpServers.github', priority: 42 },
+    it('writes over the stored document, keeping its priority unless one is requested', async () => {
+      const kept = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(storedAdmin),
       });
-      const res = mockRes();
+      await kept.handlers.tombstoneConfigField(
+        mockReq({
+          params: { principalType: 'role', principalId: 'admin' },
+          body: { fieldPath: 'mcpServers.github' },
+        }),
+        mockRes(),
+      );
+      expect(kept.deps.writeConfigDocument.mock.calls[0][3]).toBe('64b000000000000000000001:3');
+      expect(writtenDraft(kept.deps)).toEqual({
+        principalModel: 'Role',
+        priority: 7,
+        overrides: {},
+        tombstones: ['memory', 'mcpServers.github'],
+        isActive: false,
+      });
 
-      await handlers.tombstoneConfigField(req, res);
-
-      expect(deps.tombstoneConfigField.mock.calls[0][4]).toBe(42);
-      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
+      const requested = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(storedAdmin),
+      });
+      await requested.handlers.tombstoneConfigField(
+        mockReq({
+          params: { principalType: 'role', principalId: 'admin' },
+          body: { fieldPath: 'mcpServers.github', priority: 42 },
+        }),
+        mockRes(),
+      );
+      expect(writtenDraft(requested.deps).priority).toBe(42);
     });
 
     it('suppresses a secret and its preview companion in one write', async () => {
-      const { handlers, deps } = createHandlers();
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(storedAdmin),
+      });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
         body: { fieldPath: 'ocr.apiKey', expectedRevision: '64b000000000000000000001:3' },
@@ -1080,16 +1111,9 @@ describe('createAdminConfigHandlers', () => {
       await handlers.tombstoneConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(deps.tombstoneConfigField).toHaveBeenCalledTimes(1);
-      expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
-        'role',
-        'admin',
-        expect.anything(),
-        ['ocr.apiKey', 'ocr.apiKeyPreview'],
-        undefined,
-        undefined,
-        { expectedRevision: '64b000000000000000000001:3' },
-      );
+      expect(deps.writeConfigDocument).toHaveBeenCalledTimes(1);
+      expect(deps.writeConfigDocument.mock.calls[0][3]).toBe('64b000000000000000000001:3');
+      expect(writtenDraft(deps).tombstones).toEqual(['memory', 'ocr.apiKey', 'ocr.apiKeyPreview']);
     });
 
     it('ignores tenant-wide Langfuse tombstones through the generic config API', async () => {
@@ -1104,7 +1128,7 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body).toEqual({ message: 'No actionable field path provided', revision: null });
-      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
 
     it('rejects tombstones of the displayed secret key', async () => {
@@ -1118,7 +1142,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.tombstoneConfigField(req, res);
 
       expect(res.statusCode).toBe(400);
-      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
 
     it('blocks interface permission paths', async () => {
@@ -1133,7 +1157,7 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body!.message).toBeDefined();
-      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
 
     it('ignores tombstones for base-only filter policy', async () => {
@@ -1148,7 +1172,7 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body!.message).toBeDefined();
-      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
 
     it('rejects unsafe field paths', async () => {
@@ -1162,7 +1186,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.tombstoneConfigField(req, res);
 
       expect(res.statusCode).toBe(400);
-      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
   });
 
@@ -1511,6 +1535,134 @@ describe('createAdminConfigHandlers', () => {
     });
   });
 
+  /**
+   * A stored credential and its URL, and a patch that enters a decoy key at the credential's path
+   * and then writes an ancestor without it: secret preservation fills the ancestor in from the
+   * stored document, so the stored key, not the decoy, is what the document keeps.
+   */
+  describe('patchConfigField: a decoy key before an ancestor that keeps the stored one', () => {
+    const GOOD = 'https://good.example.com/mcp';
+    const EVIL = 'https://evil.example.com/mcp';
+    /** `encryptV3` is mocked as `v3:test:<plaintext>` in this file. */
+    const STORED_MCP_KEY = 'v3:test:sk-original-mcp-1111';
+    const STORED_FIRECRAWL_KEY = 'v3:test:fc-original-key-2222';
+    const DECOY = 'sk-decoy-key-0000';
+
+    const stored: ConfigRecord = {
+      _id: 'c1',
+      principalType: 'role' as ConfigRecord['principalType'],
+      principalId: 'admin',
+      principalModel: 'Role' as ConfigRecord['principalModel'],
+      priority: 10,
+      isActive: true,
+      configVersion: 1,
+      tombstones: [],
+      overrides: {
+        mcpServers: {
+          probe: {
+            type: 'streamable-http',
+            url: GOOD,
+            apiKey: {
+              source: 'admin',
+              authorization_type: 'bearer',
+              key: STORED_MCP_KEY,
+              keyPreview: '...1111',
+            },
+          },
+        },
+        webSearch: {
+          firecrawlApiUrl: 'https://fc-good.example.com',
+          firecrawlApiKey: STORED_FIRECRAWL_KEY,
+          firecrawlApiKeyPreview: '...2222',
+        },
+      } as ConfigRecord['overrides'],
+    };
+    const keyless = (url: string) => ({
+      type: 'streamable-http',
+      url,
+      apiKey: { source: 'admin', authorization_type: 'bearer' },
+    });
+
+    async function patchStored(entries: Array<{ fieldPath: string; value: unknown }>) {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn(async (_type: string, principalId: string) =>
+          principalId === 'admin' ? structuredClone(stored) : null,
+        ),
+      });
+      const res = mockRes();
+      await handlers.patchConfigField(
+        mockReq({ params: { principalType: 'role', principalId: 'admin' }, body: { entries } }),
+        res,
+      );
+      return { res, deps };
+    }
+
+    it('refuses moving a stored MCP key that a decoy entry did not replace', async () => {
+      const { res, deps } = await patchStored([
+        { fieldPath: 'mcpServers.probe.apiKey.key', value: DECOY },
+        { fieldPath: 'mcpServers.probe', value: keyless(EVIL) },
+      ]);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toMatchObject({
+        code: 'MCP_API_KEY_REENTRY_REQUIRED',
+        server: 'probe',
+        fields: ['url'],
+      });
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
+    });
+
+    it('refuses moving a stored web search key that a decoy entry did not replace', async () => {
+      const { res, deps } = await patchStored([
+        { fieldPath: 'webSearch.firecrawlApiKey', value: DECOY },
+        { fieldPath: 'webSearch', value: { firecrawlApiUrl: 'https://fc-evil.example.com' } },
+      ]);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toMatchObject({
+        code: 'CONFIG_SECRET_REENTRY_REQUIRED',
+        issues: [
+          expect.objectContaining({
+            path: 'webSearch.firecrawlApiUrl',
+            secretPath: 'webSearch.firecrawlApiKey',
+          }),
+        ],
+      });
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
+    });
+
+    it("keeps the stored key's own preview when the decoy is overwritten in place", async () => {
+      const { res, deps } = await patchStored([
+        { fieldPath: 'mcpServers.probe.apiKey.key', value: DECOY },
+        { fieldPath: 'mcpServers.probe', value: keyless(GOOD) },
+        { fieldPath: 'webSearch.firecrawlApiKey', value: DECOY },
+        { fieldPath: 'webSearch', value: { firecrawlApiUrl: 'https://fc-good.example.com' } },
+      ]);
+
+      expect(res.statusCode).toBe(200);
+      expect(writtenField(deps, 'mcpServers.probe.apiKey')).toEqual({
+        source: 'admin',
+        authorization_type: 'bearer',
+        key: STORED_MCP_KEY,
+        keyPreview: '...1111',
+      });
+      expect(writtenField(deps, 'webSearch.firecrawlApiKey')).toBe(STORED_FIRECRAWL_KEY);
+      expect(writtenField(deps, 'webSearch.firecrawlApiKeyPreview')).toBe('...2222');
+    });
+
+    it('stores the decoy, with its preview, when it is written after the ancestor', async () => {
+      const { res, deps } = await patchStored([
+        { fieldPath: 'mcpServers.probe', value: keyless(EVIL) },
+        { fieldPath: 'mcpServers.probe.apiKey.key', value: DECOY },
+      ]);
+
+      expect(res.statusCode).toBe(200);
+      expect(writtenField(deps, 'mcpServers.probe.apiKey.key')).toBe(`v3:test:${DECOY}`);
+      expect(writtenField(deps, 'mcpServers.probe.apiKey.keyPreview')).toBe('...0000');
+      expect(writtenField(deps, 'mcpServers.probe.url')).toBe(EVIL);
+    });
+  });
+
   describe('patchConfigField: section-scoped priority preservation', () => {
     it('ignores request-supplied priority when caller lacks broad manage:configs', async () => {
       const { handlers, deps } = createHandlers({
@@ -1574,8 +1726,17 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(200);
       const priorityArg = writtenDraft(deps).priority;
       expect(priorityArg).toBe(999);
-      /** Read once to validate the write on top of the stored fields, not for its priority. */
-      expect(deps.findConfigByPrincipal).toHaveBeenCalledTimes(1);
+      /**
+       * The target is read once, to validate the write on top of its stored fields (not for its
+       * priority); Base is read beside it (the store keeps role documents to the caller's
+       * partition) as the floor the write lands on, and once more after the write, to see that
+       * the floor did not move.
+       */
+      expect(deps.findConfigByPrincipal).toHaveBeenCalledTimes(3);
+      expect(deps.findConfigByPrincipal).toHaveBeenCalledWith('role', 'admin', {
+        includeInactive: true,
+      });
+      expect(deps.findConfigByPrincipal).toHaveBeenCalledWith('role', '__base__');
     });
 
     it('preserves priority 0 when broad caller supplies it', async () => {
@@ -1623,10 +1784,22 @@ describe('createAdminConfigHandlers', () => {
   });
 
   describe('tombstoneConfigField: section-scoped priority preservation', () => {
-    /** The store keeps the stored priority (or the default on create) when none is passed. */
+    const storedAt = (priority: number) =>
+      jest.fn().mockResolvedValue({
+        _id: 'c1',
+        principalType: 'role',
+        principalId: 'admin',
+        priority,
+        configVersion: 1,
+        isActive: true,
+        overrides: {},
+        tombstones: [],
+      });
+
     it('ignores request-supplied priority when caller lacks broad manage:configs', async () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn(async (_user, section) => section === 'memory'),
+        findConfigByPrincipal: storedAt(15),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -1637,13 +1810,13 @@ describe('createAdminConfigHandlers', () => {
       await handlers.tombstoneConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      const [, , , , priorityArg] = deps.tombstoneConfigField.mock.calls[0];
-      expect(priorityArg).toBeUndefined();
+      expect(writtenDraft(deps).priority).toBe(15);
     });
 
     it('honors request-supplied priority when caller holds broad manage:configs', async () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(true),
+        findConfigByPrincipal: storedAt(15),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -1654,9 +1827,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.tombstoneConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      const [, , , , priorityArg] = deps.tombstoneConfigField.mock.calls[0];
-      expect(priorityArg).toBe(999);
-      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
+      expect(writtenDraft(deps).priority).toBe(999);
     });
   });
 
@@ -2126,7 +2297,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.tombstoneConfigField(req, res);
 
       expect(res.statusCode).toBe(403);
-      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
 
     it('field delete against __base__ returns 403 for a section-scoped manager', async () => {
@@ -2333,7 +2504,6 @@ describe('createAdminConfigHandlers', () => {
         listAllConfigs: jest.fn().mockResolvedValue([]),
         findConfigByPrincipal: jest.fn().mockResolvedValue(null),
         writeConfigDocument: jest.fn(),
-        tombstoneConfigField: jest.fn(),
         unsetConfigField: jest.fn(),
         deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
         /** The document as it was before the write. */
@@ -2523,7 +2693,7 @@ describe('createAdminConfigHandlers', () => {
       expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ baseOnly: true }));
     });
 
-    it('previews a plaintext secret an override stored, never one librechat.yaml supplies', async () => {
+    it('previews a plaintext secret an override stored by its value, and a librechat.yaml one only with the fixed mask', async () => {
       const yaml = {
         webSearch: {
           serperApiKey: 'serper-yaml-literal-0001',
@@ -2548,11 +2718,14 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       expect(JSON.stringify(res.body)).not.toContain('kn-legacy-plain-0002');
+      expect(JSON.stringify(res.body)).not.toContain('0001');
       expect((res.body!.config as typeof merged).webSearch).toEqual({
         keenableApiKeyPreview: '...0002',
+        serperApiKeyPreview: '********',
       });
       expect((baseOnlyRes.body!.config as typeof yaml).webSearch).toEqual({
         keenableApiKey: '${KEENABLE_API_KEY}',
+        serperApiKeyPreview: '********',
       });
     });
 
@@ -2811,6 +2984,156 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
 
+    it('rejects a Base policy link that would run script and stores nothing', async () => {
+      const { handlers, deps } = createHandlers();
+      const params = { principalType: 'role', principalId: '__base__' };
+      const documentRes = mockRes();
+      const fieldRes = mockRes();
+
+      await handlers.upsertConfigOverrides(
+        mockReq({
+          params,
+          body: {
+            overrides: {
+              interface: {
+                privacyPolicy: { externalUrl: 'javascript:alert(document.domain)' },
+                termsOfService: { externalUrl: 'https://example.com/terms' },
+              },
+            },
+          },
+        }),
+        documentRes,
+      );
+      await handlers.patchConfigField(
+        mockReq({
+          params,
+          body: {
+            entries: [
+              {
+                fieldPath: 'interface.termsOfService.externalUrl',
+                value: '\u00a0JavaScript:alert(document.domain)',
+              },
+            ],
+          },
+        }),
+        fieldRes,
+      );
+
+      expect(documentRes.statusCode).toBe(400);
+      expect(documentRes.body?.issues).toEqual([
+        {
+          path: 'interface.privacyPolicy.externalUrl',
+          segments: ['interface', 'privacyPolicy', 'externalUrl'],
+          code: 'custom',
+        },
+      ]);
+      expect(fieldRes.statusCode).toBe(400);
+      expect(fieldRes.body?.issues).toEqual([
+        {
+          path: 'interface.termsOfService.externalUrl',
+          segments: ['interface', 'termsOfService', 'externalUrl'],
+          code: 'custom',
+        },
+      ]);
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
+    });
+
+    it('keeps accepting http(s), relative and blank policy links', async () => {
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(
+        mockReq({
+          params: { principalType: 'role', principalId: '__base__' },
+          body: {
+            overrides: {
+              interface: {
+                privacyPolicy: { externalUrl: 'https://example.com/privacy', openNewTab: true },
+                termsOfService: { externalUrl: '/terms', modalAcceptance: true },
+              },
+            },
+          },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(201);
+      expect(writtenDraft(deps).overrides.interface).toEqual({
+        privacyPolicy: { externalUrl: 'https://example.com/privacy', openNewTab: true },
+        termsOfService: { externalUrl: '/terms', modalAcceptance: true },
+      });
+    });
+
+    it('skips a Turnstile write to Base, which stays on librechat.yaml', async () => {
+      const { handlers, deps } = createHandlers();
+      const params = { principalType: 'role', principalId: '__base__' };
+      const documentRes = mockRes();
+      const fieldRes = mockRes();
+
+      await handlers.upsertConfigOverrides(
+        mockReq({
+          params,
+          body: {
+            overrides: { turnstile: { siteKey: 'stored-key' }, interface: { modelSelect: false } },
+          },
+        }),
+        documentRes,
+      );
+      await handlers.patchConfigField(
+        mockReq({ params, body: { entries: [{ fieldPath: 'turnstile.siteKey', value: 'k' }] } }),
+        fieldRes,
+      );
+      const removals = [mockRes(), mockRes()];
+      await handlers.tombstoneConfigField(
+        mockReq({ params, body: { fieldPath: 'turnstile' } }),
+        removals[0],
+      );
+      await handlers.deleteConfigField(
+        mockReq({ params, query: { fieldPath: 'turnstile.siteKey' } }),
+        removals[1],
+      );
+
+      expect(documentRes.statusCode).toBe(201);
+      expect(writtenDraft(deps).overrides).toEqual({ interface: { modelSelect: false } });
+      expect(fieldRes.statusCode).toBe(200);
+      expect(removals.map((res) => res.statusCode)).toEqual([200, 200]);
+      expect(deps.writeConfigDocument).toHaveBeenCalledTimes(1);
+      expect(deps.unsetConfigField).not.toHaveBeenCalled();
+    });
+
+    it('refuses a Turnstile tombstone under its AppConfig name and removes a stored one', async () => {
+      const { handlers, deps } = createHandlers({
+        unsetConfigField: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {}, tombstones: [] }),
+      });
+      const params = { principalType: 'role', principalId: '__base__' };
+      const tombstoneRes = mockRes();
+      const deleteRes = mockRes();
+
+      await handlers.tombstoneConfigField(
+        mockReq({ params, body: { fieldPath: 'turnstileConfig' } }),
+        tombstoneRes,
+      );
+      await handlers.deleteConfigField(
+        mockReq({ params, query: { fieldPath: 'turnstileConfig.siteKey' } }),
+        deleteRes,
+      );
+
+      expect(tombstoneRes.statusCode).toBe(400);
+      expect(tombstoneRes.body).toEqual({
+        error: 'Unknown config section',
+        code: 'UNKNOWN_SECTION',
+      });
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
+      expect(deleteRes.statusCode).toBe(200);
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        '__base__',
+        ['turnstileConfig.siteKey'],
+        undefined,
+        { expectedRevision: undefined },
+      );
+    });
+
     it('rejects a patch that addresses a custom endpoint by index', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
@@ -2949,10 +3272,7 @@ describe('createAdminConfigHandlers', () => {
 
     it('records config.created when the first tombstone creates the document', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
-      const { handlers } = createHandlers({
-        recordAuditEntry,
-        tombstoneConfigField: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
-      });
+      const { handlers } = createHandlers({ recordAuditEntry });
       const res = mockRes();
 
       await handlers.tombstoneConfigField(
@@ -2967,7 +3287,19 @@ describe('createAdminConfigHandlers', () => {
 
     it('records tombstone and unset field operations', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
-      const { handlers } = createHandlers({ recordAuditEntry });
+      const { handlers } = createHandlers({
+        recordAuditEntry,
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          principalType: 'role',
+          principalId: 'editor',
+          priority: 10,
+          configVersion: 2,
+          isActive: true,
+          overrides: {},
+          tombstones: [],
+        }),
+      });
 
       const tombstoneRes = mockRes();
       await handlers.tombstoneConfigField(
@@ -3173,7 +3505,6 @@ describe('createAdminConfigHandlers', () => {
 
         expect(res.statusCode).toBe(400);
         expect(res.body).toEqual(UNKNOWN_SECTION);
-        expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
         expect(deps.writeConfigDocument).not.toHaveBeenCalled();
         expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
       },
@@ -3450,7 +3781,7 @@ describe('createAdminConfigHandlers', () => {
       ],
       [
         'tombstone',
-        'tombstoneConfigField',
+        'writeConfigDocument',
         (h: ReturnType<typeof createHandlers>['handlers'], res: Response) =>
           h.tombstoneConfigField(
             mockReq({ params, body: { fieldPath: 'endpoints.bedrock' } }),
@@ -3486,7 +3817,6 @@ describe('createAdminConfigHandlers', () => {
           hasConfigCapability: scopedCapability(['manage:endpoints']),
           getReadableConfigSections: jest.fn().mockRejectedValue(new Error('grant lookup down')),
           writeConfigDocument: jest.fn().mockResolvedValue(writtenDoc()),
-          tombstoneConfigField: jest.fn().mockResolvedValue(writtenDoc()),
           unsetConfigField: jest.fn().mockResolvedValue(writtenDoc()),
           recordAuditEntry,
           invalidateConfigCaches,
@@ -3532,7 +3862,7 @@ describe('createAdminConfigHandlers', () => {
     it('tombstone: a section manager sees only the tombstoned section', async () => {
       const { handlers } = createHandlers({
         hasConfigCapability: scopedCapability(['manage:memory']),
-        tombstoneConfigField: jest.fn().mockResolvedValue(writtenDoc()),
+        writeConfigDocument: jest.fn().mockResolvedValue(writtenDoc()),
       });
       const res = mockRes();
 
@@ -3727,10 +4057,14 @@ describe('createAdminConfigHandlers', () => {
 
     it('re-reads and re-validates when a write without a precondition loses a race', async () => {
       const rotated = { ...stored, configVersion: 5, overrides: { interface: { a: 1 } } };
-      const findConfigByPrincipal = jest
-        .fn()
-        .mockResolvedValueOnce(stored)
-        .mockResolvedValueOnce(rotated);
+      const reads = [stored, rotated];
+      /**
+       * Base (the validation floor) has no document. Each attempt reads it beside the target,
+       * and the committed write reads it once more.
+       */
+      const findConfigByPrincipal = jest.fn(async (_type: string, principalId: string) =>
+        principalId === '__base__' ? null : reads.shift(),
+      );
       const writeConfigDocument = jest
         .fn()
         .mockRejectedValueOnce(new ConfigRevisionConflictError())
@@ -3749,12 +4083,41 @@ describe('createAdminConfigHandlers', () => {
       );
 
       expect(res.statusCode).toBe(200);
-      expect(findConfigByPrincipal).toHaveBeenCalledTimes(2);
+      expect(reads).toHaveLength(0);
+      expect(findConfigByPrincipal).toHaveBeenCalledTimes(5);
       expect(writeConfigDocument).toHaveBeenCalledTimes(2);
       expect(writeConfigDocument.mock.calls[1][2].overrides).toEqual({
         interface: { a: 1, customWelcome: 'x' },
       });
       expect(writeConfigDocument.mock.calls[1][3]).toBe('64b000000000000000000001:5');
+    });
+
+    it('keeps a committed write when Base cannot be read again to check it', async () => {
+      let baseReads = 0;
+      const findConfigByPrincipal = jest.fn(async (_type: string, principalId: string) => {
+        if (principalId !== '__base__') {
+          return stored;
+        }
+        baseReads += 1;
+        if (baseReads > 1) {
+          throw new Error('connection reset');
+        }
+        return null;
+      });
+      const { handlers, deps } = createHandlers({ findConfigByPrincipal });
+      const res = mockRes();
+
+      await handlers.patchConfigField(
+        mockReq({
+          params,
+          body: { entries: [{ fieldPath: 'interface.customWelcome', value: 'kept' }] },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(baseReads).toBe(2);
+      expect(deps.writeConfigDocument).toHaveBeenCalledTimes(1);
     });
 
     it('answers 409 once the retry budget is spent', async () => {
@@ -3775,7 +4138,9 @@ describe('createAdminConfigHandlers', () => {
     });
 
     it('passes the precondition through to tombstone, field delete, delete and toggle', async () => {
-      const { handlers, deps } = createHandlers();
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(stored),
+      });
 
       await handlers.tombstoneConfigField(
         mockReq({ params, body: { fieldPath: 'memory', expectedRevision: storedRevision } }),
@@ -3795,7 +4160,7 @@ describe('createAdminConfigHandlers', () => {
       );
 
       const options = { expectedRevision: storedRevision };
-      expect(deps.tombstoneConfigField.mock.calls[0][6]).toEqual(options);
+      expect(deps.writeConfigDocument.mock.calls[0][3]).toBe(storedRevision);
       expect(deps.unsetConfigField.mock.calls[0][4]).toEqual(options);
       expect(deps.deleteConfig.mock.calls[0][3]).toEqual({ expectEmpty: false, ...options });
       expect(deps.toggleConfigActiveTracked.mock.calls[0][3]).toEqual({
@@ -3805,7 +4170,7 @@ describe('createAdminConfigHandlers', () => {
     });
 
     it.each([
-      ['tombstoneConfigField', { body: { fieldPath: 'memory' } }, 'tombstoneConfigField'],
+      ['tombstoneConfigField', { body: { fieldPath: 'memory' } }, 'writeConfigDocument'],
       ['deleteConfigField', { query: { fieldPath: 'memory' } }, 'unsetConfigField'],
       ['deleteConfigOverrides', {}, 'deleteConfig'],
       ['toggleConfig', { body: { isActive: true } }, 'toggleConfigActiveTracked'],
@@ -3891,7 +4256,7 @@ describe('createAdminConfigHandlers', () => {
           expect(gone.body?.currentRevision).toBeNull();
           for (const deps of [exists.deps, missing.deps]) {
             expect(deps.writeConfigDocument).not.toHaveBeenCalled();
-            expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+            expect(deps.writeConfigDocument).not.toHaveBeenCalled();
             expect(deps.unsetConfigField).not.toHaveBeenCalled();
           }
         },
@@ -3910,7 +4275,12 @@ describe('createAdminConfigHandlers', () => {
           );
           expect(matched.statusCode).toBe(200);
           expect(matched.body?.revision).toBe(storedRevision);
+        },
+      );
 
+      it.each(noops.filter(([name]) => name !== 'upsertConfigOverrides'))(
+        '%s answers 200 with no revision under absent when there is no document',
+        async (name, location, input) => {
           const missing = createHandlers();
           const absent = mockRes();
           await missing.handlers[name](
@@ -3921,6 +4291,22 @@ describe('createAdminConfigHandlers', () => {
           expect(absent.body?.revision).toBeNull();
         },
       );
+
+      it('upsertConfigOverrides under absent creates the empty profile, as a create-only PUT does', async () => {
+        const missing = createHandlers();
+        const absent = mockRes();
+        await missing.handlers.upsertConfigOverrides(
+          mockReq({ params, body: { overrides: { filters: {} }, expectedRevision: 'absent' } }),
+          absent,
+        );
+        expect(absent.statusCode).toBe(201);
+        expect(missing.deps.writeConfigDocument).toHaveBeenCalledWith(
+          params.principalType,
+          params.principalId,
+          expect.objectContaining({ overrides: {}, tombstones: [], isActive: true }),
+          'absent',
+        );
+      });
     });
 
     it('returns revisions on reads', async () => {
@@ -3977,8 +4363,8 @@ describe('createAdminConfigHandlers', () => {
                 custom: [
                   {
                     name: 'Private',
-                    baseURL: 'https://private.example.com/v2',
-                    models: { default: ['m'] },
+                    baseURL: 'https://private.example.com/v1',
+                    models: { default: ['m', 'n'] },
                   },
                 ],
               },
@@ -3990,10 +4376,12 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       const [entry] = (
-        writtenDraft(deps).overrides.endpoints as { custom: Array<Record<string, string>> }
+        writtenDraft(deps).overrides.endpoints as {
+          custom: Array<Record<string, string> & { models: { default: string[] } }>;
+        }
       ).custom;
       expect(entry.apiKey).toBe('v3:test:sk-stored');
-      expect(entry.baseURL).toBe('https://private.example.com/v2');
+      expect(entry.models.default).toEqual(['m', 'n']);
       /** Validation saw the document the write stores, with the kept secret in place. */
       const overrideCalls = jest.mocked(getConfigOverrideIssues).mock.calls;
       const validated = overrideCalls[overrideCalls.length - 1][0] as {
@@ -4116,6 +4504,187 @@ describe('createAdminConfigHandlers', () => {
 
       expect(getAppConfig).toHaveBeenCalledWith(
         expect.objectContaining({ bypassOverrideCache: true }),
+      );
+    });
+  });
+
+  describe('updateConfigPriority', () => {
+    const params = { principalType: 'role', principalId: 'editor' };
+    const document = {
+      _id: '64b000000000000000000001',
+      principalType: 'role',
+      principalId: 'editor',
+      priority: 30,
+      overrides: { webSearch: { serperApiKey: 'v3:cipher', serperApiKeyPreview: 'sk-...1234' } },
+      tombstones: [],
+      isActive: true,
+      configVersion: 4,
+    };
+
+    it('rejects a bad principal type, priority or revision before touching anything', async () => {
+      const setConfigPriority = jest.fn();
+      const { handlers } = createHandlers({ setConfigPriority });
+      const cases: Array<[Record<string, unknown>, Record<string, unknown>, string]> = [
+        [{ principalType: 'public', principalId: 'x' }, { priority: 1 }, 'INVALID_PRINCIPAL_TYPE'],
+        [params, {}, 'INVALID_PRIORITY'],
+        [params, { priority: -1 }, 'INVALID_PRIORITY'],
+        [params, { priority: '3' }, 'INVALID_PRIORITY'],
+        [params, { priority: 1, expectedRevision: 'nope' }, 'INVALID_EXPECTED_REVISION'],
+      ];
+
+      for (const [reqParams, body, code] of cases) {
+        const res = mockRes();
+        await handlers.updateConfigPriority(mockReq({ params: reqParams, body }), res);
+        expect(res.statusCode).toBe(400);
+        expect(res.body?.code).toBe(code);
+      }
+      expect(setConfigPriority).not.toHaveBeenCalled();
+    });
+
+    it('requires an authenticated broad manager', async () => {
+      const setConfigPriority = jest.fn();
+      const unauthenticated = mockRes();
+      const { handlers } = createHandlers({ setConfigPriority });
+      await handlers.updateConfigPriority(
+        mockReq({ params, body: { priority: 1 }, user: undefined }),
+        unauthenticated,
+      );
+
+      const sectionScoped = createHandlers({
+        setConfigPriority,
+        hasConfigCapability: jest.fn(async (_user: unknown, section: string | null) => !!section),
+      });
+      const forbidden = mockRes();
+      await sectionScoped.handlers.updateConfigPriority(
+        mockReq({ params, body: { priority: 1 } }),
+        forbidden,
+      );
+
+      expect(unauthenticated.statusCode).toBe(401);
+      expect(forbidden.statusCode).toBe(403);
+      expect(setConfigPriority).not.toHaveBeenCalled();
+    });
+
+    it('answers 501 when the server did not wire the priority write', async () => {
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.updateConfigPriority(mockReq({ params, body: { priority: 1 } }), res);
+
+      expect(res.statusCode).toBe(501);
+    });
+
+    it('passes the revision through and redacts the stored secrets in the response', async () => {
+      const setConfigPriority = jest
+        .fn()
+        .mockResolvedValue({ config: { ...document, priority: 5 }, changed: true });
+      const { handlers } = createHandlers({ setConfigPriority });
+      const res = mockRes();
+
+      await handlers.updateConfigPriority(
+        mockReq({ params, body: { priority: 5, expectedRevision: '64b000000000000000000001:4' } }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(setConfigPriority).toHaveBeenCalledWith('role', 'editor', 5, {
+        expectedRevision: '64b000000000000000000001:4',
+      });
+      const config = res.body?.config as { overrides: { webSearch: Record<string, unknown> } };
+      expect(config.overrides.webSearch.serperApiKey).toBeUndefined();
+      expect(JSON.stringify(res.body)).not.toContain('v3:cipher');
+    });
+
+    it('answers 409 with the current revision when the precondition is stale', async () => {
+      const setConfigPriority = jest
+        .fn()
+        .mockRejectedValue(new ConfigRevisionConflictError('64b000000000000000000001:5'));
+      const { handlers } = createHandlers({ setConfigPriority });
+      const res = mockRes();
+
+      await handlers.updateConfigPriority(
+        mockReq({ params, body: { priority: 5, expectedRevision: '64b000000000000000000001:4' } }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(409);
+      expect(res.body).toEqual({
+        error: 'Config was modified by another request',
+        code: 'CONFIG_VERSION_CONFLICT',
+        currentRevision: '64b000000000000000000001:5',
+      });
+    });
+  });
+
+  describe('principal existence on create', () => {
+    const entry = { entries: [{ fieldPath: 'interface.customWelcome', value: 'hi' }] };
+
+    it('does not look the principal up when its document already exists', async () => {
+      const principalExists = jest.fn().mockResolvedValue(false);
+      const { handlers } = createHandlers({
+        principalExists,
+        findConfigByPrincipal: jest.fn(async (_type: string, principalId: string) =>
+          principalId === '__base__'
+            ? null
+            : { _id: '64b000000000000000000001', priority: 10, overrides: {}, configVersion: 1 },
+        ),
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(
+        mockReq({ params: { principalType: 'role', principalId: 'retired' }, body: entry }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(principalExists).not.toHaveBeenCalled();
+    });
+
+    it('never looks Base up, and refuses a principal the lookup does not find', async () => {
+      const principalExists = jest.fn().mockResolvedValue(false);
+      const { handlers } = createHandlers({ principalExists });
+
+      const base = mockRes();
+      await handlers.patchConfigField(
+        mockReq({ params: { principalType: 'role', principalId: '__base__' }, body: entry }),
+        base,
+      );
+      const group = mockRes();
+      await handlers.patchConfigField(
+        mockReq({
+          params: { principalType: 'group', principalId: 'grp_engineering' },
+          body: entry,
+        }),
+        group,
+      );
+
+      expect(base.statusCode).toBe(200);
+      expect(group.statusCode).toBe(404);
+      expect(group.body?.code).toBe('PRINCIPAL_NOT_FOUND');
+      expect(principalExists).toHaveBeenCalledTimes(1);
+      expect(principalExists).toHaveBeenCalledWith('group', 'grp_engineering');
+    });
+  });
+
+  describe('create-only PUT', () => {
+    it('writes an empty create-only request instead of answering it as a no-op', async () => {
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(
+        mockReq({
+          params: { principalType: 'user', principalId: '64b000000000000000000009' },
+          body: { overrides: {}, expectedRevision: 'absent' },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(201);
+      expect(deps.writeConfigDocument).toHaveBeenCalledWith(
+        'user',
+        '64b000000000000000000009',
+        { principalModel: 'User', priority: 100, overrides: {}, tombstones: [], isActive: true },
+        'absent',
       );
     });
   });

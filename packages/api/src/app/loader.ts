@@ -15,6 +15,7 @@ import {
 import type { TCustomConfig, TEndpoint } from 'librechat-data-provider';
 import type { ZodIssue } from 'zod';
 import { isAgentInferenceExtension } from '../agents/inference';
+import { checkConfigPolicyLinks } from './interface';
 import { checkConfigTheme } from './theme';
 
 type CustomParams = NonNullable<TEndpoint['customParams']>;
@@ -156,6 +157,16 @@ function isRemoteConfigPath(configPath: string): boolean {
   return /^https?:\/\//.test(configPath);
 }
 
+function reportPolicyLinkCheck(configPath: string, dropped: string[]): void {
+  if (dropped.length === 0) {
+    return;
+  }
+  logger.warn(
+    `Ignoring policy links in ${configPath} that are not http(s), mailto:, tel: or relative URLs; no link is published for them:\n` +
+      dropped.map((path) => `- ${path}`).join('\n'),
+  );
+}
+
 function reportThemeCheck(configPath: string, errors: string[], warnings: string[]): void {
   if (errors.length > 0) {
     logger.warn(
@@ -262,6 +273,9 @@ export function createCustomConfigLoader({
       const themeCheck = checkConfigTheme(loadedConfig);
       loadedConfig = themeCheck.config;
       reportThemeCheck(configPath, themeCheck.errors, themeCheck.warnings);
+      const linkCheck = checkConfigPolicyLinks(loadedConfig);
+      loadedConfig = linkCheck.config;
+      reportPolicyLinkCheck(configPath, linkCheck.dropped);
 
       setMaxSubagents(getConfiguredMaxSubagents(loadedConfig));
       const result = configSchema.strict().safeParse(loadedConfig);

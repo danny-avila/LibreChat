@@ -3,11 +3,16 @@ import mongoose from 'mongoose';
 import { readFileSync } from 'fs';
 import mongoSanitize from 'express-mongo-sanitize';
 import {
+  AppService,
+  getConfigRevision,
   loadWebSearchConfig,
   mergeConfigOverrides,
+  ABSENT_CONFIG_REVISION,
   createConfigOperations,
   getConfigOverrideIssues,
+  BASE_CONFIG_PRINCIPAL_ID,
   isConfigOverrideStateEmpty,
+  ConfigRevisionConflictError,
 } from '@librechat/data-schemas';
 import {
   Constants,
@@ -23,28 +28,41 @@ import {
   BASE_ONLY_CONFIG_SECTIONS,
   PROCESS_MCP_SERVER_FIELDS,
   INTERFACE_PERMISSION_FIELDS,
+  mapModelToAzureConfig,
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   RUNTIME_CONFIG_INTERFACE_FIELDS,
 } from 'librechat-data-provider';
 import type {
   AdminConfigFeatureFlag,
+  ConfigOverrideLayer,
+  ConfigPrincipal,
   AdminConfigMeta,
   ConfigRecord,
   ConfigStore,
   ConfigDraft,
   AppConfig,
+  IRole,
 } from '@librechat/data-schemas';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { AdminConfigDeps } from './config';
+import type { AdminRolesDeps } from './roles';
+import {
+  redactConfigSecrets,
+  encryptConfigSecretFields,
+  resolveRuntimeConfigSecrets,
+} from './secrets';
 import { createRequestSanitizer, rejectUnsafeConfigKeys } from '~/middleware/sanitize';
-import { redactConfigSecrets, encryptConfigSecretFields } from './secrets';
+import { resolvePreAuthAppConfig, resolvePreLoginAppConfig } from '~/app/resolve';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { createMCPPolicyResolver } from '~/mcp/registry/policy';
+import { createEnvReferencePolicy } from '~/app/allowlist';
 import { resolveTitleConfig } from '~/endpoints/config';
 import { createAppConfigService } from '~/app/service';
+import { mergeOverrideLayers } from '~/app/overrides';
 import { createAdminConfigHandlers } from './config';
+import { createAdminRolesHandlers } from './roles';
 import { ADMIN_CONFIG_FEATURES } from './meta';
 import { loadWebSearchAuth } from '~/web';
 
@@ -97,7 +115,6 @@ function createHandlers(overrides: Partial<AdminConfigDeps> = {}) {
       async (_type: string, _id: string, draft: ConfigDraft): Promise<ConfigRecord> =>
         storedConfig(draft.overrides ?? {}),
     ),
-    tombstoneConfigField: jest.fn().mockResolvedValue(null),
     unsetConfigField: jest.fn().mockResolvedValue(null),
     deleteConfig: jest.fn().mockResolvedValue(null),
     toggleConfigActiveTracked: jest.fn().mockResolvedValue(null),
@@ -155,6 +172,7 @@ function setIn(target: Doc, segments: string[], value: unknown): Doc {
 /** Config operations over one in-memory document, so a probe runs the real store path. */
 function memoryConfigOperations(initial: ConfigRecord): {
   operations: ReturnType<typeof createConfigOperations>;
+  store: ConfigStore;
   current: () => ConfigRecord;
 } {
   let record = initial;
@@ -163,7 +181,7 @@ function memoryConfigOperations(initial: ConfigRecord): {
     write: async (_principal: unknown, draft: ConfigDraft) =>
       (record = { ...record, ...draft, configVersion: record.configVersion + 1 }),
   } as Partial<ConfigStore> as ConfigStore;
-  return { operations: createConfigOperations(store), current: () => record };
+  return { operations: createConfigOperations(store), store, current: () => record };
 }
 
 /** Lets every pending promise settle, so a handler runs until it waits on something unresolved. */
@@ -179,6 +197,58 @@ function getIn(target: object, path: string): unknown {
         node != null && typeof node === 'object' ? (node as Doc)[segment] : undefined,
       target,
     );
+}
+
+/**
+ * A config store over a map, for probes that run the store contract's real operations: whole
+ * document writes under a revision precondition, and removals.
+ */
+function createMapStore(): ConfigStore {
+  const documents = new Map<string, ConfigRecord>();
+  let sequence = 0;
+  const keyOf = ({ principalType, principalId }: ConfigPrincipal) =>
+    `${principalType}:${principalId}`;
+  const revisionOf = (record?: ConfigRecord) =>
+    record ? getConfigRevision(record) : ABSENT_CONFIG_REVISION;
+  return {
+    read: async (principal) => documents.get(keyOf(principal)) ?? null,
+    list: async () => [...documents.values()],
+    listActive: async () => [...documents.values()].filter((record) => record.isActive),
+    async write(principal, draft, expected) {
+      const current = documents.get(keyOf(principal));
+      if (expected !== revisionOf(current)) {
+        throw new ConfigRevisionConflictError(current ? revisionOf(current) : null);
+      }
+      sequence += 1;
+      const record: ConfigRecord = {
+        ...draft,
+        ...principal,
+        _id: current?._id ?? String(sequence).padStart(24, '0'),
+        configVersion: (current?.configVersion ?? 0) + 1,
+      };
+      documents.set(keyOf(principal), record);
+      return record;
+    },
+    async remove(principal, expected) {
+      const current = documents.get(keyOf(principal));
+      if (expected !== undefined && expected !== revisionOf(current)) {
+        throw new ConfigRevisionConflictError(current ? revisionOf(current) : null);
+      }
+      documents.delete(keyOf(principal));
+      return current ?? null;
+    },
+    restore: async () => false,
+  };
+}
+
+/** Config handler deps that read and write `store` through the admin API's own calls. */
+function storeDeps(store: ConfigStore): Partial<AdminConfigDeps> {
+  return {
+    findConfigByPrincipal: (principalType, principalId) =>
+      store.read({ principalType, principalId: principalId.toString() }),
+    writeConfigDocument: (principalType, principalId, draft, expected) =>
+      store.write({ principalType, principalId }, draft, expected),
+  };
 }
 
 describe('GET /api/admin/config/meta', () => {
@@ -211,14 +281,24 @@ describe('GET /api/admin/config/meta', () => {
     expect(Object.keys(meta.versions)).toEqual(['librechat', 'dataProvider', 'configSchema']);
     expect(Object.keys(meta.features).sort()).toEqual([
       'awaitedInvalidation',
+      'azureGroupSecrets',
       'changesBatch',
+      'deterministicPrecedence',
       'dottedKeys',
+      'envAllowlist',
       'expectedRevision',
+      'preAuthBaseOverrides',
+      'principalCheck',
+      'priorityRoute',
       'prunesEmptyParents',
       'readFilteredWriteResponses',
+      'recordSecrets',
+      'roleRenameMovesProfile',
+      'secretRebinding',
       'sectionAllowlist',
       'webSearchStoredKeys',
       'yamlMcpHide',
+      'yamlSecretPreview',
     ]);
     expect(meta.limits).toEqual({
       maxPatchEntries: 100,
@@ -236,6 +316,7 @@ describe('GET /api/admin/config/meta', () => {
       'interface',
       'overrideKeyMap',
       'processMcpFields',
+      'recordSecretFields',
       'refusedMaps',
       'secretFields',
       'titleResolution',
@@ -248,12 +329,22 @@ describe('GET /api/admin/config/meta', () => {
       dottedKeys: true,
       sectionAllowlist: true,
       readFilteredWriteResponses: true,
+      preAuthBaseOverrides: true,
       webSearchStoredKeys: true,
       expectedRevision: true,
       prunesEmptyParents: true,
       awaitedInvalidation: true,
       changesBatch: true,
       yamlMcpHide: true,
+      deterministicPrecedence: true,
+      priorityRoute: true,
+      principalCheck: true,
+      roleRenameMovesProfile: true,
+      recordSecrets: true,
+      azureGroupSecrets: true,
+      yamlSecretPreview: true,
+      envAllowlist: true,
+      secretRebinding: true,
     });
   });
 
@@ -327,7 +418,7 @@ describe('meta rules equal the rules the server applies', () => {
     }
   });
 
-  it('lists the array secret reads withhold on custom endpoints', () => {
+  it('lists the array secrets reads withhold on custom endpoints and Azure groups', () => {
     expect(meta.rules.arraySecretFields).toEqual([
       {
         arrayPath: 'endpoints.custom',
@@ -335,10 +426,43 @@ describe('meta rules equal the rules the server applies', () => {
         previewKey: 'apiKeyPreview',
         identityKey: 'name',
       },
+      {
+        arrayPath: 'endpoints.azureOpenAI.groups',
+        secretKey: 'apiKey',
+        previewKey: 'apiKeyPreview',
+        identityKey: 'group',
+      },
     ]);
-    const [{ arrayPath, secretKey, identityKey }] = meta.rules.arraySecretFields;
-    const doc = setIn({}, arrayPath.split('.'), [{ [identityKey]: 'gw', [secretKey]: 'sk-live' }]);
-    expect(getIn(redactConfigSecrets(doc), arrayPath)).toEqual([{ [identityKey]: 'gw' }]);
+    for (const { arrayPath, secretKey, previewKey, identityKey } of meta.rules.arraySecretFields) {
+      const doc = setIn({}, arrayPath.split('.'), [{ [identityKey]: 'a', [secretKey]: 'sk-live' }]);
+      expect(getIn(redactConfigSecrets(doc), arrayPath)).toEqual([
+        { [identityKey]: 'a', [previewKey]: '********' },
+      ]);
+    }
+  });
+
+  it('lists the record secrets reads withhold (MCP servers, Azure groupMap), with their previews', () => {
+    expect(meta.rules.recordSecretFields).toEqual([
+      {
+        recordPath: 'mcpServers',
+        secretPath: 'oauth.client_secret',
+        previewPath: 'oauth.client_secretPreview',
+      },
+      { recordPath: 'mcpServers', secretPath: 'apiKey.key', previewPath: 'apiKey.keyPreview' },
+      {
+        recordPath: 'endpoints.azureOpenAI.groupMap',
+        secretPath: 'apiKey',
+        previewPath: 'apiKeyPreview',
+      },
+    ]);
+    for (const { recordPath, secretPath, previewPath } of meta.rules.recordSecretFields) {
+      const entry = setIn({}, secretPath.split('.'), 'sk-live-0123456789abcdef');
+      const stored = encryptConfigSecretFields({ [`${recordPath}.s1`]: entry })[`${recordPath}.s1`];
+      expect(String(getIn(stored as Doc, secretPath))).toMatch(/^v3:/);
+      const read = redactConfigSecrets(setIn({}, recordPath.split('.'), { s1: stored }));
+      expect(getIn(read, `${recordPath}.s1.${secretPath}`)).toBeUndefined();
+      expect(getIn(read, `${recordPath}.s1.${previewPath}`)).toBe('...cdef');
+    }
   });
 
   it('refuses writes to every listed map and process MCP field', async () => {
@@ -459,7 +583,6 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
           return { broad: false, sections: new Set<string>() };
         }),
         writeConfigDocument: commit,
-        tombstoneConfigField: commit,
         unsetConfigField: commit,
       };
     };
@@ -486,6 +609,43 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
         !('memory' in overrides)
       );
     });
+  },
+  async preAuthBaseOverrides() {
+    const store = new Map<string, unknown>();
+    const base: ConfigOverrideLayer = {
+      principalType: PrincipalType.ROLE,
+      principalId: BASE_CONFIG_PRINCIPAL_ID,
+      priority: 0,
+      overrides: {
+        registration: { socialLogins: ['github'] },
+        turnstile: { siteKey: 'base-site-key' },
+      },
+    };
+    const { getAppConfig } = createAppConfigService({
+      loadBaseConfig: () =>
+        AppService({
+          config: {
+            registration: { socialLogins: ['openid'] },
+            turnstile: { siteKey: 'yaml-site-key' },
+          },
+        }),
+      setCachedTools: async () => undefined,
+      getCache: () => ({
+        get: async (key: string) => store.get(key),
+        set: async (key: string, value: unknown) => store.set(key, value),
+        delete: async (key: string) => store.delete(key),
+      }),
+      cacheKeys: { APP_CONFIG: 'app_config' },
+      getApplicableConfigs: jest.fn().mockResolvedValue([base]),
+      getUserPrincipals: jest.fn().mockResolvedValue([]),
+    });
+    const signedOut = await resolvePreLoginAppConfig(getAppConfig);
+    const preAuth = await resolvePreAuthAppConfig(getAppConfig);
+    return [signedOut, preAuth].every(
+      (config) =>
+        config.registration?.socialLogins?.join() === 'github' &&
+        config.turnstileConfig?.siteKey === 'yaml-site-key',
+    );
   },
   async webSearchStoredKeys() {
     const keys = {
@@ -645,6 +805,309 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
 
     return held && res.statusCode === 200 && bypassed && dropsStaleMerge;
   },
+  async deterministicPrecedence() {
+    const layer = (
+      principalType: PrincipalType,
+      principalId: string,
+      priority: number,
+      _id: string,
+    ): ConfigOverrideLayer => ({
+      principalType,
+      principalId,
+      priority,
+      _id,
+      overrides: { interface: { customWelcome: principalId } },
+    });
+    const winner = (...configs: ConfigOverrideLayer[]) =>
+      mergeConfigOverrides({ config: {} } as AppConfig, configs).interfaceConfig?.customWelcome;
+    const base = layer(PrincipalType.ROLE, '__base__', 50, 'a3');
+    const role = layer(PrincipalType.ROLE, 'r1', 5, 'a2');
+    const group = layer(PrincipalType.GROUP, 'g1', 5, 'a1');
+    const user = layer(PrincipalType.USER, 'u1', 5, 'a0');
+    const later = layer(PrincipalType.GROUP, 'g2', 5, 'a4');
+    const ordered =
+      winner(role, base) === 'r1' &&
+      winner(base, role) === 'r1' &&
+      winner(group, role) === 'g1' &&
+      winner(role, group) === 'g1' &&
+      winner(user, group, role) === 'u1' &&
+      winner(later, group) === 'g2' &&
+      winner(group, later) === 'g2';
+
+    const store = createMapStore();
+    const handlers = createHandlers(storeDeps(store));
+    const put = async (principalType: PrincipalType, principalId: string, body: object) => {
+      await handlers.upsertConfigOverrides(
+        mockReq({ params: { principalType, principalId }, body }),
+        mockRes(),
+      );
+      return (await store.read({ principalType, principalId }))?.priority;
+    };
+    const overrides = { interface: { customWelcome: 'hi' } };
+    const defaults = await Promise.all([
+      put(PrincipalType.ROLE, 'r1', { overrides }),
+      put(PrincipalType.GROUP, 'g1', { overrides }),
+      put(PrincipalType.USER, 'u1', { overrides }),
+    ]);
+    await put(PrincipalType.ROLE, 'r1', { overrides, priority: 33 });
+    const kept = await put(PrincipalType.ROLE, 'r1', {
+      overrides: { interface: { customWelcome: 'again' } },
+    });
+    await handlers.applyConfigChanges(
+      mockReq({
+        params: { principalType: PrincipalType.GROUP, principalId: 'g0' },
+        body: { ops: [{ op: 'set', fieldPath: 'interface.customWelcome', value: 'hi' }] },
+      }),
+      mockRes(),
+    );
+    const batchDefault = (
+      await store.read({ principalType: PrincipalType.GROUP, principalId: 'g0' })
+    )?.priority;
+
+    const operations = createConfigOperations(store);
+    await operations.setFields(
+      { principalType: PrincipalType.ROLE, principalId: '__base__' },
+      PrincipalModel.ROLE,
+      { 'interface.customWelcome': 'base' },
+      500,
+    );
+    await operations.setPriority({ principalType: PrincipalType.GROUP, principalId: 'g0' }, 33);
+    const listed = mockRes();
+    await createHandlers({ listAllConfigs: () => operations.listConfigs() }).listConfigs(
+      mockReq(),
+      listed,
+    );
+    const listOrder = (listed.body?.configs as ConfigRecord[] | undefined)
+      ?.map(({ principalId }) => principalId)
+      .join();
+
+    /** Statuses of a PATCH `/fields` and a dry-run batch setting `memory.agent.model` on a role
+     *  over `yaml`, with Base tombstoning `tombstones` and setting `fields`. */
+    const floorStatuses = async (
+      yaml: object,
+      tombstones: string[],
+      fields: Record<string, unknown>,
+    ) => {
+      const floorStore = createMapStore();
+      const floorOperations = createConfigOperations(floorStore);
+      const base = { principalType: PrincipalType.ROLE, principalId: '__base__' };
+      await floorOperations.tombstoneFields(base, PrincipalModel.ROLE, tombstones);
+      await floorOperations.setFields(base, PrincipalModel.ROLE, fields);
+      const floorHandlers = createHandlers({
+        ...storeDeps(floorStore),
+        getAppConfig: jest.fn().mockResolvedValue({ config: yaml }),
+      });
+      const params = { principalType: PrincipalType.ROLE, principalId: 'r2' };
+      const batch = mockRes();
+      await floorHandlers.applyConfigChanges(
+        mockReq({
+          params,
+          body: {
+            ops: [{ op: 'set', fieldPath: 'memory.agent.model', value: 'gpt-4.1' }],
+            dryRun: true,
+          },
+        }),
+        batch,
+      );
+      const patched = await patch([{ fieldPath: 'memory.agent.model', value: 'gpt-4.1' }], {
+        ...storeDeps(floorStore),
+        getAppConfig: jest.fn().mockResolvedValue({ config: yaml }),
+      });
+      return `${patched.statusCode},${batch.statusCode}`;
+    };
+    const validOnlyOverBase = await floorStatuses(
+      { memory: { agent: { id: 'agent_1' } } },
+      ['memory.agent.id'],
+      { 'memory.agent.provider': 'openAI', 'memory.agent.model': 'gpt-4o' },
+    );
+    const invalidOnlyOverBase = await floorStatuses(
+      { memory: { agent: { provider: 'openAI', model: 'gpt-4o' } } },
+      ['memory.agent.provider', 'memory.agent.model'],
+      { 'memory.agent.id': 'agent_9' },
+    );
+
+    return (
+      ordered &&
+      defaults.join() === '10,20,100' &&
+      kept === 33 &&
+      batchDefault === 20 &&
+      listOrder === '__base__,g1,r1,g0,u1' &&
+      validOnlyOverBase === '200,200' &&
+      invalidOnlyOverBase === '400,400'
+    );
+  },
+  async priorityRoute() {
+    const store = createMapStore();
+    const operations = createConfigOperations(store);
+    const principal = { principalType: PrincipalType.ROLE, principalId: 'r1' };
+    await operations.setFields(principal, PrincipalModel.ROLE, { 'interface.customWelcome': 'x' });
+    await operations.tombstoneFields(principal, PrincipalModel.ROLE, 'memory.agent');
+    await operations.setActive(principal, false);
+    const before = await store.read(principal);
+
+    const setConfigPriority: AdminConfigDeps['setConfigPriority'] = (type, id, priority, options) =>
+      operations.setPriority({ principalType: type, principalId: id }, priority, options);
+    const route = async (
+      principalId: string,
+      body: object,
+      deps: Partial<AdminConfigDeps> = {},
+    ) => {
+      const res = mockRes();
+      await createHandlers({ setConfigPriority, ...deps }).updateConfigPriority(
+        mockReq({ params: { principalType: PrincipalType.ROLE, principalId }, body }),
+        res,
+      );
+      return res;
+    };
+    const updated = await route('r1', { priority: 42 });
+    const after = await store.read(principal);
+    const missing = await route('nobody', { priority: 1 });
+    const invalid = await route('r1', { priority: -1 });
+    const sectionScoped = await route(
+      'r1',
+      { priority: 7 },
+      { hasConfigCapability: jest.fn(async (_user, section) => section != null) },
+    );
+    return (
+      updated.statusCode === 200 &&
+      after?.priority === 42 &&
+      JSON.stringify(after.overrides) === JSON.stringify(before?.overrides) &&
+      JSON.stringify(after.tombstones) === JSON.stringify(before?.tombstones) &&
+      after.isActive === false &&
+      missing.statusCode === 404 &&
+      missing.body?.code === 'CONFIG_NOT_FOUND' &&
+      invalid.statusCode === 400 &&
+      invalid.body?.code === 'INVALID_PRIORITY' &&
+      sectionScoped.statusCode === 403 &&
+      (await store.read(principal))?.priority === 42
+    );
+  },
+  async principalCheck() {
+    const store = createMapStore();
+    const principalExists = jest.fn(async (_type: PrincipalType, id: string) => id === 'editor');
+    const handlers = createHandlers({ ...storeDeps(store), principalExists });
+    const write = async (
+      handler:
+        | 'upsertConfigOverrides'
+        | 'patchConfigField'
+        | 'tombstoneConfigField'
+        | 'applyConfigChanges',
+      principalId: string,
+      body: object,
+    ) => {
+      const res = mockRes();
+      await handlers[handler](
+        mockReq({ params: { principalType: PrincipalType.ROLE, principalId }, body }),
+        res,
+      );
+      return res;
+    };
+    const refused = await Promise.all([
+      write('upsertConfigOverrides', 'ghost', { overrides: { interface: { customWelcome: 'x' } } }),
+      write('patchConfigField', 'ghost', {
+        entries: [{ fieldPath: 'interface.customWelcome', value: 'x' }],
+      }),
+      write('tombstoneConfigField', 'ghost', { fieldPath: 'interface.customWelcome' }),
+      write('applyConfigChanges', 'ghost', {
+        ops: [{ op: 'set', fieldPath: 'interface.customWelcome', value: 'x' }],
+      }),
+      write('applyConfigChanges', 'ghost', {
+        ops: [{ op: 'unset', fieldPath: 'interface.customWelcome' }],
+        priority: 5,
+      }),
+    ]);
+    const created = await write('upsertConfigOverrides', 'editor', {
+      overrides: {},
+      expectedRevision: ABSENT_CONFIG_REVISION,
+    });
+    const again = await write('upsertConfigOverrides', 'editor', {
+      overrides: {},
+      expectedRevision: ABSENT_CONFIG_REVISION,
+    });
+
+    /** A tombstone checks the document it writes over: here a DELETE lands after its read. */
+    const retired = { principalType: PrincipalType.ROLE, principalId: 'retired' };
+    await createConfigOperations(store).setFields(retired, PrincipalModel.ROLE, {
+      'interface.customWelcome': 'old',
+    });
+    let removedConcurrently = false;
+    const raced = mockRes();
+    await createHandlers({
+      ...storeDeps(store),
+      principalExists,
+      findConfigByPrincipal: async (principalType, principalId) => {
+        const found = await store.read({ principalType, principalId });
+        if (found && !removedConcurrently) {
+          removedConcurrently = true;
+          await store.remove({ principalType, principalId });
+        }
+        return found;
+      },
+    }).tombstoneConfigField(
+      mockReq({ params: retired, body: { fieldPath: 'interface.customWelcome' } }),
+      raced,
+    );
+
+    return (
+      refused.every((res) => res.statusCode === 404 && res.body?.code === 'PRINCIPAL_NOT_FOUND') &&
+      (await store.read({ principalType: PrincipalType.ROLE, principalId: 'ghost' })) === null &&
+      created.statusCode === 201 &&
+      again.statusCode === 409 &&
+      again.body?.code === 'CONFIG_VERSION_CONFLICT' &&
+      removedConcurrently &&
+      raced.statusCode === 404 &&
+      raced.body?.code === 'PRINCIPAL_NOT_FOUND' &&
+      (await store.read(retired)) === null
+    );
+  },
+  async roleRenameMovesProfile() {
+    const store = createMapStore();
+    const operations = createConfigOperations(store);
+    const role = (principalId: string) => ({ principalType: PrincipalType.ROLE, principalId });
+    await operations.setFields(role('editor'), PrincipalModel.ROLE, {
+      'interface.customWelcome': 'moved',
+    });
+    await operations.setFields(role('taken'), PrincipalModel.ROLE, {
+      'interface.customWelcome': 'kept',
+    });
+    const moveGrantsToPrincipal = jest.fn().mockResolvedValue({ moved: [], superseded: [] });
+    const moveAclEntriesToPrincipal = jest.fn().mockResolvedValue([]);
+    const deps: Partial<AdminRolesDeps> = {
+      getRoleByName: jest.fn(async (name: string) =>
+        name === 'editor' ? ({ name } as IRole) : null,
+      ),
+      updateRoleByName: jest.fn(async (_name: string, updates: Partial<IRole>) => updates as IRole),
+      findUserIdsByRole: jest.fn().mockResolvedValue([]),
+      updateUsersByRole: jest.fn().mockResolvedValue(undefined),
+      findConfigByPrincipal: (type, id) => store.read({ principalType: type, principalId: id }),
+      renameConfigPrincipal: (_type, from, to) => operations.movePrincipal(role(from), role(to)),
+      moveGrantsToPrincipal,
+      moveAclEntriesToPrincipal,
+    };
+    const handlers = createAdminRolesHandlers(deps as AdminRolesDeps);
+    const rename = async (name: string) => {
+      const res = mockRes();
+      await handlers.updateRole(mockReq({ params: { name: 'editor' }, body: { name } }), res);
+      return res;
+    };
+    const conflict = await rename('taken');
+    const reserved = await rename('__base__');
+    const renamed = await rename('reviewer');
+    const moved = await store.read(role('reviewer'));
+    return (
+      conflict.statusCode === 409 &&
+      conflict.body?.code === 'ROLE_CONFIG_CONFLICT' &&
+      reserved.statusCode === 400 &&
+      reserved.body?.code === 'ROLE_NAME_RESERVED' &&
+      renamed.statusCode === 200 &&
+      (await store.read(role('editor'))) === null &&
+      getIn(moved?.overrides ?? {}, 'interface.customWelcome') === 'moved' &&
+      getIn((await store.read(role('taken')))?.overrides ?? {}, 'interface.customWelcome') ===
+        'kept' &&
+      moveGrantsToPrincipal.mock.calls[0]?.slice(0, 3).join() === 'role,editor,reviewer' &&
+      moveAclEntriesToPrincipal.mock.calls[0]?.slice(0, 3).join() === 'role,editor,reviewer'
+    );
+  },
   async changesBatch() {
     const writeConfigDocument = jest.fn(
       async (_type: string, _id: string, draft: ConfigDraft): Promise<ConfigRecord> => ({
@@ -702,27 +1165,19 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     const yaml = { docs, local };
     const principal = { id: 'u1', role: 'USER' };
 
-    const stored = memoryConfigOperations(storedConfig({}));
+    const store = createMapStore();
     const written = mockRes();
-    await createHandlers({
-      tombstoneConfigField: (type, id, model, paths, priority, _session, options) =>
-        stored.operations.tombstoneFields(
-          { principalType: type, principalId: id },
-          model,
-          paths,
-          priority,
-          options,
-        ),
-    }).tombstoneConfigField(
+    await createHandlers(storeDeps(store)).tombstoneConfigField(
       mockReq({
         params: { principalType: 'role', principalId: 'r1' },
         body: { fieldPath: 'mcpServers.docs' },
       }),
       written,
     );
-    const record = stored.current();
-    const storesTombstone =
-      written.statusCode === 200 && record.tombstones.includes('mcpServers.docs');
+    const record = await store.read({ principalType: PrincipalType.ROLE, principalId: 'r1' });
+    if (written.statusCode !== 200 || !record?.tombstones.includes('mcpServers.docs')) {
+      return false;
+    }
 
     const merged = mergeConfigOverrides(
       { config: { mcpServers: yaml }, mcpConfig: yaml } as Partial<AppConfig> as AppConfig,
@@ -754,7 +1209,306 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     unreadable.setYamlServerOptions(yaml);
     const failsClosed = (await unreadable.resolveHiddenServerNames({ userId: 'u2' })).has('docs');
 
-    return storesTombstone && withheld && refusesCheckout && !hidden.has('local') && failsClosed;
+    return withheld && refusesCheckout && !hidden.has('local') && failsClosed;
+  },
+  async recordSecrets() {
+    const server = (overrides: Doc = {}): Doc => ({
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      apiKey: { source: 'admin', authorization_type: 'bearer', key: 'sk-mcp-admin-secret' },
+      ...overrides,
+    });
+    const stored = encryptConfigSecretFields({ 'mcpServers.github': server() })[
+      'mcpServers.github'
+    ] as Doc;
+    const encrypted = String(getIn(stored, 'apiKey.key')).startsWith('v3:');
+    const read = redactConfigSecrets(structuredClone({ mcpServers: { github: stored } }));
+    const hidden =
+      getIn(read, 'mcpServers.github.apiKey.key') === undefined &&
+      getIn(read, 'mcpServers.github.apiKey.keyPreview') === '...cret';
+    const runtime = resolveRuntimeConfigSecrets({ mcpConfig: { github: stored } });
+    const decrypted = getIn(runtime, 'mcpConfig.github.apiKey.key') === 'sk-mcp-admin-secret';
+
+    const findConfigByPrincipal = jest
+      .fn()
+      .mockResolvedValue(storedConfig({ mcpServers: { github: stored } }));
+    const COLLECTOR = 'https://collector.example.com/mcp';
+    const moved = await patch([{ fieldPath: 'mcpServers.github.url', value: COLLECTOR }], {
+      findConfigByPrincipal,
+    });
+    /** A decoy key at the credential's path, then the server without it: the stored key stays. */
+    const decoyed = await patch(
+      [
+        { fieldPath: 'mcpServers.github.apiKey.key', value: 'sk-decoy-0000' },
+        {
+          fieldPath: 'mcpServers.github',
+          value: server({
+            url: COLLECTOR,
+            apiKey: { source: 'admin', authorization_type: 'bearer' },
+          }),
+        },
+      ],
+      { findConfigByPrincipal },
+    );
+    /** A batch that renames the server away and back around a decoy, then moves it. */
+    const batch = mockRes();
+    await createHandlers({ findConfigByPrincipal }).applyConfigChanges(
+      mockReq({
+        params: { principalType: 'role', principalId: 'r1' },
+        body: {
+          ops: [
+            { op: 'rename', fieldPath: 'mcpServers', from: 'github', to: 'tmp' },
+            { op: 'set', fieldPath: 'mcpServers.github.apiKey.key', value: 'sk-decoy-0000' },
+            { op: 'unset', fieldPath: 'mcpServers.github' },
+            { op: 'rename', fieldPath: 'mcpServers', from: 'tmp', to: 'github' },
+            { op: 'set', fieldPath: 'mcpServers.github.url', value: COLLECTOR },
+          ],
+        },
+      }),
+      batch,
+    );
+    const reentry = (res: MockRes) =>
+      res.statusCode === 400 && res.body?.code === 'MCP_API_KEY_REENTRY_REQUIRED';
+    const writeConfigDocument = jest.fn(
+      async (_type: string, _id: string, draft: ConfigDraft): Promise<ConfigRecord> =>
+        storedConfig(draft.overrides ?? {}),
+    );
+    const renamed = mockRes();
+    await createHandlers({ findConfigByPrincipal, writeConfigDocument }).patchConfigField(
+      mockReq({
+        params: { principalType: 'role', principalId: 'r1' },
+        body: {
+          entries: [
+            {
+              fieldPath: 'mcpServers.code',
+              value: server({ apiKey: { source: 'admin', authorization_type: 'bearer' } }),
+            },
+          ],
+          renames: [{ path: 'mcpServers', previousName: 'github', name: 'code' }],
+        },
+      }),
+      renamed,
+    );
+    const [, , draft] = writeConfigDocument.mock.calls[0] ?? [];
+    const carried =
+      renamed.statusCode === 200 &&
+      getIn(draft?.overrides ?? {}, 'mcpServers.code.apiKey.key') === getIn(stored, 'apiKey.key');
+    return (
+      encrypted &&
+      hidden &&
+      decrypted &&
+      reentry(moved) &&
+      reentry(decoyed) &&
+      reentry(batch) &&
+      carried
+    );
+  },
+  async azureGroupSecrets() {
+    const group = (apiKey?: string): Doc => ({
+      group: 'east',
+      instanceName: 'east-instance',
+      version: '2024-10-21',
+      deploymentName: 'gpt-4o',
+      ...(apiKey != null && { apiKey }),
+      models: { 'gpt-4o': true },
+    });
+    const [stored] = encryptConfigSecretFields({
+      'endpoints.azureOpenAI.groups': [group('azure-admin-secret-key')],
+    })['endpoints.azureOpenAI.groups'] as Doc[];
+    const encrypted = String(stored.apiKey).startsWith('v3:');
+    /** The Azure client is built with the key a profile's group holds, decrypted. */
+    const runtime = resolveRuntimeConfigSecrets(
+      mergeOverrideLayers(
+        { config: {} } as AppConfig,
+        [storedConfig({ endpoints: { azureOpenAI: { groups: [stored] } } })],
+        { envPolicy: createEnvReferencePolicy({ config: {} }) },
+      ),
+    );
+    const azure = runtime.endpoints?.azureOpenAI;
+    const decrypted =
+      azure?.groupMap != null &&
+      azure.modelGroupMap != null &&
+      mapModelToAzureConfig({
+        modelName: 'gpt-4o',
+        groupMap: azure.groupMap,
+        modelGroupMap: azure.modelGroupMap,
+      }).azureOptions.azureOpenAIApiKey === 'azure-admin-secret-key';
+    /** Moving the group the key is stored for needs the key entered again. */
+    const moved = await patch(
+      [
+        {
+          fieldPath: 'endpoints.azureOpenAI.groups',
+          value: [{ ...group(), instanceName: 'attacker-instance' }],
+        },
+      ],
+      {
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue(storedConfig({ endpoints: { azureOpenAI: { groups: [stored] } } })),
+      },
+    );
+    const reentry =
+      moved.statusCode === 400 && moved.body?.code === 'CONFIG_SECRET_REENTRY_REQUIRED';
+
+    const writeConfigDocument = jest.fn(
+      async (_type: string, _id: string, draft: ConfigDraft): Promise<ConfigRecord> =>
+        storedConfig(draft.overrides ?? {}),
+    );
+    const res = await patch([{ fieldPath: 'endpoints.azureOpenAI.groups', value: [group()] }], {
+      findConfigByPrincipal: jest
+        .fn()
+        .mockResolvedValue(storedConfig({ endpoints: { azureOpenAI: { groups: [stored] } } })),
+      writeConfigDocument,
+    });
+    const [, , draft] = writeConfigDocument.mock.calls[0] ?? [];
+    const kept =
+      getIn(draft?.overrides ?? {}, 'endpoints.azureOpenAI.groups.0.apiKey') === stored.apiKey;
+    const read = res.body?.config?.overrides ?? {};
+
+    /** `groupMap`, which the Azure clients read, holds its key the same way. */
+    const writeGroupMap = jest.fn(
+      async (_type: string, _id: string, groupMapDraft: ConfigDraft): Promise<ConfigRecord> =>
+        storedConfig(groupMapDraft.overrides ?? {}),
+    );
+    const mapped = await patch(
+      [
+        {
+          fieldPath: 'endpoints.azureOpenAI.groupMap.east',
+          value: { apiKey: 'azure-groupmap-secret-key', instanceName: 'east-instance' },
+        },
+      ],
+      { writeConfigDocument: writeGroupMap },
+    );
+    const [, , groupMapDraft] = writeGroupMap.mock.calls[0] ?? [];
+    const storedMapKey = getIn(
+      groupMapDraft?.overrides ?? {},
+      'endpoints.azureOpenAI.groupMap.east.apiKey',
+    );
+    const mapRuntime = resolveRuntimeConfigSecrets(groupMapDraft?.overrides ?? {});
+    const groupMapProtected =
+      mapped.statusCode === 200 &&
+      String(storedMapKey).startsWith('v3:') &&
+      !JSON.stringify(mapped.body).includes('azure-groupmap-secret-key') &&
+      getIn(mapped.body?.config?.overrides ?? {}, 'endpoints.azureOpenAI.groupMap.east') !==
+        undefined &&
+      getIn(mapped.body?.config?.overrides ?? {}, 'endpoints.azureOpenAI.groupMap.east.apiKey') ===
+        undefined &&
+      getIn(mapRuntime, 'endpoints.azureOpenAI.groupMap.east.apiKey') ===
+        'azure-groupmap-secret-key';
+    return (
+      encrypted &&
+      decrypted &&
+      reentry &&
+      res.statusCode === 200 &&
+      kept &&
+      getIn(read, 'endpoints.azureOpenAI.groups.0.apiKey') === undefined &&
+      groupMapProtected
+    );
+  },
+  async yamlSecretPreview() {
+    const yaml = {
+      webSearch: { serperApiKey: 'serper-yaml-literal-0001' },
+      ocr: { apiKey: '${OCR_API_KEY}' },
+    };
+    const res = mockRes();
+    await createHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({ ...structuredClone(yaml), config: yaml }),
+    }).getBaseConfig(mockReq({ query: { baseOnly: 'true' } }), res);
+    const config = (res.body?.config ?? {}) as Doc;
+    return (
+      res.statusCode === 200 &&
+      !JSON.stringify(res.body).includes('literal') &&
+      getIn(config, 'webSearch.serperApiKeyPreview') === '********' &&
+      getIn(config, 'ocr.apiKey') === '${OCR_API_KEY}'
+    );
+  },
+  async envAllowlist() {
+    const unlisted = await patch([
+      { fieldPath: 'ocr.baseURL', value: 'https://h/${UNLISTED_NAME}' },
+    ]);
+    const yamlNamed = await patch([{ fieldPath: 'ocr.apiKey', value: '${OCR_YAML_KEY}' }], {
+      getAppConfig: jest.fn().mockResolvedValue({ config: { ocr: { apiKey: '${OCR_YAML_KEY}' } } }),
+    });
+    const batch = mockRes();
+    await createHandlers().applyConfigChanges(
+      mockReq({
+        params: { principalType: 'role', principalId: 'r1' },
+        body: { ops: [{ op: 'set', fieldPath: 'ocr.apiKey', value: '${UNLISTED_NAME}' }] },
+      }),
+      batch,
+    );
+    const merged = mergeOverrideLayers(
+      { config: {} } as AppConfig,
+      [storedConfig({ ocr: { apiKey: '${UNLISTED_NAME}' } })],
+      { envPolicy: createEnvReferencePolicy({ config: {} }) },
+    );
+    const refused = (res: MockRes) =>
+      res.statusCode === 400 &&
+      JSON.stringify(res.body?.issues) ===
+        JSON.stringify([
+          {
+            path: res === unlisted ? 'ocr.baseURL' : 'ocr.apiKey',
+            segments: ['ocr', res === unlisted ? 'baseURL' : 'apiKey'],
+            code: 'env_reference_not_allowed',
+          },
+        ]);
+    return (
+      refused(unlisted) &&
+      refused(batch) &&
+      yamlNamed.statusCode === 200 &&
+      merged.ocr?.apiKey === ''
+    );
+  },
+  async secretRebinding() {
+    const yaml = {
+      mcpServers: {
+        tools: {
+          type: 'streamable-http',
+          url: 'https://tools.example.com/mcp',
+          apiKey: { source: 'admin', authorization_type: 'bearer', key: '${TOOLS_KEY}' },
+        },
+      },
+    };
+    const base = {
+      config: yaml,
+      mcpConfig: structuredClone(yaml.mcpServers),
+    } as Partial<AppConfig> as AppConfig;
+    const moved = { mcpServers: { tools: { url: 'https://collector.example.com/mcp' } } };
+    const merged = mergeOverrideLayers(base, [storedConfig(moved)], {
+      envPolicy: createEnvReferencePolicy({ config: yaml }),
+    });
+    const res = await patch(
+      [{ fieldPath: 'mcpServers.tools.url', value: 'https://collector.example.com/mcp' }],
+      { getAppConfig: jest.fn().mockResolvedValue(base) },
+    );
+    /** The documented limit: restating the visible `${TOOLS_KEY}` beside the new URL enters it. */
+    const restatedServer = {
+      url: 'https://collector.example.com/mcp',
+      apiKey: { source: 'admin', authorization_type: 'bearer', key: '${TOOLS_KEY}' },
+    };
+    const restatedMerge = mergeOverrideLayers(
+      base,
+      [storedConfig({ mcpServers: { tools: restatedServer } })],
+      { envPolicy: createEnvReferencePolicy({ config: yaml }) },
+    );
+    const restated = await patch([{ fieldPath: 'mcpServers.tools', value: restatedServer }], {
+      getAppConfig: jest.fn().mockResolvedValue(base),
+    });
+    return (
+      getIn(merged, 'mcpConfig.tools.apiKey.key') === '' &&
+      res.statusCode === 200 &&
+      JSON.stringify(res.body?.ignored) ===
+        JSON.stringify([
+          {
+            path: 'mcpServers.tools.apiKey.key',
+            segments: ['mcpServers', 'tools', 'apiKey', 'key'],
+            reason: 'secret_rebinding',
+          },
+        ]) &&
+      getIn(restatedMerge, 'mcpConfig.tools.apiKey.key') === '${TOOLS_KEY}' &&
+      restated.statusCode === 200 &&
+      restated.body?.ignored === undefined
+    );
   },
 };
 

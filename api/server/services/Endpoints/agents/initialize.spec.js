@@ -648,6 +648,47 @@ describe('initializeClient — processAgent ACL gate', () => {
     });
   });
 
+  it('rewrites the attached-workspace file note before the agent runs', async () => {
+    const config = makePrimaryConfig([]);
+    config.codeExecutionContext = {
+      baseUrl: 'https://code-attached.example.com',
+      codeSessionKey: 'execute_code',
+      executionProfile: 'stateful',
+      statefulSessions: true,
+      environmentType: 'attached',
+      environmentId: 'machine',
+      codeWorkspace: {
+        environmentId: 'machine',
+        workspaceId: 'primary',
+        operations: ['read_file'],
+      },
+    };
+    config.dynamicToolContextMap = { execute_code: 'programmatic-only note' };
+    config.codeContextEntries = [
+      {
+        file: { file_id: 'upload-1', filename: 'release.zip', user: testUser._id.toString() },
+        destination: 'release.zip',
+        agentScoped: false,
+        source: { storage_session_id: 'session-1', file_id: 'object-1' },
+      },
+    ];
+    mockInitializeAgent.mockResolvedValue(config);
+
+    await initializeClient({
+      req: makeReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.agent.dynamicToolContextMap.execute_code).toContain(
+      "release.zip (attached by user): this machine's LibreChat worker cannot receive attachments yet",
+    );
+    expect(agentClientArgs.agent.dynamicToolContextMap.execute_code).not.toContain(
+      '$LIBRECHAT_CODE_DATA_DIR',
+    );
+  });
+
   it('binds foreground tool execution to the host-owned run signal', async () => {
     mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
     const controller = new AbortController();
