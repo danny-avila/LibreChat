@@ -1,12 +1,13 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
+import { Types } from 'mongoose';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import type { Express, NextFunction, Request, Response } from 'express';
+import type { Express, NextFunction, Request, RequestHandler, Response } from 'express';
 import type { ImageAuthorizationDeps } from './authorization';
 import { createImageAuthorizationMiddleware } from './authorization';
 import staticCache from '../../../../api/server/utils/staticCache';
@@ -740,7 +741,7 @@ describe('createImageAuthorizationMiddleware', () => {
           .mockImplementation(async (query) =>
             query.id === 'agent_abc123' &&
             query['avatar.filepath']?.$in?.includes(`${AGENT_PATH}?manual=true`)
-              ? { _id: AGENT_DB_ID }
+              ? { _id: new Types.ObjectId(AGENT_DB_ID) }
               : null,
           );
         jest
@@ -750,22 +751,23 @@ describe('createImageAuthorizationMiddleware', () => {
               principals.length === 1 &&
               principals[0].principalType === 'public' &&
               resourceType === 'agent' &&
-              resourceId === AGENT_DB_ID &&
+              resourceId.toString() === AGENT_DB_ID &&
               permission === 1,
           );
         app = express();
         const router = express.Router();
-        router.use(staticCache(imageRoot, { skipGzipScan }));
+        router.use(staticCache(imageRoot, { skipGzipScan }) as RequestHandler);
         app.use(`${basePath}/images`, createImageAuthorizationMiddleware({}, deps), router);
       });
 
       it('denies direct victim requests with and without an active session', async () => {
         const path = `${basePath}/images/${VICTIM_ID}/secret.png`;
-        await request(app).get(path).expect(401);
-        await request(app)
+        const anonymous = await request(app).get(path);
+        const authenticated = await request(app)
           .get(path)
-          .set('Cookie', `refreshToken=${signUser(VIEWER_ID)}`)
-          .expect(403);
+          .set('Cookie', `refreshToken=${signUser(VIEWER_ID)}`);
+        expect(anonymous.status).toBe(401);
+        expect(authenticated.status).toBe(403);
       });
 
       it.each(['%3F', '%23'])('rejects an owner-prefix %s traversal', async (delimiter) => {
