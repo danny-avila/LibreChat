@@ -133,7 +133,7 @@
     "bcryptjs": "^2.4.3",
     "connect-redis": "^8.1.0",
     "dedent": "^1.5.3",
-    "dompurify": "^3.4.16",
+    "dompurify": "^3.4.17",
     "eventsource": "^3.0.2",
     "express": "^5.1.0",
     "express-session": "^1.18.2",
