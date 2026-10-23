@@ -440,9 +440,47 @@ describe('createImageAuthorizationMiddleware', () => {
           `${assistantPath}?manual=true`,
         ],
       },
-      { _id: 1, assistant_id: 1, endpoint: 1 },
+      { _id: 1, assistant_id: 1, endpoint: 1, user: 1 },
     );
   });
+
+  it.each([
+    { user: VIEWER_ID, tenantId: 'tenant-a', allowed: true },
+    { user: OWNER_ID, tenantId: 'tenant-a', allowed: false },
+    { user: VIEWER_ID, tenantId: 'tenant-b', allowed: false },
+  ])(
+    'checks private assistant ownership and tenant before granting image access: %p',
+    async ({ user, tenantId, allowed }) => {
+      (deps.getAssistant as jest.Mock).mockResolvedValue({
+        _id: '65cfb246f7ecadb8b1e8036e',
+        assistant_id: 'asst_private',
+        endpoint: 'assistants',
+        user,
+      });
+      (deps.getUserById as jest.Mock)
+        .mockResolvedValueOnce({ tenantId: 'tenant-a' })
+        .mockResolvedValueOnce({ tenantId });
+      const middleware = createImageAuthorizationMiddleware(
+        { assistantEndpoints: [{ endpoint: 'assistants', privateAssistants: true }] },
+        deps,
+      );
+      await middleware(
+        createRequest(
+          `/images/${OWNER_ID}/assistant-avatar.png`,
+          `refreshToken=${signUser(VIEWER_ID)}`,
+        ),
+        response,
+        next,
+      );
+      if (allowed) {
+        expect(next).toHaveBeenCalledTimes(1);
+        expect(deps.getUserPrincipals).not.toHaveBeenCalled();
+      } else {
+        expect(next).not.toHaveBeenCalled();
+        expect(response.status).toHaveBeenCalledWith(403);
+      }
+    },
+  );
 
   it('requires authentication for an otherwise shared assistant avatar', async () => {
     (deps.getAssistant as jest.Mock).mockResolvedValue({

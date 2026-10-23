@@ -30,6 +30,7 @@ jest.mock('./tools', () => require('express').Router());
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { uploadImageBuffer } = require('~/server/services/Files/process');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
+const { updateAssistantDoc } = require('~/models');
 const { avatar } = require('./v1');
 
 const attacker = new mongoose.Types.ObjectId();
@@ -86,7 +87,10 @@ describe('assistant avatar multipart authorization', () => {
           getAssistant: require('~/models').getAssistant,
           getImageConfig: async () => ({
             secureImageLinks: true,
-            assistantEndpoints: [{ endpoint: 'assistants', privateAssistants }],
+            assistantEndpoints: [
+              { endpoint: 'assistants', privateAssistants },
+              { endpoint: 'azureAssistants', privateAssistants: true },
+            ],
           }),
           getUserPrincipals: async () => [],
           hasCapabilityForPrincipals: async () => false,
@@ -180,7 +184,7 @@ describe('assistant avatar multipart authorization', () => {
     [{}, '?assistant_id=asst-victim&assistant_id=asst-attacker'],
   ])('rejects conflicting or malformed secondary selectors: %p %s', async (fields, query) => {
     const response = await upload('asst-victim', fields, query);
-    expect(response.status).not.toBe(201);
+    expect(response.status).toBe(400);
     expect(retrieve).not.toHaveBeenCalled();
     await expectVictimUnchanged();
   });
@@ -212,11 +216,25 @@ describe('assistant avatar multipart authorization', () => {
 
   it('allows management without transferring the victim document ownership', async () => {
     hasCapability.mockResolvedValue(true);
+    const filepath = `/images/${attacker}/managed-avatar.png`;
+    uploadImageBuffer.mockResolvedValue({ filepath });
     const response = await upload('asst-victim');
     expect(response.status).toBe(201);
     const doc = await Assistant.findOne({ assistant_id: 'asst-victim' }).lean();
     expect(doc.user.toString()).toBe(victim.toString());
-    expect(doc.avatar).toEqual({ filepath: '/images/avatar.png', source: 'local' });
+    expect(doc.avatar).toEqual({ filepath, source: 'local' });
+    const token = jwt.sign({ id: victim.toString() }, process.env.JWT_REFRESH_SECRET, {
+      expiresIn: '1h',
+    });
+    const image = await request(app).get(filepath).set('Cookie', `refreshToken=${token}`);
+    expect(image.status).toBe(200);
+    const unrelatedToken = jwt.sign(
+      { id: new mongoose.Types.ObjectId().toString() },
+      process.env.JWT_REFRESH_SECRET,
+      { expiresIn: '1h' },
+    );
+    const denied = await request(app).get(filepath).set('Cookie', `refreshToken=${unrelatedToken}`);
+    expect(denied.status).toBe(403);
   });
 
   it('creates a reference for a provider-only private assistant after verifying its author', async () => {
@@ -265,6 +283,73 @@ describe('assistant avatar multipart authorization', () => {
       tenantId: 'tenant-a',
     });
     expect(doc.user.toString()).toBe(attacker.toString());
+  });
+
+  it('backfills an action-created reference so a shared avatar remains accessible', async () => {
+    privateAssistants = false;
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+      updateAssistantDoc(
+        { assistantId: 'asst-action-created' },
+        { user: victim, actions: ['example-action'] },
+      ),
+    );
+    providers['asst-action-created'] = { id: 'asst-action-created', metadata: {} };
+    const filepath = `/images/${attacker}/action-avatar.png`;
+    uploadImageBuffer.mockResolvedValue({ filepath });
+
+    const response = await upload('asst-action-created');
+    expect(response.status).toBe(201);
+    const token = jwt.sign({ id: victim.toString() }, process.env.JWT_REFRESH_SECRET, {
+      expiresIn: '1h',
+    });
+    const image = await request(app).get(filepath).set('Cookie', `refreshToken=${token}`);
+    expect(image.status).toBe(200);
+    const doc = await Assistant.findOne({ assistant_id: 'asst-action-created' }).lean();
+    expect(doc.user.toString()).toBe(victim.toString());
+    expect(doc).toMatchObject({ endpoint: 'assistants', actions: ['example-action'] });
+  });
+
+  it('initializes an ownerless reference only after the provider author check succeeds', async () => {
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+      updateAssistantDoc(
+        { assistantId: 'asst-ownerless' },
+        { conversation_starters: ['Hello'], append_current_datetime: true },
+      ),
+    );
+    providers['asst-ownerless'] = {
+      id: 'asst-ownerless',
+      metadata: { author: attacker.toString() },
+    };
+
+    const response = await upload('asst-ownerless');
+    expect(response.status).toBe(201);
+    expect(retrieve).toHaveBeenCalledWith('asst-ownerless');
+    const doc = await Assistant.findOne({ assistant_id: 'asst-ownerless' }).lean();
+    expect(doc.user.toString()).toBe(attacker.toString());
+    expect(doc).toMatchObject({
+      endpoint: 'assistants',
+      conversation_starters: ['Hello'],
+      append_current_datetime: true,
+      avatar: { filepath: '/images/avatar.png', source: 'local' },
+    });
+    expect(await Assistant.countDocuments({ assistant_id: 'asst-ownerless' })).toBe(1);
+  });
+
+  it('does not claim an ownerless reference when the provider author differs', async () => {
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+      updateAssistantDoc({ assistantId: 'asst-ownerless' }, { conversation_starters: ['Hello'] }),
+    );
+    providers['asst-ownerless'] = {
+      id: 'asst-ownerless',
+      metadata: { author: victim.toString() },
+    };
+    const response = await upload('asst-ownerless');
+    expect(response.status).not.toBe(201);
+    const doc = await Assistant.findOne({ assistant_id: 'asst-ownerless' }).lean();
+    expect(doc.user).toBeUndefined();
+    expect(doc.avatar).toBeUndefined();
+    expect(update).not.toHaveBeenCalled();
+    expect(uploadImageBuffer).not.toHaveBeenCalled();
   });
 
   it('does not authorize using an owned assistant in another tenant', async () => {

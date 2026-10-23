@@ -1,5 +1,9 @@
 import { SystemCapabilities } from '@librechat/data-schemas';
-import { createAssistantAuthorValidator } from './author';
+import {
+  AssistantIdValidationError,
+  getAssistantErrorStatus,
+  createAssistantAuthorValidator,
+} from './author';
 
 const makeRequest = () => ({
   params: {} as { id?: unknown; assistant_id?: unknown },
@@ -29,6 +33,14 @@ describe('assistant author validation', () => {
     expect(hasCapability).not.toHaveBeenCalled();
     expect(getAssistant).not.toHaveBeenCalled();
     expect(retrieve).not.toHaveBeenCalled();
+  });
+
+  it('classifies only typed selector errors as client failures', () => {
+    const error = new AssistantIdValidationError('Invalid Assistant ID');
+    expect(error.code).toBe('invalid_assistant_id');
+    expect(getAssistantErrorStatus(error)).toBe(400);
+    expect(getAssistantErrorStatus(new Error('database unavailable'))).toBe(500);
+    expect(getAssistantErrorStatus({ code: 'invalid_assistant_id' })).toBe(500);
   });
 
   it.each(['', ' ', 'asst victim', ['asst-victim'], { $ne: null }, 42, null])(

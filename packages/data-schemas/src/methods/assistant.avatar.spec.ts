@@ -200,6 +200,106 @@ describe('updateAssistantAvatar', () => {
     expect(original).toMatchObject({ user: ownerId, avatar: originalAvatar });
   });
 
+  it.each([undefined, null, ''])(
+    'backfills a missing endpoint (%p) without changing its owner',
+    async (endpoint) => {
+      await Assistant.updateOne(
+        { assistant_id: 'victim-assistant' },
+        endpoint === undefined ? { $unset: { endpoint: 1 } } : { $set: { endpoint } },
+      );
+      const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        methods.updateAssistantAvatar({ assistantId: 'victim-assistant' }, avatar, {
+          user: attackerId.toString(),
+          endpoint: 'assistants',
+        }),
+      );
+      expect(result).toMatchObject({ user: ownerId, endpoint: 'assistants', avatar });
+    },
+  );
+
+  it.each([false, true])(
+    'initializes an ownerless reference with null owner=%p',
+    async (nullOwner) => {
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        methods.updateAssistantDoc(
+          { assistantId: 'ownerless' },
+          {
+            conversation_starters: ['Hello'],
+            append_current_datetime: true,
+          },
+        ),
+      );
+      if (nullOwner) {
+        await Assistant.updateOne({ assistant_id: 'ownerless' }, { $set: { user: null } });
+      }
+      const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        methods.updateAssistantAvatar(
+          { assistantId: 'ownerless', user: ownerId.toString() },
+          avatar,
+          { user: ownerId.toString(), endpoint: 'assistants' },
+        ),
+      );
+      expect(result).toMatchObject({
+        user: ownerId,
+        endpoint: 'assistants',
+        avatar,
+        conversation_starters: ['Hello'],
+        append_current_datetime: true,
+      });
+      expect(
+        await runAsSystem(async () => Assistant.countDocuments({ assistant_id: 'ownerless' })),
+      ).toBe(1);
+    },
+  );
+
+  it('does not add a query for a complete existing reference', async () => {
+    const mutate = jest.spyOn(Assistant, 'findOneAndUpdate');
+    const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+      methods.updateAssistantAvatar(
+        { assistantId: 'victim-assistant', user: ownerId.toString() },
+        avatar,
+        { user: ownerId.toString(), endpoint: 'assistants' },
+      ),
+    );
+    expect(result).toMatchObject({ user: ownerId, endpoint: 'openAI', avatar });
+    expect(mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['user', 'endpoint'] as const)(
+    'does not overwrite a concurrently populated %s during backfill',
+    async (field) => {
+      await Assistant.updateOne({ assistant_id: 'victim-assistant' }, { $unset: { endpoint: 1 } });
+      const original = Assistant.collection.findOneAndUpdate.bind(Assistant.collection);
+      let raced = false;
+      jest.spyOn(Assistant.collection, 'findOneAndUpdate').mockImplementation(async (...args) => {
+        const result = await original(...args);
+        if (!raced && result) {
+          raced = true;
+          await Assistant.updateOne(
+            { assistant_id: 'victim-assistant' },
+            {
+              $set: field === 'user' ? { user: attackerId } : { endpoint: 'azureAssistants' },
+            },
+          );
+        }
+        return result;
+      });
+      await expect(
+        tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          methods.updateAssistantAvatar(
+            { assistantId: 'victim-assistant', user: ownerId.toString() },
+            avatar,
+            { user: ownerId.toString(), endpoint: 'assistants' },
+          ),
+        ),
+      ).rejects.toThrow('Assistant identity changed');
+      const doc = await readAssistant();
+      expect(doc).toMatchObject(
+        field === 'user' ? { user: attackerId } : { endpoint: 'azureAssistants' },
+      );
+    },
+  );
+
   it.each<{ onInsert: unknown }>([
     { onInsert: null },
     { onInsert: {} },

@@ -63,7 +63,7 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
       .lean<IAssistant>();
   }
 
-  /** Updates the authorized avatar; optional insert data never overwrites an existing owner. */
+  /** Updates the authorized avatar, initializing only absent identity fields. */
   async function updateAssistantAvatar(
     query: { assistantId: string; user?: string },
     avatar: NonNullable<IAssistant['avatar']>,
@@ -98,39 +98,68 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
 
     const insertData = onInsert && { user: onInsert.user, endpoint: onInsert.endpoint };
     const upsert = insertData !== undefined && query.user === undefined;
-    const document = await Assistant()
+    let reference = await Assistant()
       .findOneAndUpdate(
         assistantFilter(query),
         { $set: { avatar }, ...(upsert ? { $setOnInsert: insertData } : {}) },
         { new: true, upsert },
       )
       .lean<IAssistant>();
-    if (document || !insertData) {
-      return document;
+    if (!insertData) {
+      return reference;
     }
-
-    // An owner-scoped upsert could duplicate another owner's existing assistant.
-    const reference = await Assistant()
-      .findOneAndUpdate(
-        assistantFilter({ assistantId: query.assistantId }),
-        { $setOnInsert: { ...insertData, avatar } },
-        { new: true, upsert: true },
-      )
-      .lean<IAssistant>();
-    if (!reference || reference.user.toString() !== query.user) {
-      throw new Error('Assistant ownership changed before the avatar update');
+    if (!reference) {
+      // An owner-scoped upsert could duplicate another owner's existing assistant.
+      reference = await Assistant()
+        .findOneAndUpdate(
+          assistantFilter({ assistantId: query.assistantId }),
+          { $setOnInsert: { ...insertData, avatar } },
+          { new: true, upsert: true },
+        )
+        .lean<IAssistant>();
     }
     if (
+      !reference ||
+      (query.user !== undefined &&
+        reference.user != null &&
+        reference.user.toString() !== query.user)
+    ) {
+      throw new Error('Assistant ownership changed before the avatar update');
+    }
+
+    const missingUser = reference.user == null;
+    const missingEndpoint = reference.endpoint == null || reference.endpoint === '';
+    if (
+      !missingUser &&
+      !missingEndpoint &&
       reference.avatar?.filepath === avatar.filepath &&
       reference.avatar.source === avatar.source
     ) {
       return reference;
     }
 
-    // A concurrent insert by the same owner still needs this upload's avatar.
-    return await Assistant()
-      .findOneAndUpdate(assistantFilter(query), { $set: { avatar } }, { new: true })
+    // Compare-and-set prevents backfill from overwriting a concurrent identity assignment.
+    const updated = await Assistant()
+      .findOneAndUpdate(
+        {
+          _id: reference._id,
+          user: reference.user ?? null,
+          endpoint: reference.endpoint ?? null,
+        },
+        {
+          $set: {
+            avatar,
+            ...(missingUser ? { user: insertData.user } : {}),
+            ...(missingEndpoint ? { endpoint: insertData.endpoint } : {}),
+          },
+        },
+        { new: true },
+      )
       .lean<IAssistant>();
+    if (!updated) {
+      throw new Error('Assistant identity changed before the avatar update');
+    }
+    return updated;
   }
 
   /**

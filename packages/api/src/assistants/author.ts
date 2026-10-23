@@ -1,4 +1,5 @@
 import { logger, SystemCapabilities } from '@librechat/data-schemas';
+import type { RequestHandler } from 'express';
 import type { CapabilityUser, HasCapabilityFn } from '../middleware/capabilities';
 
 interface AssistantAuthorRequest {
@@ -31,7 +32,29 @@ interface AssistantAuthorDeps {
   hasCapability: HasCapabilityFn;
 }
 
-function resolveAssistantId({ req, overrideAssistantId }: AssistantAuthorInput): string {
+export class AssistantIdValidationError extends Error {
+  readonly code = 'invalid_assistant_id';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'AssistantIdValidationError';
+  }
+}
+
+export function getAssistantErrorStatus(error: unknown): number {
+  return error instanceof AssistantIdValidationError ? 400 : 500;
+}
+
+interface AssistantIdInput {
+  req: {
+    params: { id?: unknown; assistant_id?: unknown };
+    body?: { assistant_id?: unknown };
+    query?: { assistant_id?: unknown };
+  };
+  overrideAssistantId?: string;
+}
+
+function resolveAssistantId({ req, overrideAssistantId }: AssistantIdInput): string {
   let assistantId: string | undefined;
   for (const value of [
     overrideAssistantId,
@@ -44,18 +67,33 @@ function resolveAssistantId({ req, overrideAssistantId }: AssistantAuthorInput):
       continue;
     }
     if (typeof value !== 'string' || value.length === 0 || /\s/.test(value)) {
-      throw new Error('Invalid Assistant ID');
+      throw new AssistantIdValidationError('Invalid Assistant ID');
     }
     if (assistantId !== undefined && value !== assistantId) {
-      throw new Error('Conflicting Assistant IDs');
+      throw new AssistantIdValidationError('Conflicting Assistant IDs');
     }
     assistantId = value;
   }
   if (assistantId === undefined) {
-    throw new Error('Assistant ID is required');
+    throw new AssistantIdValidationError('Assistant ID is required');
   }
   return assistantId;
 }
+
+/** Rejects invalid selectors before an assistant controller starts HTTP or streaming work. */
+export const validateAssistantId: RequestHandler = (req, res, next): void => {
+  try {
+    resolveAssistantId({ req });
+  } catch (error) {
+    if (!(error instanceof AssistantIdValidationError)) {
+      next(error);
+      return;
+    }
+    res.status(400).json({ error: error.code, message: error.message });
+    return;
+  }
+  next();
+};
 
 /** Returns the exact resource and owner scope authorized for a subsequent local mutation. */
 export function createAssistantAuthorValidator({

@@ -8,6 +8,7 @@ const {
   contentFilterUninspectableResponse,
   getBlockedUninspectableFileField,
   resolveAssistantToolPermissions,
+  getAssistantErrorStatus,
 } = require('@librechat/api');
 const { FileContext } = require('librechat-data-provider');
 const {
@@ -471,7 +472,7 @@ const uploadAssistantAvatar = async (req, res) => {
   } catch (error) {
     const message = 'An error occurred while updating the Assistant Avatar';
     logger.error(message, error);
-    res.status(500).json({ message });
+    res.status(getAssistantErrorStatus(error)).json({ message });
   } finally {
     try {
       await fs.unlink(req.file.path);
