@@ -1,10 +1,9 @@
 import { Constants } from 'librechat-data-provider';
 import type { TFile, TMessage } from 'librechat-data-provider';
 
-/** Protocol bound for UUIDs, nanoids, and derived turn identities, not a deployment setting. */
-export const MAX_MESSAGE_ID_LENGTH = 256;
-/** A preliminary response appends one underscore to the user identity. */
-export const MAX_RESPONSE_MESSAGE_ID_LENGTH: number = MAX_MESSAGE_ID_LENGTH + 1;
+/** Shared wire bounds, not deployment settings. */
+export const MAX_MESSAGE_ID_LENGTH: number = Constants.MAX_MESSAGE_ID_LENGTH;
+export const MAX_RESPONSE_MESSAGE_ID_LENGTH: number = Constants.MAX_RESPONSE_MESSAGE_ID_LENGTH;
 
 export function isValidMessageId(
   messageId: unknown,
