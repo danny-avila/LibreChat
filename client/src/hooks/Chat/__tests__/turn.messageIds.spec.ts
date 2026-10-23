@@ -38,8 +38,8 @@ describe('turn message-ID protocol', () => {
     const turn = buildTurn({
       text: options.compact ? '' : user.text,
       params: options.compact
-        ? { messageId: id, parentMessageId: id }
-        : { messageId: user.messageId },
+        ? { text: '', messageId: id, parentMessageId: id }
+        : { text: user.text, messageId: user.messageId },
       options: {
         ...options,
         ...(options.isEdited && { editedMessageId: id }),
@@ -47,7 +47,13 @@ describe('turn message-ID protocol', () => {
       },
       index: 0,
       conversationId: user.conversationId,
-      conversation: { conversationId: user.conversationId, endpoint: EModelEndpoint.agents },
+      conversation: {
+        conversationId: user.conversationId,
+        endpoint: EModelEndpoint.agents,
+        title: null,
+        createdAt: '2026-10-23T00:00:00.000Z',
+        updatedAt: '2026-10-23T00:00:00.000Z',
+      },
       latestMessage: response,
       cachedMessages: [user, response],
       canClearFiles: false,
@@ -78,7 +84,7 @@ describe('turn message-ID protocol', () => {
       const optimistic = [...turn.submission.messages, turn.initialResponse];
       const merged = mergeResponseMessage(
         {
-          submission: turn.submission,
+          submission: { ...turn.submission, initialResponse: turn.initialResponse },
           getMessages: () => optimistic,
           setMessages: jest.fn(),
         },
