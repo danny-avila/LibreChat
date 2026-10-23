@@ -28,6 +28,7 @@ import {
   BASE_ONLY_CONFIG_SECTIONS,
   PROCESS_MCP_SERVER_FIELDS,
   INTERFACE_PERMISSION_FIELDS,
+  mapModelToAzureConfig,
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   RUNTIME_CONFIG_INTERFACE_FIELDS,
 } from 'librechat-data-provider';
@@ -47,13 +48,19 @@ import type { Request, Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { AdminConfigDeps } from './config';
 import type { AdminRolesDeps } from './roles';
+import {
+  redactConfigSecrets,
+  encryptConfigSecretFields,
+  resolveRuntimeConfigSecrets,
+} from './secrets';
 import { createRequestSanitizer, rejectUnsafeConfigKeys } from '~/middleware/sanitize';
 import { resolvePreAuthAppConfig, resolvePreLoginAppConfig } from '~/app/resolve';
-import { redactConfigSecrets, encryptConfigSecretFields } from './secrets';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { createMCPPolicyResolver } from '~/mcp/registry/policy';
+import { createEnvReferencePolicy } from '~/app/allowlist';
 import { resolveTitleConfig } from '~/endpoints/config';
 import { createAppConfigService } from '~/app/service';
+import { mergeOverrideLayers } from '~/app/overrides';
 import { createAdminConfigHandlers } from './config';
 import { createAdminRolesHandlers } from './roles';
 import { ADMIN_CONFIG_FEATURES } from './meta';
@@ -165,6 +172,7 @@ function setIn(target: Doc, segments: string[], value: unknown): Doc {
 /** Config operations over one in-memory document, so a probe runs the real store path. */
 function memoryConfigOperations(initial: ConfigRecord): {
   operations: ReturnType<typeof createConfigOperations>;
+  store: ConfigStore;
   current: () => ConfigRecord;
 } {
   let record = initial;
@@ -173,7 +181,7 @@ function memoryConfigOperations(initial: ConfigRecord): {
     write: async (_principal: unknown, draft: ConfigDraft) =>
       (record = { ...record, ...draft, configVersion: record.configVersion + 1 }),
   } as Partial<ConfigStore> as ConfigStore;
-  return { operations: createConfigOperations(store), current: () => record };
+  return { operations: createConfigOperations(store), store, current: () => record };
 }
 
 /** Lets every pending promise settle, so a handler runs until it waits on something unresolved. */
@@ -273,19 +281,24 @@ describe('GET /api/admin/config/meta', () => {
     expect(Object.keys(meta.versions)).toEqual(['librechat', 'dataProvider', 'configSchema']);
     expect(Object.keys(meta.features).sort()).toEqual([
       'awaitedInvalidation',
+      'azureGroupSecrets',
       'changesBatch',
       'deterministicPrecedence',
       'dottedKeys',
+      'envAllowlist',
       'expectedRevision',
       'preAuthBaseOverrides',
       'principalCheck',
       'priorityRoute',
       'prunesEmptyParents',
       'readFilteredWriteResponses',
+      'recordSecrets',
       'roleRenameMovesProfile',
+      'secretRebinding',
       'sectionAllowlist',
       'webSearchStoredKeys',
       'yamlMcpHide',
+      'yamlSecretPreview',
     ]);
     expect(meta.limits).toEqual({
       maxPatchEntries: 100,
@@ -303,6 +316,7 @@ describe('GET /api/admin/config/meta', () => {
       'interface',
       'overrideKeyMap',
       'processMcpFields',
+      'recordSecretFields',
       'refusedMaps',
       'secretFields',
       'titleResolution',
@@ -326,6 +340,11 @@ describe('GET /api/admin/config/meta', () => {
       priorityRoute: true,
       principalCheck: true,
       roleRenameMovesProfile: true,
+      recordSecrets: true,
+      azureGroupSecrets: true,
+      yamlSecretPreview: true,
+      envAllowlist: true,
+      secretRebinding: true,
     });
   });
 
@@ -399,7 +418,7 @@ describe('meta rules equal the rules the server applies', () => {
     }
   });
 
-  it('lists the array secret reads withhold on custom endpoints', () => {
+  it('lists the array secrets reads withhold on custom endpoints and Azure groups', () => {
     expect(meta.rules.arraySecretFields).toEqual([
       {
         arrayPath: 'endpoints.custom',
@@ -407,10 +426,43 @@ describe('meta rules equal the rules the server applies', () => {
         previewKey: 'apiKeyPreview',
         identityKey: 'name',
       },
+      {
+        arrayPath: 'endpoints.azureOpenAI.groups',
+        secretKey: 'apiKey',
+        previewKey: 'apiKeyPreview',
+        identityKey: 'group',
+      },
     ]);
-    const [{ arrayPath, secretKey, identityKey }] = meta.rules.arraySecretFields;
-    const doc = setIn({}, arrayPath.split('.'), [{ [identityKey]: 'gw', [secretKey]: 'sk-live' }]);
-    expect(getIn(redactConfigSecrets(doc), arrayPath)).toEqual([{ [identityKey]: 'gw' }]);
+    for (const { arrayPath, secretKey, previewKey, identityKey } of meta.rules.arraySecretFields) {
+      const doc = setIn({}, arrayPath.split('.'), [{ [identityKey]: 'a', [secretKey]: 'sk-live' }]);
+      expect(getIn(redactConfigSecrets(doc), arrayPath)).toEqual([
+        { [identityKey]: 'a', [previewKey]: '********' },
+      ]);
+    }
+  });
+
+  it('lists the record secrets reads withhold (MCP servers, Azure groupMap), with their previews', () => {
+    expect(meta.rules.recordSecretFields).toEqual([
+      {
+        recordPath: 'mcpServers',
+        secretPath: 'oauth.client_secret',
+        previewPath: 'oauth.client_secretPreview',
+      },
+      { recordPath: 'mcpServers', secretPath: 'apiKey.key', previewPath: 'apiKey.keyPreview' },
+      {
+        recordPath: 'endpoints.azureOpenAI.groupMap',
+        secretPath: 'apiKey',
+        previewPath: 'apiKeyPreview',
+      },
+    ]);
+    for (const { recordPath, secretPath, previewPath } of meta.rules.recordSecretFields) {
+      const entry = setIn({}, secretPath.split('.'), 'sk-live-0123456789abcdef');
+      const stored = encryptConfigSecretFields({ [`${recordPath}.s1`]: entry })[`${recordPath}.s1`];
+      expect(String(getIn(stored as Doc, secretPath))).toMatch(/^v3:/);
+      const read = redactConfigSecrets(setIn({}, recordPath.split('.'), { s1: stored }));
+      expect(getIn(read, `${recordPath}.s1.${secretPath}`)).toBeUndefined();
+      expect(getIn(read, `${recordPath}.s1.${previewPath}`)).toBe('...cdef');
+    }
   });
 
   it('refuses writes to every listed map and process MCP field', async () => {
@@ -1158,6 +1210,305 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     const failsClosed = (await unreadable.resolveHiddenServerNames({ userId: 'u2' })).has('docs');
 
     return withheld && refusesCheckout && !hidden.has('local') && failsClosed;
+  },
+  async recordSecrets() {
+    const server = (overrides: Doc = {}): Doc => ({
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      apiKey: { source: 'admin', authorization_type: 'bearer', key: 'sk-mcp-admin-secret' },
+      ...overrides,
+    });
+    const stored = encryptConfigSecretFields({ 'mcpServers.github': server() })[
+      'mcpServers.github'
+    ] as Doc;
+    const encrypted = String(getIn(stored, 'apiKey.key')).startsWith('v3:');
+    const read = redactConfigSecrets(structuredClone({ mcpServers: { github: stored } }));
+    const hidden =
+      getIn(read, 'mcpServers.github.apiKey.key') === undefined &&
+      getIn(read, 'mcpServers.github.apiKey.keyPreview') === '...cret';
+    const runtime = resolveRuntimeConfigSecrets({ mcpConfig: { github: stored } });
+    const decrypted = getIn(runtime, 'mcpConfig.github.apiKey.key') === 'sk-mcp-admin-secret';
+
+    const findConfigByPrincipal = jest
+      .fn()
+      .mockResolvedValue(storedConfig({ mcpServers: { github: stored } }));
+    const COLLECTOR = 'https://collector.example.com/mcp';
+    const moved = await patch([{ fieldPath: 'mcpServers.github.url', value: COLLECTOR }], {
+      findConfigByPrincipal,
+    });
+    /** A decoy key at the credential's path, then the server without it: the stored key stays. */
+    const decoyed = await patch(
+      [
+        { fieldPath: 'mcpServers.github.apiKey.key', value: 'sk-decoy-0000' },
+        {
+          fieldPath: 'mcpServers.github',
+          value: server({
+            url: COLLECTOR,
+            apiKey: { source: 'admin', authorization_type: 'bearer' },
+          }),
+        },
+      ],
+      { findConfigByPrincipal },
+    );
+    /** A batch that renames the server away and back around a decoy, then moves it. */
+    const batch = mockRes();
+    await createHandlers({ findConfigByPrincipal }).applyConfigChanges(
+      mockReq({
+        params: { principalType: 'role', principalId: 'r1' },
+        body: {
+          ops: [
+            { op: 'rename', fieldPath: 'mcpServers', from: 'github', to: 'tmp' },
+            { op: 'set', fieldPath: 'mcpServers.github.apiKey.key', value: 'sk-decoy-0000' },
+            { op: 'unset', fieldPath: 'mcpServers.github' },
+            { op: 'rename', fieldPath: 'mcpServers', from: 'tmp', to: 'github' },
+            { op: 'set', fieldPath: 'mcpServers.github.url', value: COLLECTOR },
+          ],
+        },
+      }),
+      batch,
+    );
+    const reentry = (res: MockRes) =>
+      res.statusCode === 400 && res.body?.code === 'MCP_API_KEY_REENTRY_REQUIRED';
+    const writeConfigDocument = jest.fn(
+      async (_type: string, _id: string, draft: ConfigDraft): Promise<ConfigRecord> =>
+        storedConfig(draft.overrides ?? {}),
+    );
+    const renamed = mockRes();
+    await createHandlers({ findConfigByPrincipal, writeConfigDocument }).patchConfigField(
+      mockReq({
+        params: { principalType: 'role', principalId: 'r1' },
+        body: {
+          entries: [
+            {
+              fieldPath: 'mcpServers.code',
+              value: server({ apiKey: { source: 'admin', authorization_type: 'bearer' } }),
+            },
+          ],
+          renames: [{ path: 'mcpServers', previousName: 'github', name: 'code' }],
+        },
+      }),
+      renamed,
+    );
+    const [, , draft] = writeConfigDocument.mock.calls[0] ?? [];
+    const carried =
+      renamed.statusCode === 200 &&
+      getIn(draft?.overrides ?? {}, 'mcpServers.code.apiKey.key') === getIn(stored, 'apiKey.key');
+    return (
+      encrypted &&
+      hidden &&
+      decrypted &&
+      reentry(moved) &&
+      reentry(decoyed) &&
+      reentry(batch) &&
+      carried
+    );
+  },
+  async azureGroupSecrets() {
+    const group = (apiKey?: string): Doc => ({
+      group: 'east',
+      instanceName: 'east-instance',
+      version: '2024-10-21',
+      deploymentName: 'gpt-4o',
+      ...(apiKey != null && { apiKey }),
+      models: { 'gpt-4o': true },
+    });
+    const [stored] = encryptConfigSecretFields({
+      'endpoints.azureOpenAI.groups': [group('azure-admin-secret-key')],
+    })['endpoints.azureOpenAI.groups'] as Doc[];
+    const encrypted = String(stored.apiKey).startsWith('v3:');
+    /** The Azure client is built with the key a profile's group holds, decrypted. */
+    const runtime = resolveRuntimeConfigSecrets(
+      mergeOverrideLayers(
+        { config: {} } as AppConfig,
+        [storedConfig({ endpoints: { azureOpenAI: { groups: [stored] } } })],
+        { envPolicy: createEnvReferencePolicy({ config: {} }) },
+      ),
+    );
+    const azure = runtime.endpoints?.azureOpenAI;
+    const decrypted =
+      azure?.groupMap != null &&
+      azure.modelGroupMap != null &&
+      mapModelToAzureConfig({
+        modelName: 'gpt-4o',
+        groupMap: azure.groupMap,
+        modelGroupMap: azure.modelGroupMap,
+      }).azureOptions.azureOpenAIApiKey === 'azure-admin-secret-key';
+    /** Moving the group the key is stored for needs the key entered again. */
+    const moved = await patch(
+      [
+        {
+          fieldPath: 'endpoints.azureOpenAI.groups',
+          value: [{ ...group(), instanceName: 'attacker-instance' }],
+        },
+      ],
+      {
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue(storedConfig({ endpoints: { azureOpenAI: { groups: [stored] } } })),
+      },
+    );
+    const reentry =
+      moved.statusCode === 400 && moved.body?.code === 'CONFIG_SECRET_REENTRY_REQUIRED';
+
+    const writeConfigDocument = jest.fn(
+      async (_type: string, _id: string, draft: ConfigDraft): Promise<ConfigRecord> =>
+        storedConfig(draft.overrides ?? {}),
+    );
+    const res = await patch([{ fieldPath: 'endpoints.azureOpenAI.groups', value: [group()] }], {
+      findConfigByPrincipal: jest
+        .fn()
+        .mockResolvedValue(storedConfig({ endpoints: { azureOpenAI: { groups: [stored] } } })),
+      writeConfigDocument,
+    });
+    const [, , draft] = writeConfigDocument.mock.calls[0] ?? [];
+    const kept =
+      getIn(draft?.overrides ?? {}, 'endpoints.azureOpenAI.groups.0.apiKey') === stored.apiKey;
+    const read = res.body?.config?.overrides ?? {};
+
+    /** `groupMap`, which the Azure clients read, holds its key the same way. */
+    const writeGroupMap = jest.fn(
+      async (_type: string, _id: string, groupMapDraft: ConfigDraft): Promise<ConfigRecord> =>
+        storedConfig(groupMapDraft.overrides ?? {}),
+    );
+    const mapped = await patch(
+      [
+        {
+          fieldPath: 'endpoints.azureOpenAI.groupMap.east',
+          value: { apiKey: 'azure-groupmap-secret-key', instanceName: 'east-instance' },
+        },
+      ],
+      { writeConfigDocument: writeGroupMap },
+    );
+    const [, , groupMapDraft] = writeGroupMap.mock.calls[0] ?? [];
+    const storedMapKey = getIn(
+      groupMapDraft?.overrides ?? {},
+      'endpoints.azureOpenAI.groupMap.east.apiKey',
+    );
+    const mapRuntime = resolveRuntimeConfigSecrets(groupMapDraft?.overrides ?? {});
+    const groupMapProtected =
+      mapped.statusCode === 200 &&
+      String(storedMapKey).startsWith('v3:') &&
+      !JSON.stringify(mapped.body).includes('azure-groupmap-secret-key') &&
+      getIn(mapped.body?.config?.overrides ?? {}, 'endpoints.azureOpenAI.groupMap.east') !==
+        undefined &&
+      getIn(mapped.body?.config?.overrides ?? {}, 'endpoints.azureOpenAI.groupMap.east.apiKey') ===
+        undefined &&
+      getIn(mapRuntime, 'endpoints.azureOpenAI.groupMap.east.apiKey') ===
+        'azure-groupmap-secret-key';
+    return (
+      encrypted &&
+      decrypted &&
+      reentry &&
+      res.statusCode === 200 &&
+      kept &&
+      getIn(read, 'endpoints.azureOpenAI.groups.0.apiKey') === undefined &&
+      groupMapProtected
+    );
+  },
+  async yamlSecretPreview() {
+    const yaml = {
+      webSearch: { serperApiKey: 'serper-yaml-literal-0001' },
+      ocr: { apiKey: '${OCR_API_KEY}' },
+    };
+    const res = mockRes();
+    await createHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({ ...structuredClone(yaml), config: yaml }),
+    }).getBaseConfig(mockReq({ query: { baseOnly: 'true' } }), res);
+    const config = (res.body?.config ?? {}) as Doc;
+    return (
+      res.statusCode === 200 &&
+      !JSON.stringify(res.body).includes('literal') &&
+      getIn(config, 'webSearch.serperApiKeyPreview') === '********' &&
+      getIn(config, 'ocr.apiKey') === '${OCR_API_KEY}'
+    );
+  },
+  async envAllowlist() {
+    const unlisted = await patch([
+      { fieldPath: 'ocr.baseURL', value: 'https://h/${UNLISTED_NAME}' },
+    ]);
+    const yamlNamed = await patch([{ fieldPath: 'ocr.apiKey', value: '${OCR_YAML_KEY}' }], {
+      getAppConfig: jest.fn().mockResolvedValue({ config: { ocr: { apiKey: '${OCR_YAML_KEY}' } } }),
+    });
+    const batch = mockRes();
+    await createHandlers().applyConfigChanges(
+      mockReq({
+        params: { principalType: 'role', principalId: 'r1' },
+        body: { ops: [{ op: 'set', fieldPath: 'ocr.apiKey', value: '${UNLISTED_NAME}' }] },
+      }),
+      batch,
+    );
+    const merged = mergeOverrideLayers(
+      { config: {} } as AppConfig,
+      [storedConfig({ ocr: { apiKey: '${UNLISTED_NAME}' } })],
+      { envPolicy: createEnvReferencePolicy({ config: {} }) },
+    );
+    const refused = (res: MockRes) =>
+      res.statusCode === 400 &&
+      JSON.stringify(res.body?.issues) ===
+        JSON.stringify([
+          {
+            path: res === unlisted ? 'ocr.baseURL' : 'ocr.apiKey',
+            segments: ['ocr', res === unlisted ? 'baseURL' : 'apiKey'],
+            code: 'env_reference_not_allowed',
+          },
+        ]);
+    return (
+      refused(unlisted) &&
+      refused(batch) &&
+      yamlNamed.statusCode === 200 &&
+      merged.ocr?.apiKey === ''
+    );
+  },
+  async secretRebinding() {
+    const yaml = {
+      mcpServers: {
+        tools: {
+          type: 'streamable-http',
+          url: 'https://tools.example.com/mcp',
+          apiKey: { source: 'admin', authorization_type: 'bearer', key: '${TOOLS_KEY}' },
+        },
+      },
+    };
+    const base = {
+      config: yaml,
+      mcpConfig: structuredClone(yaml.mcpServers),
+    } as Partial<AppConfig> as AppConfig;
+    const moved = { mcpServers: { tools: { url: 'https://collector.example.com/mcp' } } };
+    const merged = mergeOverrideLayers(base, [storedConfig(moved)], {
+      envPolicy: createEnvReferencePolicy({ config: yaml }),
+    });
+    const res = await patch(
+      [{ fieldPath: 'mcpServers.tools.url', value: 'https://collector.example.com/mcp' }],
+      { getAppConfig: jest.fn().mockResolvedValue(base) },
+    );
+    /** The documented limit: restating the visible `${TOOLS_KEY}` beside the new URL enters it. */
+    const restatedServer = {
+      url: 'https://collector.example.com/mcp',
+      apiKey: { source: 'admin', authorization_type: 'bearer', key: '${TOOLS_KEY}' },
+    };
+    const restatedMerge = mergeOverrideLayers(
+      base,
+      [storedConfig({ mcpServers: { tools: restatedServer } })],
+      { envPolicy: createEnvReferencePolicy({ config: yaml }) },
+    );
+    const restated = await patch([{ fieldPath: 'mcpServers.tools', value: restatedServer }], {
+      getAppConfig: jest.fn().mockResolvedValue(base),
+    });
+    return (
+      getIn(merged, 'mcpConfig.tools.apiKey.key') === '' &&
+      res.statusCode === 200 &&
+      JSON.stringify(res.body?.ignored) ===
+        JSON.stringify([
+          {
+            path: 'mcpServers.tools.apiKey.key',
+            segments: ['mcpServers', 'tools', 'apiKey', 'key'],
+            reason: 'secret_rebinding',
+          },
+        ]) &&
+      getIn(restatedMerge, 'mcpConfig.tools.apiKey.key') === '${TOOLS_KEY}' &&
+      restated.statusCode === 200 &&
+      restated.body?.ignored === undefined
+    );
   },
 };
 

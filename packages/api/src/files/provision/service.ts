@@ -13,6 +13,7 @@ import {
 } from 'librechat-data-provider';
 import type { CodeEnvRef, CodeEnvRefMap, TFile } from 'librechat-data-provider';
 import type { Readable } from 'node:stream';
+import type { FileStorageUploadObserver } from '../operations';
 import type { CodeExecutionContext } from '~/agents/execution';
 import type { CodeEnvIdentity } from '~/files/code/identity';
 import type { CodeApiRateLimitBudget } from '~/utils';
@@ -52,6 +53,7 @@ export interface ProvisionDeps {
     file_id: string;
     entity_id?: string;
     signal?: AbortSignal;
+    onUploadStart?: FileStorageUploadObserver;
   }) => Promise<{ embedded?: boolean } | undefined>;
   loadAuthValues: (params: {
     userId: string;
@@ -103,6 +105,7 @@ export interface ProvisionService {
     sandboxFilename?: string;
     signal?: AbortSignal;
     rateLimitBudget?: CodeApiRateLimitBudget;
+    onUploadStart?: FileStorageUploadObserver;
   }) => Promise<{
     referenceSet: CodeEnvReferenceSetResult;
     refUpdate: CodeEnvRefUpdate;
@@ -115,6 +118,7 @@ export interface ProvisionService {
     entity_id?: string;
     existingStream?: Readable;
     signal?: AbortSignal;
+    onUploadStart?: FileStorageUploadObserver;
   }) => Promise<{ embedded: boolean; fileUpdate: ProvisionFileUpdate | null }>;
   /** SHA-256 and length of the stored bytes, the same bytes a code-environment upload sends;
    *  null when the file's storage cannot be streamed. */
@@ -277,6 +281,7 @@ export function createProvisionService({
     sandboxFilename: requestedSandboxFilename,
     signal,
     rateLimitBudget,
+    onUploadStart,
   }: {
     req: ServerRequest;
     file: TFile;
@@ -285,6 +290,7 @@ export function createProvisionService({
     sandboxFilename?: string;
     signal?: AbortSignal;
     rateLimitBudget?: CodeApiRateLimitBudget;
+    onUploadStart?: FileStorageUploadObserver;
   }) {
     signal?.throwIfAborted();
     const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
@@ -337,10 +343,11 @@ export function createProvisionService({
           ...(route?.baseUrl ? { codeApiBaseUrl: route.baseUrl } : {}),
           executionProfile,
           signal,
+          onUploadStart,
         }),
     });
-    signal?.throwIfAborted();
 
+    /* A successful upload must reach pointer persistence even if cancellation just arrived. */
     /* Merge rather than overwrite: the eager upload path persists the same shape via
      * mergeCodeEnvRef, so both the legacy pointer and the route-keyed map stay in sync
      * and pointers for other Code API routes survive re-provisioning. */
@@ -390,6 +397,7 @@ export function createProvisionService({
     file,
     entity_id,
     existingStream,
+    onUploadStart,
     signal,
   }: {
     req: ServerRequest;
@@ -397,6 +405,7 @@ export function createProvisionService({
     entity_id?: string;
     existingStream?: Readable;
     signal?: AbortSignal;
+    onUploadStart?: FileStorageUploadObserver;
   }): Promise<{ embedded: boolean; fileUpdate: { file_id: string; embedded?: boolean } | null }> {
     /* Unique per attempt: two concurrent requests provisioning the same file_id would
      * otherwise share one path, and the first to finish unlinks it while the second is
@@ -435,8 +444,8 @@ export function createProvisionService({
         file_id: file.file_id,
         entity_id,
         signal,
+        onUploadStart,
       });
-      signal?.throwIfAborted();
 
       const embedded = embeddingResult?.embedded ?? false;
 

@@ -1,4 +1,7 @@
 export * from './service';
+export * from './allowlist';
+export * from './rebinding';
+export * from './overrides';
 export * from './invalidation';
 export * from './loader';
 export * from './config';

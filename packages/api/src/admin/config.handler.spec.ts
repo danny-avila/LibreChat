@@ -716,7 +716,7 @@ describe('createAdminConfigHandlers', () => {
     });
 
     it('encrypts custom endpoint API keys on full override writes and redacts responses', async () => {
-      const { handlers, deps } = createHandlers();
+      const { handlers, deps } = createHandlers({ overrideEnvAllowlist: 'OPENROUTER_KEY' });
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
         body: {
@@ -1532,6 +1532,134 @@ describe('createAdminConfigHandlers', () => {
       await handlers.patchConfigField(req, res);
 
       expect(res.statusCode).toBe(400);
+    });
+  });
+
+  /**
+   * A stored credential and its URL, and a patch that enters a decoy key at the credential's path
+   * and then writes an ancestor without it: secret preservation fills the ancestor in from the
+   * stored document, so the stored key, not the decoy, is what the document keeps.
+   */
+  describe('patchConfigField: a decoy key before an ancestor that keeps the stored one', () => {
+    const GOOD = 'https://good.example.com/mcp';
+    const EVIL = 'https://evil.example.com/mcp';
+    /** `encryptV3` is mocked as `v3:test:<plaintext>` in this file. */
+    const STORED_MCP_KEY = 'v3:test:sk-original-mcp-1111';
+    const STORED_FIRECRAWL_KEY = 'v3:test:fc-original-key-2222';
+    const DECOY = 'sk-decoy-key-0000';
+
+    const stored: ConfigRecord = {
+      _id: 'c1',
+      principalType: 'role' as ConfigRecord['principalType'],
+      principalId: 'admin',
+      principalModel: 'Role' as ConfigRecord['principalModel'],
+      priority: 10,
+      isActive: true,
+      configVersion: 1,
+      tombstones: [],
+      overrides: {
+        mcpServers: {
+          probe: {
+            type: 'streamable-http',
+            url: GOOD,
+            apiKey: {
+              source: 'admin',
+              authorization_type: 'bearer',
+              key: STORED_MCP_KEY,
+              keyPreview: '...1111',
+            },
+          },
+        },
+        webSearch: {
+          firecrawlApiUrl: 'https://fc-good.example.com',
+          firecrawlApiKey: STORED_FIRECRAWL_KEY,
+          firecrawlApiKeyPreview: '...2222',
+        },
+      } as ConfigRecord['overrides'],
+    };
+    const keyless = (url: string) => ({
+      type: 'streamable-http',
+      url,
+      apiKey: { source: 'admin', authorization_type: 'bearer' },
+    });
+
+    async function patchStored(entries: Array<{ fieldPath: string; value: unknown }>) {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn(async (_type: string, principalId: string) =>
+          principalId === 'admin' ? structuredClone(stored) : null,
+        ),
+      });
+      const res = mockRes();
+      await handlers.patchConfigField(
+        mockReq({ params: { principalType: 'role', principalId: 'admin' }, body: { entries } }),
+        res,
+      );
+      return { res, deps };
+    }
+
+    it('refuses moving a stored MCP key that a decoy entry did not replace', async () => {
+      const { res, deps } = await patchStored([
+        { fieldPath: 'mcpServers.probe.apiKey.key', value: DECOY },
+        { fieldPath: 'mcpServers.probe', value: keyless(EVIL) },
+      ]);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toMatchObject({
+        code: 'MCP_API_KEY_REENTRY_REQUIRED',
+        server: 'probe',
+        fields: ['url'],
+      });
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
+    });
+
+    it('refuses moving a stored web search key that a decoy entry did not replace', async () => {
+      const { res, deps } = await patchStored([
+        { fieldPath: 'webSearch.firecrawlApiKey', value: DECOY },
+        { fieldPath: 'webSearch', value: { firecrawlApiUrl: 'https://fc-evil.example.com' } },
+      ]);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toMatchObject({
+        code: 'CONFIG_SECRET_REENTRY_REQUIRED',
+        issues: [
+          expect.objectContaining({
+            path: 'webSearch.firecrawlApiUrl',
+            secretPath: 'webSearch.firecrawlApiKey',
+          }),
+        ],
+      });
+      expect(deps.writeConfigDocument).not.toHaveBeenCalled();
+    });
+
+    it("keeps the stored key's own preview when the decoy is overwritten in place", async () => {
+      const { res, deps } = await patchStored([
+        { fieldPath: 'mcpServers.probe.apiKey.key', value: DECOY },
+        { fieldPath: 'mcpServers.probe', value: keyless(GOOD) },
+        { fieldPath: 'webSearch.firecrawlApiKey', value: DECOY },
+        { fieldPath: 'webSearch', value: { firecrawlApiUrl: 'https://fc-good.example.com' } },
+      ]);
+
+      expect(res.statusCode).toBe(200);
+      expect(writtenField(deps, 'mcpServers.probe.apiKey')).toEqual({
+        source: 'admin',
+        authorization_type: 'bearer',
+        key: STORED_MCP_KEY,
+        keyPreview: '...1111',
+      });
+      expect(writtenField(deps, 'webSearch.firecrawlApiKey')).toBe(STORED_FIRECRAWL_KEY);
+      expect(writtenField(deps, 'webSearch.firecrawlApiKeyPreview')).toBe('...2222');
+    });
+
+    it('stores the decoy, with its preview, when it is written after the ancestor', async () => {
+      const { res, deps } = await patchStored([
+        { fieldPath: 'mcpServers.probe', value: keyless(EVIL) },
+        { fieldPath: 'mcpServers.probe.apiKey.key', value: DECOY },
+      ]);
+
+      expect(res.statusCode).toBe(200);
+      expect(writtenField(deps, 'mcpServers.probe.apiKey.key')).toBe(`v3:test:${DECOY}`);
+      expect(writtenField(deps, 'mcpServers.probe.apiKey.keyPreview')).toBe('...0000');
+      expect(writtenField(deps, 'mcpServers.probe.url')).toBe(EVIL);
     });
   });
 
@@ -2565,7 +2693,7 @@ describe('createAdminConfigHandlers', () => {
       expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ baseOnly: true }));
     });
 
-    it('previews a plaintext secret an override stored, never one librechat.yaml supplies', async () => {
+    it('previews a plaintext secret an override stored by its value, and a librechat.yaml one only with the fixed mask', async () => {
       const yaml = {
         webSearch: {
           serperApiKey: 'serper-yaml-literal-0001',
@@ -2590,11 +2718,14 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       expect(JSON.stringify(res.body)).not.toContain('kn-legacy-plain-0002');
+      expect(JSON.stringify(res.body)).not.toContain('0001');
       expect((res.body!.config as typeof merged).webSearch).toEqual({
         keenableApiKeyPreview: '...0002',
+        serperApiKeyPreview: '********',
       });
       expect((baseOnlyRes.body!.config as typeof yaml).webSearch).toEqual({
         keenableApiKey: '${KEENABLE_API_KEY}',
+        serperApiKeyPreview: '********',
       });
     });
 
@@ -4232,8 +4363,8 @@ describe('createAdminConfigHandlers', () => {
                 custom: [
                   {
                     name: 'Private',
-                    baseURL: 'https://private.example.com/v2',
-                    models: { default: ['m'] },
+                    baseURL: 'https://private.example.com/v1',
+                    models: { default: ['m', 'n'] },
                   },
                 ],
               },
@@ -4245,10 +4376,12 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       const [entry] = (
-        writtenDraft(deps).overrides.endpoints as { custom: Array<Record<string, string>> }
+        writtenDraft(deps).overrides.endpoints as {
+          custom: Array<Record<string, string> & { models: { default: string[] } }>;
+        }
       ).custom;
       expect(entry.apiKey).toBe('v3:test:sk-stored');
-      expect(entry.baseURL).toBe('https://private.example.com/v2');
+      expect(entry.models.default).toEqual(['m', 'n']);
       /** Validation saw the document the write stores, with the kept secret in place. */
       const overrideCalls = jest.mocked(getConfigOverrideIssues).mock.calls;
       const validated = overrideCalls[overrideCalls.length - 1][0] as {
