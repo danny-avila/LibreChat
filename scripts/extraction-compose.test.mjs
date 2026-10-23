@@ -51,18 +51,21 @@ for (const files of recipes) {
           },
         },
       );
-      const { services, volumes } = JSON.parse(rendered);
+      const { services, volumes, networks } = JSON.parse(rendered);
       const processor = services.extraction;
       assert.ok(processor, 'processor must be included without overlay or profile');
       assert.equal(processor.profiles, undefined);
       assert.equal(processor.pull_policy, 'build');
       assert.equal(
         processor.build.context,
-        'https://github.com/LibreChat-AI/code-interpreter.git#77bcd2ec2e63be523bfab2dfa11159a2ceec0088',
+        'https://github.com/LibreChat-AI/code-interpreter.git#c7bfe421243c66d4d5d9c6e3d08d276586ac47bf',
       );
       assert.equal(processor.build.dockerfile, 'packages/extraction/Dockerfile');
       assert.equal(processor.build.target, 'runtime');
-      assert.equal(processor.network_mode, 'none');
+      assert.equal(processor.network_mode, undefined);
+      assert.deepEqual(Object.keys(processor.networks), ['extraction']);
+      assert.equal(networks.extraction.internal, true);
+      assert.equal(processor.container_name, undefined);
       assert.equal(processor.read_only, true);
       assert.equal(processor.user, '10001:10001');
       assert.equal(processor.init, true);
@@ -76,8 +79,9 @@ for (const files of recipes) {
       assert.equal(processor.command ?? undefined, undefined);
       assert.equal(processor.entrypoint ?? undefined, undefined);
       assert.equal(processor.volumes.length, 1);
-      assert.equal(processor.volumes[0].source, 'extraction-socket');
-      assert.equal(processor.volumes[0].target, '/socket');
+      assert.equal(processor.volumes[0].source, 'extraction-credentials');
+      assert.equal(processor.volumes[0].target, '/run/extraction');
+      assert.equal(processor.volumes[0].read_only, true);
       assert.ok(
         processor.tmpfs.some(
           (mount) =>
@@ -94,14 +98,49 @@ for (const files of recipes) {
             ].every((flag) => mount.includes(flag)),
         ),
       );
-      assert.ok(volumes['extraction-socket']);
+      assert.ok(volumes['extraction-credentials']);
+      assert.equal(volumes['extraction-socket'], undefined);
+      const provision = services['extraction-init'];
+      assert.equal(provision.image, processor.image);
+      assert.deepEqual(provision.command, ['node', 'dist/provision.js']);
+      assert.equal(provision.user, '10001:10001');
+      assert.equal(provision.healthcheck.disable, true);
+      assert.equal(processor.healthcheck, undefined);
+      assert.equal(provision.read_only, true);
+      assert.deepEqual(provision.cap_drop, ['ALL']);
+      assert.deepEqual(provision.security_opt, ['no-new-privileges:true']);
+      assert.deepEqual(Object.keys(provision.networks), ['extraction']);
+      assert.equal(provision.ports, undefined);
+      assert.equal(provision.container_name, undefined);
+      assert.equal(provision.environment, undefined);
+      assert.equal(provision.volumes.length, 1);
+      assert.equal(provision.volumes[0].source, 'extraction-credentials');
+      assert.equal(provision.volumes[0].target, '/run/extraction');
+      assert.notEqual(provision.volumes[0].read_only, true);
+      assert.equal(
+        processor.depends_on['extraction-init'].condition,
+        'service_completed_successfully',
+      );
       for (const name of services.app ? ['app'] : ['api', 'rag_api']) {
         const caller = services[name];
-        assert.ok(caller.group_add.map(String).includes('10001'));
+        assert.equal(caller.group_add, undefined);
+        assert.ok('default' in caller.networks);
+        assert.ok('extraction' in caller.networks);
         assert.equal(caller.depends_on.extraction.condition, 'service_healthy');
-        const socket = caller.volumes.find((mount) => mount.target === '/socket');
-        assert.equal(socket.source, 'extraction-socket');
-        assert.equal(socket.read_only, true);
+        const credential = caller.volumes.find((mount) => mount.target === '/run/extraction');
+        assert.equal(credential.source, 'extraction-credentials');
+        assert.equal(credential.read_only, true);
+        assert.equal(
+          caller.volumes.some((mount) => mount.target === '/socket'),
+          false,
+        );
+      }
+      if (services.rag_api) {
+        assert.equal(services.rag_api.environment.RAG_EXTRACTION_URL, 'http://extraction:8000');
+        assert.equal(
+          services.rag_api.environment.RAG_EXTRACTION_TOKEN_FILE,
+          '/run/extraction/token',
+        );
       }
     } finally {
       rmSync(scratch, { recursive: true, force: true });

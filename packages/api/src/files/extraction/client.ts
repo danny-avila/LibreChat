@@ -2,8 +2,11 @@ import { request } from 'node:http';
 import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { request as secureRequest } from 'node:https';
 import { extractionServiceSchema } from 'librechat-data-provider';
 import type { ExtractionServiceConfig } from 'librechat-data-provider';
+import type { ClientRequest, IncomingMessage } from 'node:http';
+import type { RequestOptions } from 'node:https';
 
 export type ExtractionFormat = 'pdf' | 'docx';
 export interface ExtractionSegment {
@@ -27,6 +30,7 @@ export interface DocumentExtractor {
 
 const statuses: Readonly<Record<string, number>> = {
   INVALID_REQUEST: 400,
+  UNAUTHORIZED: 401,
   INPUT_LIMIT: 413,
   OUTPUT_LIMIT: 413,
   DECOMPRESSION_LIMIT: 413,
@@ -44,13 +48,16 @@ const statuses: Readonly<Record<string, number>> = {
 };
 
 export class ExtractionServiceError extends Error {
+  readonly userErrorStatusCode: 503 | undefined;
+
   constructor(readonly code: string) {
     super(
       code === 'UNAVAILABLE'
-        ? 'Document extraction is unavailable. Start the extraction companion and verify socket access (group 10001) and Landlock ABI 3 support.'
+        ? 'Document extraction is unavailable. Start the extraction companion and verify the endpoint, processor credential and Landlock ABI 3 support.'
         : `Document extraction failed (${code}).`,
     );
     this.name = 'ExtractionServiceError';
+    this.userErrorStatusCode = code === 'UNAVAILABLE' ? 503 : undefined;
   }
 }
 
@@ -90,17 +97,54 @@ export function getExtractionFormat(name: string, mimeType: string): ExtractionF
   return null;
 }
 
-/** No cache, retries, alternate endpoints, or local parser fallback. The owner injects this client. */
+async function readCredential(path: string, signal: AbortSignal): Promise<string> {
+  signal.throwIfAborted();
+  const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK).catch(() =>
+    fail('UNAVAILABLE'),
+  );
+  try {
+    signal.throwIfAborted();
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size !== 64) return fail('UNAVAILABLE');
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of handle.createReadStream({
+      signal,
+      autoClose: false,
+      highWaterMark: 65,
+      end: 64,
+    })) {
+      const bytes = chunk as Buffer;
+      size += bytes.length;
+      if (size > 64) return fail('UNAVAILABLE');
+      chunks.push(bytes);
+    }
+    const token = Buffer.concat(chunks, size).toString('utf8');
+    if (!/^[0-9a-f]{64}$/.test(token)) return fail('UNAVAILABLE');
+    signal.throwIfAborted();
+    return token;
+  } finally {
+    await handle.close();
+  }
+}
+
+/** No retries, alternate endpoints or local fallback. Credentials rotate on the next extraction. */
 export function createDocumentExtractor(
   config?: ExtractionServiceConfig,
-  transport: typeof request = request,
+  transport?: (
+    options: RequestOptions,
+    callback: (response: IncomingMessage) => void,
+  ) => ClientRequest,
 ): DocumentExtractor {
   const parsed = extractionServiceSchema.safeParse(config ?? {});
   if (!parsed.success) return fail('INVALID_CONFIG');
   const options = parsed.data;
+  const endpoint = new URL(options.url);
+  const send = transport ?? (endpoint.protocol === 'https:' ? secureRequest : request);
 
   const exchange = async (
     path: '/v1/capabilities' | '/v1/extract-text',
+    token: string,
     signal: AbortSignal,
     limit: number,
     body?: Buffer,
@@ -110,16 +154,19 @@ export function createDocumentExtractor(
     try {
       return await new Promise((resolve, reject) => {
         let responseEnded = false;
-        const req = transport(
+        const req = send(
           {
-            socketPath: options.socketPath,
+            protocol: endpoint.protocol,
+            ...(endpoint.protocol === 'https:' ? { rejectUnauthorized: true } : {}),
+            hostname: endpoint.hostname.replace(/^\[|\]$/g, ''),
+            port: endpoint.port,
             path,
             method: body ? 'POST' : 'GET',
             agent: false,
             maxHeaderSize: 4096,
             signal,
             headers: {
-              Host: 'localhost',
+              Authorization: `Bearer ${token}`,
               Connection: 'close',
               ...(body
                 ? {
@@ -179,7 +226,9 @@ export function createDocumentExtractor(
                     statuses[value.error.code] !== res.statusCode
                   )
                     return fail();
-                  return fail(value.error.code);
+                  return fail(
+                    value.error.code === 'UNAUTHORIZED' ? 'UNAVAILABLE' : value.error.code,
+                  );
                 }
                 resolve(value);
               } catch (error) {
@@ -221,7 +270,8 @@ export function createDocumentExtractor(
       if (signal?.aborted) cancel();
       try {
         controller.signal.throwIfAborted();
-        const caps = await exchange('/v1/capabilities', controller.signal, 16384);
+        const token = await readCredential(options.tokenFile, controller.signal);
+        const caps = await exchange('/v1/capabilities', token, controller.signal, 16384);
         if (
           !record(caps) ||
           caps.version !== 1 ||
@@ -263,6 +313,7 @@ export function createDocumentExtractor(
         if (bytes.length > (limits.inputBytes as number)) return fail('INPUT_LIMIT');
         const value = await exchange(
           '/v1/extract-text',
+          token,
           controller.signal,
           Math.min(options.maxResponseBytes, limits.resultBytes as number),
           bytes,

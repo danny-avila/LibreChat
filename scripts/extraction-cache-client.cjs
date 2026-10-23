@@ -1,5 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const { request } = require('node:http');
+const { createServer } = require('node:https');
 const { processCodeOutput } = require('/test/process.cjs');
 const { createFileProvisionRecovery } = require('/test/operations.cjs');
 const { classifyCodeArtifact } = require('/test/classify.cjs');
@@ -88,7 +90,12 @@ function cacheFixture(stage, controller) {
           res: { destroyed: detached, writableFinished: false },
           config: {
             fileStrategy: 'local',
-            fileConfig: { extractionService: { socketPath: '/cache-socket/extraction.sock' } },
+            fileConfig: {
+              extractionService: {
+                url: 'https://localhost:18443',
+                tokenFile: '/custom-credentials/token',
+              },
+            },
           },
         },
         id: 'fixture-file',
@@ -106,43 +113,76 @@ function cacheFixture(stage, controller) {
 
 async function main() {
   assert.equal(
-    fs.existsSync('/socket/extraction.sock'),
+    fs.existsSync('/run/extraction/token'),
     false,
-    'Only the custom socket may be mounted',
+    'Only the custom credential location may be mounted',
   );
-  const success = cacheFixture();
-  const output = await success.run(fs.readFileSync('/fixtures/pages.pdf'), undefined, true);
-  assert.equal(output.file.text, 'First page text\nSecond page text');
-  assert.equal(output.file.textFormat, 'text');
-  assert.deepEqual(success.counters, { writes: 1, commits: 1, releases: 1 });
-  console.log('Actual PDF cache/custom socket/closed old HTTP connection: exact text persisted');
+  const forwarder = createServer(
+    {
+      key: fs.readFileSync('/test/key.pem'),
+      cert: fs.readFileSync('/test/cert.pem'),
+    },
+    (req, res) => {
+      const remote = request(
+        {
+          hostname: 'cache-extraction',
+          port: 8000,
+          method: req.method,
+          path: req.url,
+          headers: req.headers,
+        },
+        (upstream) => {
+          res.writeHead(upstream.statusCode, upstream.headers);
+          upstream.on('error', () => res.destroy());
+          upstream.pipe(res);
+        },
+      );
+      remote.on('error', () => res.destroy());
+      req.on('aborted', () => remote.destroy());
+      res.on('close', () => remote.destroy());
+      req.pipe(remote);
+    },
+  );
+  await new Promise((resolve) => forwarder.listen(18443, '127.0.0.1', resolve));
+  try {
+    const success = cacheFixture();
+    const output = await success.run(fs.readFileSync('/fixtures/pages.pdf'), undefined, true);
+    assert.equal(output.file.text, 'First page text\nSecond page text');
+    assert.equal(output.file.textFormat, 'text');
+    assert.deepEqual(success.counters, { writes: 1, commits: 1, releases: 1 });
+    console.log(
+      'Actual PDF cache/configured HTTPS endpoint/closed old HTTP connection: exact text persisted',
+    );
 
-  for (const stage of ['storage', 'retention']) {
-    const owner = new AbortController();
-    const ended = cacheFixture(stage, owner);
-    await assert.rejects(ended.run(fs.readFileSync('/fixtures/pages.pdf'), owner.signal), {
-      name: 'AbortError',
-    });
-    assert.deepEqual(ended.counters, { writes: 1, commits: 0, releases: 1 });
-    assert.deepEqual(ended.cleanup, { locks: 1, deletes: 1 });
-    console.log(`Actual PDF cache ${stage} cancellation: guarded cleanup, no metadata dispatch`);
+    for (const stage of ['storage', 'retention']) {
+      const owner = new AbortController();
+      const ended = cacheFixture(stage, owner);
+      await assert.rejects(ended.run(fs.readFileSync('/fixtures/pages.pdf'), owner.signal), {
+        name: 'AbortError',
+      });
+      assert.deepEqual(ended.counters, { writes: 1, commits: 0, releases: 1 });
+      assert.deepEqual(ended.cleanup, { locks: 1, deletes: 1 });
+      console.log(`Actual PDF cache ${stage} cancellation: guarded cleanup, no metadata dispatch`);
+    }
+
+    const cancelled = cacheFixture();
+    const controller = new AbortController();
+    const pending = cancelled.run(cancellablePdf(), controller.signal);
+    const outcome = pending.then(
+      () => 'SUCCESS',
+      (error) => error,
+    );
+    process.stdin.once('data', () => controller.abort());
+    console.log('CACHE_CANCEL_PROBE_READY');
+    const failure = await outcome;
+    assert.equal(failure.name, 'AbortError');
+    assert.deepEqual(cancelled.counters, { writes: 0, commits: 0, releases: 1 });
+    console.log(
+      'Actual foreground PDF cache: remote parse cancelled and drained, no byte or cache commit',
+    );
+  } finally {
+    await new Promise((resolve) => forwarder.close(resolve));
   }
-
-  const cancelled = cacheFixture();
-  const controller = new AbortController();
-  const pending = cancelled.run(cancellablePdf(), controller.signal);
-  const outcome = pending.then(
-    () => 'SUCCESS',
-    (error) => error,
-  );
-  process.stdin.once('data', () => controller.abort());
-  console.log('CACHE_CANCEL_PROBE_READY');
-  const failure = await outcome;
-  assert.equal(failure.name, 'AbortError');
-  assert.deepEqual(cancelled.counters, { writes: 0, commits: 0, releases: 1 });
-  console.log(
-    'Actual foreground PDF cache: remote parse cancelled and drained, no byte or cache commit',
-  );
 }
 main().catch((error) => {
   console.error(error);

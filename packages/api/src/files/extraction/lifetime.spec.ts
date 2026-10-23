@@ -1,6 +1,6 @@
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import * as fs from 'node:fs/promises';
-import { join, dirname } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { execFileSync } from 'node:child_process';
 import { resolveUploadFallbackText } from '../upload/fallback';
@@ -57,7 +57,7 @@ describe('extraction owner lifetime', () => {
     let opened: Awaited<ReturnType<typeof fs.open>> | undefined;
     const fsModule = jest.requireActual<typeof import('node:fs/promises')>('node:fs/promises');
     const originalOpen = fsModule.open;
-    const path = join(dirname(server.socketPath), 'input.pdf');
+    const path = join(server.dir, 'input.pdf');
     await fs.writeFile(path, 'pdf');
     jest.spyOn(fsModule, 'open').mockImplementation(async (...args) => {
       const handle = await originalOpen(...args);
@@ -120,7 +120,7 @@ describe('extraction owner lifetime', () => {
 
   it('does not block opening a FIFO disguised as an upload', async () => {
     const server = await fixture(() => {});
-    const path = join(dirname(server.socketPath), 'fifo.pdf');
+    const path = join(server.dir, 'fifo.pdf');
     execFileSync('mkfifo', [path]);
     const { buffer: _buffer, ...diskFile } = file;
     try {
@@ -157,7 +157,7 @@ describe('extraction owner lifetime', () => {
           endpointConfig: { textFallbackWithoutTools: true },
           signal: controller.signal,
           response,
-          extractionService: { socketPath: server.socketPath },
+          extractionService: { url: server.url, tokenFile: server.tokenFile },
         }),
       ).rejects.toMatchObject({ code: 'CANCELLED' });
       const deadlined = await resolveUploadFallbackText({
@@ -167,7 +167,7 @@ describe('extraction owner lifetime', () => {
         destinationChosen: false,
         isMessageAttachment: true,
         endpointConfig: { textFallbackWithoutTools: true },
-        extractionService: { socketPath: server.socketPath, deadlineMs: 30 },
+        extractionService: { url: server.url, tokenFile: server.tokenFile, deadlineMs: 30 },
       });
       expect(deadlined).toBeUndefined();
     } finally {

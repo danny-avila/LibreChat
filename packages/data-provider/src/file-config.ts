@@ -661,12 +661,30 @@ const skillFileConfigSchema = z.object({
 
 export const extractionServiceSchema = z
   .object({
-    socketPath: z
+    url: z
+      .string()
+      .max(2048)
+      .refine((value) => {
+        if (!/^https?:\/\/[^/?#\\\s@]+\/?$/.test(value)) return false;
+        try {
+          const url = new URL(value);
+          if (!url.hostname || url.pathname !== '/' || url.username || url.password) return false;
+          return (
+            url.protocol === 'https:' ||
+            ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+            (url.hostname === 'extraction' && url.port === '8000')
+          );
+        } catch {
+          return false;
+        }
+      }, 'Expected an HTTPS origin or local HTTP origin without credentials, path, query or fragment')
+      .default('http://extraction:8000'),
+    tokenFile: z
       .string()
       .min(1)
-      .max(100)
+      .max(4096)
       .regex(/^\/[^\0\r\n]*$/)
-      .default('/socket/extraction.sock'),
+      .default('/run/extraction/token'),
     deadlineMs: z.number().int().min(1).max(15000).default(12000),
     maxInputBytes: z
       .number()

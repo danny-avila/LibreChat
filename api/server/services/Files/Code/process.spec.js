@@ -354,7 +354,7 @@ describe('Code Process', () => {
 
   describe('isolated PDF cache ownership', () => {
     it.each(['document', 'other'])(
-      'caches exact PDF text through only the configured socket with inspection disabled (category=%s)',
+      'caches exact PDF text through only the configured endpoint with inspection disabled (category=%s)',
       async (category) => {
         const {
           fixture,
@@ -375,7 +375,11 @@ describe('Code Process', () => {
           config: {
             ...mockReq.config,
             fileConfig: {
-              extractionService: { socketPath: processor.socketPath, deadlineMs: 500 },
+              extractionService: {
+                url: processor.url,
+                tokenFile: processor.tokenFile,
+                deadlineMs: 500,
+              },
             },
           },
         };
@@ -439,7 +443,11 @@ describe('Code Process', () => {
           config: {
             ...mockReq.config,
             fileConfig: {
-              extractionService: { socketPath: processor.socketPath, deadlineMs: 5000 },
+              extractionService: {
+                url: processor.url,
+                tokenFile: processor.tokenFile,
+                deadlineMs: 5000,
+              },
             },
           },
         };
@@ -523,7 +531,11 @@ describe('Code Process', () => {
         config: {
           ...mockReq.config,
           fileConfig: {
-            extractionService: { socketPath: processor.socketPath, maxTextBytes: 1 },
+            extractionService: {
+              url: processor.url,
+              tokenFile: processor.tokenFile,
+              maxTextBytes: 1,
+            },
           },
         },
       };
@@ -569,7 +581,13 @@ describe('Code Process', () => {
         ...mockReq,
         config: {
           ...mockReq.config,
-          fileConfig: { extractionService: { socketPath: processor.socketPath, deadlineMs: 30 } },
+          fileConfig: {
+            extractionService: {
+              url: processor.url,
+              tokenFile: processor.tokenFile,
+              deadlineMs: 30,
+            },
+          },
         },
       };
       determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
@@ -611,7 +629,7 @@ describe('Code Process', () => {
         res: { destroyed: true, writableFinished: false },
         config: {
           ...mockReq.config,
-          fileConfig: { extractionService: { socketPath: processor.socketPath } },
+          fileConfig: { extractionService: { url: processor.url, tokenFile: processor.tokenFile } },
         },
       };
       determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
@@ -928,7 +946,7 @@ describe('Code Process', () => {
       expect(getStrategyFunctions).not.toHaveBeenCalled();
     });
 
-    it('closes the remote extraction socket on run abort without creating persistable output', async () => {
+    it('closes the remote extraction connection on run abort without creating persistable output', async () => {
       const {
         fixture,
         reply,
@@ -955,7 +973,8 @@ describe('Code Process', () => {
           ...mockReq.config,
           fileConfig: {
             extractionService: {
-              socketPath: processor.socketPath,
+              url: processor.url,
+              tokenFile: processor.tokenFile,
             },
           },
         },
@@ -1004,7 +1023,7 @@ describe('Code Process', () => {
         res: { destroyed: true, writableFinished: false },
         config: {
           ...mockReq.config,
-          fileConfig: { extractionService: { socketPath: processor.socketPath } },
+          fileConfig: { extractionService: { url: processor.url, tokenFile: processor.tokenFile } },
         },
       };
       determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });

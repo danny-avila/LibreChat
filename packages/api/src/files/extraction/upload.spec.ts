@@ -1,4 +1,4 @@
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import type { FiltersConfig } from 'librechat-data-provider';
 import { createDocumentExtractor, ExtractionServiceError, readExtractionInput } from './client';
@@ -125,11 +125,11 @@ describe('selected remote semantic extraction callers', () => {
       reply(res, req.method === 'GET' ? capabilities : result(file.buffer, 'docx'));
     });
     try {
-      const path = join(dirname(server.socketPath), 'upload.docx');
+      const path = join(server.dir, 'upload.docx');
       await writeFile(path, file.buffer);
       const { buffer: _buffer, ...diskFile } = file;
       const upload = { ...diskFile, path } as Express.Multer.File;
-      const config = { socketPath: server.socketPath };
+      const config = { url: server.url, tokenFile: server.tokenFile };
       await expect(
         parseDocument({
           file: upload,
@@ -167,7 +167,7 @@ describe('selected remote semantic extraction callers', () => {
           isMessageAttachment: true,
           endpointConfig: { textFallbackWithoutTools: true },
           persistence,
-          extractionService: { socketPath: server.socketPath },
+          extractionService: { url: server.url, tokenFile: server.tokenFile },
           response,
         }),
       ).resolves.toBe('你好!');
@@ -275,7 +275,7 @@ describe('selected remote semantic extraction callers', () => {
           destinationChosen: false,
           isMessageAttachment: true,
           endpointConfig: { textFallbackWithoutTools: true },
-          extractionService: { socketPath: server.socketPath },
+          extractionService: { url: server.url, tokenFile: server.tokenFile },
           extractors,
         }),
       ).resolves.toBeUndefined();
@@ -291,7 +291,7 @@ describe('selected remote semantic extraction callers', () => {
       req.resume();
       reply(res, req.method === 'GET' ? capabilities : result(file.buffer, 'docx'));
     });
-    const configured = createDocumentExtractor({ socketPath: server.socketPath });
+    const configured = createDocumentExtractor({ url: server.url, tokenFile: server.tokenFile });
     const factory = jest
       .spyOn(clientModule, 'createDocumentExtractor')
       .mockImplementationOnce((config) => {
@@ -330,7 +330,7 @@ describe('selected remote semantic extraction callers', () => {
         name: 'body.docx',
         fileSizeLimit: 10485760,
         determineFileType: async () => ({ mime: file.mimetype }),
-        extractor: createDocumentExtractor({ socketPath: server.socketPath }),
+        extractor: createDocumentExtractor({ url: server.url, tokenFile: server.tokenFile }),
       });
       expect(prepared.extractedTextComplete).toBe(true);
       expect(prepared.file.extractedText).toBe('你好!');

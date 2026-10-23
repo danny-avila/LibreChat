@@ -2,9 +2,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createServer as createSecureServer } from 'node:https';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Socket } from 'node:net';
+import type { AddressInfo, Socket } from 'node:net';
+import type { ServerOptions } from 'node:https';
 
 export const capabilities = {
   version: 1,
@@ -45,18 +47,31 @@ export function reply(res: ServerResponse, value: unknown, status = 200): void {
   });
   res.end(bytes);
 }
-export async function fixture(handler: (req: IncomingMessage, res: ServerResponse) => void) {
+export async function fixture(
+  handler: (req: IncomingMessage, res: ServerResponse) => void,
+  tls?: ServerOptions,
+) {
   const dir = await mkdtemp(join(tmpdir(), 'extract-'));
-  const socketPath = join(dir, 'service.sock');
+  const tokenFile = join(dir, 'token');
+  const token = 'a1'.repeat(32);
+  await writeFile(tokenFile, token);
   const sockets = new Set<Socket>();
-  const server = createServer(handler);
+  const authenticated = (req: IncomingMessage, res: ServerResponse) => {
+    if (req.headers.authorization !== `Bearer ${token}`)
+      return reply(res, { error: { code: 'UNAUTHORIZED' } }, 401);
+    handler(req, res);
+  };
+  const server = tls ? createSecureServer(tls, authenticated) : createServer(authenticated);
   server.on('connection', (socket) => {
     sockets.add(socket);
     socket.once('close', () => sockets.delete(socket));
   });
-  await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {
-    socketPath,
+    dir,
+    tokenFile,
+    token,
+    url: `${tls ? 'https' : 'http'}://127.0.0.1:${(server.address() as AddressInfo).port}`,
     close: async () => {
       sockets.forEach((socket) => socket.destroy());
       await new Promise<void>((resolve, reject) =>

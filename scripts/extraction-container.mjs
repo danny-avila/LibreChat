@@ -17,24 +17,36 @@ const caller = `librechat-extraction-caller-${uuid}`;
 const docker = (...args) => execFileSync('docker', args, { cwd: root, stdio: 'inherit' });
 const output = (...args) => execFileSync('docker', args, { cwd: root, encoding: 'utf8' }).trim();
 const composeFile = join(scratch, 'compose.json');
-const compose = (...args) => docker('compose', '-p', project, '-f', composeFile, ...args);
+const envFile = join(scratch, 'empty.env');
+writeFileSync(envFile, '');
+const compose = (...args) =>
+  docker('compose', '--env-file', envFile, '-p', project, '-f', composeFile, ...args);
 let imageBuilt = false;
 let callerProcess;
 let callerName = caller;
 try {
   const deployment = yaml.load(readFileSync(join(root, 'docker-compose.yml'), 'utf8'));
-  assert.deepEqual(deployment.services.api.group_add, ['10001']);
   for (const name of ['api', 'rag_api']) {
-    assert.ok(deployment.services[name].volumes.includes('extraction-socket:/socket:ro'));
-    assert.ok(deployment.services[name].group_add.includes('10001'));
+    assert.ok(
+      deployment.services[name].volumes.includes('extraction-credentials:/run/extraction:ro'),
+    );
+    assert.ok(deployment.services[name].networks.includes('extraction'));
+    assert.equal(deployment.services[name].group_add, undefined);
     assert.equal(deployment.services[name].depends_on.extraction.condition, 'service_healthy');
   }
   // Select the shipped processor unchanged. No database/app services or environment files enter this test.
   writeFileSync(
     composeFile,
     JSON.stringify({
-      services: { extraction: deployment.services.extraction },
-      volumes: { 'extraction-socket': deployment.volumes['extraction-socket'] },
+      services: {
+        extraction: {
+          ...deployment.services.extraction,
+          networks: { extraction: { aliases: ['cache-extraction'] } },
+        },
+        'extraction-init': deployment.services['extraction-init'],
+      },
+      volumes: { 'extraction-credentials': deployment.volumes['extraction-credentials'] },
+      networks: { extraction: deployment.networks.extraction },
     }),
   );
   process.env.EXTRACTION_IMAGE = image;
@@ -69,12 +81,54 @@ try {
       },
     ],
   });
+  execFileSync(
+    'openssl',
+    [
+      'req',
+      '-x509',
+      '-newkey',
+      'rsa:2048',
+      '-nodes',
+      '-days',
+      '1',
+      '-subj',
+      '/CN=localhost',
+      '-addext',
+      'subjectAltName=DNS:localhost',
+      '-keyout',
+      join(scratch, 'key.pem'),
+      '-out',
+      join(scratch, 'cert.pem'),
+    ],
+    { stdio: 'ignore' },
+  );
+  chmodSync(join(scratch, 'key.pem'), 0o444);
   imageBuilt = true;
   compose('up', '-d', '--wait', '--wait-timeout', '30', 'extraction');
-  const id = output('compose', '-p', project, '-f', composeFile, 'ps', '-q', 'extraction');
+  compose('run', '--rm', 'extraction-init');
+  const id = output(
+    'compose',
+    '--env-file',
+    envFile,
+    '-p',
+    project,
+    '-f',
+    composeFile,
+    'ps',
+    '-q',
+    'extraction',
+  );
   const container = JSON.parse(output('inspect', id))[0];
   const host = container.HostConfig;
-  assert.equal(host.NetworkMode, 'none');
+  assert.equal(host.NetworkMode, `${project}_extraction`);
+  const network = JSON.parse(output('network', 'inspect', `${project}_extraction`))[0];
+  assert.equal(network.Internal, true);
+  assert.equal(
+    Object.keys(container.NetworkSettings.Ports).some(
+      (port) => container.NetworkSettings.Ports[port]?.length,
+    ),
+    false,
+  );
   assert.equal(host.ReadonlyRootfs, true);
   assert.equal(host.Privileged, false);
   assert.deepEqual(host.CapDrop, ['ALL']);
@@ -84,7 +138,8 @@ try {
   assert.equal(host.PidsLimit, 32);
   assert.equal(container.Config.User, '10001:10001');
   assert.equal(container.Mounts.length, 1);
-  assert.equal(container.Mounts[0].Destination, '/socket');
+  assert.equal(container.Mounts[0].Destination, '/run/extraction');
+  assert.equal(container.Mounts[0].RW, false);
   assert.deepEqual(Object.keys(host.Tmpfs), ['/jobs']);
   for (const flag of [
     'noexec',
@@ -109,18 +164,16 @@ try {
     caller,
     '--init',
     '--network',
-    'none',
+    `${project}_extraction`,
     '--read-only',
     '--user',
     '1000:1000',
-    '--group-add',
-    '10001',
     '--cap-drop',
     'ALL',
     '--security-opt',
     'no-new-privileges:true',
     '--mount',
-    `type=volume,src=${project}_extraction-socket,dst=/socket,readonly`,
+    `type=volume,src=${project}_extraction-credentials,dst=/run/extraction,readonly`,
     '--mount',
     `type=bind,src=${scratch},dst=/test,readonly`,
     '--mount',
@@ -167,7 +220,10 @@ try {
       for(const pid of fs.readdirSync('/proc').filter(p=>/^\\d+$/.test(p))){
         let args;try{args=fs.readFileSync('/proc/'+pid+'/cmdline','utf8').split('\\0');}catch{continue;}
         if(args[0]?.includes('python')&&args.includes('/opt/extraction/extract.py')&&args.includes('pdf')){
-          process.kill(Number(pid),'SIGSTOP');console.log(pid);return;
+          process.kill(Number(pid),'SIGSTOP');
+          const fds=fs.readdirSync('/proc/'+pid+'/fd').map(fd=>{try{return fs.readlinkSync('/proc/'+pid+'/fd/'+fd);}catch{return '';}});
+          if(fds.some(fd=>fd.startsWith('socket:')))throw new Error('Parser inherited a socket descriptor');
+          console.log(pid);return;
         }
       }
       await new Promise(resolve=>setTimeout(resolve,10));
@@ -175,6 +231,7 @@ try {
   `,
     );
     assert.match(worker, /^\d+$/);
+    console.log('Frozen parser descriptor inspection verified no inherited or open sockets');
     callerProcess.stdin.end('cancel\n');
     let timeout;
     try {
@@ -214,11 +271,13 @@ try {
       ? callerName
       : arg === '/client.cjs'
         ? '/cache-client.cjs'
-        : arg.replace('dst=/socket,readonly', 'dst=/cache-socket,readonly'),
+        : arg.replace('dst=/run/extraction,readonly', 'dst=/custom-credentials,readonly'),
   );
   cacheArgs.splice(
     cacheArgs.indexOf('--entrypoint'),
     0,
+    '--env',
+    'NODE_EXTRA_CA_CERTS=/test/cert.pem',
     '--mount',
     `type=bind,src=${join(root, 'scripts/extraction-cache-client.cjs')},dst=/cache-client.cjs,readonly`,
   );

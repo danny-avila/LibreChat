@@ -591,7 +591,7 @@ describe('extractCodeArtifactInspectionText', () => {
         controller.abort();
       });
       const options = {
-        extractionService: { socketPath: processor.socketPath },
+        extractionService: { url: processor.url, tokenFile: processor.tokenFile },
         signal: controller.signal,
       };
       try {

@@ -428,7 +428,7 @@ beforeEach(() => {
     segments: [{ kind: format === 'pdf' ? 'page' : 'document', index: 1, text: 'extracted text' }],
   }));
   client.createDocumentExtractor.mockImplementation((config) =>
-    config?.socketPath
+    config?.url
       ? actual.createDocumentExtractor(config)
       : { maxInputBytes: 10485760, deadlineMs: 12000, extract: mockDocumentExtract },
   );
@@ -695,7 +695,10 @@ describe('processAgentFileUpload', () => {
         });
         client.createDocumentExtractor.mockImplementationOnce((config) => {
           expect(config).toBeUndefined();
-          return actual.createDocumentExtractor({ socketPath: processor.socketPath });
+          return actual.createDocumentExtractor({
+            url: processor.url,
+            tokenFile: processor.tokenFile,
+          });
         });
         try {
           const pending = processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
@@ -731,7 +734,10 @@ describe('processAgentFileUpload', () => {
       await processor.close();
       client.createDocumentExtractor.mockImplementationOnce((config) => {
         expect(config).toBeUndefined();
-        return actual.createDocumentExtractor({ socketPath: processor.socketPath });
+        return actual.createDocumentExtractor({
+          url: processor.url,
+          tokenFile: processor.tokenFile,
+        });
       });
       await expect(
         processAgentFileUpload({ req: makeReq(), res: mockRes, metadata: makeMetadata() }),
@@ -908,7 +914,8 @@ describe('processAgentFileUpload', () => {
         Object.assign(req, makeReq());
         req.file.buffer = bytes;
         req.config.fileConfig.extractionService = {
-          socketPath: processor.socketPath,
+          url: processor.url,
+          tokenFile: processor.tokenFile,
         };
         try {
           await processAgentFileUpload({ req, res, metadata: makeMetadata() });

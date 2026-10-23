@@ -79,6 +79,34 @@ async function cancellationProbe() {
 }
 
 async function main() {
+  assert.equal(fs.statSync('/run/extraction').mode & 0o777, 0o755);
+  assert.equal(fs.statSync('/run/extraction/token').mode & 0o777, 0o444);
+  assert.match(fs.readFileSync('/run/extraction/token', 'utf8'), /^[a-f0-9]{64}$/);
+  for (const path of ['/v1/capabilities', '/v1/extract-text']) {
+    const unauthorized = await new Promise((resolve, reject) => {
+      const req = request(
+        {
+          hostname: 'extraction',
+          port: 8000,
+          path,
+          method: path.endsWith('capabilities') ? 'GET' : 'POST',
+          headers: { Authorization: `Bearer ${'0'.repeat(64)}`, 'Content-Length': 0 },
+        },
+        (res) => {
+          const chunks = [];
+          res.on('data', (chunk) => chunks.push(chunk));
+          res.once('end', () =>
+            resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks)) }),
+          );
+          res.once('error', reject);
+        },
+      );
+      req.once('error', reject);
+      req.end();
+    });
+    assert.deepEqual(unauthorized, { status: 401, body: { error: { code: 'UNAUTHORIZED' } } });
+  }
+  console.log('Automatic credential permissions and safe service authentication verified');
   const client = createDocumentExtractor();
   for (const [name, format] of [
     ['pages.pdf', 'pdf'],
