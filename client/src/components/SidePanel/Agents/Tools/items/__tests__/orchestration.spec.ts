@@ -191,3 +191,78 @@ test('ordinary Subagents toggles retain an explicit independent graph choice', (
   };
   expect(setSubagentsEnabled(config, false)).toEqual({ ...config, enabled: false });
 });
+
+test.each([
+  {
+    enabled: true,
+    graphsEnabled: undefined,
+    capabilities: [AgentCapabilities.subagent_graphs],
+    selected: false,
+  },
+  {
+    enabled: true,
+    graphsEnabled: undefined,
+    capabilities: [AgentCapabilities.subagents],
+    selected: true,
+  },
+  {
+    enabled: true,
+    graphsEnabled: undefined,
+    capabilities: [AgentCapabilities.subagents, AgentCapabilities.subagent_graphs],
+    selected: true,
+  },
+  { enabled: true, graphsEnabled: undefined, capabilities: [], selected: false },
+  {
+    enabled: false,
+    graphsEnabled: undefined,
+    capabilities: [AgentCapabilities.subagents],
+    selected: false,
+  },
+  {
+    enabled: false,
+    graphsEnabled: true,
+    capabilities: [AgentCapabilities.subagent_graphs],
+    selected: true,
+  },
+  {
+    enabled: true,
+    graphsEnabled: true,
+    capabilities: [AgentCapabilities.subagents],
+    selected: false,
+  },
+  {
+    enabled: true,
+    graphsEnabled: false,
+    capabilities: [AgentCapabilities.subagents, AgentCapabilities.subagent_graphs],
+    selected: false,
+  },
+])(
+  'graph selection follows runtime capability gates for %j',
+  ({ enabled, graphsEnabled, capabilities, selected }) => {
+    const graphItem: AgentItem = {
+      kind: 'builtin',
+      id: 'subagent_graphs',
+      name: '',
+      description: '',
+      iconKey: 'subagent_graphs',
+    };
+    const subagents: AgentSubagentsConfig = {
+      enabled,
+      graphsEnabled,
+      graphs: [
+        {
+          type: 'team',
+          name: 'Team',
+          description: 'Work',
+          agent_ids: ['child'],
+          entry_agent_id: 'child',
+          result_agent_id: 'child',
+          edges: [],
+        },
+      ],
+    };
+    expect(deriveSelectedItems({ ...form, subagents }, [graphItem], [], capabilities)).toEqual(
+      selected ? [graphItem] : [],
+    );
+  },
+);

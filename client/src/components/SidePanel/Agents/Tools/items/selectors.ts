@@ -37,7 +37,11 @@ export function itemKey(item: Pick<AgentItem, 'kind' | 'id'>): string {
   return `${item.kind}:${item.id}`;
 }
 
-function isBuiltinSelected(item: AgentItem, form: FormSelection): boolean {
+function isBuiltinSelected(
+  item: AgentItem,
+  form: FormSelection,
+  capabilities?: readonly string[],
+): boolean {
   if (item.kind !== 'builtin') return false;
   switch (item.id) {
     /** File-backed built-ins share their on/off rule with removal and persistence
@@ -55,7 +59,10 @@ function isBuiltinSelected(item: AgentItem, form: FormSelection): boolean {
     case 'context':
       return form.context_files.length > 0;
     case 'subagent_graphs':
-      return isSubagentGraphsEnabled(form.subagents) && (form.subagents?.graphs?.length ?? 0) > 0;
+      return (
+        isSubagentGraphsEnabled(form.subagents, capabilities) &&
+        (form.subagents?.graphs?.length ?? 0) > 0
+      );
     case 'subagents':
       return form.subagents?.enabled === true;
     case 'handoffs':
@@ -184,10 +191,11 @@ export function deriveSelectedItems(
   form: FormSelection,
   catalog: AgentItem[],
   agentActions: Action[],
+  capabilities?: readonly string[],
 ): AgentItem[] {
   const allServerNames = mcpServerIds(catalog);
   const selected = catalog.filter((item) => {
-    if (item.kind === 'builtin') return isBuiltinSelected(item, form);
+    if (item.kind === 'builtin') return isBuiltinSelected(item, form, capabilities);
     if (item.kind === 'tool') return isToolSelected(item, form);
     if (item.kind === 'mcp') return isMcpSelected(item, form, allServerNames);
     if (item.kind === 'skill') return isSkillSelected(item, form);
