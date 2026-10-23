@@ -153,6 +153,7 @@ describe('agents chat message-ID ingress', () => {
     {},
     { messageId: null, responseMessageId: null },
     { messageId: '550e8400-e29b-41d4-a716-446655440000' },
+    { messageId: 'a'.repeat(256), responseMessageId: 'a'.repeat(256) + '_', isRegenerate: true },
     { messageId: 'nanoid_-', responseMessageId: 'event-turn:assistant', isRegenerate: true },
     { messageId: 'edited-user__', responseMessageId: 'existing-response', editedContent: {} },
   ])('preserves supported turn shapes', async (body) => {

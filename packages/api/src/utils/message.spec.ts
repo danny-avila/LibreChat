@@ -676,6 +676,16 @@ describe('bounded turn message identities', () => {
     expect(getPreliminaryResponseMessageId({ messageId })).toBe(expected);
   });
 
+  it('accepts a maximum-length user identity and its preliminary response on regeneration', () => {
+    const messageId = 'a'.repeat(MAX_MESSAGE_ID_LENGTH);
+    const responseMessageId = getPreliminaryResponseMessageId({ messageId });
+    expect(responseMessageId).toBe(`${messageId}_`);
+    expect(getPreliminaryResponseMessageId({ responseMessageId })).toBe(responseMessageId);
+    expect(
+      getPreliminaryResponseMessageId({ responseMessageId: `${responseMessageId}_` }),
+    ).toBeNull();
+  });
+
   it('uses a valid explicit response identity', () => {
     expect(
       getPreliminaryResponseMessageId({ messageId: 'user', responseMessageId: 'response' }),

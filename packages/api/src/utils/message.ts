@@ -3,12 +3,17 @@ import type { TFile, TMessage } from 'librechat-data-provider';
 
 /** Protocol bound for UUIDs, nanoids, and derived turn identities, not a deployment setting. */
 export const MAX_MESSAGE_ID_LENGTH = 256;
+/** A preliminary response appends one underscore to the user identity. */
+export const MAX_RESPONSE_MESSAGE_ID_LENGTH = MAX_MESSAGE_ID_LENGTH + 1;
 
-export function isValidMessageId(messageId: unknown): messageId is string {
+export function isValidMessageId(
+  messageId: unknown,
+  maxLength = MAX_MESSAGE_ID_LENGTH,
+): messageId is string {
   return (
     typeof messageId === 'string' &&
     messageId.length > 0 &&
-    messageId.length <= MAX_MESSAGE_ID_LENGTH &&
+    messageId.length <= maxLength &&
     !/[^A-Za-z0-9_:.-]/.test(messageId)
   );
 }
@@ -21,7 +26,9 @@ export function getPreliminaryResponseMessageId({
   responseMessageId?: unknown;
 }): string | null {
   if (responseMessageId != null) {
-    return isValidMessageId(responseMessageId) ? responseMessageId : null;
+    return isValidMessageId(responseMessageId, MAX_RESPONSE_MESSAGE_ID_LENGTH)
+      ? responseMessageId
+      : null;
   }
   if (!isValidMessageId(messageId)) {
     return null;
