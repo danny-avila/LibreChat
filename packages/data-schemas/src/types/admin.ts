@@ -69,7 +69,10 @@ export type AdminConfigDeleteResponse = {
  * `$` or naming `__*`, `constructor` or `prototype`. A segment with a dot is refused (400
  * `CONFIG_PATH_INVALID`, reason `dotted_segment`) in tombstones, in `mcpServers`, `mcpConfig` and
  * `langfuse`, and wherever it would split a registered secret's location. DELETE `/fields` takes
- * `segments` as a JSON-encoded array in the query string.
+ * `segments` as a JSON-encoded array in the query string. A segment is a key as written: one such
+ * as `custom["Name"]` never names an entry by key (only a keyed `fieldPath` does), so a write by it
+ * clears none of that entry's tombstones, and a tombstone refuses it (`keyed_path`), since its
+ * stored dotted form would read as one.
  */
 export type AdminConfigFieldTarget =
   | { fieldPath: string; segments?: never }
@@ -106,7 +109,10 @@ export type AdminConfigTombstoneRequest = AdminConfigWritePrecondition &
  * - `tombstone` removes the override and hides inherited values at the path. Tombstones are
  *   stored as dotted paths, so no segment may contain a dot, and hide whole arrays only: a path
  *   to an element or inside one is refused, and so is an index segment below a field
- *   `configSchema` does not define, which may name an array element.
+ *   `configSchema` does not define, which may name an array element. An entry of an array merged
+ *   by key is hidden by its key instead: `fieldPath: 'endpoints.custom["Name"]'`, or a path
+ *   inside it (`'endpoints.custom["Name"].headers.X-Key'`), which `unset` resets the same way
+ *   (`keyedTombstones`).
  *
  * Only sections `configSchema` defines can be written or hidden; `unset` may also remove what
  * an older server stored outside them. Entries of a merged-by-key array are addressed by key,
@@ -198,9 +204,12 @@ export type AdminConfigChangeRef = {
   /** Index of the change in the request's `ops`. */
   opIndex: number;
   op: AdminConfigChangeOp['op'];
+  /** The path, or for an entry change or a keyed `unset`/`tombstone`, the collection. */
   segments: string[];
-  /** The entry key of an `upsertEntry` or `removeEntry`. */
+  /** The entry key of an `upsertEntry` or `removeEntry`, or of a keyed `unset` or `tombstone`. */
   key?: string;
+  /** For a keyed `unset` or `tombstone` of a path inside an entry, that path within the entry. */
+  entryPath?: string[];
 };
 
 /** 200 from `POST …/changes`. */
@@ -421,6 +430,39 @@ export type AdminConfigChangeErrorResponse = {
  *   reference librechat.yaml uses beside a new destination keeps it, so for allowlisted names
  *   (`envAllowlist`) the rule stops a destination change that leaves the reference out, not one
  *   that restates it. Header maps are not covered.
+ * - `keyedTombstones`: POST `/fields/tombstone`, DELETE `/fields` and the `tombstone` and `unset`
+ *   ops of `/changes` take a keyed `fieldPath`, `<collection>["<key>"]` or
+ *   `<collection>["<key>"].<path>`, for an array merged by key (`rules.arrayMergeKeys`, such as
+ *   `endpoints.custom`): the key is a JSON string (up to `limits.maxEntryKeyLength` characters,
+ *   not starting with `$` or `__`, not `constructor` or `prototype`), compared as the merge folds
+ *   it (`ollama` names `Ollama`). A tombstone hides the inherited entry
+ *   (`endpoints.custom["Name"]`), or a path inside it (`endpoints.custom["Name"].headers.X-Key`),
+ *   for the profile's principals, and removes the profile's own entry or path. An unset removes
+ *   the profile's own entry or path and the keyed tombstones of that entry at or below it; an
+ *   unset of the collection or an ancestor removes every keyed tombstone under it. Writing an
+ *   entry (`upsertEntry`, or a PATCH or `set` of the collection or an ancestor; not PUT, which
+ *   keeps tombstones) clears the tombstone that hides it whole, and tombstones inside it stay.
+ *   A hidden custom endpoint, whether librechat.yaml or a lower profile (such as `__base__`)
+ *   defines it, also hides the model specs (and `addedEndpoints`) that select it, unless a later
+ *   layer adds the endpoint back. Refused with 400 `CONFIG_PATH_INVALID`: a
+ *   malformed keyed path, or one after an array not merged by key, and a keyed path in a write
+ *   (PATCH, `set`, or an entry op's collection), reason `keyed_path`; the entry's key field,
+ *   `merge_key`; a tombstone into an array of the entry, `inside_array`. The entry's registered
+ *   secret, its preview and its destination fingerprint answer 400 `SECRET_PATH`. POST
+ *   `/fields/tombstone` also refuses a path into an array by position (`endpoints.custom.0`,
+ *   `inside_array`), which the merge never applied. A change ref names a keyed change by its
+ *   collection (`segments`), `key` and, inside the entry, `entryPath`.
+ * - `renameHints`: the `renames` hint of PUT and PATCH also takes
+ *   `{ path: 'endpoints.custom', previousName, name }` (`rules.renameHintPaths`): the written
+ *   entry `name` that omits `apiKey` gets the key the principal stores on entry `previousName`
+ *   (ciphertext and preview), and the keyed tombstones of `previousName` move to `name`. The
+ *   carried key stays bound to its destination: a renamed entry that sends it elsewhere answers
+ *   400 `CONFIG_SECRET_REENTRY_REQUIRED`. A hint that cannot apply answers 400
+ *   `CONFIG_RENAME_INVALID` with `reason`: `inherited_entry` (either name is a librechat.yaml
+ *   entry), `source_not_found`, `target_exists` (the principal already stores `name`),
+ *   `target_not_written`, `source_still_written` (the write keeps `previousName`; swap names with
+ *   `/changes` `rename` ops), or `invalid_name`. A `/changes` `rename` of a custom endpoint moves
+ *   its keyed tombstones too.
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'
@@ -441,7 +483,9 @@ export type AdminConfigFeatureFlag =
   | 'azureGroupSecrets'
   | 'yamlSecretPreview'
   | 'envAllowlist'
-  | 'secretRebinding';
+  | 'secretRebinding'
+  | 'keyedTombstones'
+  | 'renameHints';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
 
@@ -485,6 +529,8 @@ export type AdminConfigMergeRules = {
 export type AdminConfigRules = AdminConfigMergeRules & {
   /** Top-level sections `configSchema` defines; enforced on writes when `sectionAllowlist`. */
   acceptedSections: string[];
+  /** The `path` values a `renames` hint takes (`recordSecrets`, `renameHints`). */
+  renameHintPaths: string[];
   /** Sections only `librechat.yaml` sets; writes to them are dropped. */
   baseOnlySections: string[];
   /** Sections only the base (`__base__`) document may hold, through their dedicated APIs. */
@@ -527,6 +573,8 @@ export type AdminConfigMeta = {
     maxPatchEntries: number;
     /** Most ops one `POST /changes` accepts. */
     maxChangeOps: number;
+    /** Longest entry key a keyed path (`keyedTombstones`) or an entry rename hint can name. */
+    maxEntryKeyLength: number;
     /**
      * The app config service's `overrideCacheTtl`: how long another server instance may serve
      * resolved config from before a write.

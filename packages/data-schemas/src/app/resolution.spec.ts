@@ -7,7 +7,6 @@ import type { TCustomConfig, TWebSearchConfigInput } from 'librechat-data-provid
 import type { AppConfig, IConfig } from '~/types';
 import {
   resolveRawConfig,
-  foldConfigMergeKey,
   isConfigRecordPath,
   getConfigMergeRules,
   mergeConfigOverrides,
@@ -16,16 +15,18 @@ import {
   getConfigFieldIssues,
   applyConfigTombstones,
   getConfigChangeIssues,
-  getConfigArrayMergeKey,
   getDottedSectionIssues,
   getConfigOverrideIssues,
   combineFoldedConfigItems,
   getIndexedMergeKeyIssues,
+  isConfigEntryArrayItemPath,
 } from './resolution';
+import { foldConfigMergeKey, getConfigArrayMergeKey } from './collections';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { toConfigOverrideState } from './mutations';
 import { applyConfigChanges } from './changes';
 import { loadWebSearchConfig } from './web';
+import { formatKeyedPath } from './paths';
 import logger from '~/config/winston';
 
 function fakeConfig(
@@ -3501,5 +3502,147 @@ describe('isAcceptedOverrideSection', () => {
     for (const key of ['', 'toString', 'constructor', '__proto__']) {
       expect(isAcceptedOverrideSection(key)).toBe(false);
     }
+  });
+});
+
+/**
+ * Keyed tombstones hide one entry of a merged-by-key array, or a path inside it, by the entry's
+ * key: `endpoints.custom["Name"]` and `endpoints.custom["Name"].headers.X-Key`.
+ */
+describe('mergeConfigOverrides: keyed tombstones of custom endpoints', () => {
+  type CustomItem = Record<string, unknown>;
+  const customOf = (config: AppConfig): CustomItem[] | undefined =>
+    (config as unknown as { endpoints?: { custom?: CustomItem[] } }).endpoints?.custom;
+  const entry = (name: string, extra: CustomItem = {}): CustomItem => ({
+    name,
+    apiKey: '${KEY}',
+    baseURL: `https://${encodeURIComponent(name)}.example.com/v1`,
+    models: { default: ['m'] },
+    ...extra,
+  });
+  const awkward = ['My Endpoint', 'api.example.com', 'quote " inside', 'bracket ] [ "x"'];
+  const yaml = [
+    ...awkward.map((name) => entry(name)),
+    entry('Ollama', { headers: { 'X-Team': 'a', 'X-Trace': 'b' } }),
+  ];
+  const base = { endpoints: { custom: yaml }, config: { endpoints: { custom: yaml } } };
+  const hide = (path: string, priority = 10, principalId = 'role') =>
+    fakeConfig({}, priority, [path], principalId);
+
+  it('hides an entry by its key, whatever characters the name holds', () => {
+    for (const name of awkward) {
+      const merged = mergeConfigOverrides(base as unknown as AppConfig, [
+        hide(formatKeyedPath(['endpoints', 'custom'], name)),
+      ]);
+      expect(customOf(merged)?.map((item) => item.name)).toEqual(
+        yaml.map((item) => item.name).filter((other) => other !== name),
+      );
+    }
+  });
+
+  it('hides the entry under the spelling the merge folds it to', () => {
+    const merged = mergeConfigOverrides(base as unknown as AppConfig, [
+      hide('endpoints.custom["OLLAMA"]'),
+    ]);
+    expect(customOf(merged)?.map((item) => item.name)).toEqual(awkward);
+  });
+
+  it('removes one inherited header and keeps its siblings (record-key tombstone)', () => {
+    const merged = mergeConfigOverrides(base as unknown as AppConfig, [
+      hide('endpoints.custom["Ollama"].headers.X-Team'),
+    ]);
+    expect(customOf(merged)?.find((item) => item.name === 'Ollama')?.headers).toEqual({
+      'X-Trace': 'b',
+    });
+    expect(customOf(base as unknown as AppConfig)?.[4].headers).toEqual({
+      'X-Team': 'a',
+      'X-Trace': 'b',
+    });
+  });
+
+  it('keeps a key tombstone through a sibling write, and lets a higher layer re-add the key', () => {
+    const role = fakeConfig(
+      { endpoints: { custom: [{ name: 'Ollama', headers: { 'X-Other': 'c' } }] } },
+      10,
+      ['endpoints.custom["Ollama"].headers.X-Team'],
+    );
+    const headersOf = (configs: IConfig[]) =>
+      customOf(mergeConfigOverrides(base as unknown as AppConfig, configs))?.find(
+        (item) => item.name === 'Ollama',
+      )?.headers;
+    expect(headersOf([role])).toEqual({ 'X-Trace': 'b', 'X-Other': 'c' });
+
+    const user = fakeConfig(
+      { endpoints: { custom: [{ name: 'Ollama', headers: { 'X-Team': 'user' } }] } },
+      100,
+      [],
+      'user',
+    );
+    expect(headersOf([role, user])).toEqual({ 'X-Trace': 'b', 'X-Other': 'c', 'X-Team': 'user' });
+  });
+
+  it('lets a higher layer add a hidden entry back, as its own definition', () => {
+    const readd = fakeConfig({ endpoints: { custom: [entry('My Endpoint')] } }, 20, [], 'group');
+    const merged = mergeConfigOverrides(base as unknown as AppConfig, [
+      hide('endpoints.custom["My Endpoint"]'),
+      readd,
+    ]);
+    expect(customOf(merged)?.map((item) => item.name)).toEqual([
+      ...awkward.slice(1),
+      'Ollama',
+      'My Endpoint',
+    ]);
+  });
+
+  it('applies to the YAML-shaped config each layer is validated on', () => {
+    expect(
+      applyConfigTombstones(base.config, ['endpoints.custom["api.example.com"]']).endpoints?.custom,
+    ).toHaveLength(yaml.length - 1);
+    expect(
+      resolveRawConfig(base.config as Partial<TCustomConfig>, [
+        hide('endpoints.custom["Ollama"]'),
+      ]).endpoints?.custom?.map((item) => item.name),
+    ).toEqual(awkward);
+  });
+
+  it('ignores a keyed tombstone of an array the merge replaces, or a malformed one', () => {
+    const specs = {
+      ...base,
+      modelSpecs: { list: [{ name: 'a', label: 'A', preset: { endpoint: 'openAI' } }] },
+    };
+    const merged = mergeConfigOverrides(specs as unknown as AppConfig, [
+      fakeConfig({}, 10, [
+        'modelSpecs.list["a"]',
+        'endpoints.custom["Ollama"',
+        'endpoints.custom[0]',
+      ]),
+    ]);
+    expect(merged.modelSpecs?.list).toHaveLength(1);
+    expect(customOf(merged)).toHaveLength(yaml.length);
+  });
+
+  it('reads a tombstone holding `["` after anything but an array merged by key as a dotted path', () => {
+    const servers = {
+      'a["b"]': { type: 'streamable-http', url: 'https://quoted.example.com' },
+      a: { type: 'streamable-http', url: 'https://plain.example.com' },
+    };
+    const mcpBase = { mcpConfig: servers, config: { mcpServers: servers } };
+    const merged = mergeConfigOverrides(mcpBase as unknown as AppConfig, [
+      hide('mcpServers.a["b"]'),
+    ]);
+    expect(Object.keys(merged.mcpConfig ?? {})).toEqual(['a']);
+    const raw = applyConfigTombstones(mcpBase.config as Partial<TCustomConfig>, [
+      'mcpServers.a["b"]',
+    ]);
+    expect(Object.keys(raw.mcpServers ?? {})).toEqual(['a']);
+  });
+
+  it('tells a path inside an entry that runs into one of its own arrays', () => {
+    expect(isConfigEntryArrayItemPath(['endpoints', 'custom'], ['models', 'default'])).toBe(false);
+    expect(isConfigEntryArrayItemPath(['endpoints', 'custom'], ['models', 'default', '0'])).toBe(
+      true,
+    );
+    expect(isConfigEntryArrayItemPath(['endpoints', 'custom'], ['headers', 'X-Key'])).toBe(false);
+    expect(isConfigArrayItemPath(['endpoints', 'custom', '0', 'headers'])).toBe(true);
   });
 });

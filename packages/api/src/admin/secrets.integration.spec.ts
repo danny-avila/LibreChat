@@ -1998,7 +1998,11 @@ describe('MCP server credentials — real handlers against a real Config collect
       const write = [{ fieldPath: 'mcpServers.code', value: renamed() }];
 
       const cases: Array<[unknown, string]> = [
-        [[{ path: 'endpoints.custom', previousName: 'github', name: 'code' }], 'unsupported_path'],
+        [
+          [{ path: 'endpoints.azureOpenAI.groups', previousName: 'github', name: 'code' }],
+          'unsupported_path',
+        ],
+        [[{ path: 'endpoints.custom', previousName: 'github', name: 'code' }], 'source_not_found'],
         [[{ path: 'mcpServers', previousName: 'github', name: 'github' }], 'invalid_name'],
         [[{ path: 'mcpServers', previousName: '__proto__', name: 'code' }], 'invalid_name'],
         [[{ path: 'mcpServers', previousName: 'missing', name: 'code' }], 'source_not_found'],

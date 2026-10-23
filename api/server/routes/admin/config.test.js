@@ -161,6 +161,7 @@ describe('admin config routes', () => {
     expect(response.body.limits).toEqual({
       maxPatchEntries: 100,
       maxChangeOps: 1000,
+      maxEntryKeyLength: 256,
       overrideCacheTtlMs: 15_000,
     });
   });

@@ -9,6 +9,7 @@ export * from './turnstile';
 export * from './vertex';
 export * from './web';
 export * from './resolution';
+export { foldConfigMergeKey, getConfigEntryIdentity, getConfigArrayMergeKey } from './collections';
 export * from './precedence';
 export * from './paths';
 export * from './mutations';

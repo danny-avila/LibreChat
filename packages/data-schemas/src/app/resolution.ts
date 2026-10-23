@@ -6,24 +6,36 @@ import {
   RUNTIME_CONFIG_INTERFACE_FIELDS,
   PERMISSION_SUB_KEYS,
   isProcessMCPServerConfig,
-  normalizeEndpointName,
   EModelEndpoint,
   configSchema,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AdminConfigMergeRules, AppConfig, Config, TWebSearchKeys } from '~/types';
+import type { ConfigEntryRename, ConfigFieldWrite } from './mutations';
+import type { ConfigEntryLocation } from './collections';
 import type { AzureResolvedGroupField } from './azure';
-import type { ConfigFieldWrite } from './mutations';
+import {
+  MERGE_KEY_FOLDS,
+  ARRAY_MERGE_KEYS,
+  OVERRIDE_KEY_MAP,
+  remapOverridePath,
+  foldConfigMergeKey,
+  isConfigEntryAt,
+  readConfigEntryTombstone,
+  getConfigEntryIdentity,
+  getConfigArrayMergeKey,
+  getConfigMergeArrayPath,
+} from './collections';
 import {
   AZURE_RESOLVED_GROUP_FIELDS,
   lacksAzureAssistantModels,
   narrowAzureServedModels,
   resolveAzureGroups,
 } from './azure';
+import { setConfigFields, toConfigOverrideState, renameConfigEntriesTombstones } from './mutations';
 import { isBaseConfigPrincipal, sortByConfigPrecedence } from './precedence';
-import { setConfigFields, toConfigOverrideState } from './mutations';
+import { parseFieldPath, isDotFreePath, isKeyedConfigPath } from './paths';
 import { webSearchPairedFields, unbindWebSearchKeys } from './web';
-import { parseFieldPath, isDotFreePath } from './paths';
 import logger from '~/config/winston';
 
 type AnyObject = { [key: string]: unknown };
@@ -89,50 +101,11 @@ function withoutAzureGroups<T extends AnyObject>(merged: T): T {
 }
 
 /**
- * Paths within the config tree where arrays of objects should be merged by
- * a key field rather than replaced wholesale. `deepMerge` matches items by
- * the given key, deep-merges matching pairs, preserves unmatched base items,
- * and appends new override-only items.
- *
- * Paths use AppConfig key names (post-OVERRIDE_KEY_MAP remapping),
- * not YAML-level key names. E.g. use `interfaceConfig.x`, not `interface.x`.
- */
-const ARRAY_MERGE_KEYS: Record<string, string> = {
-  'endpoints.custom': 'name',
-};
-
-/**
- * How a merge key is folded before items are matched, by `ARRAY_MERGE_KEYS` path: two
- * spellings the runtime serves as one item are one item to the merge too. Custom endpoint
- * names fold through `normalizeEndpointName`, so an override `ollama` lands on the YAML
- * `Ollama` instead of serving beside it with a different baseURL and key.
- */
-const MERGE_KEY_FOLDS: Record<string, (key: string) => string> = {
-  'endpoints.custom': normalizeEndpointName,
-};
-
-/**
  * Object-valued paths an override replaces whole instead of merging into. A theme
  * definition is one coherent value: merging two would keep the base theme's modes,
  * brands and tokens under the override's name. Uses AppConfig key names.
  */
 const ATOMIC_MERGE_PATHS = new Set<string>(['interfaceConfig.theme']);
-
-/**
- * Maps YAML-level override keys (TCustomConfig) to their AppConfig equivalents.
- * Overrides are stored with YAML keys but merged into the already-processed AppConfig
- * where some fields have been renamed by AppService.
- *
- * When AppService renames a field, add the mapping here. Map entries are
- * type-checked: keys must be valid TCustomConfig fields, values must be
- * valid AppConfig fields. The runtime lookup casts string keys to satisfy
- * strict indexing — unknown keys safely fall through via the ?? fallback.
- */
-const OVERRIDE_KEY_MAP: Partial<Record<keyof TCustomConfig, keyof AppConfig>> = {
-  mcpServers: 'mcpConfig',
-  interface: 'interfaceConfig',
-  turnstile: 'turnstileConfig',
-};
 
 /** AppConfig key → the override (YAML) section merged into it, the inverse of `OVERRIDE_KEY_MAP`. */
 const OVERRIDE_SECTION_BY_APP_KEY = new Map<string, string>(
@@ -174,35 +147,6 @@ function isSafePath(path: string): boolean {
 }
 
 /**
- * The key field that identifies entries of the merged-by-key array at an override (YAML) path,
- * such as `name` for `endpoints.custom`; `undefined` for any other path.
- */
-export function getConfigArrayMergeKey(segments: readonly string[]): string | undefined {
-  const arrayPath = getMergeArrayPath(segments);
-  return arrayPath === undefined ? undefined : ARRAY_MERGE_KEYS[arrayPath];
-}
-
-/** The `ARRAY_MERGE_KEYS` path of the merged-by-key array at an override (YAML) path. */
-function getMergeArrayPath(segments: readonly string[]): string | undefined {
-  if (segments.length === 0 || segments.some((segment) => segment.includes('.'))) {
-    return undefined;
-  }
-  const appConfigPath = remapOverridePath(segments.join('.'));
-  return hasOwn(ARRAY_MERGE_KEYS, appConfigPath) ? appConfigPath : undefined;
-}
-
-/**
- * The identity entry key `key` of the merged-by-key array at an override (YAML) path has: the
- * key as the runtime merge folds it (`foldConfigMergeKey`), so `Ollama` and `ollama` name one
- * custom endpoint to entry changes as they do to the merge. A key at any other path is its own
- * identity.
- */
-export function getConfigEntryIdentity(segments: readonly string[], key: string): string {
-  const arrayPath = getMergeArrayPath(segments);
-  return arrayPath === undefined ? key : foldConfigMergeKey(arrayPath, key);
-}
-
-/**
  * `combineFoldedConfigItems` for the merged-by-key array at an override (YAML) path: stored
  * items naming one entry in two spellings, combined as the runtime merge combines them.
  */
@@ -210,21 +154,26 @@ export function combineFoldedConfigEntries(
   segments: readonly string[],
   items: unknown[],
 ): unknown[] {
-  const arrayPath = getMergeArrayPath(segments);
+  const arrayPath = getConfigMergeArrayPath(segments);
   return arrayPath === undefined ? items : combineFoldedConfigItems(arrayPath, items);
-}
-
-function remapOverridePath(path: string): string {
-  const [first, ...rest] = path.split('.');
-  const mappedFirst = OVERRIDE_KEY_MAP[first as keyof typeof OVERRIDE_KEY_MAP] ?? first;
-  return [mappedFirst, ...rest].join('.');
 }
 
 function isBaseOnlyOverridePath(path: string): boolean {
   return BASE_ONLY_OVERRIDE_SECTIONS.has(path.split('.')[0]);
 }
 
+/**
+ * Removes a path from `target`, stopping at arrays. A keyed path (`endpoints.custom["Name"]`)
+ * reaches into an array merged by key instead: it removes every entry whose key has the same
+ * identity (`Ollama` and `ollama` alike), or with a path inside the entry, that path from each
+ * of them. Any other path holding `["` is split on its dots, as before keyed paths existed, so a
+ * stored tombstone of a record key such as an MCP server named `a["b"]` keeps hiding it.
+ */
 function deletePath<T extends AnyObject>(target: T, path: string): T {
+  const entry = isKeyedConfigPath(path) ? readConfigEntryTombstone(path) : null;
+  if (entry) {
+    return deleteEntryPath(target, entry);
+  }
   if (!isSafePath(path)) {
     return target;
   }
@@ -246,6 +195,22 @@ function deletePath<T extends AnyObject>(target: T, path: string): T {
 
   delete cursor[segments[segments.length - 1]];
   return result as T;
+}
+
+function deleteEntryPath<T extends AnyObject>(target: T, location: ConfigEntryLocation): T {
+  const segments = [...location.segments];
+  const items = getPath(target, segments);
+  if (!Array.isArray(items) || !items.some((item) => isConfigEntryAt(location, item))) {
+    return target;
+  }
+  const inside = location.entry.rest.join('.');
+  const next =
+    inside === ''
+      ? items.filter((item) => !isConfigEntryAt(location, item))
+      : items.map((item) =>
+          isConfigEntryAt(location, item) ? deletePath(item as AnyObject, inside) : item,
+        );
+  return setPath(target, segments, next) as T;
 }
 
 function deleteConfigPath<T extends AnyObject>(target: T, path: string): T {
@@ -272,15 +237,6 @@ function deleteConfigPath<T extends AnyObject>(target: T, path: string): T {
   }
 
   return { ...target, mcpConfig: processServers } as T;
-}
-
-/**
- * Folds a merge key of the merged-by-key array at `arrayPath` into the identity layers match
- * on (`Ollama` and `ollama` are one custom endpoint); other keys come back unchanged. Code that
- * pairs items across writes, such as secret preservation, matches on the same identity.
- */
-export function foldConfigMergeKey(arrayPath: string, key: string): string {
-  return hasOwn(MERGE_KEY_FOLDS, arrayPath) ? MERGE_KEY_FOLDS[arrayPath](key) : key;
 }
 
 /** The identity an item of the merged-by-key array at `arrayPath` matches on. */
@@ -751,9 +707,13 @@ function isArrayStep(node: SchemaNode, segment: string, depth = 0): boolean {
  * define it), and whether the path continues past an array on the way. Below a field of a
  * known section that the schema does not define (a key it does not know, or what an
  * intersection or `any` holds), the stored value decides the shape, so an index segment there
- * is taken to name an array element.
+ * is taken to name an array element. Only steps from index `from` of `segments` on count toward
+ * `throughArray`, so a path inside an array entry can be judged on the entry's own arrays.
  */
-function resolveConfigSchemaPath(segments: readonly string[]): {
+function resolveConfigSchemaPath(
+  segments: readonly string[],
+  from = 0,
+): {
   node?: SchemaNode;
   throughArray: boolean;
 } {
@@ -764,13 +724,16 @@ function resolveConfigSchemaPath(segments: readonly string[]): {
   }
   let node: SchemaNode | undefined = shape[section];
   let throughArray = false;
-  for (const segment of rest) {
+  for (let index = 0; index < rest.length; index++) {
+    const segment = rest[index];
+    /** `from` counts in `segments`, where `rest[index]` is `segments[index + 1]`. */
+    const counts = index + 1 >= from;
     if (!node || OPAQUE_SCHEMA_TYPES.has(unwrapSchema(node)._def.typeName ?? '')) {
       node = undefined;
-      throughArray = throughArray || ARRAY_INDEX.test(segment);
+      throughArray = throughArray || (counts && ARRAY_INDEX.test(segment));
       continue;
     }
-    throughArray = throughArray || isArrayStep(node, segment);
+    throughArray = throughArray || (counts && isArrayStep(node, segment));
     node = getChildSchema(node, segment);
   }
   return { node, throughArray };
@@ -795,6 +758,18 @@ export function isConfigRecordPath(segments: readonly string[]): boolean {
  */
 export function isConfigArrayItemPath(segments: readonly string[]): boolean {
   return resolveConfigSchemaPath(segments).throughArray;
+}
+
+/**
+ * {@link isConfigArrayItemPath} for a path inside an entry of the merged-by-key array at
+ * `segments`: whether `rest` continues past an array of the entry's own schema (`models.default.0`),
+ * which a keyed tombstone cannot hide part of either.
+ */
+export function isConfigEntryArrayItemPath(
+  segments: readonly string[],
+  rest: readonly string[],
+): boolean {
+  return resolveConfigSchemaPath([...segments, '0', ...rest], segments.length + 1).throughArray;
 }
 
 /**
@@ -1147,11 +1122,17 @@ export function getConfigChangeIssues(
  * field, then reset the old ones). A tombstone a deeper write clears as a side effect does
  * not: setting `memory.agent.enabled` under a hidden `memory.agent` brings the inherited agent
  * back, and a conflict with the stored fields is reported instead of being dropped at merge.
+ * Nor does a keyed tombstone, which a write never clears by its spelled path
+ * (`getPathClearedTombstones`): a segment `custom["Name"]` is a key of that spelling.
+ *
+ * `renames` are the entry renames the write carries out (a `renames` hint), which move the keyed
+ * tombstones of each old entry key to its new one (`renameConfigEntryTombstones`).
  */
 export function getConfigFieldIssues(
   fields: Record<string, unknown> | readonly ConfigFieldWrite[],
   base: Partial<TCustomConfig> = {},
   stored?: { overrides?: unknown; tombstones?: unknown[] } | null,
+  renames: readonly ConfigEntryRename[] = [],
 ): ConfigOverrideIssue[] {
   const writes: readonly ConfigFieldWrite[] = Array.isArray(fields)
     ? fields
@@ -1164,8 +1145,14 @@ export function getConfigFieldIssues(
   if (indexed.length > 0) {
     return indexed;
   }
-  const candidate = setConfigFields(toConfigOverrideState(stored), writes);
-  const lifted = written.filter(isDotFreePath).map((segments) => segments.join('.'));
+  const candidate = renameConfigEntriesTombstones(
+    setConfigFields(toConfigOverrideState(stored), writes),
+    renames,
+  );
+  const lifted = written.flatMap((segments) => {
+    const path = segments.join('.');
+    return isDotFreePath(segments) && readConfigEntryTombstone(path) == null ? [path] : [];
+  });
   return getConfigChangeIssues(candidate, base, stored, written, lifted);
 }
 

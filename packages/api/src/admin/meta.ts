@@ -12,7 +12,7 @@ import {
   RUNTIME_CONFIG_INTERFACE_FIELDS,
 } from 'librechat-data-provider';
 import type { AdminConfigFeatures, AdminConfigMeta } from '@librechat/data-schemas';
-import { getConfigSecretRules } from './secrets';
+import { RENAME_HINT_PATHS, getConfigSecretRules } from './secrets';
 
 /**
  * The admin config behaviours this server has. A change flips its own flag when it wires the
@@ -39,6 +39,8 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   yamlSecretPreview: true,
   envAllowlist: true,
   secretRebinding: true,
+  keyedTombstones: true,
+  renameHints: true,
 };
 
 /**
@@ -57,6 +59,7 @@ export function buildAdminConfigMeta(limits: AdminConfigMeta['limits']): AdminCo
     limits: { ...limits },
     rules: {
       acceptedSections: Object.keys(configSchema.shape),
+      renameHintPaths: [...RENAME_HINT_PATHS],
       baseOnlySections: [...BASE_ONLY_CONFIG_SECTIONS],
       basePrincipalSections: [...BASE_PRINCIPAL_CONFIG_SECTIONS],
       baseOnlyPaths: [...BASE_ONLY_CONFIG_PATHS],

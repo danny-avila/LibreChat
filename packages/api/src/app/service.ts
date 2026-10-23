@@ -101,6 +101,51 @@ function scopeModelSpecs(
   return { ...specs, list, addedEndpoints };
 }
 
+/** Adds the folded name of each entry in `endpoints` that `served` lacks to `hidden`. */
+function addUnservedEndpointNames(
+  endpoints: ReadonlyArray<{ name?: string } | null> | undefined,
+  served: ReadonlySet<string>,
+  hidden: Set<string>,
+): void {
+  if (!Array.isArray(endpoints)) {
+    return;
+  }
+  for (const endpoint of endpoints) {
+    const name = typeof endpoint?.name === 'string' ? normalizeEndpointName(endpoint.name) : '';
+    if (name !== '' && !served.has(name)) {
+      hidden.add(name);
+    }
+  }
+}
+
+/**
+ * `merged` without the model specs (and `addedEndpoints`) of custom endpoints the merge removed:
+ * ones librechat.yaml or any applied override layer (Base included) defines that the merged
+ * config no longer serves. A profile that hides an endpoint (a keyed `endpoints.custom["Name"]`
+ * tombstone, or a tombstone of all of them) hides the specs that select it too, rather than
+ * serving specs for an endpoint its principals are not served. Only `modelSpecs` is scoped, never
+ * the endpoint list, so an endpoint a later layer adds back keeps its specs.
+ */
+function scopeHiddenEndpointSpecs(
+  base: AppConfig,
+  layers: readonly ConfigOverrideLayer[],
+  merged: AppConfig,
+): AppConfig {
+  if (!merged.modelSpecs) {
+    return merged;
+  }
+  const served = new Set(
+    (merged.endpoints?.custom ?? []).map((endpoint) => normalizeEndpointName(endpoint.name ?? '')),
+  );
+  const hidden = new Set<string>();
+  addUnservedEndpointNames(base.endpoints?.custom, served, hidden);
+  for (const layer of layers) {
+    addUnservedEndpointNames(layer.overrides?.endpoints?.custom, served, hidden);
+  }
+  const modelSpecs = scopeModelSpecs(merged.modelSpecs, hidden);
+  return modelSpecs === merged.modelSpecs ? merged : { ...merged, modelSpecs };
+}
+
 /** Keep tenant-scoped YAML endpoints out of every other tenant's effective config. */
 function scopeCustomEndpoints(
   config: AppConfig,
@@ -763,7 +808,10 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
           onRebinding: warnRebinding,
         });
         merged = scopeCustomEndpoints(
-          checkOverrideTheme(scopedBaseConfig, completeEffectiveConfig(layered)),
+          checkOverrideTheme(
+            scopedBaseConfig,
+            scopeHiddenEndpointSpecs(scopedBaseConfig, configs, completeEffectiveConfig(layered)),
+          ),
           effectiveTenantId,
           hiddenEndpoints,
         );

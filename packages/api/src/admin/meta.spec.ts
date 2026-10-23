@@ -13,6 +13,8 @@ import {
   BASE_CONFIG_PRINCIPAL_ID,
   isConfigOverrideStateEmpty,
   ConfigRevisionConflictError,
+  MAX_CONFIG_ENTRY_KEY_LENGTH,
+  formatKeyedPath,
 } from '@librechat/data-schemas';
 import {
   Constants,
@@ -287,12 +289,14 @@ describe('GET /api/admin/config/meta', () => {
       'dottedKeys',
       'envAllowlist',
       'expectedRevision',
+      'keyedTombstones',
       'preAuthBaseOverrides',
       'principalCheck',
       'priorityRoute',
       'prunesEmptyParents',
       'readFilteredWriteResponses',
       'recordSecrets',
+      'renameHints',
       'roleRenameMovesProfile',
       'secretRebinding',
       'sectionAllowlist',
@@ -303,6 +307,7 @@ describe('GET /api/admin/config/meta', () => {
     expect(meta.limits).toEqual({
       maxPatchEntries: 100,
       maxChangeOps: 1000,
+      maxEntryKeyLength: 256,
       overrideCacheTtlMs: 60_000,
     });
     expect(Object.keys(meta.rules).sort()).toEqual([
@@ -318,6 +323,7 @@ describe('GET /api/admin/config/meta', () => {
       'processMcpFields',
       'recordSecretFields',
       'refusedMaps',
+      'renameHintPaths',
       'secretFields',
       'titleResolution',
     ]);
@@ -345,6 +351,8 @@ describe('GET /api/admin/config/meta', () => {
       yamlSecretPreview: true,
       envAllowlist: true,
       secretRebinding: true,
+      keyedTombstones: true,
+      renameHints: true,
     });
   });
 
@@ -376,6 +384,8 @@ describe('meta rules equal the rules the server applies', () => {
 
   it('lists the sections and paths of the live constants', () => {
     expect(meta.rules.acceptedSections).toEqual(Object.keys(configSchema.shape));
+    expect(meta.rules.renameHintPaths).toEqual(['mcpServers', 'endpoints.custom']);
+    expect(meta.limits.maxEntryKeyLength).toBe(MAX_CONFIG_ENTRY_KEY_LENGTH);
     expect(meta.rules.baseOnlySections).toEqual([...BASE_ONLY_CONFIG_SECTIONS]);
     expect(meta.rules.basePrincipalSections).toEqual([...BASE_PRINCIPAL_CONFIG_SECTIONS]);
     expect(meta.rules.baseOnlyPaths).toEqual([...BASE_ONLY_CONFIG_PATHS]);
@@ -1508,6 +1518,144 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
       getIn(restatedMerge, 'mcpConfig.tools.apiKey.key') === '${TOOLS_KEY}' &&
       restated.statusCode === 200 &&
       restated.body?.ignored === undefined
+    );
+  },
+  async keyedTombstones() {
+    const name = 'api.example.com "v2" [eu]';
+    const hiddenPath = formatKeyedPath(['endpoints', 'custom'], name);
+    const entry = (entryName: string): Doc => ({
+      name: entryName,
+      apiKey: '${GATEWAY_KEY}',
+      baseURL: 'https://gateway.example.com/v1',
+      models: { default: ['m'] },
+      headers: { 'X-Team': 'yaml', 'X-Trace': 'on' },
+    });
+    const yaml = {
+      endpoints: { custom: [entry(name), entry('kept')] },
+      modelSpecs: { list: [{ name: 's', label: 'S', preset: { endpoint: name, model: 'm' } }] },
+    };
+    const base = {
+      config: yaml,
+      endpoints: { custom: structuredClone(yaml.endpoints.custom) },
+      modelSpecs: structuredClone(yaml.modelSpecs),
+    } as Partial<AppConfig> as AppConfig;
+    const store = createMapStore();
+    const handlers = createHandlers({
+      ...storeDeps(store),
+      getAppConfig: jest.fn().mockResolvedValue(base),
+    });
+    const principal = { principalType: PrincipalType.ROLE, principalId: 'r1' };
+    const run = async (
+      handler: 'tombstoneConfigField' | 'deleteConfigField' | 'applyConfigChanges',
+      init: MockReqInit,
+    ) => {
+      const res = mockRes();
+      await handlers[handler](mockReq({ params: principal, ...init }), res);
+      return res;
+    };
+
+    const hidden = await run('tombstoneConfigField', { body: { fieldPath: hiddenPath } });
+    const header = await run('applyConfigChanges', {
+      body: { ops: [{ op: 'tombstone', fieldPath: 'endpoints.custom["kept"].headers.X-Team' }] },
+    });
+    const record = await store.read(principal);
+    if (hidden.statusCode !== 200 || header.statusCode !== 200 || !record) {
+      return false;
+    }
+    const merged = mergeConfigOverrides(base, [record]);
+    const served = (merged.endpoints?.custom ?? []) as Doc[];
+    const hides =
+      served.length === 1 &&
+      served[0].name === 'kept' &&
+      JSON.stringify(served[0].headers) === JSON.stringify({ 'X-Trace': 'on' });
+
+    const { getAppConfig } = createAppConfigService({
+      loadBaseConfig: async () => base,
+      setCachedTools: async () => undefined,
+      getCache: () => ({
+        get: async () => undefined,
+        set: async () => undefined,
+        delete: async () => true,
+      }),
+      cacheKeys: { APP_CONFIG: 'app_config' },
+      getApplicableConfigs: jest.fn().mockResolvedValue([record]),
+      getUserPrincipals: jest.fn().mockResolvedValue([]),
+      overrideEnvAllowlist: 'GATEWAY_KEY',
+    });
+    const specsHidden = !(await getAppConfig({ role: 'r1' })).modelSpecs?.list?.length;
+
+    const refused = await Promise.all(
+      [
+        ['endpoints.custom["kept"', 'keyed_path'],
+        ['modelSpecs.list["s"]', 'keyed_path'],
+        ['endpoints.custom["kept"].name', 'merge_key'],
+        ['endpoints.custom.0.headers', 'inside_array'],
+      ].map(async ([fieldPath, reason]) => {
+        const res = await run('tombstoneConfigField', { body: { fieldPath } });
+        return res.statusCode === 400 && res.body?.reason === reason;
+      }),
+    );
+    const secret = await run('tombstoneConfigField', {
+      body: { fieldPath: 'endpoints.custom["kept"].apiKey' },
+    });
+
+    const restored = await run('deleteConfigField', { query: { fieldPath: 'endpoints.custom' } });
+    return (
+      JSON.stringify(record.tombstones) ===
+        JSON.stringify([hiddenPath, 'endpoints.custom["kept"].headers.X-Team']) &&
+      hides &&
+      specsHidden &&
+      refused.every(Boolean) &&
+      secret.statusCode === 400 &&
+      secret.body?.code === 'SECRET_PATH' &&
+      restored.statusCode === 200 &&
+      (await store.read(principal))?.tombstones.length === 0
+    );
+  },
+  async renameHints() {
+    const { meta } = await getMeta();
+    const draft = {
+      name: 'draft',
+      baseURL: 'https://gateway.example.com/v1',
+      models: { default: ['m'] },
+    };
+    const [stored] = encryptConfigSecretFields({
+      'endpoints.custom': [{ ...draft, apiKey: 'sk-endpoint-admin-secret' }],
+    })['endpoints.custom'] as Doc[];
+    const store = createMapStore();
+    const principal = { principalType: PrincipalType.ROLE, principalId: 'r1' };
+    await store.write(
+      principal,
+      {
+        principalModel: PrincipalModel.ROLE,
+        priority: 10,
+        isActive: true,
+        overrides: { endpoints: { custom: [stored] } } as ConfigDraft['overrides'],
+        tombstones: ['endpoints.custom["draft"].headers.X-Legacy'],
+      },
+      ABSENT_CONFIG_REVISION,
+    );
+    const res = mockRes();
+    await createHandlers(storeDeps(store)).patchConfigField(
+      mockReq({
+        params: principal,
+        body: {
+          entries: [{ fieldPath: 'endpoints.custom', value: [{ ...draft, name: 'final' }] }],
+          renames: [{ path: 'endpoints.custom', previousName: 'draft', name: 'final' }],
+        },
+      }),
+      res,
+    );
+    const record = await store.read(principal);
+    const [final] = (getIn(record?.overrides ?? {}, 'endpoints.custom') as Doc[] | undefined) ?? [];
+    return (
+      meta.rules.renameHintPaths.includes('endpoints.custom') &&
+      res.statusCode === 200 &&
+      final?.name === 'final' &&
+      final.apiKey === stored.apiKey &&
+      final.apiKeyPreview === stored.apiKeyPreview &&
+      JSON.stringify(record?.tombstones) ===
+        JSON.stringify(['endpoints.custom["final"].headers.X-Legacy'])
     );
   },
 };
