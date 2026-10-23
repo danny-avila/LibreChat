@@ -9,12 +9,13 @@ import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { SearchParams } from 'meilisearch';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type { ISubagentContentChunk } from '~/models/subagentContent';
-import type { AppConfig, IConversation, IMessage } from '~/types';
+import type { AppConfig, IContextEntry, IConversation, IMessage } from '~/types';
 import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { fitBoundAppSnapshots, hasBoundAppSnapshots } from './appSnapshots';
 import { prepareSubagentContentDeletion } from './subagentContent';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { splitProviderItems } from '~/utils/providerItems';
 import { tenantStorage } from '~/config/tenantContext';
 import logger from '~/config/winston';
 
@@ -31,6 +32,16 @@ const MAX_SUBAGENT_CONTROL_MESSAGE_LENGTH = 4 * 1024;
  * writer therefore has enough rounds for every admitted receipt to converge. */
 const MAX_SUBAGENT_CONTROL_RECEIPT_CAS_ATTEMPTS = 64;
 const HITL_MESSAGE_FILTER_FIELD_SET = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
+
+/**
+ * Written only through `saveMessage` metadata, `setMessageContextAnchor` and the provider items
+ * `saveMessage` splits off a response's content, never from input.
+ */
+function stripContextFields(record: Record<string, unknown>): void {
+  delete record.contextUpdates;
+  delete record.contextAnchor;
+  delete record.providerItems;
+}
 
 function normalizeUserSubmittedPaths(paths: unknown): string[] {
   if (!Array.isArray(paths)) {
@@ -298,15 +309,19 @@ function buildMessageSaveUpdate(
     unsetContextMeta: boolean;
     unsetPrivateText?: boolean;
     retentionOnInsert?: { expiredAt: Date; isTemporary: false };
+    createdAtOnInsert?: Date;
   },
 ): UpdateQuery<IMessage> {
   return {
     $set: update,
     $inc: { __v: 1 },
-    ...((options.stampModelOutputOnInsert || options.retentionOnInsert != null) && {
+    ...((options.stampModelOutputOnInsert ||
+      options.retentionOnInsert != null ||
+      options.createdAtOnInsert != null) && {
       $setOnInsert: {
         ...(options.stampModelOutputOnInsert && { isUserSubmitted: false }),
         ...options.retentionOnInsert,
+        ...(options.createdAtOnInsert != null && { createdAt: options.createdAtOnInsert }),
       },
     }),
     ...((options.unsetContextMeta || options.unsetPrivateText) && {
@@ -334,6 +349,14 @@ function isTemporaryMessage(message: IMessage): boolean {
   return implicit && message.expiredAt != null;
 }
 
+/** An insert-time `createdAt` replaces Mongoose's stamp; `updatedAt` stays automatic. */
+function getSaveTimestamps(
+  timestamps: boolean | undefined,
+  createdAtOnInsert: Date | undefined,
+): boolean | { createdAt: false } | undefined {
+  return createdAtOnInsert != null && timestamps !== false ? { createdAt: false } : timestamps;
+}
+
 async function findOneAndMergeMessageProvenance(
   Message: Model<IMessage>,
   identity: FilterQuery<IMessage>,
@@ -346,6 +369,7 @@ async function findOneAndMergeMessageProvenance(
     unsetContextMeta?: boolean;
     unsetPrivateText?: boolean;
     retentionOnInsert?: { expiredAt: Date; isTemporary: false };
+    createdAtOnInsert?: Date;
     prepareAppUpdate?: (
       current: Record<string, unknown> | null,
       update: Record<string, unknown>,
@@ -417,7 +441,12 @@ async function findOneAndMergeMessageProvenance(
           $set: admittedUpdate,
           $inc: { __v: 1 },
           ...(current == null &&
-            options.retentionOnInsert != null && { $setOnInsert: options.retentionOnInsert }),
+            (options.retentionOnInsert != null || options.createdAtOnInsert != null) && {
+              $setOnInsert: {
+                ...options.retentionOnInsert,
+                ...(options.createdAtOnInsert != null && { createdAt: options.createdAtOnInsert }),
+              },
+            }),
           ...((options.unsetContextMeta || options.unsetPrivateText) && {
             $unset: {
               ...(options.unsetContextMeta && { contextMeta: 1 }),
@@ -429,7 +458,11 @@ async function findOneAndMergeMessageProvenance(
             },
           }),
         },
-        { upsert: options.upsert && current == null, new: true, timestamps: options.timestamps },
+        {
+          upsert: options.upsert && current == null,
+          new: true,
+          timestamps: getSaveTimestamps(options.timestamps, options.createdAtOnInsert),
+        },
       );
       if (message != null) {
         options.onWrite?.(current == null, message._id);
@@ -768,7 +801,15 @@ export interface MessageMethods {
       newMessageId?: string;
       contextMeta?: IMessage['contextMeta'] | null;
     },
-    metadata?: { context?: string; privateText?: PrivateTextWrite; insertOnly?: boolean },
+    metadata?: {
+      context?: string;
+      privateText?: PrivateTextWrite;
+      insertOnly?: boolean;
+      /** Creation time to store when this save inserts the row; an existing row keeps its own. */
+      createdAtOnInsert?: Date;
+      /** Context changes announced with this user message; the only way to write them. */
+      contextUpdates?: IContextEntry[];
+    },
   ): Promise<IMessage | null | undefined>;
   /**
    * Reads the references a trace viewer needs for one of the user's
@@ -835,6 +876,16 @@ export interface MessageMethods {
     overrideTimestamp?: boolean,
     provenance?: { privateTextTokens: ReadonlyMap<string, readonly string[]> },
   ): Promise<unknown>;
+  /**
+   * Stores the anchor of the context segment a summary opens, on the user's message carrying it.
+   * A stored anchor is never replaced: concurrent turns cannot move one in use.
+   * @returns whether the message now holds an anchor
+   */
+  setMessageContextAnchor(input: {
+    user: string;
+    messageId: string;
+    anchor: IContextEntry[];
+  }): Promise<boolean>;
   updateToolCallResult(params: {
     userId: string;
     messageId: string;
@@ -1084,6 +1135,7 @@ export function createMessageMethods(
       stampModelOutputOnInsert?: boolean;
       unsetContextMeta?: boolean;
       retentionOnInsert?: { expiredAt: Date; isTemporary: false };
+      createdAtOnInsert?: Date;
       unsetPrivateText?: boolean;
       timestamps?: boolean;
       onWrite?: (inserted: boolean, id: unknown) => void;
@@ -1105,12 +1157,13 @@ export function createMessageMethods(
             stampModelOutputOnInsert: options.stampModelOutputOnInsert ?? false,
             unsetContextMeta: options.unsetContextMeta ?? false,
             retentionOnInsert: options.retentionOnInsert,
+            createdAtOnInsert: options.createdAtOnInsert,
             unsetPrivateText: options.unsetPrivateText,
           }),
           {
             upsert: options.upsert,
             new: true,
-            timestamps: options.timestamps,
+            timestamps: getSaveTimestamps(options.timestamps, options.createdAtOnInsert),
             includeResultMetadata: true,
           },
         );
@@ -1150,7 +1203,15 @@ export function createMessageMethods(
       /** `null` unsets a previously stored value; omission leaves it in place. */
       contextMeta?: IMessage['contextMeta'] | null;
     },
-    metadata?: { context?: string; privateText?: PrivateTextWrite; insertOnly?: boolean },
+    metadata?: {
+      context?: string;
+      privateText?: PrivateTextWrite;
+      insertOnly?: boolean;
+      /** Creation time to store when this save inserts the row; an existing row keeps its own. */
+      createdAtOnInsert?: Date;
+      /** Context changes announced with this user message; the only way to write them. */
+      contextUpdates?: IContextEntry[];
+    },
   ) {
     if (!userId) {
       throw new Error('User not authenticated');
@@ -1174,6 +1235,17 @@ export function createMessageMethods(
       delete update.privateText;
       delete update.privacyRevision;
       delete update.privateTextTokens;
+      stripContextFields(update);
+      if (metadata?.contextUpdates != null && params.isCreatedByUser === true) {
+        update.contextUpdates = metadata.contextUpdates;
+      }
+      const split = splitProviderItems(update.content);
+      if (split != null) {
+        update.content = split.content;
+        if (params.isCreatedByUser !== true && split.providerItems != null) {
+          update.providerItems = split.providerItems;
+        }
+      }
       if (metadata?.privateText != null) {
         if (params.isCreatedByUser !== true || typeof params.text !== 'string') {
           throw new Error('Private text requires a user message.');
@@ -1273,6 +1345,15 @@ export function createMessageMethods(
       delete update.__v;
       const stampModelOutputOnInsert =
         params.isCreatedByUser === false && params.isUserSubmitted === undefined;
+      const createdAtOnInsert =
+        metadata?.createdAtOnInsert instanceof Date &&
+        !Number.isNaN(metadata.createdAtOnInsert.getTime())
+          ? metadata.createdAtOnInsert
+          : undefined;
+      if (createdAtOnInsert != null) {
+        /** With Mongoose's own stamp off, a caller-supplied value would rewrite stored rows. */
+        delete update.createdAt;
+      }
       if (metadata?.insertOnly === true) {
         if (metadata.privateText != null) {
           throw new Error('A private message cannot use the ordinary insert-only writer.');
@@ -1286,7 +1367,7 @@ export function createMessageMethods(
               ...(userSubmittedPaths.length > 0 && { userSubmittedPaths }),
               ...(userSubmittedMessageFieldPaths.length > 0 && { userSubmittedMessageFieldPaths }),
               ...retentionOnInsert,
-              createdAt: now,
+              createdAt: createdAtOnInsert ?? now,
               updatedAt: now,
             },
           },
@@ -1302,6 +1383,7 @@ export function createMessageMethods(
           stampModelOutputOnInsert,
           unsetContextMeta,
           retentionOnInsert,
+          createdAtOnInsert,
           unsetPrivateText:
             metadata?.privateText == null && Object.prototype.hasOwnProperty.call(update, 'text'),
         },
@@ -1394,6 +1476,7 @@ export function createMessageMethods(
         delete normalizedMessage.privateText;
         delete normalizedMessage.privacyRevision;
         delete normalizedMessage.privateTextTokens;
+        stripContextFields(normalizedMessage);
         const tokens = provenance?.privateTextTokens.get(String(message.messageId));
         const text = message.text;
         if (
@@ -2522,6 +2605,27 @@ export function createMessageMethods(
       : !remaining.some((result) => taskIds.includes(result.taskId));
   }
 
+  async function setMessageContextAnchor({
+    user,
+    messageId,
+    anchor,
+  }: {
+    user: string;
+    messageId: string;
+    anchor: IContextEntry[];
+  }): Promise<boolean> {
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const result = await Message.updateOne(
+      { messageId, user, contextAnchor: { $exists: false } },
+      { $set: { contextAnchor: anchor } },
+      { timestamps: false },
+    );
+    if (result.modifiedCount === 1) {
+      return true;
+    }
+    return (await Message.exists({ messageId, user, contextAnchor: { $exists: true } })) != null;
+  }
+
   /**
    * Updates a message and returns sanitized fields.
    */
@@ -2535,6 +2639,7 @@ export function createMessageMethods(
       delete update.privateText;
       delete update.privacyRevision;
       delete update.privateTextTokens;
+      stripContextFields(update);
       const updatedMessage = await writeMessage({ messageId, user: userId }, update, {
         upsert: false,
         unsetPrivateText: Object.prototype.hasOwnProperty.call(update, 'text'),
@@ -4324,6 +4429,7 @@ export function createMessageMethods(
     getPrivateMessageTexts,
     saveMessage,
     bulkSaveMessages,
+    setMessageContextAnchor,
     updateToolCallResult,
     claimBackgroundToolResults,
     confirmBackgroundToolResultClaim,
