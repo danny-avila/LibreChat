@@ -222,17 +222,19 @@ function firstAgreeingAttachmentCall(
   if (scope.agentId == null && scope.stepId == null) {
     return index.first;
   }
-  const candidates =
-    scope.agentId == null
-      ? [index.byStep.get(scope.stepId), index.byStep.get(undefined)]
-      : scope.stepId == null
-        ? [index.byAgent.get(scope.agentId), index.byAgent.get(undefined)]
-        : [
-            index.byScope.get(scope.agentId)?.get(scope.stepId),
-            index.byScope.get(undefined)?.get(scope.stepId),
-            index.byScope.get(scope.agentId)?.get(undefined),
-            index.byScope.get(undefined)?.get(undefined),
-          ];
+  let candidates: Array<IndexedAttachmentCall | undefined>;
+  if (scope.agentId == null) {
+    candidates = [index.byStep.get(scope.stepId), index.byStep.get(undefined)];
+  } else if (scope.stepId == null) {
+    candidates = [index.byAgent.get(scope.agentId), index.byAgent.get(undefined)];
+  } else {
+    candidates = [
+      index.byScope.get(scope.agentId)?.get(scope.stepId),
+      index.byScope.get(undefined)?.get(scope.stepId),
+      index.byScope.get(scope.agentId)?.get(undefined),
+      index.byScope.get(undefined)?.get(undefined),
+    ];
+  }
   let first: IndexedAttachmentCall | undefined;
   for (const candidate of candidates) {
     if (candidate != null && (first == null || candidate.order < first.order)) {
