@@ -170,10 +170,10 @@ async function seed(principalId: string, overrides: Doc, tombstones: string[] = 
 }
 
 /** The effective config a principal of `role` is served, through the real config service. */
-async function servedConfig(role: string): Promise<AppConfig> {
+async function servedConfig(role: string, base: AppConfig = baseAppConfig): Promise<AppConfig> {
   const entries = new Map<string, unknown>();
   const { getAppConfig } = createAppConfigService({
-    loadBaseConfig: async () => structuredClone(baseAppConfig),
+    loadBaseConfig: async () => structuredClone(base),
     setCachedTools: async () => undefined,
     getCache: () => ({
       get: async (key: string) => entries.get(key),
@@ -306,6 +306,73 @@ describe('hiding librechat.yaml custom endpoints by key', () => {
     await seed(role, {}, ['endpoints.custom["Literal"]']);
 
     expect(servedNames(await servedConfig(role))).toEqual(['My Endpoint', 'Own Keys']);
+  });
+
+  describe('the endpoint lists a hidden endpoint is named in', () => {
+    const spec = (name: string, endpointName: string) => ({
+      name,
+      label: name,
+      preset: { endpoint: endpointName, model: 'm' },
+    });
+    /** The base config with these model specs and agent providers, as librechat.yaml loads them. */
+    const baseWith = (
+      modelSpecs: { list: ReturnType<typeof spec>[]; addedEndpoints?: string[] },
+      allowedProviders?: string[],
+    ) =>
+      ({
+        ...structuredClone(baseAppConfig),
+        endpoints: {
+          custom: structuredClone(YAML.endpoints.custom),
+          ...(allowedProviders && { agents: { allowedProviders } }),
+        },
+        modelSpecs,
+      }) as unknown as AppConfig;
+
+    it('keeps the unrelated added endpoints when the hidden endpoint owned every spec', async () => {
+      const role = nextRole();
+      await seed(role, {}, ['endpoints.custom["My Endpoint"]']);
+      const base = baseWith({
+        list: [spec('mine', 'My Endpoint')],
+        addedEndpoints: ['agents', 'My Endpoint', 'Literal'],
+      });
+
+      const served = await servedConfig(role, base);
+
+      expect(served.modelSpecs?.list).toEqual([]);
+      expect(served.modelSpecs?.addedEndpoints).toEqual(['agents', 'Literal']);
+      expect((await servedConfig(nextRole(), base)).modelSpecs).toEqual(base.modelSpecs);
+    });
+
+    it('takes the hidden endpoint out of the agent provider allow-list', async () => {
+      const role = nextRole();
+      await seed(role, {}, ['endpoints.custom["My Endpoint"]']);
+      const base = baseWith({ list: [] }, ['My Endpoint', 'openAI', 'Literal']);
+
+      const served = await servedConfig(role, base);
+
+      expect(served.endpoints?.agents?.allowedProviders).toEqual(['openAI', 'Literal']);
+      expect((await servedConfig(nextRole(), base)).endpoints?.agents?.allowedProviders).toEqual([
+        'My Endpoint',
+        'openAI',
+        'Literal',
+      ]);
+    });
+
+    it('never empties an allow-list, which would allow every endpoint', async () => {
+      const role = nextRole();
+      await seed(role, {}, ['endpoints.custom["My Endpoint"]']);
+      const base = baseWith(
+        { list: [spec('literal', 'Literal')], addedEndpoints: ['My Endpoint'] },
+        ['My Endpoint'],
+      );
+
+      const served = await servedConfig(role, base);
+
+      expect(servedNames(served)).toEqual(['Literal', 'Own Keys']);
+      expect(specNames(served)).toEqual(['literal']);
+      expect(served.modelSpecs?.addedEndpoints).toEqual(['My Endpoint']);
+      expect(served.endpoints?.agents?.allowedProviders).toEqual(['My Endpoint']);
+    });
   });
 
   it('DELETE of the keyed path shows the endpoint again', async () => {
@@ -848,6 +915,11 @@ describe('stored keys of entries a profile hides or renames', () => {
           [final],
           [{ path: 'endpoints.custom', previousName: 'draft', name: '$final' }],
           'invalid_name',
+        ],
+        [
+          [final, renamed(draft, { name: 'copy' })],
+          [...hint, { path: 'endpoints.custom', previousName: 'draft', name: 'copy' }],
+          'duplicate_source',
         ],
       ];
       for (const [custom, renames, reason] of cases) {

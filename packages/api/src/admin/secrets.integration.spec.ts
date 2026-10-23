@@ -1983,6 +1983,30 @@ describe('MCP server credentials — real handlers against a real Config collect
       expect(res.body).toMatchObject({ code: 'MCP_API_KEY_REENTRY_REQUIRED', server: 'code' });
     });
 
+    it('duplicates a server to two names from one stored source', async () => {
+      const principalId = await seed();
+      const source = await storedServer(principalId, 'github');
+
+      const res = await patch(
+        principalId,
+        [
+          { fieldPath: 'mcpServers.code', value: renamed() },
+          { fieldPath: 'mcpServers.copy', value: renamed() },
+        ],
+        {
+          renames: [
+            { path: 'mcpServers', previousName: 'github', name: 'code' },
+            { path: 'mcpServers', previousName: 'github', name: 'copy' },
+          ],
+        },
+      );
+
+      expect(res.statusCode).toBe(200);
+      for (const name of ['code', 'copy']) {
+        expect((await storedServer(principalId, name)).apiKey.key).toBe(source.apiKey.key);
+      }
+    });
+
     it('without a hint, a renamed server keeps no credential', async () => {
       const principalId = await seed();
 

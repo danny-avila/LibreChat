@@ -43,10 +43,20 @@ tombstones.
 ## Hiding an endpoint
 
 `fieldPath: 'endpoints.custom["Name"]'` hides the endpoint for every principal the profile applies
-to. The profile's own entry of that name, and any key it stored on it, is removed. Model specs that
-select the endpoint (`preset.endpoint`), and its `modelSpecs.addedEndpoints` listing, are hidden
-with it, so the principals are not offered a spec for an endpoint they are not served. This holds
-whether `librechat.yaml` or a lower profile (such as `__base__`) defines the endpoint.
+to. The profile's own entry of that name, and any key it stored on it, is removed. Everything that
+offers the endpoint goes with it, so the principals are not offered an endpoint they are not
+served:
+
+- the model specs that select it (`preset.endpoint`);
+- its name in `modelSpecs.addedEndpoints`;
+- its name in `endpoints.agents.allowedProviders`.
+
+This holds whether `librechat.yaml` or a lower profile (such as `__base__`) defines the endpoint.
+Nothing else goes: when the hidden endpoint selected every spec, the spec list is empty and the
+other `addedEndpoints` stay. An empty `addedEndpoints` or `allowedProviders` allows every endpoint,
+so a list that names only hidden endpoints stays as it is; those names match no endpoint the
+principals are served, so it allows none. With every spec hidden, `modelSpecs.enforce` no longer
+applies, as for a `librechat.yaml` with an empty spec list.
 
 A tombstone in the `__base__` profile applies to every principal. Every other profile merges after
 `__base__`.
@@ -143,6 +153,8 @@ cannot apply answers 400 `CONFIG_RENAME_INVALID` with `reason`:
 | `target_exists`        | the profile already stores an entry named `name`                     |
 | `target_not_written`   | the write does not write an entry named `name`                       |
 | `source_still_written` | the write still writes `previousName`; swap names with `rename` ops  |
+| `duplicate_source`     | two hints rename the same entry                                      |
+| `duplicate_target`     | two hints rename to the same name                                    |
 | `invalid_name`         | a name a keyed path cannot address, or two spellings of one entry    |
 
 Without a hint, a renamed entry is a new entry: it keeps no key, and the tombstones stay on the old

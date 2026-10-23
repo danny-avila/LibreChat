@@ -443,8 +443,10 @@ export type AdminConfigChangeErrorResponse = {
  *   entry (`upsertEntry`, or a PATCH or `set` of the collection or an ancestor; not PUT, which
  *   keeps tombstones) clears the tombstone that hides it whole, and tombstones inside it stay.
  *   A hidden custom endpoint, whether librechat.yaml or a lower profile (such as `__base__`)
- *   defines it, also hides the model specs (and `addedEndpoints`) that select it, unless a later
- *   layer adds the endpoint back. Refused with 400 `CONFIG_PATH_INVALID`: a
+ *   defines it, also hides the model specs that select it and its name in
+ *   `modelSpecs.addedEndpoints` and `endpoints.agents.allowedProviders`, unless a later layer
+ *   adds the endpoint back; other added endpoints stay when no spec is left, and an allow-list
+ *   that names only hidden endpoints stays whole. Refused with 400 `CONFIG_PATH_INVALID`: a
  *   malformed keyed path, or one after an array not merged by key, and a keyed path in a write
  *   (PATCH, `set`, or an entry op's collection), reason `keyed_path`; the entry's key field,
  *   `merge_key`; a tombstone into an array of the entry, `inside_array`. The entry's registered
@@ -461,8 +463,8 @@ export type AdminConfigChangeErrorResponse = {
  *   `CONFIG_RENAME_INVALID` with `reason`: `inherited_entry` (either name is a librechat.yaml
  *   entry), `source_not_found`, `target_exists` (the principal already stores `name`),
  *   `target_not_written`, `source_still_written` (the write keeps `previousName`; swap names with
- *   `/changes` `rename` ops), or `invalid_name`. A `/changes` `rename` of a custom endpoint moves
- *   its keyed tombstones too.
+ *   `/changes` `rename` ops), `duplicate_source` (two hints rename one entry), `duplicate_target`
+ *   or `invalid_name`. A `/changes` `rename` of a custom endpoint moves its keyed tombstones too.
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'

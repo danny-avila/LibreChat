@@ -1127,7 +1127,9 @@ function getRenameIdentity(path: ConfigSecretRename['path'], name: string): stri
  * renamed or duplicated from the stored `previousName`) or `endpoints.custom` (a custom endpoint
  * renamed from the stored entry named `previousName`), telling the write to carry the secrets the
  * entry it writes as `name` omits from there. Never stored. A custom endpoint name must be one a
- * keyed path can address (`isConfigEntryKey`), since the entry's keyed tombstones move with it.
+ * keyed path can address (`isConfigEntryKey`), since the entry's keyed tombstones move with it,
+ * and one entry is renamed once per write (`duplicate_source`): its tombstones move to one name.
+ * A server may be duplicated, so several hints may share its `previousName`.
  */
 function readRenames(value: unknown): RenamesRead {
   if (value === undefined || value === null) {
@@ -1138,6 +1140,7 @@ function readRenames(value: unknown): RenamesRead {
   }
   const renames: ConfigSecretRename[] = [];
   const targets = new Set<string>();
+  const sources = new Set<string>();
   for (const item of value) {
     const { path, previousName, name } = (item ?? {}) as Record<string, unknown>;
     if (!isRenamePath(path)) {
@@ -1155,7 +1158,8 @@ function readRenames(value: unknown): RenamesRead {
       return { ok: false, reason: 'invalid_name' };
     }
     const rename: ConfigSecretRename = { path, previousName, name };
-    if (isEntryRename(rename) && (!isConfigEntryKey(previousName) || !isConfigEntryKey(name))) {
+    const entry = isEntryRename(rename);
+    if (entry && (!isConfigEntryKey(previousName) || !isConfigEntryKey(name))) {
       return { ok: false, reason: 'invalid_name' };
     }
     const target = JSON.stringify([path, getRenameIdentity(path, name)]);
@@ -1163,6 +1167,11 @@ function readRenames(value: unknown): RenamesRead {
       return { ok: false, reason: 'duplicate_target' };
     }
     targets.add(target);
+    const source = JSON.stringify([path, getRenameIdentity(path, previousName)]);
+    if (entry && sources.has(source)) {
+      return { ok: false, reason: 'duplicate_source' };
+    }
+    sources.add(source);
     renames.push(rename);
   }
   return { ok: true, renames };
