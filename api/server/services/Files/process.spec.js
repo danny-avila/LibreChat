@@ -122,6 +122,7 @@ jest.mock('@librechat/api', () => {
   );
   return {
     ...jest.requireActual('../../../../packages/api/src/files/extraction/upload'),
+    ...jest.requireActual('../../../../packages/api/src/files/extraction/commit'),
     ...jest.requireActual('../../../../packages/api/src/files/storage'),
     ...jest.requireActual('../../../../packages/api/src/files/operations'),
     ...jest.requireActual('../../../../packages/api/src/files/finalize'),
@@ -174,26 +175,8 @@ jest.mock('@librechat/api', () => {
         if (file.metadata?.codeEnvRef != null) deleters.push(getDeleteFile('execute_code'));
         await Promise.all(deleters.map((deleteFile) => deleteFile?.(req, file)));
       },
-    withStoredUploadCleanup: async (
-      { stored, resolveDeleteFile, recordExists, req, trackWrite },
-      next,
-    ) => {
-      let writeBegun = trackWrite !== true;
-      try {
-        return await next(() => {
-          writeBegun = true;
-        });
-      } catch (error) {
-        try {
-          if (!writeBegun || !(await recordExists(stored))) {
-            await resolveDeleteFile()?.(req, stored);
-          }
-        } catch {
-          /* the helper logs cleanup failures; the original error wins */
-        }
-        throw error;
-      }
-    },
+    withStoredUploadCleanup: jest.requireActual('../../../../packages/api/src/files/orphan')
+      .withStoredUploadCleanup,
     resolveStoredUploadTarget: ({ isAssistantUpload, stored, convertedImage, storageMetadata }) => {
       if (!isAssistantUpload) {
         return { source: stored.source, stored: { ...stored, ...storageMetadata } };
@@ -662,6 +645,137 @@ describe('processAgentFileUpload', () => {
   });
 
   describe('extraction service HTTP lifetime', () => {
+    test.each(['storage', 'retention', 'resource'])(
+      'cancels a remote upload during %s and cleans uncommitted state',
+      async (stage) => {
+        const { createServer, request } = require('node:http');
+        const express = require('express');
+        const disk = require('node:fs/promises');
+        const { join } = require('node:path');
+        const { tmpdir } = require('node:os');
+        const directory = await disk.mkdtemp(join(tmpdir(), 'l3-upload-'));
+        const filepath = join(directory, 'owned.pdf');
+        const unrelatedPath = join(directory, 'other-user.pdf');
+        await disk.writeFile(unrelatedPath, 'unrelated file');
+        const clientModule = require('../../../../packages/api/src/files/extraction/client');
+        const extract = jest
+          .fn()
+          .mockResolvedValue({ segments: [{ text: 'remote document' }], textBytes: 15 });
+        jest
+          .spyOn(clientModule, 'createDocumentExtractor')
+          .mockReturnValue({ maxInputBytes: 10485760, extract });
+        let releaseStorage;
+        let storageStarted;
+        const stored = new Promise((resolve) => {
+          releaseStorage = resolve;
+        });
+        const started = new Promise((resolve) => {
+          storageStarted = resolve;
+        });
+        const storageResult = {
+          bytes: 42,
+          filename: 'upload.pdf',
+          filepath,
+        };
+        const handleFileUpload = jest.fn(async () => {
+          if (stage === 'storage') {
+            storageStarted();
+            await stored;
+          }
+          await disk.writeFile(filepath, 'stored document');
+          if (stage === 'retention') setImmediate(storageStarted);
+          return storageResult;
+        });
+        if (stage === 'retention')
+          getRetentionExpiry.mockImplementationOnce(async () => {
+            await stored;
+            return {};
+          });
+        if (stage === 'resource')
+          db.addAgentResourceFile.mockImplementationOnce(async () => {
+            storageStarted();
+            await stored;
+            return {};
+          });
+        const deleteFile = jest.fn(async (_req, ref) => {
+          expect(ref.filepath).toBe(filepath);
+          await disk.unlink(ref.filepath);
+        });
+        getStrategyFunctions.mockReturnValue({ handleFileUpload, deleteFile });
+        let finish;
+        const outcome = new Promise((resolve) => {
+          finish = resolve;
+        });
+        let disconnected;
+        const closed = new Promise((resolve) => {
+          disconnected = resolve;
+        });
+        const app = express();
+        app.use(express.raw({ type: '*/*' }));
+        app.post('/upload', async (req, res) => {
+          Object.assign(req, makeReq({ interfaceConfig: { retentionMode: RetentionMode.ALL } }));
+          req.file.buffer = Buffer.from('uploaded document');
+          req.config.fileConfig.extractionService = { enabled: true };
+          res.once('close', disconnected);
+          try {
+            await processAgentFileUpload({ req, res, metadata: makeMetadata() });
+            finish({ ok: true });
+          } catch (error) {
+            finish({ ok: false, code: error.code });
+          }
+        });
+        const http = createServer(app);
+        await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve));
+        const caller = request({
+          hostname: '127.0.0.1',
+          port: http.address().port,
+          path: '/upload',
+          method: 'POST',
+        });
+        caller.on('error', () => {});
+        caller.end('upload');
+        try {
+          await started;
+          caller.destroy();
+          await closed;
+          releaseStorage({
+            bytes: 42,
+            filename: 'upload.pdf',
+            filepath,
+          });
+          const result = await outcome;
+          expect(result).toMatchObject({ ok: false, code: 'CANCELLED' });
+          expect(db.addAgentResourceFile).toHaveBeenCalledTimes(stage === 'resource' ? 1 : 0);
+          if (stage === 'resource') {
+            expect(db.removeAgentResourceFiles).toHaveBeenCalledWith({
+              agent_id: 'agent-abc',
+              files: [{ tool_resource: EToolResources.context, file_id: 'file-uuid-123' }],
+            });
+          }
+          expect(db.createFile).not.toHaveBeenCalled();
+          expect(deleteFile).toHaveBeenCalledWith(
+            expect.objectContaining({ user: expect.objectContaining({ id: 'user-123' }) }),
+            expect.objectContaining({
+              file_id: 'file-uuid-123',
+              filepath,
+              source: 'local',
+              user: 'user-123',
+              tenantId: 'tenant-a',
+            }),
+          );
+          await expect(disk.stat(filepath)).rejects.toMatchObject({ code: 'ENOENT' });
+          await expect(disk.readFile(unrelatedPath, 'utf8')).resolves.toBe('unrelated file');
+        } finally {
+          releaseStorage({ bytes: 42, filepath });
+          caller.destroy();
+          http.closeAllConnections();
+          await new Promise((resolve) => http.close(resolve));
+          jest.restoreAllMocks();
+          await disk.rm(directory, { recursive: true, force: true });
+        }
+      },
+    );
+
     test('cancels extraction on a real HTTP disconnect without success persistence', async () => {
       const { createServer, request } = require('node:http');
       const express = require('express');
@@ -3903,6 +4017,48 @@ describe('fallback text for uploads left to tools', () => {
       }),
     };
   };
+
+  test('cancels an optionally extracted document after storage without writing a record', async () => {
+    const { resolveUploadFallbackText } = require('@librechat/api');
+    const deleteFile = jest.fn().mockResolvedValue(undefined);
+    const res = { destroyed: false, writableFinished: false };
+    const req = makeReq({ mimetype: PDF_MIME });
+    req.config.fileConfig.extractionService = { enabled: true };
+    resolveUploadFallbackText.mockImplementationOnce(async ({ persistence }) => {
+      persistence.select();
+      return 'remote document';
+    });
+    getStrategyFunctions.mockReturnValue({
+      deleteFile,
+      handleFileUpload: jest.fn(async () => {
+        res.destroyed = true;
+        return { bytes: 42, filepath: '/uploads/user-123/optional.pdf' };
+      }),
+    });
+    await expect(
+      processAgentFileUpload({
+        req,
+        res,
+        metadata: {
+          agent_id: 'agent-abc',
+          message_file: 'true',
+          effectiveEndpoint: 'Custom Provider',
+          file_id: 'optional-file',
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'CANCELLED' });
+    expect(db.createFile).not.toHaveBeenCalled();
+    expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+    expect(deleteFile).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({
+        file_id: 'optional-file',
+        filepath: '/uploads/user-123/optional.pdf',
+        user: 'user-123',
+        tenantId: 'tenant-a',
+      }),
+    );
+  });
 
   test('stores the text a turn without a reading tool can fall back to', async () => {
     const { createFile } = require('~/models');

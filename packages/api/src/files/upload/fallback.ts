@@ -6,6 +6,7 @@ import type {
   EndpointFileConfig,
   TDefaultLLMDeliveryPath,
 } from 'librechat-data-provider';
+import type { ExtractionUploadPersistence } from '~/files/extraction/commit';
 import type { ExtractionLifetime } from '~/files/extraction/lifetime';
 import {
   extractInspectableFileText,
@@ -95,6 +96,7 @@ export async function resolveUploadFallbackText({
   filters,
   extractors = builtInExtractors,
   extractionService,
+  persistence,
   request,
   response,
   signal,
@@ -102,6 +104,7 @@ export async function resolveUploadFallbackText({
 }: Omit<UploadFallbackTextRoute, 'mimeType'> & {
   file: Express.Multer.File;
   extractionService?: ExtractionServiceConfig;
+  persistence?: ExtractionUploadPersistence;
   request?: ExtractionLifetime['request'];
   response?: ExtractionLifetime['response'];
   signal?: AbortSignal;
@@ -137,6 +140,7 @@ export async function resolveUploadFallbackText({
         resolveUploadDocumentText({
           file,
           config: extractionService,
+          persistence,
           request,
           response,
           signal,

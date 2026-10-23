@@ -1,5 +1,6 @@
 import { FileSources } from 'librechat-data-provider';
 import type { ExtractionServiceConfig } from 'librechat-data-provider';
+import type { ExtractionUploadPersistence } from './commit';
 import type { MistralOCRUploadResult } from '~/types';
 import type { ExtractionLifetime } from './lifetime';
 import type { DocumentExtractor } from './client';
@@ -24,6 +25,7 @@ export async function resolveUploadDocumentText<T extends DocumentText>(
     response?: ExtractionLifetime['response'];
     config?: ExtractionServiceConfig;
     extractor?: DocumentExtractor;
+    persistence?: ExtractionUploadPersistence;
   } & (
     | { extract: () => Promise<T> }
     | {
@@ -39,6 +41,7 @@ export async function resolveUploadDocumentText<T extends DocumentText>(
   const extractor = input.extractor ?? createDocumentExtractor(input.config);
   const format = getExtractionFormat(input.file.originalname, input.file.mimetype);
   if (extractor && format) {
+    input.persistence?.select();
     return withExtractionLifetime(
       { ...input, deadlineMs: extractor.deadlineMs },
       async (signal) => {

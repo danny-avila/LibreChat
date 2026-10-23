@@ -6,6 +6,7 @@ import { prepareCodeOutputBufferForInspection } from '../code/inspection';
 import { capabilities, fixture, reply, result } from './fixture.helper';
 import { resolveUploadFallbackText } from '../upload/fallback';
 import { preflightCodeOutputBatch } from '../code/preflight';
+import { createExtractionUploadPersistence } from './commit';
 import { resolveUploadDocumentText } from './upload';
 import { parseDocument } from '../documents/crud';
 
@@ -92,6 +93,37 @@ describe('selected remote semantic extraction callers', () => {
           { maxInputBytes: 2, extract: jest.fn() },
         ),
       ).rejects.toThrow('Document extraction failed (INPUT_UNAVAILABLE).');
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('keeps selected optional-upload ownership after the text consumer returns', async () => {
+    const server = await fixture((req, res) => {
+      req.resume();
+      reply(res, req.method === 'GET' ? capabilities : result(file.buffer, 'docx'));
+    });
+    const response = { destroyed: false, writableFinished: false };
+    const persistence = createExtractionUploadPersistence({ response });
+    try {
+      await expect(
+        resolveUploadFallbackText({
+          file,
+          fileId: 'file',
+          deliveryPath: 'none',
+          destinationChosen: false,
+          isMessageAttachment: true,
+          endpointConfig: { textFallbackWithoutTools: true },
+          persistence,
+          extractionService: { enabled: true, socketPath: server.socketPath },
+          response,
+        }),
+      ).resolves.toBe('你好!');
+      expect(persistence.selected).toBe(true);
+      response.destroyed = true;
+      await expect(persistence.wait(Promise.resolve({}))).rejects.toMatchObject({
+        code: 'CANCELLED',
+      });
     } finally {
       await server.close();
     }

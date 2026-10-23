@@ -41,6 +41,8 @@ const {
   getUploadExtractedTextPlan,
   resolveUploadFallbackText,
   resolveUploadDocumentText,
+  createExtractionUploadPersistence,
+  commitExtractionUpload,
   UPLOAD_EXTRACTED_TEXT_PLANS,
   MAX_STORED_EXTRACTED_TEXT_BYTES,
   inspectContent,
@@ -810,6 +812,7 @@ const filterEnabledConsumers = async (req, agentTools, roleGrants) => {
 const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const { file } = req;
   const appConfig = req.config;
+  const persistence = createExtractionUploadPersistence({ request: req, response: res });
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
 
   let messageAttachment = isMessageFileUpload(metadata.message_file);
@@ -965,6 +968,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
      * @return {Promise<void>}
      */
     const createTextFile = async ({ text, isTranscript = false }) => {
+      persistence.assertActive();
       if (!isTranscript) {
         assertExtractedTextInspectable({
           filters: appConfig?.filters,
@@ -1035,7 +1039,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
       const retentionExpiry = await withStoredUploadCleanup(
         { ...storedCleanup, trackWrite: true },
-        () => retentionExpiryPromise,
+        () => persistence.wait(retentionExpiryPromise),
       );
       const fileInfo = {
         ...removeNullishValues({
@@ -1060,21 +1064,20 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         ...retentionExpiry,
       };
 
-      const result = await withStoredUploadCleanup(
-        { ...storedCleanup, trackWrite: true },
-        async (beginWrite) => {
-          if (!messageAttachment && effectiveToolResource) {
-            await db.addAgentResourceFile({
-              file_id,
-              agent_id,
-              tool_resource: effectiveToolResource,
-              updatingUserId: req?.user?.id,
-            });
-          }
-          beginWrite();
-          return db.createFile(fileInfo, true);
+      const result = await commitExtractionUpload({
+        persistence,
+        cleanup: storedCleanup,
+        messageAttachment,
+        resource: {
+          file_id,
+          agent_id,
+          tool_resource: effectiveToolResource,
+          updatingUserId: req?.user?.id,
         },
-      );
+        addAgentResourceFile: db.addAgentResourceFile,
+        removeAgentResourceFiles: db.removeAgentResourceFiles,
+        createFile: () => db.createFile(fileInfo, true),
+      });
       sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
     };
 
@@ -1098,6 +1101,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       resolveUploadDocumentText({
         file,
         config: appConfig?.fileConfig?.extractionService,
+        persistence,
         request: req,
         response: res,
         configuredOCR: shouldUseConfiguredOCR,
@@ -1177,6 +1181,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         resolveUploadDocumentText({
           file,
           config: appConfig?.fileConfig?.extractionService,
+          persistence,
           request: req,
           response: res,
           extract: () =>
@@ -1200,6 +1205,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     isMessageAttachment: messageAttachment,
     endpointConfig,
     extractionService: appConfig?.fileConfig?.extractionService,
+    persistence,
     request: req,
     response: res,
     filters: appConfig?.filters,
@@ -1397,7 +1403,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   };
   const retentionExpiry = await withStoredUploadCleanup(
     { ...storedCleanup, trackWrite: true },
-    () => retentionExpiryPromise,
+    () => persistence.wait(retentionExpiryPromise),
   );
   const fileInfo = {
     ...removeNullishValues({
@@ -1430,21 +1436,20 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     ...retentionExpiry,
   };
 
-  const result = await withStoredUploadCleanup(
-    { ...storedCleanup, trackWrite: true },
-    async (beginWrite) => {
-      if (!messageAttachment && effectiveToolResource) {
-        await db.addAgentResourceFile({
-          file_id,
-          agent_id,
-          tool_resource: effectiveToolResource,
-          updatingUserId: req?.user?.id,
-        });
-      }
-      beginWrite();
-      return db.createFile(fileInfo, true);
+  const result = await commitExtractionUpload({
+    persistence,
+    cleanup: storedCleanup,
+    messageAttachment,
+    resource: {
+      file_id,
+      agent_id,
+      tool_resource: effectiveToolResource,
+      updatingUserId: req?.user?.id,
     },
-  );
+    addAgentResourceFile: db.addAgentResourceFile,
+    removeAgentResourceFiles: db.removeAgentResourceFiles,
+    createFile: () => db.createFile(fileInfo, true),
+  });
 
   sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
 };
