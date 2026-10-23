@@ -1,7 +1,14 @@
 import { encryptV3, setConfigFields, toConfigOverrideState } from '@librechat/data-schemas';
-import type { ConfigFieldWrite } from '@librechat/data-schemas';
+import type { AppConfig, ConfigFieldWrite } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
-import { findSecretReentry, getAzureGroupReentryIssues } from './reentry';
+import {
+  SECRET_BINDINGS,
+  getAzureGroupFingerprint,
+  getServerSecretFingerprint,
+  getScalarBindingFingerprint,
+  getCustomEndpointFingerprint,
+} from '~/app/rebinding';
+import { findSecretReentry, getBoundKeyReentryIssues, getAzureGroupReentryIssues } from './reentry';
 
 /** Encryption reads `CREDS_KEY` when data-schemas loads, before any spec code runs. */
 jest.mock('@librechat/data-schemas', () => {
@@ -446,5 +453,251 @@ describe('getAzureGroupReentryIssues', () => {
         empty,
       ),
     ).toEqual([]);
+  });
+});
+
+describe('getBoundKeyReentryIssues', () => {
+  /** librechat.yaml's resolved config: one custom endpoint and an OCR service. */
+  const baseConfig = {
+    config: {},
+    endpoints: {
+      custom: [{ name: 'Ollama', apiKey: 'ollama', baseURL: 'http://ollama:11434/v1', models: {} }],
+    },
+    ocr: { baseURL: 'https://ocr.yaml.example/v1' },
+  } as unknown as AppConfig;
+
+  const document = (overrides: Record<string, unknown>): StoredDocument => ({
+    overrides,
+    tombstones: [],
+  });
+  const endpointDoc = (entry: Record<string, unknown> = {}) =>
+    document({
+      endpoints: {
+        custom: [
+          {
+            name: 'Gateway',
+            apiKey: STORED_KEY,
+            baseURL: 'https://gateway.example/v1',
+            models: { default: ['m'] },
+            ...entry,
+          },
+        ],
+      },
+    });
+
+  function issues(
+    stored: StoredDocument,
+    writes: ConfigFieldWrite[],
+    entered: ReadonlySet<string> = new Set(),
+  ) {
+    return getBoundKeyReentryIssues({
+      stored,
+      candidate: setConfigFields(toConfigOverrideState(stored), writes),
+      baseConfig,
+      entered,
+    });
+  }
+
+  const endpointIssue = (field: string) => ({
+    path: `endpoints.custom.0.${field}`,
+    segments: ['endpoints', 'custom', '0', ...field.split('.')],
+    code: 'secret_reentry_required',
+    secretPath: 'endpoints.custom.0.apiKey',
+  });
+
+  it.each([
+    ['baseURL', 'https://attacker.example/v1', 'baseURL'],
+    ['provider', 'anthropic', 'provider'],
+    ['addParams', { anthropicApiUrl: 'https://attacker.example' }, 'addParams.anthropicApiUrl'],
+    ['dropParams', ['clientOptions'], 'dropParams'],
+  ])('refuses a %s change beside a kept endpoint key', (field, value, reported) => {
+    expect(
+      issues(endpointDoc(), [{ segments: ['endpoints', 'custom', '0', field], value }]),
+    ).toEqual([endpointIssue(reported)]);
+  });
+
+  it('accepts the move when the key is entered again, and an edit that moves nothing', () => {
+    expect(
+      issues(
+        endpointDoc(),
+        [
+          {
+            segments: ['endpoints', 'custom', '0', 'baseURL'],
+            value: 'https://attacker.example/v1',
+          },
+          { segments: ['endpoints', 'custom', '0', 'apiKey'], value: ENTERED_KEY },
+        ],
+        new Set([ENTERED_KEY]),
+      ),
+    ).toEqual([]);
+    expect(
+      issues(endpointDoc(), [
+        { segments: ['endpoints', 'custom', '0', 'models'], value: { default: ['n'] } },
+        {
+          segments: ['endpoints', 'custom', '0', 'baseURL'],
+          value: 'https://gateway.example/v1#x',
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('follows a renamed key by value, and refuses it under a name librechat.yaml points elsewhere', () => {
+    const keyOnly = document({
+      endpoints: { custom: [{ name: 'Gateway', apiKey: STORED_KEY, models: {} }] },
+    });
+    expect(
+      issues(endpointDoc(), [{ segments: ['endpoints', 'custom', '0', 'name'], value: 'Renamed' }]),
+    ).toEqual([]);
+    expect(
+      issues(keyOnly, [{ segments: ['endpoints', 'custom', '0', 'name'], value: 'ollama' }]),
+    ).toEqual([endpointIssue('baseURL')]);
+  });
+
+  it('accepts a key moved onto the destination it was bound to over a lower layer', () => {
+    const boundTo = {
+      name: 'Gateway',
+      baseURL: 'https://base.example/v1',
+      models: { default: ['m'] },
+    };
+    const bound = endpointDoc({
+      baseURL: undefined,
+      apiKeyBinding: getCustomEndpointFingerprint(boundTo),
+    });
+    expect(
+      issues(bound, [
+        { segments: ['endpoints', 'custom', '0', 'baseURL'], value: 'https://base.example/v1' },
+      ]),
+    ).toEqual([]);
+    expect(
+      issues(bound, [
+        { segments: ['endpoints', 'custom', '0', 'baseURL'], value: 'https://attacker.example/v1' },
+      ]),
+    ).toEqual([endpointIssue('baseURL')]);
+  });
+
+  it('refuses a scalar move, a removal or tombstone of its destination included', () => {
+    const ocr = document({ ocr: { apiKey: STORED_KEY, baseURL: 'https://ocr.example/v1' } });
+    const expected = [
+      {
+        path: 'ocr.baseURL',
+        segments: ['ocr', 'baseURL'],
+        code: 'secret_reentry_required',
+        secretPath: 'ocr.apiKey',
+      },
+    ];
+    expect(
+      issues(ocr, [{ segments: ['ocr', 'baseURL'], value: 'https://attacker.example/v1' }]),
+    ).toEqual(expected);
+    expect(
+      getBoundKeyReentryIssues({
+        stored: ocr,
+        candidate: { overrides: { ocr: { apiKey: STORED_KEY } }, tombstones: [] },
+        baseConfig,
+        entered: new Set(),
+      }),
+    ).toEqual(expected);
+    expect(
+      getBoundKeyReentryIssues({
+        stored: ocr,
+        candidate: { overrides: { ocr: { apiKey: STORED_KEY } }, tombstones: ['ocr.baseURL'] },
+        baseConfig,
+        entered: new Set(),
+      }),
+    ).toEqual(expected);
+  });
+
+  it('leaves visible references and keys the request entered alone', () => {
+    const referenced = document({
+      ocr: { apiKey: '${OCR_API_KEY}', baseURL: 'https://ocr.example/v1' },
+      endpoints: {
+        custom: [{ name: 'Gateway', apiKey: 'user_provided', baseURL: 'https://g/v1' }],
+      },
+    });
+    expect(
+      issues(referenced, [
+        { segments: ['ocr', 'baseURL'], value: 'https://attacker.example/v1' },
+        { segments: ['endpoints', 'custom', '0', 'baseURL'], value: 'https://attacker.example/v1' },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('keeps a scalar key bound to the destination it was entered for over a lower layer', () => {
+    const binding = SECRET_BINDINGS.find(({ path }) => path.join('.') === 'ocr')!;
+    const bound = document({
+      ocr: {
+        apiKey: STORED_KEY,
+        apiKeyBinding: getScalarBindingFingerprint(binding, { baseURL: 'https://base.example/v1' }),
+      },
+    });
+    expect(
+      issues(bound, [{ segments: ['ocr', 'baseURL'], value: 'https://base.example/v1' }]),
+    ).toEqual([]);
+  });
+});
+
+describe('a stored key bound to a destination over a lower layer', () => {
+  it('lets an MCP write restate the destination its key was bound to, and nothing else', () => {
+    const bound: StoredDocument = {
+      overrides: {
+        mcpServers: {
+          shared: {
+            apiKey: {
+              source: 'admin',
+              authorization_type: 'bearer',
+              key: STORED_KEY,
+              keyBinding: getServerSecretFingerprint('apiKey', {
+                url: 'https://base.example/mcp',
+                apiKey: { authorization_type: 'bearer' },
+              }),
+            },
+          },
+        },
+      },
+      tombstones: [],
+    };
+    const restate = (url: string) =>
+      check([{ segments: ['mcpServers', 'shared', 'url'], value: url }], yaml, bound, new Set());
+
+    expect(restate('https://base.example/mcp')).toBeNull();
+    expect(restate('https://attacker.example/mcp')).toMatchObject({
+      code: 'MCP_API_KEY_REENTRY_REQUIRED',
+      server: 'shared',
+      fields: ['url'],
+    });
+  });
+
+  it('lets an Azure groupMap write restate the destination its key was bound to', () => {
+    const bound: StoredDocument = {
+      overrides: {
+        endpoints: {
+          azureOpenAI: {
+            groupMap: {
+              shared: {
+                apiKey: STORED_KEY,
+                apiKeyBinding: getAzureGroupFingerprint({ baseURL: 'https://base.example/openai' }),
+              },
+            },
+          },
+        },
+      },
+      tombstones: [],
+    };
+    const restate = (baseURL: string) =>
+      getAzureGroupReentryIssues({
+        stored: bound,
+        candidate: setConfigFields(toConfigOverrideState(bound), [
+          {
+            segments: ['endpoints', 'azureOpenAI', 'groupMap', 'shared', 'baseURL'],
+            value: baseURL,
+          },
+        ]),
+        baseGroupMap: {},
+        entered: new Set(),
+      });
+
+    expect(restate('https://base.example/openai')).toEqual([]);
+    expect(restate('https://attacker.example/openai').map(({ path }) => path)).toEqual([
+      'endpoints.azureOpenAI.groupMap.shared.baseURL',
+    ]);
   });
 });

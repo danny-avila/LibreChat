@@ -126,9 +126,25 @@ import {
   ENV_REFERENCE_NOT_ALLOWED,
   hasDisallowedStoredReference,
 } from '~/app/allowlist';
-import { MCP_SERVER_SECTIONS, findSecretReentry, getAzureGroupReentryIssues } from './reentry';
-import { REBINDING_SECTIONS, toIgnoredSecretOverride } from '~/app/rebinding';
-import { getWebSearchReentryIssues, isWebSearchBindingPath } from './binding';
+import {
+  SECRET_BINDINGS,
+  REBINDING_SECTIONS,
+  getRebindingIdentity,
+  toIgnoredSecretOverride,
+  withoutStoredSecretBindings,
+} from '~/app/rebinding';
+import {
+  MCP_SERVER_SECTIONS,
+  findSecretReentry,
+  getBoundKeyReentryIssues,
+  getAzureGroupReentryIssues,
+} from './reentry';
+import {
+  entersBoundSecret,
+  bindSecretDestinations,
+  isWebSearchBindingPath,
+  getWebSearchReentryIssues,
+} from './binding';
 import { createAdminAuditEmitter, configTarget } from './audit';
 import { DEFAULT_OVERRIDE_CACHE_TTL } from '~/app/service';
 import { getSafeErrorMetadata } from '~/utils/errors';
@@ -846,6 +862,7 @@ type ConfigResponse = ConfigRecord & { revision: ConfigRevision };
 function redactConfigForResponse(config: ConfigRecord): ConfigResponse {
   const safeConfig = JSON.parse(JSON.stringify(config)) as ConfigRecord;
   if (safeConfig.overrides) {
+    safeConfig.overrides = withoutStoredSecretBindings(safeConfig.overrides);
     redactConfigSecrets(safeConfig.overrides, { previewPlaintext: true });
   }
   return { ...safeConfig, revision: getConfigRevision(config) };
@@ -1170,23 +1187,53 @@ function isAzureGroupPath(segments: readonly string[]): boolean {
   );
 }
 
+/** Sections whose keys sit beside their own destination: OCR's and each speech service's. */
+const SCALAR_BOUND_SECTIONS = new Set<string>(['ocr', 'speech']);
+
+/** Whether a path names an OCR or speech key itself, or its preview: removing it moves nothing. */
+function isScalarSecretPath(segments: readonly string[]): boolean {
+  return SECRET_BINDINGS.some(
+    ({ path, secretKey }) =>
+      segments.length === path.length + 1 &&
+      path.every((segment, index) => segments[index] === segment) &&
+      (segments[path.length] === secretKey || segments[path.length] === `${secretKey}Preview`),
+  );
+}
+
+/**
+ * Whether a path holds a key bound to the destination beside it, or that destination: OCR,
+ * speech, or a custom endpoint (and `endpoints` whole). The key itself is not such a path.
+ */
+function isBoundKeyPath(segments: readonly string[]): boolean {
+  if (isScalarSecretPath(segments)) {
+    return false;
+  }
+  return (
+    SCALAR_BOUND_SECTIONS.has(segments[0]) ||
+    (segments[0] === 'endpoints' && (segments.length === 1 || segments[1] === 'custom'))
+  );
+}
+
 /**
  * Whether removing or tombstoning `target` can change where a stored credential is sent: a web
- * search URL (or the whole section) beside a stored key, any field of an MCP server, or anything
- * an Azure group's key and destination sit in.
+ * search URL (or the whole section) beside a stored key, any field of an MCP server, anything an
+ * Azure group's key and destination sit in, or anything an OCR, speech or custom endpoint key
+ * and its destination sit in.
  */
 function isBoundRemoval(target: FieldTarget): boolean {
   return (
     (target.dotFree && isWebSearchBindingPath(target.fieldPath)) ||
     MCP_SECTIONS.has(target.segments[0]) ||
-    isAzureGroupPath(target.segments)
+    isAzureGroupPath(target.segments) ||
+    isBoundKeyPath(target.segments)
   );
 }
 
 /**
  * The stored keys a planned document keeps beside a destination it changes, which the request
- * must enter again: web search keys, and Azure group keys (compared over librechat.yaml's
- * resolved groups, from `baseConfig`). MCP credentials answer with their own error
+ * must enter again: web search keys, Azure group keys (compared over librechat.yaml's resolved
+ * groups, from `baseConfig`), and custom endpoint, OCR and speech keys (compared as the document
+ * alone sends them over librechat.yaml). MCP credentials answer with their own error
  * (`findSecretReentry`).
  */
 function getKeptKeyReentryIssues(
@@ -1203,6 +1250,7 @@ function getKeptKeyReentryIssues(
       entered,
       baseGroupMap: baseConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.groupMap,
     }),
+    ...getBoundKeyReentryIssues({ stored, candidate, entered, baseConfig }),
   ];
 }
 
@@ -1961,7 +2009,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   ): Promise<ConfigMutationOutcome<RemovalStop>> {
     const paths = getRemovalPaths(target);
     const baseConfig =
-      MCP_SECTIONS.has(target.segments[0]) || isAzureGroupPath(target.segments)
+      MCP_SECTIONS.has(target.segments[0]) ||
+      isAzureGroupPath(target.segments) ||
+      isBoundKeyPath(target.segments)
         ? await getBaseAppConfig(tenantId)
         : undefined;
     const base: Partial<TCustomConfig> = baseConfig?.config ?? {};
@@ -1995,6 +2045,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         if (mcpReentry) {
           return { draft: null, result: { status: 400, mcpReentry } };
         }
+        const bound = bindSecretDestinations({
+          stored,
+          candidate: state,
+          entered: NO_ENTERED_SECRETS,
+        });
         return {
           draft: {
             principalModel: stored?.principalModel ?? principalModel(principalType),
@@ -2002,8 +2057,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
               (removal.tombstone ? removal.priority : undefined) ??
               stored?.priority ??
               getDefaultConfigPriority({ principalType, principalId }),
-            overrides: state.overrides,
-            tombstones: state.tombstones,
+            overrides: bound.overrides,
+            tombstones: bound.tombstones,
             isActive: stored?.isActive ?? true,
           },
         };
@@ -2085,6 +2140,61 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   }
 
   /**
+   * Binds the keys a planned document holds to the destinations they were entered for
+   * (`bindSecretDestinations`): a key the request entered, to where the merge sends it over the
+   * active Base when that is not where librechat.yaml and the document alone send it, as the
+   * rebinding guard reports it (`SecretRebinding.binding`); a key it kept, to what is stored
+   * beside it. A profile can then enter its own key for an endpoint, server or service Base
+   * defines without restating the destination, and the key is dropped again once Base, or any
+   * layer below the profile, moves that destination. Base merges first, so nothing moves its
+   * keys from below.
+   */
+  function bindPlannedSecrets(params: {
+    principalType: PrincipalType;
+    principalId: string;
+    stored: ConfigRecord | null;
+    candidate: ConfigOverrideState;
+    entered: ReadonlySet<string>;
+    base: ConfigRecord | null;
+    baseConfig: AppConfig | undefined;
+    envPolicy: EnvReferencePolicy;
+  }): ConfigOverrideState {
+    const { principalType, principalId, stored, candidate, entered, base } = params;
+    const kept = bindSecretDestinations({ stored, candidate, entered });
+    if (
+      base == null ||
+      isBaseConfigPrincipal({ principalType, principalId }) ||
+      !entersBoundSecret(kept, entered)
+    ) {
+      return kept;
+    }
+    const destinations = new Map<string, string>();
+    const layer: ConfigOverrideLayer = {
+      principalType,
+      principalId,
+      priority: getDefaultConfigPriority({ principalType, principalId }),
+      overrides: kept.overrides,
+      tombstones: kept.tombstones,
+    };
+    mergeOverrideLayers(params.baseConfig ?? ({} as AppConfig), [base, layer], {
+      envPolicy: params.envPolicy,
+      onRebinding: (rebinding) => {
+        if (
+          rebinding.binding != null &&
+          rebinding.layer.principalType === principalType &&
+          rebinding.layer.principalId?.toString() === principalId
+        ) {
+          destinations.set(getRebindingIdentity(rebinding.segments), rebinding.binding);
+        }
+      },
+    });
+    if (destinations.size === 0) {
+      return kept;
+    }
+    return bindSecretDestinations({ stored, candidate: kept, entered, destinations });
+  }
+
+  /**
    * The active Base document, from the caller's tenant partition (platform-level without one),
    * as the config store addresses every role document.
    */
@@ -2143,7 +2253,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    * `librechat.yaml` alone for Base itself. The principal's other profiles vary per user and
    * are left to the merge. Base is read from the caller's tenant partition, so a caller without
    * a tenant validates on the platform-level Base and never on a tenant's. With `yaml` `null`
-   * the write does not validate on the floor, and `plan` gets an empty one.
+   * the write does not validate on the floor, and `plan` gets an empty one. `plan` also gets the
+   * Base document itself (`null` for Base, or when none is active), which binds the keys the
+   * write enters to the destinations they are sent to over it (`bindPlannedSecrets`).
    *
    * Base is its own document, which the profile's compare-and-swap does not cover. So each
    * attempt reads Base beside the profile (a retry never reuses a Base a concurrent write has
@@ -2164,6 +2276,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     plan: (
       stored: ConfigRecord | null,
       floor: Partial<TCustomConfig>,
+      base: ConfigRecord | null,
     ) => Promise<ConfigMutationPlan<T>>,
     expectedRevision: ConfigRevision | undefined,
   ): Promise<FloorOutcome<T>> {
@@ -2188,7 +2301,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         write: (draft, revision) =>
           writeConfigDocument(principalType, principalId, draft, revision),
       },
-      (stored) => plan(stored, floorOver(attempt.base)),
+      (stored) => plan(stored, floorOver(attempt.base), attempt.base),
       { expectedRevision },
     );
     if (!readsBase) {
@@ -2199,7 +2312,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     }
     const judged = await judgeOnLandedBase(attempt.base, (landed) => {
       attempt.base = landed;
-      return plan(outcome.previous, floorOver(landed));
+      return plan(outcome.previous, floorOver(landed), landed);
     });
     if (judged == null || judged.draft != null) {
       return { ...outcome, base: attempt.base };
@@ -2553,7 +2666,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           principalId,
           user.tenantId,
           yaml,
-          async (stored, floor) => {
+          async (stored, floor, base) => {
             if (!stored && !(await canCreateFor(principalType, principalId))) {
               return { draft: null, result: { status: 404 } };
             }
@@ -2601,10 +2714,19 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
                 }
               }
             }
-            const state = replaceConfigOverrides(
-              toConfigOverrideState(stored),
-              next as Partial<TCustomConfig>,
-            );
+            const state = bindPlannedSecrets({
+              principalType,
+              principalId,
+              stored,
+              candidate: replaceConfigOverrides(
+                toConfigOverrideState(stored),
+                next as Partial<TCustomConfig>,
+              ),
+              entered,
+              base,
+              baseConfig,
+              envPolicy,
+            });
             /** An omitted priority keeps the stored one, so a replace never reorders profiles. */
             const requestedPriority = hasBroadManage ? priority : undefined;
             return {
@@ -2850,7 +2972,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           principalId,
           user.tenantId,
           baseYaml,
-          async (stored, floor) => {
+          async (stored, floor, base) => {
             if (!stored && !(await canCreateFor(principalType, principalId))) {
               return { draft: null, result: { status: 404 } };
             }
@@ -2888,6 +3010,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             if (mcpReentry) {
               return { draft: null, result: { status: 400, mcpReentry } };
             }
+            const bound = bindPlannedSecrets({
+              principalType,
+              principalId,
+              stored,
+              candidate: state,
+              entered,
+              base,
+              baseConfig,
+              envPolicy,
+            });
             return {
               draft: {
                 principalModel: principalModel(principalType),
@@ -2895,8 +3027,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
                   requestedPriority ??
                   stored?.priority ??
                   getDefaultConfigPriority({ principalType, principalId }),
-                overrides: state.overrides,
-                tombstones: state.tombstones,
+                overrides: bound.overrides,
+                tombstones: bound.tombstones,
                 isActive: stored?.isActive ?? true,
               },
             };
@@ -3378,6 +3510,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const plan = async (
         stored: ConfigRecord | null,
         floor: Partial<TCustomConfig>,
+        base: ConfigRecord | null,
       ): Promise<ConfigMutationPlan<ChangesResult>> => {
         if (!stored && !(await canCreateFor(principalType, principalId))) {
           return { draft: null, result: { stop: { kind: 'principal' } } };
@@ -3475,6 +3608,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         if (!documentChanged && !priorityChanged) {
           return { draft: null, result: { report } };
         }
+        let planned = state;
         if (documentChanged) {
           const issues = getConfigChangeIssues(state, floor, stored, written);
           if (issues.length > 0) {
@@ -3496,9 +3630,19 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           if (mcpReentry) {
             return { draft: null, result: { stop: { kind: 'mcpReentry', reentry: mcpReentry } } };
           }
+          planned = bindPlannedSecrets({
+            principalType,
+            principalId,
+            stored,
+            candidate: state,
+            entered,
+            base,
+            baseConfig,
+            envPolicy,
+          });
         }
         if (dryRun) {
-          return { draft: null, result: { report: { ...report, planned: state } } };
+          return { draft: null, result: { report: { ...report, planned } } };
         }
         return {
           draft: {
@@ -3507,8 +3651,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
               requestedPriority ??
               stored?.priority ??
               getDefaultConfigPriority({ principalType, principalId }),
-            overrides: state.overrides,
-            tombstones: state.tombstones,
+            overrides: planned.overrides,
+            tombstones: planned.tombstones,
             isActive: stored?.isActive ?? true,
           },
           result: { report },

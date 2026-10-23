@@ -50,7 +50,21 @@ function normalizeCustomHeader(apiKey: CredentialBindingConfig['apiKey']): strin
   return (apiKey.custom_header || 'X-Api-Key').toLowerCase();
 }
 
-function apiKeyBinding(config: CredentialBindingConfig): Record<string, string | undefined> {
+/** A credential's binding fields, normalized, by name: two configs that send it alike match. */
+export type CredentialBindingFields = Record<string, string | undefined>;
+
+function diffBindingFields(
+  existing: CredentialBindingFields,
+  updated: CredentialBindingFields,
+): string[] {
+  return Object.keys(existing).filter((field) => existing[field] !== updated[field]);
+}
+
+/**
+ * The request-boundary fields (`url`, `type`, `proxy`, `apiKey.authorization_type`,
+ * `apiKey.custom_header`) of a config, normalized: where an `apiKey.key` would be sent.
+ */
+export function getApiKeyBindingFields(config: CredentialBindingConfig): CredentialBindingFields {
   return {
     url: normalizeUrl(getUrl(config), true),
     type: normalizeTransport(config.type),
@@ -68,9 +82,10 @@ export function diffApiKeyBinding(
   existingConfig: CredentialBindingConfig,
   updatedConfig: CredentialBindingConfig,
 ): string[] {
-  const existing = apiKeyBinding(existingConfig);
-  const updated = apiKeyBinding(updatedConfig);
-  return Object.keys(existing).filter((field) => existing[field] !== updated[field]);
+  return diffBindingFields(
+    getApiKeyBindingFields(existingConfig),
+    getApiKeyBindingFields(updatedConfig),
+  );
 }
 
 /** Returns fields that would move an omitted, stored admin key to a new request boundary. */
@@ -127,67 +142,54 @@ export function preserveOmittedOAuthBindingFields<T extends Partial<OAuthOptions
 }
 
 /**
- * The fields that bind an OAuth client secret to its authorization server and client, and the
- * access token exchanged for it to the server and proxy it is sent through, which differ between
- * two configs: changing any of them while keeping a stored secret would hand that secret, or the
+ * The fields of a config that bind an OAuth client secret to its authorization server and
+ * client, and the access token exchanged for it to the server and proxy it is sent through,
+ * normalized; `null` without an `oauth` block.
+ */
+export function getOAuthSecretBindingFields(
+  config: CredentialBindingConfig,
+): CredentialBindingFields | null {
+  const oauth = config.oauth;
+  if (!oauth) {
+    return null;
+  }
+  return {
+    url: normalizeUrl(getUrl(config)),
+    proxy: normalizeUrl(getProxy(config), true),
+    'oauth.authorization_url': normalizeUrl(oauth.authorization_url),
+    'oauth.token_url': normalizeUrl(oauth.token_url),
+    'oauth.client_id': oauth.client_id,
+    'oauth.token_exchange_method': oauth.token_exchange_method,
+    'oauth.token_endpoint_auth_methods_supported': normalizeOAuthMethods(
+      oauth.token_endpoint_auth_methods_supported,
+    ),
+    'oauth.revocation_endpoint': normalizeUrl(oauth.revocation_endpoint),
+    'oauth.revocation_endpoint_auth_methods_supported': normalizeOAuthMethods(
+      oauth.revocation_endpoint_auth_methods_supported,
+    ),
+  };
+}
+
+/**
+ * The OAuth binding fields ({@link getOAuthSecretBindingFields}) that differ between two
+ * configs: changing any of them while keeping a stored secret would hand that secret, or the
  * token it obtains, to a different destination or client.
  */
 export function getChangedOAuthSecretBindingFields(
   existingConfig: CredentialBindingConfig,
   updatedConfig: CredentialBindingConfig,
 ): string[] {
-  const existingOAuth = existingConfig.oauth;
-  const updatedOAuth = updatedConfig.oauth;
-  if (!existingOAuth || !updatedOAuth) {
+  const existing = getOAuthSecretBindingFields(existingConfig);
+  const updated = getOAuthSecretBindingFields(updatedConfig);
+  if (!existing || !updated) {
     return [];
   }
-
-  const fields = [
-    ['url', normalizeUrl(getUrl(existingConfig)), normalizeUrl(getUrl(updatedConfig))],
-    [
-      'proxy',
-      normalizeUrl(getProxy(existingConfig), true),
-      normalizeUrl(getProxy(updatedConfig), true),
-    ],
-    [
-      'oauth.authorization_url',
-      normalizeUrl(existingOAuth.authorization_url),
-      normalizeUrl(updatedOAuth.authorization_url),
-    ],
-    [
-      'oauth.token_url',
-      normalizeUrl(existingOAuth.token_url),
-      normalizeUrl(updatedOAuth.token_url),
-    ],
-    ['oauth.client_id', existingOAuth.client_id, updatedOAuth.client_id],
-    [
-      'oauth.token_exchange_method',
-      existingOAuth.token_exchange_method,
-      updatedOAuth.token_exchange_method,
-    ],
-    [
-      'oauth.token_endpoint_auth_methods_supported',
-      normalizeOAuthMethods(existingOAuth.token_endpoint_auth_methods_supported),
-      normalizeOAuthMethods(updatedOAuth.token_endpoint_auth_methods_supported),
-    ],
-    [
-      'oauth.revocation_endpoint',
-      normalizeUrl(existingOAuth.revocation_endpoint),
-      normalizeUrl(updatedOAuth.revocation_endpoint),
-    ],
-    [
-      'oauth.revocation_endpoint_auth_methods_supported',
-      normalizeOAuthMethods(existingOAuth.revocation_endpoint_auth_methods_supported),
-      normalizeOAuthMethods(updatedOAuth.revocation_endpoint_auth_methods_supported),
-    ],
-  ] as const;
-
-  return fields.filter(([, existing, updated]) => existing !== updated).map(([field]) => field);
+  return diffBindingFields(existing, updated);
 }
 
 function userApiKeyBinding(config: MCPOptions): string {
   return JSON.stringify([
-    apiKeyBinding(config),
+    getApiKeyBindingFields(config),
     normalizeUrl(config.oauth?.authorization_url, true),
     normalizeUrl(config.oauth?.token_url, true),
     /** redirect_uri is sent as an OAuth parameter, not used as an outbound request URL. */

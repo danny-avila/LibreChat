@@ -73,8 +73,8 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
     previewPath: 'speech.tts.azureOpenAI.apiKeyPreview',
     section: 'speech',
     object: { tts: { azureOpenAI: { apiKey: SECRET, instanceName: 'inst' } } },
-    siblingPath: 'speech.tts.azureOpenAI.instanceName',
-    siblingValue: 'inst-2',
+    siblingPath: 'speech.tts.azureOpenAI.apiVersion',
+    siblingValue: '2024-10-21',
   },
   {
     path: 'speech.tts.elevenlabs.apiKey',
@@ -89,8 +89,8 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
     previewPath: 'speech.tts.localai.apiKeyPreview',
     section: 'speech',
     object: { tts: { localai: { apiKey: SECRET, url: 'http://localai:8080' } } },
-    siblingPath: 'speech.tts.localai.url',
-    siblingValue: 'http://localai:8081',
+    siblingPath: 'speech.tts.localai.backend',
+    siblingValue: 'coqui',
   },
   {
     path: 'speech.stt.openai.apiKey',
@@ -105,8 +105,8 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
     previewPath: 'speech.stt.azureOpenAI.apiKeyPreview',
     section: 'speech',
     object: { stt: { azureOpenAI: { apiKey: SECRET, instanceName: 'inst' } } },
-    siblingPath: 'speech.stt.azureOpenAI.instanceName',
-    siblingValue: 'inst-2',
+    siblingPath: 'speech.stt.azureOpenAI.apiVersion',
+    siblingValue: '2024-10-21',
   },
   {
     path: 'webSearch.serperApiKey',
@@ -236,6 +236,11 @@ function getAtPath(root: unknown, path: string): unknown {
 }
 
 type RawConfig = Pick<Config, 'configVersion'> & { overrides: Record<string, unknown> };
+
+/** The parts of a served config these tests read. */
+type AppConfigShape = {
+  endpoints?: { custom?: Array<Record<string, unknown> & { name: string }> };
+};
 
 async function readRawConfig(principalId: string): Promise<RawConfig> {
   const doc = await mongoose.models.Config.findOne({ principalId });
@@ -2987,35 +2992,63 @@ describe('secrets a layer below moved (`ignored` in write responses)', () => {
     await mongoose.models.Config.deleteOne({ principalId: basePrincipalId });
   });
 
-  it("reports a profile's own key when the Base profile moved its server", async () => {
+  it("binds a profile's own key to the server Base points it at, and reports it once Base moves it", async () => {
     const yamlHandlers = createRealHandlers({ getAppConfig: async () => baseAppConfig as never });
     const baseMoved = await patch(
       basePrincipalId,
-      [{ fieldPath: 'mcpServers.tools.url', value: 'https://attacker.example/mcp' }],
+      [{ fieldPath: 'mcpServers.tools.url', value: 'https://base.example/mcp' }],
       {},
       yamlHandlers,
     );
     expect(baseMoved.statusCode).toBe(200);
 
-    const keyed = await patch(nextPrincipalId(), [ownKey], {}, yamlHandlers);
+    /** Entered over the server as Base defines it, the key is bound there. */
+    const principalId = nextPrincipalId();
+    const keyed = await patch(principalId, [ownKey], {}, yamlHandlers);
     expect(keyed.statusCode).toBe(200);
-    expect(keyed.body!.ignored).toEqual([
+    expect(keyed.body!.ignored).toBeUndefined();
+    const stored = await readRawOverrides(principalId);
+    expect(getAtPath(stored, 'mcpServers.tools.apiKey.keyBinding')).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(keyed.body)).not.toContain('keyBinding');
+
+    const baseMovedAgain = await patch(
+      basePrincipalId,
+      [{ fieldPath: 'mcpServers.tools.url', value: 'https://attacker.example/mcp' }],
+      {},
+      yamlHandlers,
+    );
+    expect(baseMovedAgain.statusCode).toBe(200);
+    const retitled = await patch(
+      principalId,
+      [{ fieldPath: 'mcpServers.tools.title', value: 'Tools' }],
+      {},
+      yamlHandlers,
+    );
+    expect(retitled.statusCode).toBe(200);
+    expect(retitled.body!.ignored).toEqual([
       {
         path: 'mcpServers.tools.apiKey.key',
         segments: ['mcpServers', 'tools', 'apiKey', 'key'],
         reason: 'secret_rebinding',
       },
     ]);
+    expect(
+      getAtPath(await readRawOverrides(principalId), 'mcpServers.tools.apiKey.keyBinding'),
+    ).toBe(getAtPath(stored, 'mcpServers.tools.apiKey.keyBinding'));
 
-    /** Pinning the destination in the same profile keeps the key. */
+    /** Pinning the destination in the same profile keeps the key, with nothing to bind. */
+    const pinnedId = nextPrincipalId();
     const pinned = await patch(
-      nextPrincipalId(),
+      pinnedId,
       [ownKey, { fieldPath: 'mcpServers.tools.url', value: 'https://tools.example.com/mcp' }],
       {},
       yamlHandlers,
     );
     expect(pinned.statusCode).toBe(200);
     expect(pinned.body!.ignored).toBeUndefined();
+    expect(
+      getAtPath(await readRawOverrides(pinnedId), 'mcpServers.tools.apiKey.keyBinding'),
+    ).toBeUndefined();
   });
 
   it('drops the key Base stores for an endpoint a profile moves, whatever their priorities', async () => {
@@ -3076,22 +3109,32 @@ describe('secrets a layer below moved (`ignored` in write responses)', () => {
         return configMethods.findConfigByPrincipal(principalType, principalId, options);
       },
     });
-    const baseMoved = await patch(
+    const baseKeyed = await patch(
       basePrincipalId,
-      [{ fieldPath: 'mcpServers.tools.url', value: 'https://attacker.example/mcp' }],
+      [
+        {
+          fieldPath: 'mcpServers.based',
+          value: {
+            type: 'streamable-http',
+            url: 'https://based.example/mcp',
+            apiKey: { source: 'admin', authorization_type: 'bearer', key: 'sk-base-own-key' },
+          },
+        },
+      ],
       {},
       yamlHandlers,
     );
-    expect(baseMoved.statusCode).toBe(200);
+    expect(baseKeyed.statusCode).toBe(200);
+    const move = { fieldPath: 'mcpServers.based.url', value: 'https://attacker.example/mcp' };
     const batch = (dryRun: boolean) =>
       send(yamlHandlers.applyConfigChanges, {
         params: { principalType: 'role', principalId: nextPrincipalId() },
-        body: { ops: [{ op: 'set', ...ownKey }], dryRun },
+        body: { ops: [{ op: 'set', ...move }], dryRun },
       });
 
     /** Each attempt reads Base beside the profile, and a written profile reads it once more. */
     const requests: Array<[string, () => Promise<MockResponse>, number]> = [
-      ['PATCH', () => patch(nextPrincipalId(), [ownKey], {}, yamlHandlers), 2],
+      ['PATCH', () => patch(nextPrincipalId(), [move], {}, yamlHandlers), 2],
       ['a written batch', () => batch(false), 2],
       ['a dry run', () => batch(true), 1],
     ];
@@ -3100,8 +3143,8 @@ describe('secrets a layer below moved (`ignored` in write responses)', () => {
       const res = await request();
       expect(res.statusCode).toBe(200);
       expect(res.body!.ignored).toContainEqual({
-        path: 'mcpServers.tools.apiKey.key',
-        segments: ['mcpServers', 'tools', 'apiKey', 'key'],
+        path: 'mcpServers.based.apiKey.key',
+        segments: ['mcpServers', 'based', 'apiKey', 'key'],
         reason: 'secret_rebinding',
       });
       expect(baseReads).toBe(reads);
@@ -3172,6 +3215,356 @@ describe('secrets a layer below moved (`ignored` in write responses)', () => {
     expect(tombstoned.body!.ignored).toEqual([
       expect.objectContaining({ path: 'mcpServers.tools.apiKey.key' }),
     ]);
+  });
+});
+
+describe('keys bound to the destination beside them (custom endpoints, OCR, speech)', () => {
+  const yaml = {
+    endpoints: {
+      custom: [
+        {
+          name: 'Regional',
+          apiKey: 'user_provided',
+          baseURL: 'https://regional.example.com/v1',
+          models: { default: ['m'] },
+        },
+      ],
+    },
+  };
+  const baseAppConfig = { config: yaml, endpoints: structuredClone(yaml.endpoints) };
+  const yamlHandlers = () =>
+    createRealHandlers({ getAppConfig: async () => structuredClone(baseAppConfig) as never });
+  const shared = (extra: Record<string, unknown> = {}) => ({
+    name: 'Shared',
+    baseURL: 'https://shared.example.com/v1',
+    models: { default: ['m'] },
+    ...extra,
+  });
+  const reentryIssue = (path: string, secretPath: string) => ({
+    path,
+    segments: path.split('.'),
+    code: 'secret_reentry_required',
+    secretPath,
+  });
+
+  /** What the merge serves a profile over Base, decrypted, as `getAppConfig` would. */
+  async function serve(principalId: string): Promise<AppConfigShape> {
+    const { resolveConfigOverrides } = await import('~/app/overrides');
+    const { createEnvReferencePolicy } = await import('~/app/allowlist');
+    const [base, profile] = await Promise.all([
+      configMethods.findConfigByPrincipal(PrincipalType.ROLE, basePrincipalId),
+      configMethods.findConfigByPrincipal(PrincipalType.ROLE, principalId),
+    ]);
+    return resolveConfigOverrides(
+      structuredClone(baseAppConfig) as never,
+      [base, profile].filter((layer) => layer != null),
+      { envPolicy: createEnvReferencePolicy({ config: yaml }) },
+    ) as unknown as AppConfigShape;
+  }
+
+  afterEach(async () => {
+    await mongoose.models.Config.deleteOne({ principalId: basePrincipalId });
+  });
+
+  it('needs a stored endpoint key again when the document that stores it moves it', async () => {
+    const target = yamlHandlers();
+    const keyed = await patch(
+      basePrincipalId,
+      [{ fieldPath: 'endpoints.custom', value: [shared({ apiKey: 'sk-shared-entered' })] }],
+      {},
+      target,
+    );
+    expect(keyed.statusCode).toBe(200);
+    const before = await readRawOverrides(basePrincipalId);
+    const moved = shared({ baseURL: 'https://attacker.example/v1' });
+
+    const attempts: Array<[string, () => Promise<MockResponse>]> = [
+      [
+        'PATCH',
+        () =>
+          patch(basePrincipalId, [{ fieldPath: 'endpoints.custom', value: [moved] }], {}, target),
+      ],
+      [
+        'PUT',
+        () =>
+          send(target.upsertConfigOverrides, {
+            params: { principalType: 'role', principalId: basePrincipalId },
+            body: { overrides: { endpoints: { custom: [moved] } } },
+          }),
+      ],
+      ...[true, false].map((dryRun): [string, () => Promise<MockResponse>] => [
+        `/changes${dryRun ? ' (dry run)' : ''}`,
+        () =>
+          send(target.applyConfigChanges, {
+            params: { principalType: 'role', principalId: basePrincipalId },
+            body: {
+              ops: [{ op: 'upsertEntry', fieldPath: 'endpoints.custom', entry: moved }],
+              dryRun,
+            },
+          }),
+      ]),
+    ];
+    for (const [, attempt] of attempts) {
+      const res = await attempt();
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toMatchObject({
+        code: 'CONFIG_SECRET_REENTRY_REQUIRED',
+        issues: [reentryIssue('endpoints.custom.0.baseURL', 'endpoints.custom.0.apiKey')],
+      });
+    }
+    expect(await readRawOverrides(basePrincipalId)).toEqual(before);
+
+    const provider = await patch(
+      basePrincipalId,
+      [{ fieldPath: 'endpoints.custom', value: [shared({ provider: 'anthropic' })] }],
+      {},
+      target,
+    );
+    expect(provider.statusCode).toBe(400);
+    expect(provider.body!.issues).toEqual([
+      reentryIssue('endpoints.custom.0.provider', 'endpoints.custom.0.apiKey'),
+    ]);
+
+    const edited = await patch(
+      basePrincipalId,
+      [{ fieldPath: 'endpoints.custom', value: [shared({ models: { default: ['m', 'n'] } })] }],
+      {},
+      target,
+    );
+    expect(edited.statusCode).toBe(200);
+    const entry = (await readRawOverrides(basePrincipalId)) as {
+      endpoints: { custom: Array<Record<string, unknown>> };
+    };
+    expect(entry.endpoints.custom[0].apiKey).toBe(
+      (before as { endpoints: { custom: Array<Record<string, unknown>> } }).endpoints.custom[0]
+        .apiKey,
+    );
+
+    const reentered = await patch(
+      basePrincipalId,
+      [{ fieldPath: 'endpoints.custom', value: [{ ...moved, apiKey: 'sk-shared-again' }] }],
+      {},
+      target,
+    );
+    expect(reentered.statusCode).toBe(200);
+  });
+
+  it('needs a stored OCR or speech key again when the document moves it, by any route', async () => {
+    const target = yamlHandlers();
+    const principalId = nextPrincipalId();
+    const keyed = await patch(
+      principalId,
+      [
+        {
+          fieldPath: 'ocr',
+          value: { apiKey: 'sk-ocr-entered', baseURL: 'https://ocr.example.com/v1' },
+        },
+        {
+          fieldPath: 'speech.tts.openai',
+          value: {
+            apiKey: 'sk-tts-entered',
+            url: 'https://tts.example.com/v1',
+            model: 'tts-1',
+            voices: ['alloy'],
+          },
+        },
+      ],
+      {},
+      target,
+    );
+    expect(keyed.statusCode).toBe(200);
+    const before = await readRawOverrides(principalId);
+    const params = { principalType: 'role', principalId };
+
+    const attempts: Array<[() => Promise<MockResponse>, string, string]> = [
+      [
+        () =>
+          patch(
+            principalId,
+            [{ fieldPath: 'ocr.baseURL', value: 'https://attacker.example/v1' }],
+            {},
+            target,
+          ),
+        'ocr.baseURL',
+        'ocr.apiKey',
+      ],
+      [
+        () => send(target.deleteConfigField, { params, query: { fieldPath: 'ocr.baseURL' } }),
+        'ocr.baseURL',
+        'ocr.apiKey',
+      ],
+      [
+        () => send(target.tombstoneConfigField, { params, body: { fieldPath: 'ocr.baseURL' } }),
+        'ocr.baseURL',
+        'ocr.apiKey',
+      ],
+      [
+        () =>
+          patch(
+            principalId,
+            [{ fieldPath: 'speech.tts.openai.url', value: 'https://attacker.example/v1' }],
+            {},
+            target,
+          ),
+        'speech.tts.openai.url',
+        'speech.tts.openai.apiKey',
+      ],
+    ];
+    for (const [attempt, path, secretPath] of attempts) {
+      const res = await attempt();
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toMatchObject({
+        code: 'CONFIG_SECRET_REENTRY_REQUIRED',
+        issues: [reentryIssue(path, secretPath)],
+      });
+    }
+    expect(await readRawOverrides(principalId)).toEqual(before);
+
+    const removed = await send(target.deleteConfigField, {
+      params,
+      query: { fieldPath: 'ocr.apiKey' },
+    });
+    expect(removed.statusCode).toBe(200);
+    const moved = await patch(
+      principalId,
+      [{ fieldPath: 'ocr.baseURL', value: 'https://elsewhere.example/v1' }],
+      {},
+      target,
+    );
+    expect(moved.statusCode).toBe(200);
+  });
+
+  it("binds a profile's own endpoint key to the endpoint Base defines, until Base moves it", async () => {
+    const target = yamlHandlers();
+    const baseKeyed = await patch(
+      basePrincipalId,
+      [{ fieldPath: 'endpoints.custom', value: [shared({ apiKey: 'sk-base-shared' })] }],
+      {},
+      target,
+    );
+    expect(baseKeyed.statusCode).toBe(200);
+
+    const principalId = nextPrincipalId();
+    const keyed = await patch(
+      principalId,
+      [
+        {
+          fieldPath: 'endpoints.custom',
+          value: [{ name: 'Shared', apiKey: 'sk-role-shared', apiKeyBinding: 'f'.repeat(64) }],
+        },
+      ],
+      {},
+      target,
+    );
+    expect(keyed.statusCode).toBe(200);
+    expect(keyed.body!.ignored).toBeUndefined();
+    const stored = (await readRawOverrides(principalId)) as {
+      endpoints: { custom: Array<Record<string, unknown>> };
+    };
+    const [entry] = stored.endpoints.custom;
+    expect(entry.apiKeyBinding).toMatch(/^[0-9a-f]{64}$/);
+    expect(entry.apiKeyBinding).not.toBe('f'.repeat(64));
+    expect(JSON.stringify(keyed.body)).not.toContain('apiKeyBinding');
+
+    const read = await send(target.getConfig, { params: { principalType: 'role', principalId } });
+    expect(JSON.stringify(read.body)).not.toContain('apiKeyBinding');
+    const servedEntry = (await serve(principalId)).endpoints?.custom?.find(
+      ({ name }) => name === 'Shared',
+    );
+    expect(servedEntry).toMatchObject({ baseURL: 'https://shared.example.com/v1' });
+    expect(decryptV3(servedEntry!.apiKey as string)).toBe('sk-role-shared');
+
+    /** A write that keeps the key, a round trip of what a read returns included, keeps its binding. */
+    const roundTrip = await send(target.upsertConfigOverrides, {
+      params: { principalType: 'role', principalId },
+      body: { overrides: (read.body!.config as { overrides: Record<string, unknown> }).overrides },
+    });
+    expect(roundTrip.statusCode).toBe(200);
+    expect(roundTrip.body!.ignored).toBeUndefined();
+    const kept = (await readRawOverrides(principalId)) as typeof stored;
+    expect(kept.endpoints.custom[0]).toMatchObject({
+      apiKey: entry.apiKey,
+      apiKeyBinding: entry.apiKeyBinding,
+    });
+
+    const baseMoved = await patch(
+      basePrincipalId,
+      [
+        {
+          fieldPath: 'endpoints.custom',
+          value: [shared({ baseURL: 'https://attacker.example/v1', apiKey: 'sk-base-again' })],
+        },
+      ],
+      {},
+      target,
+    );
+    expect(baseMoved.statusCode).toBe(200);
+    const dropped = (await serve(principalId)).endpoints?.custom?.find(
+      ({ name }) => name === 'Shared',
+    );
+    expect(dropped).toMatchObject({ apiKey: '', baseURL: 'https://attacker.example/v1' });
+    const reported = await send(target.applyConfigChanges, {
+      params: { principalType: 'role', principalId },
+      body: {
+        ops: [{ op: 'set', fieldPath: 'interface.customWelcome', value: 'hi' }],
+        dryRun: true,
+      },
+    });
+    expect(reported.statusCode).toBe(200);
+    expect(reported.body!.ignored).toEqual([
+      {
+        path: 'endpoints.custom["Shared"].apiKey',
+        segments: ['endpoints', 'custom', 'Shared', 'apiKey'],
+        reason: 'secret_rebinding',
+      },
+    ]);
+
+    /** Entering the key again over the moved endpoint binds it there. */
+    const rekeyed = await patch(
+      principalId,
+      [{ fieldPath: 'endpoints.custom', value: [{ name: 'Shared', apiKey: 'sk-role-again' }] }],
+      {},
+      target,
+    );
+    expect(rekeyed.statusCode).toBe(200);
+    expect(rekeyed.body!.ignored).toBeUndefined();
+    const rebound = (await serve(principalId)).endpoints?.custom?.find(
+      ({ name }) => name === 'Shared',
+    );
+    expect(rebound).toMatchObject({ baseURL: 'https://attacker.example/v1' });
+    expect(decryptV3(rebound!.apiKey as string)).toBe('sk-role-again');
+    expect(JSON.stringify(await readRawOverrides(basePrincipalId))).not.toContain('apiKeyBinding');
+  });
+
+  it("sets back the destination of a user_provided endpoint a profile moves, so users' keys stay", async () => {
+    const target = yamlHandlers();
+    const principalId = nextPrincipalId();
+    const moved = await patch(
+      principalId,
+      [
+        {
+          fieldPath: 'endpoints.custom',
+          value: [{ name: 'Regional', baseURL: 'https://attacker.example/v1' }],
+        },
+      ],
+      {},
+      target,
+    );
+    expect(moved.statusCode).toBe(200);
+    expect(moved.body!.ignored).toEqual([
+      {
+        path: 'endpoints.custom["Regional"].baseURL',
+        segments: ['endpoints', 'custom', 'Regional', 'baseURL'],
+        reason: 'secret_rebinding',
+      },
+    ]);
+    const served = (await serve(principalId)).endpoints?.custom?.find(
+      ({ name }) => name === 'Regional',
+    );
+    expect(served).toMatchObject({
+      apiKey: 'user_provided',
+      baseURL: 'https://regional.example.com/v1',
+    });
   });
 });
 

@@ -414,7 +414,7 @@ describe('POST …/changes: secrets', () => {
     expect(JSON.stringify(body)).not.toContain(ciphertext);
   });
 
-  it('encrypts an entry key, keeps it through a rename and an edit, and never needs it again', async () => {
+  it('encrypts an entry key and keeps it through a rename and an edit that leave its destination', async () => {
     const params = nextParams();
     const created = await send(
       {
@@ -434,15 +434,15 @@ describe('POST …/changes: secrets', () => {
     expect(storedEntry.apiKey.startsWith('v3:')).toBe(true);
     expect(storedEntry.apiKeyPreview).toBe('...0001');
 
+    const edited = endpoint('new', {
+      baseURL: 'https://old.example.com/v1',
+      models: { default: ['m', 'n'] },
+    });
     const { status, body } = await send(
       {
         ops: [
           { op: 'rename', fieldPath: 'endpoints.custom', from: 'old', to: 'new' },
-          {
-            op: 'upsertEntry',
-            fieldPath: 'endpoints.custom',
-            entry: endpoint('new', { baseURL: 'https://new.example.com/v2' }),
-          },
+          { op: 'upsertEntry', fieldPath: 'endpoints.custom', entry: edited },
         ],
       },
       params,
@@ -451,7 +451,7 @@ describe('POST …/changes: secrets', () => {
     expect(status).toBe(200);
     const [entry] = (await storedDocument(params.principalId))!.overrides.endpoints.custom;
     expect(entry).toEqual({
-      ...endpoint('new', { baseURL: 'https://new.example.com/v2' }),
+      ...edited,
       apiKey: storedEntry.apiKey,
       apiKeyPreview: '...0001',
     });
@@ -459,6 +459,89 @@ describe('POST …/changes: secrets', () => {
     const returned = (body.config?.overrides.endpoints as { custom: object[] }).custom[0];
     expect(returned).not.toHaveProperty('apiKey');
     expect(returned).toHaveProperty('apiKeyPreview', '...0001');
+  });
+
+  it('needs an entry key again when a batch moves its destination, renamed or not', async () => {
+    const params = nextParams();
+    const created = await send(
+      {
+        ops: [
+          {
+            op: 'upsertEntry',
+            fieldPath: 'endpoints.custom',
+            entry: endpoint('old', { apiKey: 'sk-endpoint-secret-0002' }),
+          },
+        ],
+      },
+      params,
+    );
+    expect(created.status).toBe(200);
+    const before = await storedDocument(params.principalId);
+
+    const moves: Array<[string, Array<Record<string, unknown>>]> = [
+      [
+        'an upsert of the entry with another base URL',
+        [
+          {
+            op: 'upsertEntry',
+            fieldPath: 'endpoints.custom',
+            entry: endpoint('old', { baseURL: 'https://attacker.example.com/v1' }),
+          },
+        ],
+      ],
+      [
+        'a rename, then an upsert under the new name with another base URL',
+        [
+          { op: 'rename', fieldPath: 'endpoints.custom', from: 'old', to: 'new' },
+          {
+            op: 'upsertEntry',
+            fieldPath: 'endpoints.custom',
+            entry: endpoint('new', { baseURL: 'https://new.example.com/v2' }),
+          },
+        ],
+      ],
+      [
+        'an upsert that sets a native client destination',
+        [
+          {
+            op: 'upsertEntry',
+            fieldPath: 'endpoints.custom',
+            entry: endpoint('old', { addParams: { anthropicApiUrl: 'https://attacker.example' } }),
+          },
+        ],
+      ],
+    ];
+    for (const [, ops] of moves) {
+      for (const dryRun of [true, false]) {
+        const { status, body } = await send({ ops, dryRun }, params);
+        expect(status).toBe(400);
+        expect(body).toMatchObject({ code: 'CONFIG_SECRET_REENTRY_REQUIRED' });
+        expect(body.issues).toEqual([
+          expect.objectContaining({
+            code: 'secret_reentry_required',
+            secretPath: 'endpoints.custom.0.apiKey',
+          }),
+        ]);
+      }
+    }
+    expect(await storedDocument(params.principalId)).toEqual(before);
+
+    const reentered = await send(
+      {
+        ops: [
+          {
+            op: 'upsertEntry',
+            fieldPath: 'endpoints.custom',
+            entry: endpoint('old', {
+              baseURL: 'https://attacker.example.com/v1',
+              apiKey: 'sk-endpoint-secret-0003',
+            }),
+          },
+        ],
+      },
+      params,
+    );
+    expect(reentered.status).toBe(200);
   });
 
   it('refuses submitted ciphertext and writes under a secret, naming the change', async () => {

@@ -1,13 +1,29 @@
+import { PrincipalType } from 'librechat-data-provider';
 import {
   getAtPath,
   isPlainRecord,
+  isSameConfigValue,
   resolveAzureGroups,
+  foldConfigMergeKey,
+  mergeConfigOverrides,
   applyConfigTombstones,
 } from '@librechat/data-schemas';
-import type { ConfigOverrideState } from '@librechat/data-schemas';
+import type { AppConfig, ConfigOverrideState } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { CredentialBindingConfig } from '~/mcp/registry/binding';
+import type { SecretBinding } from '~/app/rebinding';
 import type { SecretReentryIssue } from './binding';
+import {
+  SECRET_BINDINGS,
+  getSecretBindingKey,
+  diffAzureGroupBinding,
+  getAzureGroupFingerprint,
+  getServerSecretFingerprint,
+  getChangedScalarBindingKeys,
+  getScalarBindingFingerprint,
+  getCustomEndpointFingerprint,
+  getChangedCustomEndpointBinding,
+} from '~/app/rebinding';
 import {
   diffApiKeyBinding,
   preserveOmittedOAuthBindingFields,
@@ -15,7 +31,6 @@ import {
 } from '~/mcp/registry/binding';
 import { MCPApiKeyReentryRequiredError, MCPOAuthSecretReentryRequiredError } from '~/mcp/errors';
 import { isSameStoredSecret, isCredentialReference, isMCPCredentialReference } from './secrets';
-import { diffAzureGroupBinding } from '~/app/rebinding';
 import { SECRET_REENTRY_REQUIRED } from './binding';
 
 type JsonRecord = Record<string, unknown>;
@@ -211,12 +226,16 @@ export function findSecretReentry(params: {
           continue;
         }
         const target = getEffectiveServer(base, candidate.tombstones, name, server);
+        const fingerprint = getServerSecretFingerprint(secret.parent, target);
+        const bindingKey = getSecretBindingKey(secret.key);
         const changes = origins.map((origin) =>
-          getChangedBindingFields(
-            secret.parent,
-            getEffectiveServer(base, stored?.tombstones, origin.name, origin.server),
-            target,
-          ),
+          getAtPath(origin.server, [secret.parent, bindingKey]) === fingerprint
+            ? []
+            : getChangedBindingFields(
+                secret.parent,
+                getEffectiveServer(base, stored?.tombstones, origin.name, origin.server),
+                target,
+              ),
         );
         if (changes.every((fields) => fields.length > 0)) {
           return toReentry(secret.parent, name, changes[0]);
@@ -356,9 +375,14 @@ export function getAzureGroupReentryIssues(params: {
       ...getEffectiveAzureGroups(stored, baseGroupMap).values(),
       ...getGroupItems(storedAzure),
     ];
+    const fingerprint = getAzureGroupFingerprint(group);
     const changes = origins
       .filter((origin) => isSameStoredSecret(origin.apiKey, value))
-      .map((origin) => diffAzureGroupBinding(origin, group));
+      .map((origin) =>
+        origin[getSecretBindingKey('apiKey')] === fingerprint
+          ? []
+          : diffAzureGroupBinding(origin, group),
+      );
     if (changes.length === 0 || changes.some((fields) => fields.length === 0)) {
       continue;
     }
@@ -372,4 +396,224 @@ export function getAzureGroupReentryIssues(params: {
     });
   }
   return [...issues.values()];
+}
+
+const CUSTOM_ENDPOINTS = ['endpoints', 'custom'] as const;
+const CUSTOM_ENDPOINTS_PATH = CUSTOM_ENDPOINTS.join('.');
+
+/** A principal no document belongs to, for merging one document alone. */
+const ALONE_PRINCIPAL = '__reentry__';
+
+/**
+ * Where a document alone sends its secrets: librechat.yaml's resolved config with only this
+ * document merged over it, as the merge's rebinding guard measures a layer's own destination
+ * (`alone()`), tombstones, folded endpoint names and all.
+ */
+function resolveAlone(
+  document: StoredDocument | ConfigOverrideState | null | undefined,
+  baseConfig: AppConfig,
+): AppConfig {
+  return mergeConfigOverrides(baseConfig, [
+    {
+      principalType: PrincipalType.ROLE,
+      principalId: ALONE_PRINCIPAL,
+      priority: 0,
+      overrides: (document?.overrides ?? {}) as Partial<TCustomConfig>,
+      tombstones: document?.tombstones,
+    },
+  ]);
+}
+
+/** A custom endpoint of an override document, with its index there. */
+interface EndpointItem {
+  index: number;
+  entry: JsonRecord;
+  identity: string;
+}
+
+function getEndpointItems(overrides: unknown): EndpointItem[] {
+  const items = getAtPath(overrides, CUSTOM_ENDPOINTS);
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items.flatMap((entry, index) =>
+    isPlainRecord(entry) && typeof entry.name === 'string'
+      ? [{ index, entry, identity: foldConfigMergeKey(CUSTOM_ENDPOINTS_PATH, entry.name) }]
+      : [],
+  );
+}
+
+/** A resolved config's custom endpoints by the identity the merge folds their names to, first one kept. */
+function getResolvedEndpoints(config: AppConfig): Map<string, JsonRecord> {
+  const resolved = new Map<string, JsonRecord>();
+  for (const { entry, identity } of getEndpointItems(config)) {
+    if (!resolved.has(identity)) {
+      resolved.set(identity, entry);
+    }
+  }
+  return resolved;
+}
+
+function toReentryIssue(segments: string[], secretSegments: string[]): SecretReentryIssue {
+  return {
+    path: segments.join('.'),
+    segments,
+    code: SECRET_REENTRY_REQUIRED,
+    secretPath: secretSegments.join('.'),
+  };
+}
+
+/** The resolved configs a document alone sends its secrets by, before and after a write. */
+interface AloneConfigs {
+  stored: AppConfig;
+  candidate: AppConfig;
+}
+
+function getScalarReentryIssue(
+  binding: SecretBinding,
+  stored: StoredDocument | null | undefined,
+  alone: AloneConfigs,
+): SecretReentryIssue | null {
+  const { path, secretKey } = binding;
+  const origin = getAtPath(stored?.overrides, path);
+  if (!isPlainRecord(origin) || !isHiddenGroupKey(origin[secretKey])) {
+    return null;
+  }
+  const target = getAtPath(alone.candidate, path);
+  const sent = isPlainRecord(target) ? target : {};
+  const reference = getAtPath(alone.stored, path);
+  const changed = getChangedScalarBindingKeys(
+    binding,
+    isPlainRecord(reference) ? reference : null,
+    sent,
+  );
+  if (
+    changed.length === 0 ||
+    origin[getSecretBindingKey(secretKey)] === getScalarBindingFingerprint(binding, sent)
+  ) {
+    return null;
+  }
+  return toReentryIssue([...path, changed[0]], [...path, secretKey]);
+}
+
+/** The parts of a document that decide where its custom endpoint, OCR and speech keys go. */
+function getBoundSections(document: StoredDocument | ConfigOverrideState | null | undefined) {
+  const overrides = isPlainRecord(document?.overrides) ? document.overrides : {};
+  const endpoints = isPlainRecord(overrides.endpoints) ? overrides.endpoints : {};
+  return {
+    custom: endpoints.custom,
+    ocr: overrides.ocr,
+    speech: overrides.speech,
+    tombstones: document?.tombstones ?? [],
+  };
+}
+
+/** Whether a write changed anything those keys or their destinations sit in. */
+function movesBoundSections(
+  stored: StoredDocument | null | undefined,
+  candidate: ConfigOverrideState,
+): boolean {
+  return !isSameConfigValue(getBoundSections(stored), getBoundSections(candidate));
+}
+
+/** A changed binding location of an endpoint, as a write names it: `dropParams` whole. */
+function toEndpointField(location: readonly string[]): string[] {
+  return location[0] === 'dropParams' ? ['dropParams'] : [...location];
+}
+
+function getEndpointReentryIssue(
+  item: EndpointItem,
+  held: readonly EndpointItem[],
+  alone: AloneConfigs & {
+    storedEndpoints: Map<string, JsonRecord>;
+    candidateEndpoints: Map<string, JsonRecord>;
+  },
+): SecretReentryIssue | null {
+  const value = item.entry.apiKey as string;
+  const matches = held.filter(({ entry }) => isSameStoredSecret(entry.apiKey, value));
+  const origins =
+    matches.length > 0 ? matches : held.filter(({ identity }) => identity === item.identity);
+  if (origins.length === 0) {
+    return null;
+  }
+  const target = alone.candidateEndpoints.get(item.identity) ?? item.entry;
+  const fingerprint = getCustomEndpointFingerprint(target);
+  const changes = origins.map(({ entry, identity }) => {
+    const changed = getChangedCustomEndpointBinding(
+      alone.storedEndpoints.get(identity) ?? entry,
+      target,
+    );
+    return entry[getSecretBindingKey('apiKey')] === fingerprint ? [] : changed;
+  });
+  if (changes.some((changed) => changed.length === 0)) {
+    return null;
+  }
+  const entry = [...CUSTOM_ENDPOINTS, String(item.index)];
+  return toReentryIssue([...entry, ...toEndpointField(changes[0][0])], [...entry, 'apiKey']);
+}
+
+/**
+ * The re-entry rule for the keys whose destination sits beside them: each custom endpoint's
+ * `apiKey` (bound to its base URL, `provider` and destination options) and OCR's and each speech
+ * service's key (bound to their URL or instance; `SECRET_BINDINGS`). A write that keeps one of
+ * these stored keys while changing where the document sends it must enter the key again, as for
+ * MCP credentials, web search keys and Azure group keys.
+ *
+ * - **Kept is judged by value.** A key counts as entered again only when the planned document
+ *   holds a value the request itself entered.
+ * - **Compared with where it was.** A kept endpoint key is compared with every stored endpoint
+ *   that held the same value, so a rename or a copy is followed; a scalar key with the stored
+ *   one at its own path.
+ * - **As the document alone sends it.** Destinations are read from librechat.yaml's resolved
+ *   config with only the document merged over it, as the merge's rebinding guard measures a
+ *   layer's own keys, so restating librechat.yaml's destination changes nothing. A destination
+ *   the stored key was bound to over a lower layer (its `<key>Binding` fingerprint) counts as
+ *   where it was too, so restating that destination keeps the key as well.
+ *
+ * Only keys a read hides count: a `${VAR}` reference or `user_provided` is visible, so a client
+ * can resend it.
+ */
+export function getBoundKeyReentryIssues(params: {
+  stored: StoredDocument | null | undefined;
+  candidate: ConfigOverrideState;
+  /** librechat.yaml's resolved config; without one, the documents resolve over nothing. */
+  baseConfig: AppConfig | undefined;
+  /** The secret values the request itself entered, encrypted. */
+  entered: ReadonlySet<string>;
+}): SecretReentryIssue[] {
+  const { stored, candidate, entered } = params;
+  const isKept = (value: unknown): value is string =>
+    isHiddenGroupKey(value) && !entered.has(value);
+  const scalars = SECRET_BINDINGS.filter((binding) =>
+    isKept(getAtPath(candidate.overrides, [...binding.path, binding.secretKey])),
+  );
+  const endpoints = getEndpointItems(candidate.overrides).filter(({ entry }) =>
+    isKept(entry.apiKey),
+  );
+  if ((scalars.length === 0 && endpoints.length === 0) || !movesBoundSections(stored, candidate)) {
+    return [];
+  }
+  const baseConfig = params.baseConfig ?? ({} as AppConfig);
+  const alone = {
+    stored: resolveAlone(stored, baseConfig),
+    candidate: resolveAlone(candidate, baseConfig),
+  };
+  const scalarIssues = scalars.flatMap(
+    (binding) => getScalarReentryIssue(binding, stored, alone) ?? [],
+  );
+  if (endpoints.length === 0) {
+    return scalarIssues;
+  }
+  const held = getEndpointItems(stored?.overrides).filter(({ entry }) =>
+    isHiddenGroupKey(entry.apiKey),
+  );
+  const resolved = {
+    ...alone,
+    storedEndpoints: getResolvedEndpoints(alone.stored),
+    candidateEndpoints: getResolvedEndpoints(alone.candidate),
+  };
+  return [
+    ...scalarIssues,
+    ...endpoints.flatMap((item) => getEndpointReentryIssue(item, held, resolved) ?? []),
+  ];
 }

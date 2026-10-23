@@ -1,5 +1,11 @@
+import { createHash } from 'crypto';
 import { EModelEndpoint, envVarRegex } from 'librechat-data-provider';
-import { foldConfigMergeKey, webSearchUrlApiKeys } from '@librechat/data-schemas';
+import {
+  getAtPath,
+  setAtPath,
+  foldConfigMergeKey,
+  webSearchUrlApiKeys,
+} from '@librechat/data-schemas';
 import type {
   AppConfig,
   ConfigMergeStep,
@@ -7,7 +13,13 @@ import type {
   AdminConfigIgnoredSecret,
 } from '@librechat/data-schemas';
 import type { CredentialBindingConfig } from '~/mcp/registry/binding';
-import { diffApiKeyBinding, getChangedOAuthSecretBindingFields } from '~/mcp/registry/binding';
+import {
+  diffApiKeyBinding,
+  getApiKeyBindingFields,
+  getOAuthSecretBindingFields,
+  getChangedOAuthSecretBindingFields,
+} from '~/mcp/registry/binding';
+import { hasUserCredentialPlaceholder } from '~/utils/oidc';
 import { isUserVariableTemplate } from '~/admin/secrets';
 import { isUserProvided } from '~/utils/common';
 
@@ -25,19 +37,27 @@ export interface SecretRebinding {
   segments: string[];
   /** The same location as text: `endpoints.custom["Name"].apiKey`, `summarization.parameters.baseURL`. */
   path: string;
+  /**
+   * For a secret the layer supplies, dropped because a layer below it changed where it is sent:
+   * the fingerprint of the destination the merge sends it to. A write that enters the secret
+   * over that destination stores it beside the secret ({@link getSecretBindingKey}), which binds
+   * the secret to it.
+   */
+  binding?: string;
 }
 
 /**
  * A secret and the settings beside it that decide where it is sent, in one object of the resolved
  * config (whose keys match librechat.yaml for these sections).
  */
-interface SecretBinding {
+export interface SecretBinding {
   path: readonly string[];
   secretKey: string;
   bindingKeys: readonly string[];
 }
 
-const SECRET_BINDINGS: readonly SecretBinding[] = [
+/** The scalar secrets bound to settings beside them: OCR's and each speech service's key. */
+export const SECRET_BINDINGS: readonly SecretBinding[] = [
   { path: ['ocr'], secretKey: 'apiKey', bindingKeys: ['baseURL'] },
   { path: ['speech', 'tts', 'openai'], secretKey: 'apiKey', bindingKeys: ['url'] },
   { path: ['speech', 'tts', 'azureOpenAI'], secretKey: 'apiKey', bindingKeys: ['instanceName'] },
@@ -246,6 +266,58 @@ function bindingChanged(
 }
 
 /**
+ * Which of a scalar secret's binding keys differ between two objects that hold it, compared as
+ * the guard compares them (a URL in canonical form).
+ */
+export function getChangedScalarBindingKeys(
+  binding: SecretBinding,
+  reference: JsonRecord | null,
+  merged: JsonRecord,
+): string[] {
+  return binding.bindingKeys.filter((key) => bindingChanged(reference, merged, [key]));
+}
+
+/**
+ * The key beside a secret a layer supplies that holds the fingerprint of the destination a write
+ * entered it for, when that destination is not the one librechat.yaml and the layer alone define
+ * (`<secret>Binding`, as `<secret>Preview` holds its preview). The admin config API writes it and
+ * never returns it; the merge removes it ({@link withoutSecretBindings}).
+ */
+export function getSecretBindingKey(secretKey: string): string {
+  return `${secretKey}Binding`;
+}
+
+/**
+ * A destination's fingerprint, from what decides where a secret is sent. One-way, so the key it
+ * is stored beside tells nothing of where it points.
+ */
+function toFingerprint(signature: unknown): string {
+  return createHash('sha256').update(JSON.stringify(signature)).digest('hex');
+}
+
+/** Whether the object that holds a layer's secret binds it to the destination `fingerprint` names. */
+function isBoundTo(owner: unknown, secretKey: string, fingerprint: string): boolean {
+  return asRecord(owner)?.[getSecretBindingKey(secretKey)] === fingerprint;
+}
+
+/**
+ * A binding's locations and values in one order, by code unit rather than locale, so equal
+ * bindings serialize alike on every replica. Locations are unique, so none compare equal.
+ */
+function toSortedEntries(binding: Iterable<[string, unknown]>): Array<[string, unknown]> {
+  return [...binding].sort(([left], [right]) => (left < right ? -1 : 1));
+}
+
+function getScalarSignature(bindingKeys: readonly string[], record: JsonRecord): unknown[] {
+  return bindingKeys.map((key) => normalizeBindingValue(record[key]) ?? null);
+}
+
+/** The fingerprint of where a scalar secret in `record` is sent ({@link getSecretBindingKey}). */
+export function getScalarBindingFingerprint(binding: SecretBinding, record: JsonRecord): string {
+  return toFingerprint(getScalarSignature(binding.bindingKeys, record));
+}
+
+/**
  * Copies `root` along `segments` (array items by index) and sets the last one to `value`, so
  * objects the merge shares with lower layers and the base config are never mutated.
  */
@@ -268,13 +340,16 @@ interface Drop {
   at: readonly (string | number)[];
   segments: string[];
   path: string;
+  /** For the layer's own secret, the fingerprint of the destination it would be sent to. */
+  binding?: string;
 }
 
 /**
  * Which config a merged secret's destination must match for the secret to stay:
  * - `below`: the layer inherited the secret, so the destination it inherited with it;
  * - `alone`: the layer supplied the secret, so the destination librechat.yaml and the layer
- *   itself define, whatever another layer below it changed;
+ *   itself define, whatever another layer below it changed, or the one a write bound it to
+ *   (`<secret>Binding`, {@link getSecretBindingKey});
  * - `null`: nothing to check (no secret, or a value each user supplies).
  */
 type BindingReference = 'below' | 'alone' | null;
@@ -287,6 +362,20 @@ function getBindingReference(below: unknown, merged: unknown, applied: unknown):
     return merged === below ? 'below' : null;
   }
   return merged === applied ? 'alone' : null;
+}
+
+/**
+ * The fingerprint of where the merge sends a secret the layer supplies, when the layer did not
+ * bind the secret to it (`null` when it did): the drop reports it, so a write that enters the
+ * secret over this destination can bind it there.
+ */
+function getUnboundFingerprint(
+  owner: unknown,
+  secretKey: string,
+  signature: unknown,
+): string | null {
+  const fingerprint = toFingerprint(signature);
+  return isBoundTo(owner, secretKey, fingerprint) ? null : fingerprint;
 }
 
 function findScalarDrops(step: ConfigMergeStep): Drop[] {
@@ -309,8 +398,15 @@ function findScalarDrops(step: ConfigMergeStep): Drop[] {
     if (!bindingChanged(expected, merged, bindingKeys)) {
       return [];
     }
+    const binding =
+      reference === 'alone'
+        ? getUnboundFingerprint(applied, secretKey, getScalarSignature(bindingKeys, merged))
+        : undefined;
+    if (binding === null) {
+      return [];
+    }
     const segments = [...path, secretKey];
-    return [{ at: segments, segments, path: segments.join('.') }];
+    return [{ at: segments, segments, path: segments.join('.'), binding }];
   });
 }
 
@@ -442,26 +538,51 @@ function customEndpointBindingChanged(reference: JsonRecord | null, merged: Json
 }
 
 /**
- * Custom endpoints merge by name, folded as the merge folds it; each one's `apiKey` is bound to
- * the settings {@link getCustomEndpointBinding} lists. A merged entry is judged against the
- * entry of the layer that supplied it (the last of its identity, as the merge applies them) and
- * the entry it was merged onto: the merge keeps one merged entry per entry below, in order, so
- * the n-th merged entry of an identity comes from the n-th one below. An entry the layer's
- * overrides do not name is judged too, as inherited: whatever else changed it (a tombstone, say)
- * changed it without entering its key. A drop names the entry by the spelling the merge keeps,
- * the lower layer's.
+ * The locations of a custom endpoint's binding ({@link getCustomEndpointBinding}) that differ
+ * between two definitions of it, each as segments within the entry (`['baseURL']`,
+ * `['addParams', 'anthropicApiUrl']`, `['dropParams', 'clientOptions']`), in a stable order.
  */
-function findCustomEndpointDrops(step: ConfigMergeStep): Drop[] {
-  const merged = getAt(step.merged, CUSTOM_ENDPOINTS);
-  const below = getAt(step.below, CUSTOM_ENDPOINTS);
-  if (!Array.isArray(merged) || merged === below) {
-    return [];
-  }
-  const appliedGroups = groupByIdentity(getAt(step.applied, CUSTOM_ENDPOINTS));
+export function getChangedCustomEndpointBinding(
+  reference: JsonRecord | null,
+  merged: JsonRecord,
+): string[][] {
+  const expected = getCustomEndpointBinding(reference);
+  const actual = getCustomEndpointBinding(merged);
+  return [...new Set([...expected.keys(), ...actual.keys()])]
+    .filter(
+      (location) =>
+        !expected.has(location) ||
+        !actual.has(location) ||
+        expected.get(location) !== actual.get(location),
+    )
+    .sort()
+    .map((location) => JSON.parse(location) as string[]);
+}
+
+function getCustomEndpointSignature(entry: JsonRecord): unknown {
+  return toSortedEntries(getCustomEndpointBinding(entry));
+}
+
+/** The fingerprint of where a custom endpoint sends its key ({@link getSecretBindingKey}). */
+export function getCustomEndpointFingerprint(entry: JsonRecord): string {
+  return toFingerprint(getCustomEndpointSignature(entry));
+}
+
+/** A merged custom endpoint and the entry below it that the merge kept it from. */
+interface EndpointPair {
+  index: number;
+  entry: JsonRecord;
+  name: string;
+  identity: string;
+  /** Which entry of its identity it is: the merge keeps one merged entry per entry below, in order. */
+  occurrence: number;
+  below: JsonRecord | null;
+}
+
+function pairCustomEndpoints(merged: readonly unknown[], below: unknown): EndpointPair[] {
   const belowGroups = groupByIdentity(below);
   const occurrences = new Map<string, number>();
-  let aloneGroups: Map<string, JsonRecord[]> | undefined;
-  const drops: Drop[] = [];
+  const pairs: EndpointPair[] = [];
   merged.forEach((item, index) => {
     const entry = asRecord(item);
     const name = entry?.name;
@@ -471,15 +592,44 @@ function findCustomEndpointDrops(step: ConfigMergeStep): Drop[] {
     const identity = getEndpointIdentity(name);
     const occurrence = occurrences.get(identity) ?? 0;
     occurrences.set(identity, occurrence + 1);
+    const belowEntry = belowGroups.get(identity)?.[occurrence] ?? null;
+    pairs.push({ index, entry, name, identity, occurrence, below: belowEntry });
+  });
+  return pairs;
+}
+
+/**
+ * Custom endpoints merge by name, folded as the merge folds it; each one's `apiKey` is bound to
+ * the settings {@link getCustomEndpointBinding} lists. A merged entry is judged against the
+ * entry of the layer that supplied it (the last of its identity, as the merge applies them) and
+ * the entry it was merged onto: the merge keeps one merged entry per entry below, in order, so
+ * the n-th merged entry of an identity comes from the n-th one below. An entry the layer's
+ * overrides do not name is judged too, as inherited: whatever else changed it (a tombstone, say)
+ * changed it without entering its key. A drop names the entry by the spelling the merge keeps,
+ * the lower layer's. The layer's own key stays where its entry binds it
+ * ({@link getSecretBindingKey}).
+ */
+function findCustomEndpointDrops(step: ConfigMergeStep): Drop[] {
+  const merged = getAt(step.merged, CUSTOM_ENDPOINTS);
+  const below = getAt(step.below, CUSTOM_ENDPOINTS);
+  if (!Array.isArray(merged) || merged === below) {
+    return [];
+  }
+  const appliedGroups = groupByIdentity(getAt(step.applied, CUSTOM_ENDPOINTS));
+  let aloneGroups: Map<string, JsonRecord[]> | undefined;
+  const drops: Drop[] = [];
+  for (const { index, entry, name, identity, occurrence, below: belowEntry } of pairCustomEndpoints(
+    merged,
+    below,
+  )) {
     const appliedGroup = appliedGroups.get(identity);
     const appliedEntry = appliedGroup?.[appliedGroup.length - 1];
-    const belowEntry = belowGroups.get(identity)?.[occurrence] ?? null;
     if (appliedEntry == null && entry === belowEntry) {
-      return;
+      continue;
     }
     const reference = getBindingReference(belowEntry?.apiKey, entry.apiKey, appliedEntry?.apiKey);
     if (reference == null) {
-      return;
+      continue;
     }
     if (reference === 'alone') {
       aloneGroups ??= groupByIdentity(getAt(step.alone(), CUSTOM_ENDPOINTS));
@@ -487,14 +637,22 @@ function findCustomEndpointDrops(step: ConfigMergeStep): Drop[] {
     const expected =
       reference === 'below' ? belowEntry : (aloneGroups?.get(identity)?.[occurrence] ?? null);
     if (!customEndpointBindingChanged(expected, entry)) {
-      return;
+      continue;
+    }
+    const binding =
+      reference === 'alone'
+        ? getUnboundFingerprint(appliedEntry, 'apiKey', getCustomEndpointSignature(entry))
+        : undefined;
+    if (binding === null) {
+      continue;
     }
     drops.push({
       at: [...CUSTOM_ENDPOINTS, index, 'apiKey'],
       segments: [...CUSTOM_ENDPOINTS, name, 'apiKey'],
       path: `endpoints.custom[${JSON.stringify(name)}].apiKey`,
+      binding,
     });
-  });
+  }
   return drops;
 }
 
@@ -504,6 +662,11 @@ interface RecordSecret {
   segments: readonly string[];
   /** The fields that decide where the secret is sent and differ between two entries. */
   changedFields: (reference: JsonRecord, merged: JsonRecord) => string[];
+  /**
+   * What decides where an entry sends the secret, for a secret its own layer supplies: equal for
+   * two entries that send it alike, ignoring what {@link OWN_SECRET_IGNORED_FIELDS} names.
+   */
+  signature: (entry: JsonRecord) => unknown;
 }
 
 /** A record of entries, keyed by name, each with its own bound secrets. */
@@ -552,6 +715,18 @@ function getDeploymentNames(group: JsonRecord): string {
 }
 
 /**
+ * What decides where an Azure group sends its `apiKey` ({@link diffAzureGroupBinding}), equal for
+ * two groups that send it alike.
+ */
+function getAzureGroupSignature(group: JsonRecord): unknown {
+  return [
+    ...AZURE_GROUP_BINDING_KEYS.map((key) => toAzureDestination(group[key]) ?? null),
+    isHostFromDeployment(group.baseURL) ? getDeploymentNames(group) : null,
+    toSortedEntries(collectClientOptionBinding(group, new Map())),
+  ];
+}
+
+/**
  * The settings of a resolved Azure group (a `groupMap` entry, or a `groups` item) that differ
  * between two definitions of it and decide where its `apiKey` is sent: `baseURL`, `instanceName`
  * (the Azure host, and the `${INSTANCE_NAME}` a base URL template holds), the deployment names
@@ -574,6 +749,47 @@ export function diffAzureGroupBinding(reference: JsonRecord, merged: JsonRecord)
   return changed;
 }
 
+/**
+ * Binding fields not compared for a secret the layer supplies: a transport `type` set below it
+ * changes the protocol spoken to the same URL, not the host the secret reaches, so a profile that
+ * sets a key and URL for a server another layer defines need not restate its type.
+ */
+const OWN_SECRET_IGNORED_FIELDS = new Set(['type']);
+
+/** A credential's binding fields without those a secret the layer supplies ignores, in one order. */
+function getOwnSecretSignature(fields: Record<string, string | undefined> | null): unknown {
+  if (fields == null) {
+    return null;
+  }
+  return toSortedEntries(
+    Object.entries(fields).filter(([field]) => !OWN_SECRET_IGNORED_FIELDS.has(field)),
+  );
+}
+
+/** What decides where a server sends `apiKey.key` or `oauth.client_secret`, for its own layer. */
+function getServerSecretSignature(parent: 'apiKey' | 'oauth', server: JsonRecord): unknown {
+  const config = server as CredentialBindingConfig;
+  return getOwnSecretSignature(
+    parent === 'apiKey' ? getApiKeyBindingFields(config) : getOAuthSecretBindingFields(config),
+  );
+}
+
+/**
+ * The fingerprint of where an MCP server sends `apiKey.key` or `oauth.client_secret`
+ * ({@link getSecretBindingKey}).
+ */
+export function getServerSecretFingerprint(parent: 'apiKey' | 'oauth', server: JsonRecord): string {
+  return toFingerprint(getServerSecretSignature(parent, server));
+}
+
+/** The fingerprint of where an Azure group sends its `apiKey` ({@link getSecretBindingKey}). */
+export function getAzureGroupFingerprint(group: JsonRecord): string {
+  return toFingerprint(getAzureGroupSignature(group));
+}
+
+const MCP_SERVERS_REPORT_PATH: readonly string[] = ['mcpServers'];
+const AZURE_GROUP_MAP_PATH: readonly string[] = ['endpoints', 'azureOpenAI', 'groupMap'];
+
 const RECORD_BINDINGS: readonly RecordBinding[] = [
   /**
    * MCP servers merge by name. `apiKey.key` and `oauth.client_secret` are bound by the same rules
@@ -581,7 +797,7 @@ const RECORD_BINDINGS: readonly RecordBinding[] = [
    */
   {
     path: ['mcpConfig'],
-    reportPath: ['mcpServers'],
+    reportPath: MCP_SERVERS_REPORT_PATH,
     secrets: [
       {
         segments: ['apiKey', 'key'],
@@ -590,6 +806,7 @@ const RECORD_BINDINGS: readonly RecordBinding[] = [
             reference as CredentialBindingConfig,
             merged as CredentialBindingConfig,
           ),
+        signature: (entry) => getServerSecretSignature('apiKey', entry),
       },
       {
         segments: ['oauth', 'client_secret'],
@@ -598,6 +815,7 @@ const RECORD_BINDINGS: readonly RecordBinding[] = [
             reference as CredentialBindingConfig,
             merged as CredentialBindingConfig,
           ),
+        signature: (entry) => getServerSecretSignature('oauth', entry),
       },
     ],
   },
@@ -607,18 +825,17 @@ const RECORD_BINDINGS: readonly RecordBinding[] = [
    * so each group's key is bound to its own destination.
    */
   {
-    path: ['endpoints', 'azureOpenAI', 'groupMap'],
-    reportPath: ['endpoints', 'azureOpenAI', 'groupMap'],
-    secrets: [{ segments: ['apiKey'], changedFields: diffAzureGroupBinding }],
+    path: AZURE_GROUP_MAP_PATH,
+    reportPath: AZURE_GROUP_MAP_PATH,
+    secrets: [
+      {
+        segments: ['apiKey'],
+        changedFields: diffAzureGroupBinding,
+        signature: getAzureGroupSignature,
+      },
+    ],
   },
 ];
-
-/**
- * Binding fields not compared for a secret the layer supplies: a transport `type` set below it
- * changes the protocol spoken to the same URL, not the host the secret reaches, so a profile that
- * sets a key and URL for a server another layer defines need not restate its type.
- */
-const OWN_SECRET_IGNORED_FIELDS = new Set(['type']);
 
 /** Entries the merge left untouched (the same object as below) cannot have moved. */
 function findRecordDrops(step: ConfigMergeStep, binding: RecordBinding): Drop[] {
@@ -636,7 +853,7 @@ function findRecordDrops(step: ConfigMergeStep, binding: RecordBinding): Drop[] 
       continue;
     }
     const appliedEntry = applied?.[name];
-    for (const { segments, changedFields } of binding.secrets) {
+    for (const { segments, changedFields, signature } of binding.secrets) {
       const reference = getBindingReference(
         getAt(belowEntry, segments),
         getAt(entry, segments),
@@ -655,11 +872,21 @@ function findRecordDrops(step: ConfigMergeStep, binding: RecordBinding): Drop[] 
       if (moved.length === 0) {
         continue;
       }
+      const owner = getAt(appliedEntry, segments.slice(0, -1));
+      const secretKey = segments[segments.length - 1];
+      const fingerprint =
+        reference === 'alone'
+          ? getUnboundFingerprint(owner, secretKey, signature(entry))
+          : undefined;
+      if (fingerprint === null) {
+        continue;
+      }
       const reported = [...binding.reportPath, name, ...segments];
       drops.push({
         at: [...binding.path, name, ...segments],
         segments: reported,
         path: reported.join('.'),
+        binding: fingerprint,
       });
     }
   }
@@ -846,6 +1073,347 @@ function withWebSearchRestores(config: unknown, restores: readonly WebSearchRest
   return { ...asRecord(config), webSearch };
 }
 
+/** A `{{NAME}}` that is none of LibreChat's own placeholders: one of the user's custom variables. */
+const CUSTOM_VARIABLE_PLACEHOLDER = /\{\{(?!LIBRECHAT_)[^{}]+\}\}/;
+
+/**
+ * Whether a value sends a credential each user holds: a `{{...}}` LibreChat fills with their
+ * OpenID or Graph token, or with one of their custom variables. Identity and request placeholders
+ * (`{{LIBRECHAT_USER_ID}}`, `{{LIBRECHAT_BODY_*}}`) are not credentials: whoever chooses the
+ * destination receives the conversation they belong to anyway.
+ */
+function sendsUserCredential(value: unknown): boolean {
+  if (typeof value === 'string') {
+    return hasUserCredentialPlaceholder(value) || CUSTOM_VARIABLE_PLACEHOLDER.test(value);
+  }
+  if (Array.isArray(value)) {
+    return value.some(sendsUserCredential);
+  }
+  const record = asRecord(value);
+  return record != null && Object.values(record).some(sendsUserCredential);
+}
+
+/** Whether an entry declares `customUserVars`, which each user fills in for themselves. */
+function declaresUserVars(entry: JsonRecord): boolean {
+  const customUserVars = asRecord(entry.customUserVars);
+  return customUserVars != null && Object.keys(customUserVars).length > 0;
+}
+
+/**
+ * Whether a custom endpoint sends a credential each user enters or holds: their own key or URL
+ * (`user_provided`, which LibreChat looks up by the endpoint's name alone, wherever it points),
+ * the values of its `customUserVars`, or one {@link sendsUserCredential} finds in its key or
+ * headers.
+ */
+function endpointSendsUserValues(entry: JsonRecord): boolean {
+  const { apiKey, baseURL } = entry;
+  return (
+    (typeof apiKey === 'string' && isUserEntered(apiKey)) ||
+    (typeof baseURL === 'string' && isUserProvided(baseURL.trim())) ||
+    declaresUserVars(entry) ||
+    sendsUserCredential(apiKey) ||
+    sendsUserCredential(entry.headers)
+  );
+}
+
+/**
+ * Whether an MCP server sends a credential each user enters or holds: the values of its
+ * `customUserVars`, a key each user provides (`apiKey.source: user`), or one
+ * {@link sendsUserCredential} finds in its URL, headers or key. LibreChat keeps those per user
+ * and server name, not per destination.
+ */
+function serverSendsUserValues(server: JsonRecord): boolean {
+  const apiKey = asRecord(server.apiKey);
+  return (
+    declaresUserVars(server) ||
+    apiKey?.source === 'user' ||
+    sendsUserCredential(apiKey?.key) ||
+    sendsUserCredential(server.url) ||
+    sendsUserCredential(server.headers)
+  );
+}
+
+/** Copies `root` along `location` and sets `value` there, or removes the key when `undefined`. */
+function restoreAt(root: unknown, location: readonly string[], value: unknown): unknown {
+  const [segment, ...rest] = location;
+  if (Array.isArray(root)) {
+    const index = Number(segment);
+    const next = [...root];
+    next[index] = rest.length === 0 ? value : restoreAt(root[index], rest, value);
+    return next;
+  }
+  const record = { ...(asRecord(root) ?? {}) };
+  if (rest.length > 0) {
+    record[segment] = restoreAt(record[segment], rest, value);
+  } else if (value === undefined) {
+    delete record[segment];
+  } else {
+    record[segment] = value;
+  }
+  return record;
+}
+
+/**
+ * `entry` with the binding locations {@link getChangedCustomEndpointBinding} names set back to
+ * `below`'s: its base URL, provider and destination options, and the names of `dropParams` that
+ * remove a destination, keeping the rest of what the layer set.
+ */
+function restoreEndpointBinding(
+  entry: JsonRecord,
+  below: JsonRecord,
+  locations: readonly string[][],
+): JsonRecord {
+  let restored: unknown = entry;
+  const dropped = new Set<string>();
+  for (const location of locations) {
+    if (location[0] === 'dropParams') {
+      dropped.add(location[1]);
+      continue;
+    }
+    restored = restoreAt(restored, location, getAtPath(below, location));
+  }
+  if (dropped.size === 0) {
+    return restored as JsonRecord;
+  }
+  const names = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+  const record = asRecord(restored) ?? {};
+  const dropParams = [
+    ...names(record.dropParams).filter((name) => typeof name !== 'string' || !dropped.has(name)),
+    ...names(below.dropParams).filter((name) => typeof name === 'string' && dropped.has(name)),
+  ];
+  return { ...record, dropParams };
+}
+
+/** A destination a layer moved, set back because what it sends there is each user's own. */
+interface UserValueRestore {
+  segments: string[];
+  path: string;
+}
+
+/**
+ * Custom endpoints whose destination a layer changed while what they send there is each user's
+ * own ({@link endpointSendsUserValues}), below and merged: the binding is set back to the entry
+ * below's. A user's key is stored under the endpoint's name, so the layer could otherwise collect
+ * every key users entered for the destination it inherited, which no one can enter again for it.
+ */
+function restoreUserEndpoints(step: ConfigMergeStep): {
+  merged: AppConfig;
+  restores: UserValueRestore[];
+} {
+  const merged = getAt(step.merged, CUSTOM_ENDPOINTS);
+  const below = getAt(step.below, CUSTOM_ENDPOINTS);
+  if (!Array.isArray(merged) || merged === below) {
+    return { merged: step.merged, restores: [] };
+  }
+  let entries: unknown[] | undefined;
+  const restores: UserValueRestore[] = [];
+  for (const { index, entry, name, below: belowEntry } of pairCustomEndpoints(merged, below)) {
+    if (
+      belowEntry == null ||
+      entry === belowEntry ||
+      !endpointSendsUserValues(belowEntry) ||
+      !endpointSendsUserValues(entry)
+    ) {
+      continue;
+    }
+    const locations = getChangedCustomEndpointBinding(belowEntry, entry);
+    if (locations.length === 0) {
+      continue;
+    }
+    entries ??= [...merged];
+    entries[index] = restoreEndpointBinding(entry, belowEntry, locations);
+    const reported = new Set(
+      locations.map((location) =>
+        JSON.stringify(location[0] === 'dropParams' ? ['dropParams'] : location),
+      ),
+    );
+    for (const location of reported) {
+      const fields = JSON.parse(location) as string[];
+      restores.push({
+        segments: [...CUSTOM_ENDPOINTS, name, ...fields],
+        path: `endpoints.custom[${JSON.stringify(name)}].${fields.join('.')}`,
+      });
+    }
+  }
+  if (entries == null) {
+    return { merged: step.merged, restores };
+  }
+  return { merged: setAt(step.merged, CUSTOM_ENDPOINTS, entries) as AppConfig, restores };
+}
+
+/** The settings of an MCP server that decide where it connects, set back together. */
+const SERVER_DESTINATION_KEYS = ['url', 'type', 'proxy'] as const;
+
+/** Whether a server connects somewhere else: another URL or proxy (a fragment aside). */
+function serverMoved(below: JsonRecord, merged: JsonRecord): boolean {
+  return bindingChanged(below, merged, ['url', 'proxy']);
+}
+
+/**
+ * MCP servers a layer points elsewhere while what they send is each user's own
+ * ({@link serverSendsUserValues}), below and merged: the server's URL, transport and proxy are
+ * set back to the ones below.
+ */
+function restoreUserServers(
+  step: ConfigMergeStep,
+  config: AppConfig,
+): { merged: AppConfig; restores: UserValueRestore[] } {
+  const merged = asRecord(getAt(config, ['mcpConfig']));
+  const below = asRecord(getAt(step.below, ['mcpConfig']));
+  if (merged == null || below == null || merged === below) {
+    return { merged: config, restores: [] };
+  }
+  let result: unknown = config;
+  const restores: UserValueRestore[] = [];
+  for (const [name, value] of Object.entries(merged)) {
+    const server = asRecord(value);
+    const belowServer = asRecord(below[name]);
+    if (
+      server == null ||
+      belowServer == null ||
+      server === belowServer ||
+      !serverSendsUserValues(belowServer) ||
+      !serverSendsUserValues(server) ||
+      !serverMoved(belowServer, server)
+    ) {
+      continue;
+    }
+    const keys = SERVER_DESTINATION_KEYS.filter((key) => server[key] !== belowServer[key]);
+    let restored: unknown = server;
+    for (const key of keys) {
+      restored = restoreAt(restored, [key], belowServer[key]);
+    }
+    result = setAt(result, ['mcpConfig', name], restored);
+    for (const key of keys) {
+      const segments = [...MCP_SERVERS_REPORT_PATH, name, key];
+      restores.push({ segments, path: segments.join('.') });
+    }
+  }
+  return { merged: result as AppConfig, restores };
+}
+
+/** Where a bound secret sits in a config or override document. */
+export interface BoundSecretLocation {
+  /** The object that holds the secret and its {@link getSecretBindingKey} companion; array items by index. */
+  owner: string[];
+  /** The secret's key in it. */
+  key: string;
+  /** The secret's identity, as {@link getRebindingIdentity} names a rebinding of it. */
+  identity: string;
+}
+
+const AZURE_GROUPS_PATH: readonly string[] = ['endpoints', 'azureOpenAI', 'groups'];
+const MCP_SECRET_KEYS: ReadonlyArray<readonly [string, string]> = [
+  ['apiKey', 'key'],
+  ['oauth', 'client_secret'],
+];
+
+/**
+ * A secret's identity by its YAML location (`SecretRebinding.segments`): a custom endpoint is
+ * named by its name as the merge folds it, so every spelling of one endpoint has one identity.
+ */
+export function getRebindingIdentity(segments: readonly string[]): string {
+  const [section, field, name, ...rest] = segments;
+  if (section === CUSTOM_ENDPOINTS[0] && field === CUSTOM_ENDPOINTS[1] && name != null) {
+    return JSON.stringify([section, field, getEndpointIdentity(name), ...rest]);
+  }
+  return JSON.stringify(segments);
+}
+
+/** The entry a YAML location is in: a custom endpoint by its folded name, an MCP server by name. */
+function getEntryKey(segments: readonly string[]): string {
+  const [section, field, name] = segments;
+  if (section === CUSTOM_ENDPOINTS[0] && field === CUSTOM_ENDPOINTS[1] && name != null) {
+    return JSON.stringify([section, field, getEndpointIdentity(name)]);
+  }
+  return JSON.stringify(segments.slice(0, 2));
+}
+
+function collectBoundSecretLocations(
+  root: unknown,
+  mcpSections: readonly string[],
+): BoundSecretLocation[] {
+  const locations: BoundSecretLocation[] = [];
+  const add = (owner: string[], key: string, reported: readonly string[]) =>
+    locations.push({ owner, key, identity: getRebindingIdentity(reported) });
+  for (const { path, secretKey } of SECRET_BINDINGS) {
+    if (asRecord(getAt(root, path)) != null) {
+      add([...path], secretKey, [...path, secretKey]);
+    }
+  }
+  const endpoints = getAt(root, CUSTOM_ENDPOINTS);
+  (Array.isArray(endpoints) ? endpoints : []).forEach((item, index) => {
+    const name = asRecord(item)?.name;
+    if (typeof name === 'string') {
+      add([...CUSTOM_ENDPOINTS, String(index)], 'apiKey', [...CUSTOM_ENDPOINTS, name, 'apiKey']);
+    }
+  });
+  const groups = getAt(root, AZURE_GROUPS_PATH);
+  (Array.isArray(groups) ? groups : []).forEach((item, index) => {
+    if (asRecord(item) != null) {
+      add([...AZURE_GROUPS_PATH, String(index)], 'apiKey', [
+        ...AZURE_GROUPS_PATH,
+        String(index),
+        'apiKey',
+      ]);
+    }
+  });
+  for (const [group, value] of Object.entries(asRecord(getAt(root, AZURE_GROUP_MAP_PATH)) ?? {})) {
+    if (asRecord(value) != null) {
+      add([...AZURE_GROUP_MAP_PATH, group], 'apiKey', [...AZURE_GROUP_MAP_PATH, group, 'apiKey']);
+    }
+  }
+  for (const section of mcpSections) {
+    for (const [name, server] of Object.entries(asRecord(getAt(root, [section])) ?? {})) {
+      for (const [parent, key] of MCP_SECRET_KEYS) {
+        if (asRecord(asRecord(server)?.[parent]) != null) {
+          add([section, name, parent], key, [...MCP_SERVERS_REPORT_PATH, name, parent, key]);
+        }
+      }
+    }
+  }
+  return locations;
+}
+
+/**
+ * Every place an override document can hold a secret bound to a destination, and so a
+ * {@link getSecretBindingKey} companion: OCR's and each speech service's key, each custom
+ * endpoint's and Azure group's (`groups` and `groupMap`), and each MCP server's credentials
+ * under `mcpServers` and its alias `mcpConfig`.
+ */
+export function getBoundSecretLocations(overrides: unknown): BoundSecretLocation[] {
+  return collectBoundSecretLocations(overrides, ['mcpServers', 'mcpConfig']);
+}
+
+/** `root` without the companions at `locations`; objects are copied only where one is removed. */
+function withoutBindingsAt<T>(root: T, locations: readonly BoundSecretLocation[]): T {
+  let result: unknown = root;
+  for (const { owner, key } of locations) {
+    const companion = getSecretBindingKey(key);
+    const record = asRecord(getAtPath(result, owner));
+    if (record == null || !Object.prototype.hasOwnProperty.call(record, companion)) {
+      continue;
+    }
+    const { [companion]: _removed, ...rest } = record;
+    result = setAtPath(result as JsonRecord, owner, rest);
+  }
+  return result as T;
+}
+
+/**
+ * A merged config without the destination fingerprints layers store beside their secrets
+ * ({@link getSecretBindingKey}): the guard reads them from each layer's own overrides, and no
+ * runtime reader expects them.
+ */
+export function withoutSecretBindings(config: AppConfig): AppConfig {
+  return withoutBindingsAt(config, collectBoundSecretLocations(config, ['mcpConfig']));
+}
+
+/** An override document's overrides without its destination fingerprints, as reads return them. */
+export function withoutStoredSecretBindings<T>(overrides: T): T {
+  return withoutBindingsAt(overrides, getBoundSecretLocations(overrides));
+}
+
 /**
  * The merge's `afterLayer` policy for credentials bound to a destination. A credential stays
  * only where it was entered:
@@ -872,8 +1440,17 @@ function withWebSearchRestores(config: unknown, restores: readonly WebSearchRest
  * URLs from the environment, and Langfuse only reaches destinations the deployment configures.
  * Header maps are not covered: their values are not registered secrets.
  *
+ * A secret a layer supplies whose destination a layer below defines is kept when the layer's
+ * own object binds it to exactly the destination the merge sends it to: the admin config API
+ * stores that fingerprint beside a key it encrypts (`<secret>Binding`, {@link
+ * getSecretBindingKey}) when the destination over the active Base is not the layer's own, which
+ * the drop reports (`SecretRebinding.binding`). A later move below drops the key again.
+ *
  * A dropped bound secret is set to `''`, which those readers treat as missing. `user_provided`
- * and `{{VAR}}` name a value each user enters and are never dropped. Each change is reported to
+ * and `{{VAR}}` name a value each user enters and are never dropped. LibreChat keeps those values
+ * per user and entry name, not per destination, so an inherited custom endpoint or MCP server that
+ * sends them ({@link restoreUserEndpoints}, {@link restoreUserServers}) keeps the destination it
+ * inherited: a layer that moves it has the move set back. Each change is reported to
  * `onRebinding`.
  *
  * A secret a layer writes counts as entered by it, whatever it is. That includes a `${VAR}`
@@ -886,7 +1463,17 @@ function withWebSearchRestores(config: unknown, restores: readonly WebSearchRest
 export function createSecretRebindingGuard(
   onRebinding?: (rebinding: SecretRebinding) => void,
 ): (step: ConfigMergeStep) => AppConfig {
-  return (step) => {
+  return (layerStep) => {
+    const endpoints = restoreUserEndpoints(layerStep);
+    const servers = restoreUserServers(layerStep, endpoints.merged);
+    const step =
+      servers.merged === layerStep.merged ? layerStep : { ...layerStep, merged: servers.merged };
+    const userRestores = [...endpoints.restores, ...servers.restores];
+    for (const { segments, path } of userRestores) {
+      onRebinding?.({ layer: step.layer, kind: 'destination', segments, path });
+    }
+    /** A key is never bound to a destination the guard put back over the layer's own. */
+    const restoredEntries = new Set(userRestores.map(({ segments }) => getEntryKey(segments)));
     const drops = [
       ...findScalarDrops(step),
       ...findCustomEndpointDrops(step),
@@ -895,9 +1482,15 @@ export function createSecretRebindingGuard(
     const restores = findDestinationRestores(step);
     const webSearchRestores = findWebSearchRestores(step);
     let result: unknown = step.merged;
-    for (const { at, segments, path } of drops) {
+    for (const { at, segments, path, binding } of drops) {
       result = setAt(result, at, '');
-      onRebinding?.({ layer: step.layer, kind: 'secret', segments, path });
+      onRebinding?.({
+        layer: step.layer,
+        kind: 'secret',
+        segments,
+        path,
+        ...(binding != null && !restoredEntries.has(getEntryKey(segments)) && { binding }),
+      });
     }
     if (webSearchRestores.length > 0) {
       result = withWebSearchRestores(result, webSearchRestores);

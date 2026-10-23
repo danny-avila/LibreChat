@@ -186,6 +186,64 @@ describe('getAppConfig with admin-written overrides', () => {
     );
   });
 
+  it("serves a profile's own key bound to a destination Base defines, without the fingerprint", async () => {
+    const { mergeOverrideLayers } = await import('./overrides');
+    const { createEnvReferencePolicy } = await import('./allowlist');
+    const baseLayer = {
+      principalType: PrincipalType.ROLE,
+      principalId: dataSchemas.BASE_CONFIG_PRINCIPAL_ID,
+      priority: 0,
+      overrides: {
+        mcpServers: {
+          shared: {
+            type: 'streamable-http',
+            url: 'https://shared.example.com/mcp',
+            apiKey: {
+              source: 'admin',
+              authorization_type: 'bearer',
+              key: dataSchemas.encryptV3('sk-base-key'),
+            },
+          },
+        },
+      },
+    } as ConfigOverrideLayer;
+    const ownKey = (keyBinding?: string) =>
+      roleLayer({
+        mcpServers: {
+          shared: {
+            apiKey: {
+              source: 'admin',
+              authorization_type: 'bearer',
+              key: dataSchemas.encryptV3('sk-role-key'),
+              ...(keyBinding != null && { keyBinding }),
+            },
+          },
+        },
+      });
+    const bindings: Array<string | undefined> = [];
+    mergeOverrideLayers({ config: yaml } as unknown as AppConfig, [baseLayer, ownKey()], {
+      envPolicy: createEnvReferencePolicy({ config: yaml }),
+      onRebinding: ({ layer, binding }) => {
+        if (layer.principalId === 'USER') {
+          bindings.push(binding);
+        }
+      },
+    });
+    expect(bindings).toEqual([expect.stringMatching(/^[0-9a-f]{64}$/)]);
+
+    const unbound = await createService([baseLayer, ownKey()]).getAppConfig({ role: 'USER' });
+    expect((unbound.mcpConfig?.shared as { apiKey: { key: string } }).apiKey.key).toBe('');
+
+    const config = await createService([baseLayer, ownKey(bindings[0])]).getAppConfig({
+      role: 'USER',
+    });
+    expect(config.mcpConfig?.shared).toMatchObject({
+      url: 'https://shared.example.com/mcp',
+      apiKey: { key: 'sk-role-key' },
+    });
+    expect(JSON.stringify(config)).not.toContain('keyBinding');
+  });
+
   it('resolves ${...} under a prompt-named header to nothing, and keeps a real prompt as text', async () => {
     const { getAppConfig } = createService([
       roleLayer({

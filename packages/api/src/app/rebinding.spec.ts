@@ -2,7 +2,11 @@ import { PrincipalType } from 'librechat-data-provider';
 import { mergeConfigOverrides } from '@librechat/data-schemas';
 import type { AppConfig, ConfigOverrideLayer } from '@librechat/data-schemas';
 import type { SecretRebinding } from './rebinding';
-import { createSecretRebindingGuard, toIgnoredSecretOverride } from './rebinding';
+import {
+  withoutSecretBindings,
+  toIgnoredSecretOverride,
+  createSecretRebindingGuard,
+} from './rebinding';
 
 function layer(
   overrides: Record<string, unknown>,
@@ -394,42 +398,293 @@ describe('createSecretRebindingGuard', () => {
   });
 
   describe('values each user supplies', () => {
-    it('keeps user_provided when a layer re-points the endpoint', () => {
+    /** A base config with a `user_provided` endpoint beside the keyed one. */
+    function withUserEndpoint(endpoint: Record<string, unknown> = {}): AppConfig {
       const base = baseConfig();
-      const endpoint = { ...customEndpoint, name: 'Regional', apiKey: 'user_provided' };
-      (base.endpoints as { custom: unknown[] }).custom.push(endpoint);
-      const { merged, rebindings } = merge(
+      (base.endpoints as { custom: unknown[] }).custom.push({
+        ...customEndpoint,
+        name: 'Regional',
+        apiKey: 'user_provided',
+        ...endpoint,
+      });
+      return base;
+    }
+
+    it("sets back the destination of a user_provided endpoint a layer moves, as users' keys follow its name", () => {
+      const { merged, rebindings, ignored } = merge(
         [
           layer({
-            endpoints: { custom: [{ name: 'Regional', baseURL: 'https://eu.gateway.example/v1' }] },
+            endpoints: {
+              custom: [{ name: 'Regional', baseURL: 'https://attacker.example/v1' }],
+            },
           }),
         ],
-        base,
+        withUserEndpoint(),
       );
 
       expect(merged.endpoints?.custom?.[1]).toMatchObject({
         name: 'Regional',
         apiKey: 'user_provided',
-        baseURL: 'https://eu.gateway.example/v1',
+        baseURL: customEndpoint.baseURL,
       });
-      expect(rebindings).toEqual([]);
+      expect(rebindings.map(({ kind }) => kind)).toEqual(['destination']);
+      expect(ignored).toEqual([
+        {
+          path: 'endpoints.custom["Regional"].baseURL',
+          segments: ['endpoints', 'custom', 'Regional', 'baseURL'],
+          reason: 'secret_rebinding',
+        },
+      ]);
     });
 
-    it('keeps a {{VAR}} MCP key when a layer moves the server', () => {
-      const base = baseConfig();
-      (base.mcpConfig as Record<string, unknown>).personal = {
-        type: 'streamable-http',
-        url: 'https://personal.example/mcp',
-        apiKey: { source: 'admin', authorization_type: 'bearer', key: '{{PERSONAL_TOKEN}}' },
+    it('sets back every destination setting, a restated user_provided included', () => {
+      const { merged, ignored } = merge(
+        [
+          layer({
+            endpoints: {
+              custom: [
+                {
+                  name: 'Regional',
+                  apiKey: 'user_provided',
+                  provider: 'anthropic',
+                  addParams: { anthropicApiUrl: 'https://attacker.example', promptCache: true },
+                  dropParams: ['temperature', 'clientOptions'],
+                  models: { default: ['claude'] },
+                },
+              ],
+            },
+          }),
+        ],
+        withUserEndpoint({ dropParams: ['temperature'] }),
+      );
+
+      const entry = merged.endpoints?.custom?.[1] as Record<string, unknown>;
+      expect(entry).toMatchObject({
+        name: 'Regional',
+        apiKey: 'user_provided',
+        baseURL: customEndpoint.baseURL,
+        addParams: { promptCache: true },
+        dropParams: ['temperature'],
+        models: { default: ['claude'] },
+      });
+      expect(entry).not.toHaveProperty('provider');
+      expect(entry.addParams).not.toHaveProperty('anthropicApiUrl');
+      expect(ignored.map(({ path }) => path)).toEqual([
+        'endpoints.custom["Regional"].addParams.anthropicApiUrl',
+        'endpoints.custom["Regional"].dropParams',
+        'endpoints.custom["Regional"].provider',
+      ]);
+    });
+
+    it('sets back an endpoint that sends a user placeholder in its headers, or takes the user URL', () => {
+      const withHeaders = baseConfig();
+      (withHeaders.endpoints as { custom: Array<Record<string, unknown>> }).custom[0].headers = {
+        Authorization: 'Bearer {{LIBRECHAT_OPENID_TOKEN}}',
       };
-      const { merged, rebindings } = merge(
-        [layer({ mcpServers: { personal: { url: 'https://eu.personal.example/mcp' } } })],
+      const headers = merge(
+        [
+          layer({
+            endpoints: { custom: [{ name: 'Gateway', baseURL: 'https://attacker.example/v1' }] },
+          }),
+        ],
+        withHeaders,
+      );
+      expect(headers.merged.endpoints?.custom?.[0]).toMatchObject({
+        apiKey: '${GATEWAY_KEY}',
+        baseURL: customEndpoint.baseURL,
+      });
+      expect(headers.ignored.map(({ path }) => path)).toEqual([
+        'endpoints.custom["Gateway"].baseURL',
+      ]);
+
+      const userURL = merge(
+        [
+          layer({
+            endpoints: {
+              custom: [{ name: 'Regional', baseURL: 'https://attacker.example/v1' }],
+            },
+          }),
+        ],
+        withUserEndpoint({ baseURL: 'user_provided' }),
+      );
+      expect(userURL.merged.endpoints?.custom?.[1]).toMatchObject({ baseURL: 'user_provided' });
+
+      const userVars = merge(
+        [
+          layer({
+            endpoints: {
+              custom: [{ name: 'Regional', baseURL: 'https://attacker.example/v1' }],
+            },
+          }),
+        ],
+        withUserEndpoint({
+          apiKey: '${GATEWAY_KEY}',
+          customUserVars: { TEAM_TOKEN: { title: 'Team token' } },
+        }),
+      );
+      expect(userVars.merged.endpoints?.custom?.[1]).toMatchObject({
+        apiKey: '${GATEWAY_KEY}',
+        baseURL: customEndpoint.baseURL,
+      });
+    });
+
+    it('judges an endpoint that sends only who the user is like any other', () => {
+      const identified = baseConfig();
+      (identified.endpoints as { custom: Array<Record<string, unknown>> }).custom[0].headers = {
+        'X-User': '{{LIBRECHAT_USER_ID}}',
+        'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      };
+      const { merged, ignored } = merge(
+        [
+          layer({
+            endpoints: { custom: [{ name: 'Gateway', baseURL: 'https://eu.gateway.example/v1' }] },
+          }),
+        ],
+        identified,
+      );
+      expect(merged.endpoints?.custom?.[0]).toMatchObject({
+        apiKey: '',
+        baseURL: 'https://eu.gateway.example/v1',
+      });
+      expect(ignored.map(({ path }) => path)).toEqual(['endpoints.custom["Gateway"].apiKey']);
+    });
+
+    it('leaves a user_provided endpoint a layer only retitles, or redefines with a key of its own', () => {
+      const retitled = merge(
+        [layer({ endpoints: { custom: [{ name: 'Regional', modelDisplayLabel: 'EU' }] } })],
+        withUserEndpoint(),
+      );
+      expect(retitled.rebindings).toEqual([]);
+
+      const keyed = merge(
+        [
+          layer({
+            endpoints: {
+              custom: [
+                {
+                  name: 'Regional',
+                  apiKey: 'v3:editors-key',
+                  baseURL: 'https://eu.gateway.example/v1',
+                },
+              ],
+            },
+          }),
+        ],
+        withUserEndpoint(),
+      );
+      expect(keyed.merged.endpoints?.custom?.[1]).toMatchObject({
+        apiKey: 'v3:editors-key',
+        baseURL: 'https://eu.gateway.example/v1',
+      });
+      expect(keyed.rebindings).toEqual([]);
+    });
+
+    it("sets back an MCP server a layer moves while it sends each user's own values", () => {
+      const base = baseConfig();
+      Object.assign(base.mcpConfig as Record<string, unknown>, {
+        personal: {
+          type: 'streamable-http',
+          url: 'https://personal.example/mcp',
+          apiKey: { source: 'admin', authorization_type: 'bearer', key: '{{PERSONAL_TOKEN}}' },
+          customUserVars: { PERSONAL_TOKEN: { title: 'Token', description: 'Yours' } },
+        },
+        headed: {
+          type: 'sse',
+          url: 'https://headed.example/sse',
+          headers: { 'X-Token': '{{HEADED_TOKEN}}' },
+        },
+        userKey: {
+          type: 'streamable-http',
+          url: 'https://user-key.example/mcp',
+          apiKey: { source: 'user', authorization_type: 'bearer' },
+        },
+      });
+      const { merged, ignored } = merge(
+        [
+          layer({
+            mcpServers: {
+              personal: { url: 'https://attacker.example/mcp' },
+              headed: { type: 'streamable-http', url: 'https://attacker.example/mcp' },
+              userKey: { proxy: 'http://proxy.attacker.example:8080' },
+            },
+          }),
+        ],
         base,
       );
 
-      expect((merged.mcpConfig?.personal as typeof mcpServer).apiKey.key).toBe(
-        '{{PERSONAL_TOKEN}}',
+      expect(merged.mcpConfig?.personal).toMatchObject({
+        url: 'https://personal.example/mcp',
+        apiKey: { key: '{{PERSONAL_TOKEN}}' },
+      });
+      expect(merged.mcpConfig?.headed).toMatchObject({
+        type: 'sse',
+        url: 'https://headed.example/sse',
+      });
+      expect(merged.mcpConfig?.userKey).not.toHaveProperty('proxy');
+      expect(ignored.map(({ path }) => path)).toEqual([
+        'mcpServers.personal.url',
+        'mcpServers.headed.url',
+        'mcpServers.headed.type',
+        'mcpServers.userKey.proxy',
+      ]);
+    });
+
+    it('never binds a key the layer enters to the destination it set back', () => {
+      const base = baseConfig();
+      Object.assign(base.mcpConfig as Record<string, unknown>, {
+        personal: {
+          type: 'streamable-http',
+          url: 'https://personal.example/mcp',
+          customUserVars: { TOKEN: { title: 'Token' } },
+        },
+      });
+      const { merged, rebindings } = merge(
+        [
+          layer({
+            mcpServers: {
+              personal: {
+                url: 'https://editors.example/mcp',
+                apiKey: { source: 'admin', authorization_type: 'bearer', key: 'v3:editors' },
+              },
+            },
+          }),
+        ],
+        base,
       );
+
+      expect(merged.mcpConfig?.personal).toMatchObject({
+        url: 'https://personal.example/mcp',
+        apiKey: { key: '' },
+      });
+      expect(rebindings.map(({ kind, path, binding }) => [kind, path, binding])).toEqual([
+        ['destination', 'mcpServers.personal.url', undefined],
+        ['secret', 'mcpServers.personal.apiKey.key', undefined],
+      ]);
+    });
+
+    it('leaves a server without user values, or one a layer only renames in the UI', () => {
+      const base = baseConfig();
+      Object.assign(base.mcpConfig as Record<string, unknown>, {
+        open: { type: 'streamable-http', url: 'https://open.example/mcp' },
+        personal: {
+          type: 'streamable-http',
+          url: 'https://personal.example/mcp',
+          customUserVars: { TOKEN: { title: 'Token' } },
+        },
+      });
+      const { merged, rebindings } = merge(
+        [
+          layer({
+            mcpServers: {
+              open: { url: 'https://eu.open.example/mcp' },
+              personal: { title: 'Personal', type: 'http' },
+            },
+          }),
+        ],
+        base,
+      );
+      expect(merged.mcpConfig?.open).toMatchObject({ url: 'https://eu.open.example/mcp' });
+      expect(merged.mcpConfig?.personal).toMatchObject({ title: 'Personal', type: 'http' });
       expect(rebindings).toEqual([]);
     });
 
@@ -440,6 +695,167 @@ describe('createSecretRebindingGuard', () => {
         }),
       ]);
       expect(merged.endpoints?.custom?.[0]?.apiKey).toBe('');
+    });
+  });
+
+  describe('a key a layer enters over a destination a layer below defines', () => {
+    /** Base defines the endpoint, server and OCR service, each with a key of its own. */
+    const baseLayer = (
+      endpointURL = 'https://shared.example/v1',
+      serverURL = 'https://shared.example/mcp',
+      ocrURL = 'https://shared.example/ocr',
+    ) =>
+      layer(
+        {
+          endpoints: {
+            custom: [
+              {
+                name: 'Shared',
+                apiKey: 'v3:base-endpoint',
+                baseURL: endpointURL,
+                models: { default: ['m'] },
+              },
+            ],
+            azureOpenAI: {
+              groupMap: { shared: { apiKey: 'v3:base-group', baseURL: endpointURL } },
+            },
+          },
+          mcpServers: {
+            shared: {
+              type: 'streamable-http',
+              url: serverURL,
+              apiKey: { source: 'admin', authorization_type: 'bearer', key: 'v3:base-server' },
+            },
+          },
+          ocr: { apiKey: 'v3:base-ocr', baseURL: ocrURL },
+        },
+        '__base__',
+        0,
+      );
+
+    /** The editors' own keys, each bound to the fingerprints `binding` names. */
+    const editors = (binding: Record<string, string | undefined> = {}) =>
+      layer({
+        endpoints: {
+          custom: [
+            { name: 'Shared', apiKey: 'v3:editors-endpoint', apiKeyBinding: binding.endpoint },
+          ],
+          azureOpenAI: {
+            groupMap: { shared: { apiKey: 'v3:editors-group', apiKeyBinding: binding.group } },
+          },
+        },
+        mcpServers: {
+          shared: {
+            apiKey: {
+              source: 'admin',
+              authorization_type: 'bearer',
+              key: 'v3:editors-server',
+              keyBinding: binding.server,
+            },
+          },
+        },
+        ocr: { apiKey: 'v3:editors-ocr', apiKeyBinding: binding.ocr },
+      });
+
+    const shared = (config: AppConfig) =>
+      config.endpoints?.custom?.find((entry) => entry?.name === 'Shared');
+
+    const OWN_PATHS = [
+      'ocr.apiKey',
+      'endpoints.custom["Shared"].apiKey',
+      'mcpServers.shared.apiKey.key',
+      'endpoints.azureOpenAI.groupMap.shared.apiKey',
+    ];
+
+    /** The fingerprints the guard reports for each of the editors' keys over `base`. */
+    function fingerprintsOver(base: ConfigOverrideLayer): Record<string, string | undefined> {
+      const { rebindings } = merge([base, editors()]);
+      const byPath = new Map(
+        rebindings
+          .filter(({ layer: { principalId } }) => principalId === 'editors')
+          .map(({ path, binding }) => [path, binding]),
+      );
+      return {
+        ocr: byPath.get('ocr.apiKey'),
+        endpoint: byPath.get('endpoints.custom["Shared"].apiKey'),
+        server: byPath.get('mcpServers.shared.apiKey.key'),
+        group: byPath.get('endpoints.azureOpenAI.groupMap.shared.apiKey'),
+      };
+    }
+
+    it('drops a key bound to no destination, reporting the fingerprint of where it would go', () => {
+      const { merged, rebindings } = merge([baseLayer(), editors()]);
+
+      expect(shared(merged)?.apiKey).toBe('');
+      expect((merged.mcpConfig?.shared as typeof mcpServer).apiKey.key).toBe('');
+      expect(merged.ocr?.apiKey).toBe('');
+      const own = rebindings.filter(({ layer: { principalId } }) => principalId === 'editors');
+      expect(own.map(({ path }) => path)).toEqual(OWN_PATHS);
+      for (const { binding } of own) {
+        expect(binding).toMatch(/^[0-9a-f]{64}$/);
+      }
+    });
+
+    it('keeps each key bound to the destination the merge sends it to, and leaves the fingerprint out', () => {
+      const { merged, rebindings } = merge([baseLayer(), editors(fingerprintsOver(baseLayer()))]);
+
+      expect(rebindings.filter(({ layer: { principalId } }) => principalId === 'editors')).toEqual(
+        [],
+      );
+      expect(shared(merged)).toMatchObject({
+        apiKey: 'v3:editors-endpoint',
+        baseURL: 'https://shared.example/v1',
+      });
+      expect((merged.mcpConfig?.shared as typeof mcpServer).apiKey.key).toBe('v3:editors-server');
+      expect(merged.ocr?.apiKey).toBe('v3:editors-ocr');
+      expect(merged.endpoints?.azureOpenAI?.groupMap?.shared?.apiKey).toBe('v3:editors-group');
+      expect(JSON.stringify(merged)).toContain('apiKeyBinding');
+      const served = withoutSecretBindings(merged);
+      expect(JSON.stringify(served)).not.toContain('Binding');
+      expect(shared(served)?.apiKey).toBe('v3:editors-endpoint');
+      expect(withoutSecretBindings(served)).toBe(served);
+    });
+
+    it('drops each key again once the layer below moves its destination', () => {
+      const bound = fingerprintsOver(baseLayer());
+      const moved = baseLayer(
+        'https://attacker.example/v1',
+        'https://attacker.example/mcp',
+        'https://attacker.example/ocr',
+      );
+      const { merged, rebindings } = merge([moved, editors(bound)]);
+
+      expect(shared(merged)?.apiKey).toBe('');
+      expect((merged.mcpConfig?.shared as typeof mcpServer).apiKey.key).toBe('');
+      expect(merged.ocr?.apiKey).toBe('');
+      expect(merged.endpoints?.azureOpenAI?.groupMap?.shared?.apiKey).toBe('');
+      expect(
+        rebindings
+          .filter(({ layer: { principalId } }) => principalId === 'editors')
+          .map(({ path }) => path),
+      ).toEqual(OWN_PATHS);
+    });
+
+    it('binds nothing to a fingerprint another destination has, or that a profile in between moved', () => {
+      const bound = fingerprintsOver(baseLayer());
+      const swapped = merge([
+        baseLayer(),
+        editors({ endpoint: bound.server, server: bound.endpoint, ocr: bound.group }),
+      ]);
+      expect(shared(swapped.merged)?.apiKey).toBe('');
+      expect((swapped.merged.mcpConfig?.shared as typeof mcpServer).apiKey.key).toBe('');
+      expect(swapped.merged.ocr?.apiKey).toBe('');
+
+      const between = merge([
+        baseLayer(),
+        layer(
+          { endpoints: { custom: [{ name: 'Shared', baseURL: 'https://attacker.example/v1' }] } },
+          'low',
+          5,
+        ),
+        editors(bound),
+      ]);
+      expect(shared(between.merged)?.apiKey).toBe('');
     });
   });
 

@@ -4363,8 +4363,8 @@ describe('createAdminConfigHandlers', () => {
                 custom: [
                   {
                     name: 'Private',
-                    baseURL: 'https://private.example.com/v2',
-                    models: { default: ['m'] },
+                    baseURL: 'https://private.example.com/v1',
+                    models: { default: ['m', 'n'] },
                   },
                 ],
               },
@@ -4376,10 +4376,12 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       const [entry] = (
-        writtenDraft(deps).overrides.endpoints as { custom: Array<Record<string, string>> }
+        writtenDraft(deps).overrides.endpoints as {
+          custom: Array<Record<string, string> & { models: { default: string[] } }>;
+        }
       ).custom;
       expect(entry.apiKey).toBe('v3:test:sk-stored');
-      expect(entry.baseURL).toBe('https://private.example.com/v2');
+      expect(entry.models.default).toEqual(['m', 'n']);
       /** Validation saw the document the write stores, with the kept secret in place. */
       const overrideCalls = jest.mocked(getConfigOverrideIssues).mock.calls;
       const validated = overrideCalls[overrideCalls.length - 1][0] as {
