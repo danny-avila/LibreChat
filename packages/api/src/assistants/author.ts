@@ -32,6 +32,38 @@ interface AssistantAuthorDeps {
   hasCapability: HasCapabilityFn;
 }
 
+interface AssistantAvatarIdentityInput {
+  query: { user?: string };
+  user: Pick<CapabilityUser, 'id' | 'tenantId'>;
+  endpoint: string;
+  author?: unknown;
+  getUserById: (id: string, select: string) => Promise<{ tenantId?: string } | null>;
+}
+
+/** Provider authors initialize references; populated local identity remains authoritative. */
+export async function resolveAssistantAvatarIdentity({
+  query,
+  user,
+  endpoint,
+  author,
+  getUserById,
+}: AssistantAvatarIdentityInput): Promise<{ user: string; endpoint: string }> {
+  const identity = { user: query.user ?? user.id, endpoint };
+  if (
+    query.user !== undefined ||
+    author === user.id ||
+    typeof author !== 'string' ||
+    !/^[a-f0-9]{24}$/i.test(author)
+  ) {
+    return identity;
+  }
+  const providerAuthor = await getUserById(author, 'tenantId');
+  if (providerAuthor && providerAuthor.tenantId === user.tenantId) {
+    identity.user = author;
+  }
+  return identity;
+}
+
 export class AssistantIdValidationError extends Error {
   readonly code = 'invalid_assistant_id';
 

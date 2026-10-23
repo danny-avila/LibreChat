@@ -3,6 +3,7 @@ import {
   AssistantIdValidationError,
   getAssistantErrorStatus,
   createAssistantAuthorValidator,
+  resolveAssistantAvatarIdentity,
 } from './author';
 
 const makeRequest = () => ({
@@ -159,5 +160,58 @@ describe('assistant author validation', () => {
     });
     expect(hasCapability).not.toHaveBeenCalled();
     expect(getAssistant).not.toHaveBeenCalled();
+  });
+});
+
+describe('assistant avatar identity', () => {
+  const author = '65cfb246f7ecadb8b1e8036c';
+  const user = { id: '65cfb246f7ecadb8b1e8036b', tenantId: 'tenant-a' };
+  const getUserById = jest.fn();
+  const resolveIdentity = (query: { user?: string }, providerAuthor: unknown = author) =>
+    resolveAssistantAvatarIdentity({
+      query,
+      user,
+      endpoint: 'assistants',
+      author: providerAuthor,
+      getUserById,
+    });
+
+  beforeEach(() => getUserById.mockReset().mockResolvedValue({ tenantId: 'tenant-a' }));
+
+  it('initializes a managed reference with the same-tenant provider author', async () => {
+    await expect(resolveIdentity({})).resolves.toEqual({ user: author, endpoint: 'assistants' });
+    expect(getUserById).toHaveBeenCalledWith(author, 'tenantId');
+  });
+
+  it.each([null, { tenantId: 'tenant-b' }, {}])(
+    'does not adopt an unavailable or foreign-tenant author: %p',
+    async (account) => {
+      getUserById.mockResolvedValue(account);
+      await expect(resolveIdentity({})).resolves.toEqual({ user: user.id, endpoint: 'assistants' });
+    },
+  );
+
+  it('retains the authorized owner scope without a redundant user lookup', async () => {
+    await expect(resolveIdentity({ user: user.id })).resolves.toEqual({
+      user: user.id,
+      endpoint: 'assistants',
+    });
+    expect(getUserById).not.toHaveBeenCalled();
+  });
+
+  it.each([null, '', 'external-author', ['65cfb246f7ecadb8b1e8036c'], { $ne: null }, user.id])(
+    'does not query invalid or already-known provider authors: %p',
+    async (providerAuthor) => {
+      await expect(resolveIdentity({}, providerAuthor)).resolves.toEqual({
+        user: user.id,
+        endpoint: 'assistants',
+      });
+      expect(getUserById).not.toHaveBeenCalled();
+    },
+  );
+
+  it('propagates a user lookup failure instead of adopting an unverified author', async () => {
+    getUserById.mockRejectedValue(new Error('user database unavailable'));
+    await expect(resolveIdentity({})).rejects.toThrow('user database unavailable');
   });
 });

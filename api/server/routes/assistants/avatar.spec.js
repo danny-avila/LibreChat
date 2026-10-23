@@ -47,6 +47,8 @@ describe('assistant avatar multipart authorization', () => {
   let app;
   let providers;
   let privateAssistants;
+  let requestUser;
+  let User;
   const retrieve = jest.fn();
   const update = jest.fn();
   const openai = { beta: { assistants: { retrieve, update } } };
@@ -56,12 +58,12 @@ describe('assistant avatar multipart authorization', () => {
     mongo = await MongoMemoryServer.create({ instance: { args: ['--nounixsocket'] } });
     await mongoose.connect(mongo.getUri());
     mongoose.set('strictQuery', true);
-    Assistant = createModels(mongoose).Assistant;
+    ({ Assistant, User } = createModels(mongoose));
     const upload = multer({ dest: directory });
     app = express();
     // Authenticated user/config fixture; exercise real multipart parsing, route, guard and DB.
     app.use((req, _res, next) => {
-      req.user = { id: attacker.toString(), role: 'USER', tenantId: 'tenant-a' };
+      req.user = { id: requestUser.toString(), role: 'USER', tenantId: 'tenant-a' };
       req.config = {
         fileStrategy: 'local',
         endpoints: { assistants: { privateAssistants } },
@@ -110,6 +112,12 @@ describe('assistant avatar multipart authorization', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     privateAssistants = true;
+    requestUser = attacker;
+    await User.deleteMany({});
+    await User.collection.insertMany([
+      { _id: attacker, tenantId: 'tenant-a' },
+      { _id: victim, tenantId: 'tenant-a' },
+    ]);
     await Assistant.deleteMany({});
     await Assistant.create([
       {
@@ -252,6 +260,51 @@ describe('assistant avatar multipart authorization', () => {
       avatar: { filepath: '/images/avatar.png', source: 'local' },
     });
   });
+
+  it.each([false, true])(
+    'preserves the provider author after a manager initializes an ownerless reference: %p',
+    async (existingReference) => {
+      if (existingReference) {
+        await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          updateAssistantDoc(
+            { assistantId: 'asst-managed-provider' },
+            { conversation_starters: ['Hello'] },
+          ),
+        );
+      }
+      providers['asst-managed-provider'] = {
+        id: 'asst-managed-provider',
+        metadata: { author: victim.toString() },
+      };
+      hasCapability.mockResolvedValue(true);
+      const managedPath = `/images/${attacker}/provider-avatar.png`;
+      uploadImageBuffer.mockResolvedValue({ filepath: managedPath });
+      const managedResponse = await upload('asst-managed-provider');
+      expect(managedResponse.status).toBe(201);
+      const reference = await Assistant.findOne({ assistant_id: 'asst-managed-provider' }).lean();
+      expect(reference.user.toString()).toBe(victim.toString());
+      const token = jwt.sign({ id: victim.toString() }, process.env.JWT_REFRESH_SECRET, {
+        expiresIn: '1h',
+      });
+      const image = await request(app).get(managedPath).set('Cookie', `refreshToken=${token}`);
+      expect(image.status).toBe(200);
+
+      requestUser = victim;
+      hasCapability.mockResolvedValue(false);
+      providers['asst-managed-provider'] = managedResponse.body;
+      const ownerPath = `/images/${victim}/owner-avatar.png`;
+      uploadImageBuffer.mockResolvedValue({ filepath: ownerPath });
+      // Keep the fixture focused on persistence rather than the old-storage deletion service.
+      delete providers['asst-managed-provider'].metadata.avatar;
+      delete providers['asst-managed-provider'].metadata.avatar_source;
+      const ownerResponse = await upload('asst-managed-provider');
+      expect(ownerResponse.status).toBe(201);
+      const updated = await Assistant.findOne({ assistant_id: 'asst-managed-provider' }).lean();
+      expect(updated.user.toString()).toBe(victim.toString());
+      expect(updated.avatar.filepath).toBe(ownerPath);
+      expect(await Assistant.countDocuments({ assistant_id: 'asst-managed-provider' })).toBe(1);
+    },
+  );
 
   it('keeps the owner of an existing shared assistant when another user changes its avatar', async () => {
     privateAssistants = false;

@@ -9,6 +9,7 @@ const {
   getBlockedUninspectableFileField,
   resolveAssistantToolPermissions,
   getAssistantErrorStatus,
+  resolveAssistantAvatarIdentity,
 } = require('@librechat/api');
 const { FileContext } = require('librechat-data-provider');
 const {
@@ -17,6 +18,7 @@ const {
   updateAssistantAvatar,
   getAssistants,
   getRoleByName,
+  getUserById,
 } = require('~/models');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
@@ -454,6 +456,13 @@ const uploadAssistantAvatar = async (req, res) => {
       avatar_source: appConfig.fileStrategy,
     };
 
+    const avatarIdentity = await resolveAssistantAvatarIdentity({
+      query: assistantQuery,
+      user: req.user,
+      endpoint: req.body?.endpoint ?? req.query?.endpoint,
+      author: _metadata.author,
+      getUserById,
+    });
     const promises = [];
     promises.push(
       updateAssistantAvatar(
@@ -462,7 +471,7 @@ const uploadAssistantAvatar = async (req, res) => {
           filepath: image.filepath,
           source: appConfig.fileStrategy,
         },
-        { user: req.user.id, endpoint: req.body?.endpoint ?? req.query?.endpoint },
+        avatarIdentity,
       ),
     );
     promises.push(openai.beta.assistants.update(assistant_id, { metadata }));
