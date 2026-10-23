@@ -23,6 +23,7 @@ import {
   assertToolOptionsWithinLimits,
   MAX_TOOL_OPTION_KEY_LENGTH,
   getPersistedToolOptions,
+  ToolOptionsLimitError,
 } from '../options';
 import { selectSkillPrimesForTurn, unionPrimeAllowedTools } from '~/agents/skills';
 import { isMCPAllPlaceholder, normalizeAgentToolKeys } from '~/mcp/utils';
@@ -72,7 +73,7 @@ function createAdmissionWork(): AdmissionWork {
   return (name, copies = 1) => {
     const work = Math.max(1, name.length) * copies;
     if (name.length > MAX_TOOL_OPTION_KEY_LENGTH || work > remaining) {
-      throw new RangeError('Tool approval admission exceeds the safety work limit');
+      throw new ToolOptionsLimitError('Tool approval admission exceeds the safety work limit');
     }
     remaining -= work;
   };

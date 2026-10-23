@@ -4207,6 +4207,42 @@ describe('initializeAgent — execute_code capability expansion', () => {
     },
   );
 
+  it.each([
+    { ['q' + '_mcp_z'.repeat(4000)]: { approval_mode: 'ask' as const } },
+    Object.fromEntries(
+      Array.from({ length: 1025 }, (_, i) => [`${i}`, { approval_mode: 'ask' as const }]),
+    ),
+    Object.fromEntries(
+      Array.from({ length: 129 }, (_, i) => [
+        `${i}`.padEnd(256, 'é'),
+        { approval_mode: 'ask' as const },
+      ]),
+    ),
+  ])(
+    'rejects legacy option-limit violations before loading tools or priming resources',
+    async (tool_options) => {
+      const { agent, req, res, loadTools, db } = createMocks();
+      agent.tool_options = tool_options;
+      const primeCalls = jest.mocked(primeResources).mock.calls.length;
+      await expect(
+        initializeAgent(
+          {
+            req,
+            res,
+            agent,
+            loadTools,
+            endpointOption: { endpoint: EModelEndpoint.agents },
+            allowedProviders: new Set([Providers.OPENAI]),
+            isInitialAgent: true,
+          },
+          db,
+        ),
+      ).rejects.toMatchObject({ code: 'AGENT_TOOL_OPTIONS_LIMIT_EXCEEDED' });
+      expect(loadTools).not.toHaveBeenCalled();
+      expect(primeResources).toHaveBeenCalledTimes(primeCalls);
+    },
+  );
+
   it('rejects a stateful environment excluded by deployment policy', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['execute_code'];

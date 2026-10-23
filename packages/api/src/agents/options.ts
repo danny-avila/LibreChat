@@ -5,6 +5,17 @@ export const MAX_TOOL_OPTION_KEY_LENGTH = 1024;
 export const MAX_TOOL_OPTION_ENTRIES = 1024;
 export const MAX_TOOL_OPTION_KEY_BYTES = 64 * 1024;
 
+export const AGENT_TOOL_OPTIONS_LIMIT_EXCEEDED = 'AGENT_TOOL_OPTIONS_LIMIT_EXCEEDED';
+
+export class ToolOptionsLimitError extends RangeError {
+  readonly code: string = AGENT_TOOL_OPTIONS_LIMIT_EXCEEDED;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ToolOptionsLimitError';
+  }
+}
+
 export function getToolOptionsLimitError(options?: object): string | undefined {
   let count = 0;
   let bytes = 0;
@@ -26,7 +37,7 @@ export function getToolOptionsLimitError(options?: object): string | undefined {
 
 export function assertToolOptionsWithinLimits(options?: object): void {
   const error = getToolOptionsLimitError(options);
-  if (error) throw new RangeError(error);
+  if (error) throw new ToolOptionsLimitError(error);
 }
 
 const persistedToolOptions = new WeakMap<AgentToolOptions, AgentToolOptions>();
