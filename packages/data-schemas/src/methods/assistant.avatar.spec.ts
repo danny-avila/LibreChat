@@ -117,6 +117,117 @@ describe('updateAssistantAvatar', () => {
     expect(await runAsSystem(async () => Assistant.countDocuments())).toBe(2);
   });
 
+  it('creates an authorized shared reference in the active tenant', async () => {
+    const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+      methods.updateAssistantAvatar({ assistantId: 'provider-only' }, avatar, {
+        user: attackerId.toString(),
+        endpoint: 'assistants',
+      }),
+    );
+
+    expect(result).toMatchObject({
+      assistant_id: 'provider-only',
+      user: attackerId,
+      endpoint: 'assistants',
+      tenantId: 'tenant-a',
+      avatar,
+    });
+    expect(await readAssistant('provider-only')).toMatchObject({ avatar });
+  });
+
+  it('never applies insert-only identity to an existing shared assistant', async () => {
+    const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+      methods.updateAssistantAvatar({ assistantId: 'victim-assistant' }, avatar, {
+        user: attackerId.toString(),
+        endpoint: 'assistants',
+      }),
+    );
+
+    expect(result).toMatchObject({ user: ownerId, endpoint: 'openAI', avatar });
+    expect(await readAssistant()).toMatchObject({ user: ownerId, endpoint: 'openAI', avatar });
+    expect(await runAsSystem(async () => Assistant.countDocuments())).toBe(2);
+  });
+
+  it('creates a provider-authorized owner-scoped reference when none exists', async () => {
+    const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+      methods.updateAssistantAvatar(
+        { assistantId: 'provider-only', user: ownerId.toString() },
+        avatar,
+        { user: ownerId.toString(), endpoint: 'assistants' },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      assistant_id: 'provider-only',
+      user: ownerId,
+      endpoint: 'assistants',
+      tenantId: 'tenant-a',
+      avatar,
+    });
+  });
+
+  it('cannot duplicate or take over an existing assistant through owner-scoped insertion', async () => {
+    await expect(
+      tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        methods.updateAssistantAvatar(
+          { assistantId: 'victim-assistant', user: attackerId.toString() },
+          avatar,
+          { user: attackerId.toString(), endpoint: 'assistants' },
+        ),
+      ),
+    ).rejects.toThrow('Assistant ownership changed');
+
+    expect(await readAssistant()).toMatchObject({
+      user: ownerId,
+      endpoint: 'openAI',
+      avatar: originalAvatar,
+    });
+    expect(await runAsSystem(async () => Assistant.countDocuments())).toBe(2);
+  });
+
+  it('inserts a tenant-local reference without modifying an overlapping foreign assistant', async () => {
+    const result = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
+      methods.updateAssistantAvatar({ assistantId: 'victim-assistant' }, avatar, {
+        user: attackerId.toString(),
+        endpoint: 'assistants',
+      }),
+    );
+
+    expect(result).toMatchObject({ user: attackerId, tenantId: 'tenant-b', avatar });
+    const original = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+      Assistant.findOne({ assistant_id: 'victim-assistant' }).lean<IAssistant>(),
+    );
+    expect(original).toMatchObject({ user: ownerId, avatar: originalAvatar });
+  });
+
+  it.each<{ onInsert: unknown }>([
+    { onInsert: null },
+    { onInsert: {} },
+    { onInsert: { user: '', endpoint: 'assistants' } },
+    { onInsert: { user: attackerId.toString(), endpoint: '' } },
+    { onInsert: { user: { $ne: null }, endpoint: 'assistants' } },
+    { onInsert: { user: attackerId.toString(), endpoint: ['assistants'] } },
+  ])('rejects invalid insert identity before querying: $onInsert', async ({ onInsert }) => {
+    const findOneAndUpdate = jest.spyOn(Assistant, 'findOneAndUpdate');
+    await expect(
+      // @ts-expect-error JavaScript callers can supply invalid insertion data at runtime.
+      methods.updateAssistantAvatar({ assistantId: 'provider-only' }, avatar, onInsert),
+    ).rejects.toThrow('Avatar insert data must identify');
+    expect(findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('requires insert identity to agree with the authorized owner scope', async () => {
+    const findOneAndUpdate = jest.spyOn(Assistant, 'findOneAndUpdate');
+    await expect(
+      methods.updateAssistantAvatar(
+        { assistantId: 'provider-only', user: ownerId.toString() },
+        avatar,
+        { user: attackerId.toString(), endpoint: 'assistants' },
+      ),
+    ).rejects.toThrow('Avatar insert data must identify');
+    expect(findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   it.each<{ query: unknown }>([
     { query: undefined },
     { query: null },

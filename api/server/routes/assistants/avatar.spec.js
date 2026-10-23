@@ -1,10 +1,12 @@
 const os = require('os');
 const fs = require('fs').promises;
+const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { createImageAuthorizationMiddleware } = require('@librechat/api');
 const { createModels, tenantStorage } = require('@librechat/data-schemas');
 
 jest.mock('~/models', () => require('@librechat/data-schemas').createMethods(require('mongoose')));
@@ -43,6 +45,7 @@ describe('assistant avatar multipart authorization', () => {
   let Assistant;
   let app;
   let providers;
+  let privateAssistants;
   const retrieve = jest.fn();
   const update = jest.fn();
   const openai = { beta: { assistants: { retrieve, update } } };
@@ -60,7 +63,7 @@ describe('assistant avatar multipart authorization', () => {
       req.user = { id: attacker.toString(), role: 'USER', tenantId: 'tenant-a' };
       req.config = {
         fileStrategy: 'local',
-        endpoints: { assistants: { privateAssistants: true } },
+        endpoints: { assistants: { privateAssistants } },
       };
       next();
     });
@@ -69,6 +72,29 @@ describe('assistant avatar multipart authorization', () => {
       tenantStorage.run({ tenantId: req.user.tenantId }, next);
     });
     app.use('/api/files/images/assistants', avatar);
+    app.get(
+      '/images/:user/:filename',
+      createImageAuthorizationMiddleware(
+        { secureImageLinks: true },
+        {
+          parseCookies: (header) => Object.fromEntries([header.split('=')]),
+          isOpenIdReuseEnabled: () => false,
+          getBasePath: () => '',
+          findSession: async () => ({ id: 'test-session' }),
+          getUserById: async () => ({ role: 'USER', tenantId: 'tenant-a' }),
+          getAgent: async () => null,
+          getAssistant: require('~/models').getAssistant,
+          getImageConfig: async () => ({
+            secureImageLinks: true,
+            assistantEndpoints: [{ endpoint: 'assistants', privateAssistants }],
+          }),
+          getUserPrincipals: async () => [],
+          hasCapabilityForPrincipals: async () => false,
+          hasPermission: async () => false,
+        },
+      ),
+      (_req, res) => res.sendStatus(200),
+    );
   });
 
   afterAll(async () => {
@@ -79,6 +105,7 @@ describe('assistant avatar multipart authorization', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    privateAssistants = true;
     await Assistant.deleteMany({});
     await Assistant.create([
       {
@@ -190,6 +217,54 @@ describe('assistant avatar multipart authorization', () => {
     const doc = await Assistant.findOne({ assistant_id: 'asst-victim' }).lean();
     expect(doc.user.toString()).toBe(victim.toString());
     expect(doc.avatar).toEqual({ filepath: '/images/avatar.png', source: 'local' });
+  });
+
+  it('creates a reference for a provider-only private assistant after verifying its author', async () => {
+    providers['asst-provider-only'] = {
+      id: 'asst-provider-only',
+      metadata: { author: attacker.toString() },
+    };
+    const response = await upload('asst-provider-only');
+    expect(response.status).toBe(201);
+    const doc = await Assistant.findOne({ assistant_id: 'asst-provider-only' }).lean();
+    expect(doc.user.toString()).toBe(attacker.toString());
+    expect(doc).toMatchObject({
+      endpoint: 'assistants',
+      tenantId: 'tenant-a',
+      avatar: { filepath: '/images/avatar.png', source: 'local' },
+    });
+  });
+
+  it('keeps the owner of an existing shared assistant when another user changes its avatar', async () => {
+    privateAssistants = false;
+    const response = await upload('asst-victim');
+    expect(response.status).toBe(201);
+    const doc = await Assistant.findOne({ assistant_id: 'asst-victim' }).lean();
+    expect(doc.user.toString()).toBe(victim.toString());
+    expect(doc.avatar).toEqual({ filepath: '/images/avatar.png', source: 'local' });
+    expect(await Assistant.countDocuments({ assistant_id: 'asst-victim' })).toBe(1);
+  });
+
+  it('keeps provider-only shared avatars accessible to another authenticated user', async () => {
+    privateAssistants = false;
+    providers['asst-provider-only'] = { id: 'asst-provider-only', metadata: {} };
+    const filepath = `/images/${attacker}/shared-avatar.png`;
+    uploadImageBuffer.mockResolvedValue({ filepath });
+
+    const response = await upload('asst-provider-only');
+    expect(response.status).toBe(201);
+    const token = jwt.sign({ id: victim.toString() }, process.env.JWT_REFRESH_SECRET, {
+      expiresIn: '1h',
+    });
+    const image = await request(app).get(filepath).set('Cookie', `refreshToken=${token}`);
+    expect(image.status).toBe(200);
+    const doc = await Assistant.findOne({ assistant_id: 'asst-provider-only' }).lean();
+    expect(doc).toMatchObject({
+      endpoint: 'assistants',
+      avatar: { filepath, source: 'local' },
+      tenantId: 'tenant-a',
+    });
+    expect(doc.user.toString()).toBe(attacker.toString());
   });
 
   it('does not authorize using an owned assistant in another tenant', async () => {

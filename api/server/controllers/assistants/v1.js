@@ -455,10 +455,14 @@ const uploadAssistantAvatar = async (req, res) => {
 
     const promises = [];
     promises.push(
-      updateAssistantAvatar(assistantQuery, {
-        filepath: image.filepath,
-        source: appConfig.fileStrategy,
-      }),
+      updateAssistantAvatar(
+        assistantQuery,
+        {
+          filepath: image.filepath,
+          source: appConfig.fileStrategy,
+        },
+        { user: req.user.id, endpoint: req.body?.endpoint ?? req.query?.endpoint },
+      ),
     );
     promises.push(openai.beta.assistants.update(assistant_id, { metadata }));
 

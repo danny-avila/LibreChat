@@ -22,6 +22,7 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
   updateAssistantAvatar: (
     query: { assistantId: string; user?: string },
     avatar: NonNullable<IAssistant['avatar']>,
+    onInsert?: { user: string; endpoint: string },
   ) => Promise<IAssistant | null>;
   deleteAssistant: (query: AssistantQuery) => Promise<IAssistant | null>;
   deleteAssistants: (query: AssistantQuery) => Promise<number>;
@@ -62,10 +63,11 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
       .lean<IAssistant>();
   }
 
-  /** Updates only the avatar of an existing assistant. */
+  /** Updates the authorized avatar; optional insert data never overwrites an existing owner. */
   async function updateAssistantAvatar(
     query: { assistantId: string; user?: string },
     avatar: NonNullable<IAssistant['avatar']>,
+    onInsert?: { user: string; endpoint: string },
   ): Promise<IAssistant | null> {
     if (
       typeof query?.assistantId !== 'string' ||
@@ -83,6 +85,49 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
       throw new TypeError('user must be a nonempty string');
     }
 
+    if (
+      onInsert !== undefined &&
+      (typeof onInsert?.user !== 'string' ||
+        onInsert.user.trim().length === 0 ||
+        typeof onInsert.endpoint !== 'string' ||
+        onInsert.endpoint.trim().length === 0 ||
+        (query.user !== undefined && query.user !== onInsert.user))
+    ) {
+      throw new TypeError('Avatar insert data must identify the authorized user and endpoint');
+    }
+
+    const insertData = onInsert && { user: onInsert.user, endpoint: onInsert.endpoint };
+    const upsert = insertData !== undefined && query.user === undefined;
+    const document = await Assistant()
+      .findOneAndUpdate(
+        assistantFilter(query),
+        { $set: { avatar }, ...(upsert ? { $setOnInsert: insertData } : {}) },
+        { new: true, upsert },
+      )
+      .lean<IAssistant>();
+    if (document || !insertData) {
+      return document;
+    }
+
+    // An owner-scoped upsert could duplicate another owner's existing assistant.
+    const reference = await Assistant()
+      .findOneAndUpdate(
+        assistantFilter({ assistantId: query.assistantId }),
+        { $setOnInsert: { ...insertData, avatar } },
+        { new: true, upsert: true },
+      )
+      .lean<IAssistant>();
+    if (!reference || reference.user.toString() !== query.user) {
+      throw new Error('Assistant ownership changed before the avatar update');
+    }
+    if (
+      reference.avatar?.filepath === avatar.filepath &&
+      reference.avatar.source === avatar.source
+    ) {
+      return reference;
+    }
+
+    // A concurrent insert by the same owner still needs this upload's avatar.
     return await Assistant()
       .findOneAndUpdate(assistantFilter(query), { $set: { avatar } }, { new: true })
       .lean<IAssistant>();
