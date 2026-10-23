@@ -47,6 +47,7 @@ import {
   validatePrincipalType,
   principalNotFoundResponse,
 } from './config';
+import { resolveServedCustomEndpoints } from '~/endpoints/custom/config';
 import { listAvailableTools } from '~/tools/available';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { resolveConfigSecret } from './secrets';
@@ -171,7 +172,7 @@ function referencedEnvNames(...values: unknown[]): string[] {
 }
 
 /** Whether a custom endpoint fetches its models with a key and URL the server holds. */
-function fetchesWithServerKey(endpoint: TEndpoint): boolean {
+function fetchesWithServerKey(endpoint: Partial<TEndpoint>): boolean {
   return (
     endpoint.models?.fetch === true &&
     !isUserProvided(resolveConfigSecret(endpoint.apiKey) ?? '') &&
@@ -182,6 +183,24 @@ function fetchesWithServerKey(endpoint: TEndpoint): boolean {
 function getCustomEndpoints(config: AppConfig): TEndpoint[] {
   const custom = config.endpoints?.custom;
   return Array.isArray(custom) ? (custom as TEndpoint[]) : [];
+}
+
+/**
+ * The definition the catalog reports for each custom endpoint name: the one the endpoint config
+ * serves under that name (`resolveServedCustomEndpoints`), or the last definition of a name it
+ * serves none of.
+ */
+function resolveCustomEndpoints(config: AppConfig): Map<string, Partial<TEndpoint>> {
+  const custom = getCustomEndpoints(config);
+  const served = resolveServedCustomEndpoints(custom);
+  const resolved = new Map<string, Partial<TEndpoint>>();
+  for (const endpoint of custom) {
+    const name = normalizeEndpointName(endpoint.name ?? '');
+    if (name !== '') {
+      resolved.set(name, served.get(name) ?? endpoint);
+    }
+  }
+  return resolved;
 }
 
 /** `config` without the model lists of built-in endpoints, so their defaults load instead. */
@@ -226,7 +245,7 @@ function withoutFetchFallbacks(config: AppConfig): AppConfig {
 }
 
 /** Why a custom endpoint the endpoint config leaves out is not served. */
-function getCustomReason(endpoint: TEndpoint): AdminCatalogEndpointReason {
+function getCustomReason(endpoint: Partial<TEndpoint>): AdminCatalogEndpointReason {
   if (!endpoint.apiKey) {
     return 'missing_api_key';
   }
@@ -352,11 +371,7 @@ export function createAdminConfigCatalogHandlers(deps: AdminConfigCatalogDeps): 
           : { reason: listsEndpoints && !listed.has(name) ? 'not_listed' : 'missing_credentials' }),
       };
     }
-    for (const endpoint of getCustomEndpoints(config)) {
-      const name = normalizeEndpointName(endpoint.name ?? '');
-      if (name === '' || endpoints[name]?.custom === true) {
-        continue;
-      }
+    for (const [name, endpoint] of resolveCustomEndpoints(config)) {
       const entry = served?.[name];
       endpoints[name] = {
         enabled: entry != null,
@@ -375,12 +390,7 @@ export function createAdminConfigCatalogHandlers(deps: AdminConfigCatalogDeps): 
       loadDefaultModels({ ...request, config: withoutModelLists(request.config) }),
       loadConfigModels({ ...request, config: withoutFetchFallbacks(request.config) }),
     ]);
-    const custom = new Map(
-      getCustomEndpoints(request.config).map((endpoint) => [
-        normalizeEndpointName(endpoint.name ?? ''),
-        endpoint,
-      ]),
-    );
+    const custom = resolveCustomEndpoints(request.config);
     const models: Record<string, AdminCatalogModels> = {};
     for (const name of new Set([
       ...Object.keys(defaults ?? {}),

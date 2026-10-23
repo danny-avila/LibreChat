@@ -349,6 +349,52 @@ describe('GET /catalog', () => {
     expect(fetchModels).toHaveBeenCalledTimes(3);
   });
 
+  it('reports each duplicated custom endpoint name from the definition the endpoint config serves', async () => {
+    const original = appConfig;
+    const endpoint = (name: string, key: string, models: string[], iconURL?: string) => ({
+      name,
+      apiKey: `\${${key}}`,
+      baseURL: `https://${key.toLowerCase()}.example.com/v1`,
+      models: { default: models },
+      ...(iconURL && { iconURL }),
+    });
+    appConfig = await dataSchemas.AppService({
+      config: {
+        ...structuredClone(YAML),
+        endpoints: {
+          custom: [
+            endpoint('Ollama', 'FIRST_OLLAMA_KEY', ['first-model'], 'first.png'),
+            endpoint('ollama', 'LAST_OLLAMA_KEY', ['last-model'], 'last.png'),
+            endpoint('Kept', 'SERVED_KEY', ['kept-model']),
+            { name: 'Kept', apiKey: '${UNSERVED_KEY}' },
+            { name: 'Unserved', apiKey: '${FIRST_UNSERVED_KEY}' },
+            { name: 'Unserved', baseURL: 'https://unserved.example.com/v1' },
+          ],
+        },
+      },
+    });
+    try {
+      const { body } = await catalog({});
+      expect(body.endpoints?.ollama).toMatchObject({
+        enabled: true,
+        envVars: ['LAST_OLLAMA_KEY'],
+        config: { iconURL: 'last.png' },
+      });
+      expect(body.endpoints).not.toHaveProperty('Ollama');
+      expect(body.models?.ollama).toEqual({ served: ['last-model'], configured: ['last-model'] });
+      expect(body.endpoints?.Kept).toMatchObject({ enabled: true, envVars: ['SERVED_KEY'] });
+      expect(body.models?.Kept).toEqual({ served: ['kept-model'], configured: ['kept-model'] });
+      expect(body.endpoints?.Unserved).toEqual({
+        enabled: false,
+        custom: true,
+        envVars: [],
+        reason: 'missing_api_key',
+      });
+    } finally {
+      appConfig = original;
+    }
+  });
+
   it('lists the tools the server loaded, marking those it holds the credentials of', async () => {
     const { body } = await catalog({});
     expect(body.tools).toEqual([
