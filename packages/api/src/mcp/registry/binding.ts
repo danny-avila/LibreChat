@@ -127,9 +127,10 @@ export function preserveOmittedOAuthBindingFields<T extends Partial<OAuthOptions
 }
 
 /**
- * The fields that bind an OAuth client secret to its authorization server and client, which
- * differ between two configs: changing any of them while keeping a stored secret would hand that
- * secret to a different destination or client.
+ * The fields that bind an OAuth client secret to its authorization server and client, and the
+ * access token exchanged for it to the server and proxy it is sent through, which differ between
+ * two configs: changing any of them while keeping a stored secret would hand that secret, or the
+ * token it obtains, to a different destination or client.
  */
 export function getChangedOAuthSecretBindingFields(
   existingConfig: CredentialBindingConfig,
@@ -143,6 +144,11 @@ export function getChangedOAuthSecretBindingFields(
 
   const fields = [
     ['url', normalizeUrl(getUrl(existingConfig)), normalizeUrl(getUrl(updatedConfig))],
+    [
+      'proxy',
+      normalizeUrl(getProxy(existingConfig), true),
+      normalizeUrl(getProxy(updatedConfig), true),
+    ],
     [
       'oauth.authorization_url',
       normalizeUrl(existingOAuth.authorization_url),

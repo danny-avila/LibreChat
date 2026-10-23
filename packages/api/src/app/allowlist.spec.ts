@@ -7,6 +7,7 @@ type Allowlist = typeof import('./allowlist');
 
 /** Loaded after `CREDS_KEY` is set: the encryption key is read when data-schemas loads. */
 let encryptV3: typeof import('@librechat/data-schemas').encryptV3;
+let loadWebSearchConfig: typeof import('@librechat/data-schemas').loadWebSearchConfig;
 let parseEnvAllowlist: Allowlist['parseEnvAllowlist'];
 let getEnvReferenceIssues: Allowlist['getEnvReferenceIssues'];
 let neutralizeEnvReferences: Allowlist['neutralizeEnvReferences'];
@@ -17,7 +18,7 @@ let ENV_LITERAL_TEXT_PATHS: Allowlist['ENV_LITERAL_TEXT_PATHS'];
 let ENV_REFERENCE_NOT_ALLOWED: string;
 
 beforeAll(async () => {
-  ({ encryptV3 } = await import('@librechat/data-schemas'));
+  ({ encryptV3, loadWebSearchConfig } = await import('@librechat/data-schemas'));
   ({
     parseEnvAllowlist,
     getEnvReferenceIssues,
@@ -56,28 +57,61 @@ describe('createEnvReferencePolicy', () => {
 
   it('allows YAML names, endpoint credential names and the extra list, nothing else', () => {
     const policy = createEnvReferencePolicy({ config: yaml, allowlist: ['EXTRA_NAME'] });
+    const anywhere = ['endpoints', 'custom', '0', 'headers', 'X-Key'];
 
-    expect(policy.allows('GATEWAY_KEY')).toBe(true);
-    expect(policy.allows('GH_PAT')).toBe(true);
-    expect(policy.allows('OPENAI_API_KEY')).toBe(true);
-    expect(policy.allows('BEDROCK_AWS_SECRET_ACCESS_KEY')).toBe(true);
-    expect(policy.allows('EXTRA_NAME')).toBe(true);
-    expect(policy.allows('MEILI_HTTP_ADDR')).toBe(false);
-    expect(policy.allows('HOME')).toBe(false);
+    expect(policy.allows('GATEWAY_KEY', anywhere)).toBe(true);
+    expect(policy.allows('GH_PAT', anywhere)).toBe(true);
+    expect(policy.allows('OPENAI_API_KEY', anywhere)).toBe(true);
+    expect(policy.allows('BEDROCK_AWS_SECRET_ACCESS_KEY', anywhere)).toBe(true);
+    expect(policy.allows('EXTRA_NAME', anywhere)).toBe(true);
+    expect(policy.allows('MEILI_HTTP_ADDR', anywhere)).toBe(false);
+    expect(policy.allows('HOME', anywhere)).toBe(false);
   });
 
-  it('allows the OCR key reference loading fills in when librechat.yaml configures OCR', () => {
+  it('allows the OCR key reference loading fills in, only where it fills it in', () => {
     const configured = createEnvReferencePolicy({
       config: { ocr: { baseURL: 'https://ocr.internal.example/v1' } },
     });
     const keyed = createEnvReferencePolicy({
       config: { ocr: { apiKey: '${OCR_GATEWAY_KEY}', baseURL: 'https://ocr.internal.example' } },
     });
+    const ocrKey = ['ocr', 'apiKey'];
 
-    expect(configured.allows('OCR_API_KEY')).toBe(true);
-    expect(keyed.allows('OCR_GATEWAY_KEY')).toBe(true);
-    expect(keyed.allows('OCR_API_KEY')).toBe(false);
-    expect(createEnvReferencePolicy({ config: yaml }).allows('OCR_API_KEY')).toBe(false);
+    expect(configured.allows('OCR_API_KEY', ocrKey)).toBe(true);
+    expect(configured.allows('OCR_API_KEY', ['endpoints', 'custom', '0', 'apiKey'])).toBe(false);
+    expect(keyed.allows('OCR_GATEWAY_KEY', ['speech', 'tts', 'openai', 'url'])).toBe(true);
+    expect(keyed.allows('OCR_API_KEY', ocrKey)).toBe(false);
+    expect(createEnvReferencePolicy({ config: yaml }).allows('OCR_API_KEY', ocrKey)).toBe(false);
+  });
+
+  it('allows the web search defaults loading fills in, each at its own field only', () => {
+    const policy = createEnvReferencePolicy({ config: yaml });
+    const configured = createEnvReferencePolicy({
+      config: { webSearch: { searxngInstanceUrl: 'https://search.internal.example' } },
+    });
+    const instanceUrl = ['webSearch', 'searxngInstanceUrl'];
+
+    expect(policy.allows('SEARXNG_INSTANCE_URL', instanceUrl)).toBe(true);
+    expect(policy.allows('FIRECRAWL_API_KEY', ['webSearch', 'firecrawlApiKey'])).toBe(true);
+    expect(policy.allows('SEARXNG_INSTANCE_URL', ['webSearch', 'firecrawlApiUrl'])).toBe(false);
+    expect(policy.allows('SERPER_API_KEY', ['endpoints', 'custom', '0', 'headers', 'X'])).toBe(
+      false,
+    );
+    expect(configured.allows('SEARXNG_INSTANCE_URL', instanceUrl)).toBe(false);
+  });
+
+  it('accepts and keeps the web search section config reads return, written back', () => {
+    const policy = createEnvReferencePolicy({ config: yaml });
+    const written = { webSearch: loadWebSearchConfig(undefined) };
+
+    expect(getEnvReferenceIssues(written, policy)).toEqual([]);
+    expect(neutralizeEnvReferences(written, policy)).toEqual(written);
+    expect(
+      getEnvReferenceIssues(
+        { endpoints: { custom: [{ name: 'X', headers: { K: '${SERPER_API_KEY}' } }] } },
+        policy,
+      ).map(({ path }) => path),
+    ).toEqual(['endpoints.custom.0.headers.K']);
   });
 
   it('never allows an infrastructure secret, even when YAML or the extra list names it', () => {
@@ -86,9 +120,9 @@ describe('createEnvReferencePolicy', () => {
       allowlist: ['JWT_SECRET', 'MONGO_URI'],
     });
 
-    expect(policy.allows('CREDS_KEY')).toBe(false);
-    expect(policy.allows('JWT_SECRET')).toBe(false);
-    expect(policy.allows('MONGO_URI')).toBe(false);
+    expect(policy.allows('CREDS_KEY', ['ocr', 'apiKey'])).toBe(false);
+    expect(policy.allows('JWT_SECRET', [])).toBe(false);
+    expect(policy.allows('MONGO_URI', [])).toBe(false);
   });
 });
 
@@ -423,7 +457,7 @@ describe('Azure base URL templates', () => {
   it('does not allow those names elsewhere because librechat.yaml uses the templates', () => {
     expect([...collectEnvReferenceNames(azure(TEMPLATE_URL))]).toEqual(['AZURE_API_KEY']);
     const policy = createEnvReferencePolicy({ config: azure(TEMPLATE_URL) });
-    expect(policy.allows('INSTANCE_NAME')).toBe(false);
+    expect(policy.allows('INSTANCE_NAME', ['ocr', 'baseURL'])).toBe(false);
   });
 });
 

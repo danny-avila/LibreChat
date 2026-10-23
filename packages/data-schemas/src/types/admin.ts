@@ -341,7 +341,8 @@ export type AdminConfigChangeErrorResponse = {
  *   hint (`[{ path: 'mcpServers', previousName, name }]`) on PUT and PATCH, or a `rename` op in
  *   a change batch, carries the stored credentials to the new name. A write that keeps a stored
  *   credential while changing where the server sends it (URL, transport, proxy, auth header,
- *   OAuth endpoints) answers 400 `MCP_API_KEY_REENTRY_REQUIRED` or
+ *   OAuth endpoints and client; the proxy binds the OAuth client secret too, since the access
+ *   token it obtains travels through it) answers 400 `MCP_API_KEY_REENTRY_REQUIRED` or
  *   `MCP_OAUTH_SECRET_REENTRY_REQUIRED` with `server` and `fields`: on PUT, PATCH, field
  *   deletes, tombstones and change batches. A credential counts as entered again only when the
  *   written document holds the value the request entered, whatever order its writes came in;
@@ -356,10 +357,13 @@ export type AdminConfigChangeErrorResponse = {
  *   and decrypted for the Azure clients, which use it: the merge resolves a profile's `groups`
  *   as AppService resolves librechat.yaml's, into the `groupMap`, `modelGroupMap`, model list
  *   and assistant models the clients read. A profile's `groups` replace the groups below whole,
- *   as its array does; groups that do not resolve (a duplicate group or model, a model without a
- *   deployment or version) stay unread, with a warning. When none of the models the merge leaves
- *   supports assistants, `assistants` is off for that profile, with a warning, rather than on
- *   without a model (librechat.yaml refuses that combination at startup). An override that writes
+ *   as its array does, and a tombstone of `groups` removes everything they resolve to; groups
+ *   that do not resolve (a duplicate group or model, a model without a deployment or version)
+ *   stay unread, with a warning. The merged model lists name only models a merged group serves:
+ *   a `modelNames`, `assistantModels` or `assistantGroups` an override writes directly is
+ *   narrowed to them, with a warning. When none of the models the merge leaves supports
+ *   assistants, `assistants` is off for that profile, with a warning, rather than on without a
+ *   model (librechat.yaml refuses that combination at startup). An override that writes
  *   `endpoints.azureOpenAI.groupMap.<group>.apiKey` directly (a record secret,
  *   `rules.recordSecretFields`) gets the same treatment: encrypted with `apiKeyPreview`, kept
  *   when a write of its group omits it, left out of every read (GET `/base` included, where a
@@ -375,15 +379,17 @@ export type AdminConfigChangeErrorResponse = {
  *   instead of nothing, so it reads as set; nothing about the value is revealed. A `${VAR}`
  *   reference, where the field allows one, stays readable.
  * - `envAllowlist`: a `${NAME}` reference in a value written through the admin config API is
- *   refused unless `NAME` is referenced in librechat.yaml (including the `${OCR_API_KEY}`
- *   loading fills in for an `ocr` section without a key, which GET `/base` returns), is a
- *   built-in endpoint credential (`OPENAI_API_KEY`, ...) or is listed in
- *   `CONFIG_OVERRIDE_ENV_ALLOWLIST`: 400
+ *   refused unless `NAME` is referenced in librechat.yaml, is a built-in endpoint credential
+ *   (`OPENAI_API_KEY`, ...) or is listed in `CONFIG_OVERRIDE_ENV_ALLOWLIST`, or the value is
+ *   where loading librechat.yaml puts that same reference (the `${OCR_API_KEY}` of an `ocr`
+ *   section without a key, and the web search defaults such as `${SEARXNG_INSTANCE_URL}`,
+ *   which GET `/base` returns, so a section read there is accepted written back): 400
  *   `CONFIG_OVERRIDE_INVALID` with issue `env_reference_not_allowed`, on PUT, PATCH and change
  *   batches. A batch is judged on the document it leaves: a reference counts when that document
- *   still holds it where the batch changed something, named there (an upserted entry by its
- *   index in the collection the batch leaves, a value under a renamed key by its new name), so
- *   one a later change of the batch removes or replaces is not refused. Text no reader expands
+ *   still holds it where the batch changed something, named there (an entry of a merged-by-key
+ *   list, set alone or within its collection, by its index in the collection the batch leaves;
+ *   a value under a renamed key or entry by its new name), so one a later change of the batch
+ *   removes or replaces is not refused. Text no reader expands
  *   (`interface`, `modelSpecs`, prompt fields) is exempt, and so are the `${INSTANCE_NAME}` and
  *   `${DEPLOYMENT_NAME}` templates the Azure client fills in a group's `baseURL` (`groups` or
  *   `groupMap`), which are not env references, and opaque credentials: the OCR, speech, web

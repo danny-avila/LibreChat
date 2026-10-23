@@ -949,6 +949,63 @@ describe('POST …/changes: env references and the credentials a write leaves el
     expect(overrides.interface).toEqual({ customWelcome: 'Welcome' });
   });
 
+  it('follows each entry of a collection a change sets by its key, through later changes', async () => {
+    const bad = (name: string) => endpoint(name, { headers: { 'X-Key': '${LC8_UNLISTED_NAME}' } });
+    const cases = [
+      {
+        ops: [
+          {
+            op: 'set',
+            fieldPath: 'endpoints.custom',
+            value: [endpoint('good'), bad('bad')],
+          },
+          { op: 'removeEntry', fieldPath: 'endpoints.custom', key: 'good' },
+        ],
+        path: ['endpoints', 'custom', '0', 'headers', 'X-Key'],
+      },
+      {
+        ops: [
+          {
+            op: 'set',
+            fieldPath: 'endpoints',
+            value: { custom: [endpoint('good'), bad('bad')] },
+          },
+          { op: 'removeEntry', fieldPath: 'endpoints.custom', key: 'good' },
+          { op: 'rename', fieldPath: 'endpoints.custom', from: 'bad', to: 'renamed' },
+          { op: 'upsertEntry', fieldPath: 'endpoints.custom', entry: endpoint('first') },
+        ],
+        path: ['endpoints', 'custom', '0', 'headers', 'X-Key'],
+      },
+      {
+        ops: [
+          {
+            op: 'set',
+            fieldPath: 'mcpServers',
+            value: {
+              draft: { type: 'streamable-http', url: 'https://h.example/${LC8_UNLISTED_NAME}' },
+            },
+          },
+          { op: 'rename', fieldPath: 'mcpServers', from: 'draft', to: 'tools' },
+        ],
+        path: ['mcpServers', 'tools', 'url'],
+      },
+    ];
+
+    for (const { ops, path } of cases) {
+      for (const dryRun of [true, false]) {
+        const params = nextParams();
+
+        const { status, body } = await send({ dryRun, ops }, params);
+
+        expect({ status, issues: body.issues }).toEqual({
+          status: 400,
+          issues: [{ path: path.join('.'), segments: path, code: 'env_reference_not_allowed' }],
+        });
+        expect(await storedDocument(params.principalId)).toBeNull();
+      }
+    }
+  });
+
   it('names a value under a key a later rename moved by the new key', async () => {
     const params = nextParams();
 

@@ -1,6 +1,6 @@
 import isPlainObject from 'lodash/isPlainObject';
-import { loadOCRConfig } from '@librechat/data-schemas';
 import { EModelEndpoint, isSensitiveEnvVar } from 'librechat-data-provider';
+import { loadOCRConfig, loadWebSearchConfig } from '@librechat/data-schemas';
 import type { ConfigOverrideIssue } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import {
@@ -41,10 +41,12 @@ export const ENDPOINT_CREDENTIAL_ENV_NAMES: readonly string[] = [
 /**
  * Which `${NAME}` references a value from a database override layer may resolve. librechat.yaml
  * is the operator's own file and resolves any name; override layers are written through the
- * admin API, so their references are limited to names the deployment already uses for config.
+ * admin API, so their references are limited to names the deployment already uses for config,
+ * and to the references loading librechat.yaml introduces, where it introduces them.
  */
 export interface EnvReferencePolicy {
-  allows(name: string): boolean;
+  /** Whether a reference to `name` may resolve in the string at `segments` (override keys). */
+  allows(name: string, segments: readonly string[]): boolean;
 }
 
 /**
@@ -200,35 +202,71 @@ export function collectEnvReferenceNames(value: unknown): Set<string> {
   return names;
 }
 
-/**
- * librechat.yaml with the references loading it spells out for what a section it configures
- * leaves unset: OCR without a key uses `${OCR_API_KEY}` (`loadOCRConfig`). The resolved config
- * carries that reference, so config reads return it and a client that writes back what it read
- * restates it; it is a name librechat.yaml uses as much as one it spells out.
- */
-function withLoadedReferences(config: unknown): unknown {
-  if (!isPlainObject(config)) {
-    return config;
-  }
-  const yaml = config as Partial<TCustomConfig>;
-  return yaml.ocr == null ? yaml : { ...yaml, ocr: loadOCRConfig(yaml.ocr) };
+/** Joins segments so that a key containing a dot never spells another location. */
+function locationKey(segments: readonly string[]): string {
+  return segments.join('\u0000');
 }
 
 /**
- * The allowlist: names librechat.yaml references (`config` is the raw YAML config, with the
- * references loading it fills in, {@link withLoadedReferences}), the built-in endpoints'
- * credential names, and the operator's extra names. Infrastructure secrets `extractEnvVariable`
- * never expands (`CREDS_KEY`, `JWT_SECRET`, ...) stay out whatever lists them.
+ * The sections AppService loads from librechat.yaml with references of their own for what the
+ * YAML leaves unset, as AppService loads them: OCR without a key uses `${OCR_API_KEY}`
+ * (`loadOCRConfig`, only for a YAML that configures OCR), and web search, always loaded, fills
+ * each unset URL and key with its default variable (`loadWebSearchConfig`, such as
+ * `${SEARXNG_INSTANCE_URL}`). The resolved config carries those references, so config reads
+ * return them and a client that writes back what it read restates them.
+ */
+function loadSectionsWithReferences(config: unknown): Partial<TCustomConfig> {
+  const yaml: Partial<TCustomConfig> = isPlainObject(config)
+    ? (config as Partial<TCustomConfig>)
+    : {};
+  const webSearch = isPlainObject(yaml.webSearch) ? yaml.webSearch : undefined;
+  return {
+    ...(yaml.ocr != null && { ocr: loadOCRConfig(yaml.ocr) }),
+    webSearch: loadWebSearchConfig(webSearch),
+  };
+}
+
+/**
+ * Every reference the loaded sections ({@link loadSectionsWithReferences}) hold, by the location
+ * it is at: a reference loading introduces is allowed there only, so a default variable of one
+ * field is not a name any other field may send.
+ */
+function collectLoadedReferences(config: unknown): Map<string, Set<string>> {
+  const references = new Map<string, Set<string>>();
+  visitExpandedStrings(loadSectionsWithReferences(config), (text, segments) => {
+    const names = referencedNames(text, segments);
+    if (names.length === 0) {
+      return;
+    }
+    const key = locationKey(segments);
+    const held = references.get(key) ?? new Set<string>();
+    names.forEach((name) => held.add(name));
+    references.set(key, held);
+  });
+  return references;
+}
+
+/**
+ * The allowlist: names librechat.yaml references (`config` is the raw YAML config), the
+ * built-in endpoints' credential names and the operator's extra names, anywhere; and each
+ * reference loading librechat.yaml introduces, at its own location
+ * ({@link collectLoadedReferences}). Infrastructure secrets `extractEnvVariable` never expands
+ * (`CREDS_KEY`, `JWT_SECRET`, ...) stay out whatever lists them.
  */
 export function createEnvReferencePolicy(options: {
   config?: unknown;
   allowlist?: readonly string[];
 }): EnvReferencePolicy {
-  const names = collectEnvReferenceNames(withLoadedReferences(options.config));
+  const names = collectEnvReferenceNames(options.config);
   for (const name of [...ENDPOINT_CREDENTIAL_ENV_NAMES, ...(options.allowlist ?? [])]) {
     names.add(name);
   }
-  return { allows: (name) => names.has(name) && !isSensitiveEnvVar(name) };
+  const loaded = collectLoadedReferences(options.config);
+  return {
+    allows: (name, segments) =>
+      !isSensitiveEnvVar(name) &&
+      (names.has(name) || loaded.get(locationKey(segments))?.has(name) === true),
+  };
 }
 
 function hasDisallowedReference(
@@ -236,7 +274,7 @@ function hasDisallowedReference(
   policy: EnvReferencePolicy,
   segments: readonly string[],
 ): boolean {
-  return referencedNames(text, segments).some((name) => !policy.allows(name));
+  return referencedNames(text, segments).some((name) => !policy.allows(name, segments));
 }
 
 /**
@@ -307,7 +345,7 @@ function neutralizeText(
   let current = text;
   while (current.includes('${')) {
     const next = current.replace(ENV_REFERENCE, (reference, name: string) =>
-      policy.allows(name) || isAzureURLTemplate(name, segments) ? reference : '',
+      policy.allows(name, segments) || isAzureURLTemplate(name, segments) ? reference : '',
     );
     if (next === current) {
       break;

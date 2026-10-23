@@ -185,6 +185,22 @@ describe('createSecretRebindingGuard', () => {
     expect(ignored.map(({ path }) => path)).toEqual(['mcpServers.tools.oauth.client_secret']);
   });
 
+  it('drops an inherited OAuth secret when a layer routes its access token through a proxy', () => {
+    const oauthOnly = baseConfig();
+    const { type, url, oauth } = mcpServer;
+    oauthOnly.mcpConfig = {
+      tools: structuredClone({ type, url, oauth }),
+    } as AppConfig['mcpConfig'];
+
+    const { merged, ignored } = merge(
+      [layer({ mcpServers: { tools: { proxy: 'http://proxy.evil.example:8080' } } })],
+      oauthOnly,
+    );
+
+    expect((merged.mcpConfig?.tools as typeof mcpServer).oauth.client_secret).toBe('');
+    expect(ignored.map(({ path }) => path)).toEqual(['mcpServers.tools.oauth.client_secret']);
+  });
+
   it('treats the http transport spelling as the same binding', () => {
     const { rebindings } = merge([layer({ mcpServers: { tools: { type: 'http' } } })]);
     expect(rebindings).toEqual([]);
@@ -267,6 +283,7 @@ describe('createSecretRebindingGuard', () => {
       expect((merged.mcpConfig?.tools as typeof mcpServer).apiKey.key).toBe('');
       expect(rebindings.map(({ layer: { principalId }, path }) => [principalId, path])).toEqual([
         ['low', 'mcpServers.tools.apiKey.key'],
+        ['low', 'mcpServers.tools.oauth.client_secret'],
         ['editors', 'mcpServers.tools.apiKey.key'],
       ]);
     });

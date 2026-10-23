@@ -61,6 +61,9 @@ import {
   isConfigRevisionConflict,
   isConfigOverrideStateEmpty,
   toConfigDraft,
+  toConfigIdentityPath,
+  renameConfigIdentityPath,
+  resolveConfigIdentityPath,
 } from '@librechat/data-schemas';
 import type {
   AppConfig,
@@ -88,6 +91,7 @@ import type {
   AdminConfigChangeErrorResponse,
   ConfigMutationOutcome,
   ConfigMutationPlan,
+  ConfigIdentityStep,
 } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Response } from 'express';
@@ -119,6 +123,7 @@ import {
   parseEnvAllowlist,
   getEnvReferenceIssues,
   createEnvReferencePolicy,
+  ENV_REFERENCE_NOT_ALLOWED,
   hasDisallowedStoredReference,
 } from '~/app/allowlist';
 import { MCP_SERVER_SECTIONS, findSecretReentry, getAzureGroupReentryIssues } from './reentry';
@@ -1700,95 +1705,80 @@ function describeChange(change: PreparedChange): string {
   return change.key !== undefined ? `${path}[${JSON.stringify(change.key)}]` : path;
 }
 
-/** A value an applied change of a batch sent, and where it is as the batch goes on. */
-interface SentValue {
-  value: unknown;
-  /** A set's path, or an upserted entry's collection and then its key; renames are followed. */
-  segments: string[];
-  /** Whether `segments` ends with the key of an entry of a merged-by-key array. */
-  entry: boolean;
-}
-
-/** The value a change sends for the env allowlist to judge: a set's, or an upserted entry's. */
-function getSentValue(change: PreparedChange): SentValue | null {
+/**
+ * Where the value an applied change sends sits in the document it leaves (`next`): a set's path,
+ * or an upserted entry at its position in its collection. `null` for a change that sends none.
+ */
+function getSentLocation(change: PreparedChange, next: ConfigOverrideState): string[] | null {
   const { segments } = change.target;
   if (change.op === 'set' && !change.paths) {
-    return { value: change.value, segments: [...segments], entry: false };
+    return [...segments];
   }
-  if (change.op === 'upsertEntry') {
-    return { value: change.value, segments: [...segments, change.key ?? ''], entry: true };
+  if (change.op !== 'upsertEntry') {
+    return null;
   }
-  return null;
-}
-
-/** Where a sent value is once a later `rename` of the batch has moved it or the key above it. */
-function followRename(sent: SentValue, change: PreparedChange): SentValue {
-  const collection = change.target.segments;
-  if (
-    change.op !== 'rename' ||
-    sent.segments.length <= collection.length ||
-    !isSegmentPrefix(collection, sent.segments) ||
-    sent.segments[collection.length] !== change.key
-  ) {
-    return sent;
-  }
-  const segments = [...sent.segments];
-  segments[collection.length] = change.to ?? '';
-  return { ...sent, segments };
+  const keyField = getConfigArrayMergeKey(segments);
+  const entries = getAtPath(next.overrides, segments);
+  const index =
+    keyField && Array.isArray(entries)
+      ? entries.findIndex(getConfigEntryMatcher(segments, keyField, change.key ?? ''))
+      : -1;
+  return index >= 0 ? [...segments, String(index)] : null;
 }
 
 /**
- * Where the batch leaves a value a change sent: a set's path, and an upserted entry at its index
- * in the collection the batch leaves. `null` when a later change removed that entry.
+ * Env reference issues in the value an applied change sent, by identity
+ * (`toConfigIdentityPath`): each location is named in the document the change left, with every
+ * entry of a merged-by-key array by its key, so the issue still names that entry however later
+ * changes of the batch move, add or remove other entries.
  */
-function getSentLocation(sent: SentValue, overrides: unknown): string[] | null {
-  if (!sent.entry) {
-    return sent.segments;
+function getSentEnvIssuePaths(
+  change: PreparedChange,
+  next: ConfigOverrideState,
+  policy: EnvReferencePolicy,
+): ConfigIdentityStep[][] {
+  const location = getSentLocation(change, next);
+  if (!location) {
+    return [];
   }
-  const collection = sent.segments.slice(0, -1);
-  const key = sent.segments[sent.segments.length - 1];
-  const keyField = getConfigArrayMergeKey(collection);
-  const entries = getAtPath(overrides, collection);
-  const index =
-    keyField && Array.isArray(entries)
-      ? entries.findIndex((item) => isPlainRecord(item) && item[keyField] === key)
-      : -1;
-  return index >= 0 ? [...collection, String(index)] : null;
+  return getEnvReferenceIssues(change.value, policy, location).map(({ segments }) =>
+    toConfigIdentityPath(next.overrides, segments),
+  );
 }
 
 /**
  * Env reference issues for the values a batch's changes sent, judged on the document the batch
- * leaves as its other issues are: each is named where the batch leaves the value, and counts only
+ * leaves as its other issues are. Each is held by identity (`getSentEnvIssuePaths`), carried
+ * through the batch's later renames, and named where the batch leaves the value; it counts only
  * when the end state still holds a disallowed reference there (as stored, ciphertext by its
  * plaintext) at a location the batch changed (`written`). A reference a later change removed or
  * replaced, or one that leaves the stored value as it was, does not.
  */
 function getBatchEnvIssues(
-  sent: readonly SentValue[],
+  sent: ReadonlyArray<readonly ConfigIdentityStep[]>,
   state: ConfigOverrideState,
   written: ReadonlyArray<readonly string[]>,
   policy: EnvReferencePolicy,
 ): ConfigOverrideIssue[] {
   const reported = new Set<string>();
-  return sent
-    .flatMap((item) => {
-      const location = getSentLocation(item, state.overrides);
-      return location ? getEnvReferenceIssues(item.value, policy, location) : [];
-    })
-    .filter(({ segments }) => {
-      const kept = getAtPath(state.overrides, segments);
-      const key = segments.join('\u0000');
-      if (
-        reported.has(key) ||
-        typeof kept !== 'string' ||
-        !hasDisallowedStoredReference(kept, policy, segments) ||
-        !written.some((path) => isSegmentPrefix(path, segments))
-      ) {
-        return false;
-      }
-      reported.add(key);
-      return true;
-    });
+  return sent.flatMap((path): ConfigOverrideIssue[] => {
+    const segments = resolveConfigIdentityPath(state.overrides, path);
+    if (!segments) {
+      return [];
+    }
+    const kept = getAtPath(state.overrides, segments);
+    const key = segments.join('\u0000');
+    if (
+      reported.has(key) ||
+      typeof kept !== 'string' ||
+      !hasDisallowedStoredReference(kept, policy, segments) ||
+      !written.some((writtenPath) => isSegmentPrefix(writtenPath, segments))
+    ) {
+      return [];
+    }
+    reported.add(key);
+    return [{ path: segments.join('.'), segments, code: ENV_REFERENCE_NOT_ALLOWED }];
+  });
 }
 
 /**
@@ -3399,8 +3389,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           appliedChanges: [],
         };
         const appliedSteps: ConfigChange[] = [];
-        /** Values the applied changes sent, for the env allowlist, followed through renames. */
-        let sent: SentValue[] = [];
+        /** Env issues in the values the applied changes sent, by identity, followed through renames. */
+        let sent: ConfigIdentityStep[][] = [];
         let state: ConfigOverrideState = toConfigOverrideState(stored);
         for (const change of changes) {
           const steps = expandChange(change, state.overrides);
@@ -3430,12 +3420,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           report.applied.push(ref);
           report.appliedChanges.push(change);
           if (change.op === 'rename') {
-            sent = sent.map((item) => followRename(item, change));
+            sent = sent.map((path) =>
+              renameConfigIdentityPath(
+                path,
+                change.target.segments,
+                change.key ?? '',
+                change.to ?? '',
+              ),
+            );
           }
-          const sentValue = getSentValue(change);
-          if (sentValue) {
-            sent.push(sentValue);
-          }
+          sent.push(...getSentEnvIssuePaths(change, next, envPolicy));
           for (const part of getIgnoredParts(change, yamlHeld)) {
             report.ignored.push({ ...ref, ...part });
           }

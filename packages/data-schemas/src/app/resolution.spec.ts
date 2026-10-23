@@ -2666,6 +2666,70 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
     expect(aloneGroups).toEqual(['west']);
   });
 
+  describe('a tombstone of the groups', () => {
+    const tombstone = (priority = 10) =>
+      fakeConfig({}, priority, ['endpoints.azureOpenAI.groups'], `t${priority}`);
+
+    it('resolves the groups to none, so no Azure model or group is served', () => {
+      const merged = mergeConfigOverrides(base, [tombstone()]);
+
+      expect(merged.endpoints?.azureOpenAI).toEqual({
+        titleModel: 'gpt-4o',
+        groupMap: {},
+        modelGroupMap: {},
+        modelNames: [],
+        assistantModels: [],
+        assistantGroups: [],
+      });
+      expect(base.endpoints?.azureOpenAI?.groupMap).toHaveProperty('east');
+    });
+
+    it('creates no Azure endpoint where none is configured', () => {
+      const merged = mergeConfigOverrides({ config: {}, endpoints: {} } as AppConfig, [
+        tombstone(),
+      ]);
+
+      expect(merged.endpoints).toEqual({});
+    });
+
+    it("lets the same layer's groups, or a later layer's, resolve in their place", () => {
+      const same = mergeConfigOverrides(base, [
+        fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 10, [
+          'endpoints.azureOpenAI.groups',
+        ]),
+      ]);
+      const later = mergeConfigOverrides(base, [
+        tombstone(10),
+        fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 20),
+      ]);
+
+      for (const merged of [same, later]) {
+        expect(Object.keys(merged.endpoints?.azureOpenAI?.groupMap ?? {})).toEqual(['west']);
+        expect(merged.endpoints?.azureOpenAI?.modelNames).toEqual(['gpt-5', 'o3-mini']);
+      }
+    });
+
+    it('shows the layer alone without the groups, and removes them from the YAML floor', () => {
+      let alone: unknown;
+      mergeConfigOverrides(base, [tombstone()], {
+        afterLayer: (step) => {
+          alone = step.alone().endpoints?.azureOpenAI;
+          return step.merged;
+        },
+      });
+
+      expect(alone).toEqual({ titleModel: 'gpt-4o' });
+      expect(
+        applyConfigTombstones(
+          {
+            endpoints: { azureOpenAI: { groups: [yamlGroup], groupMap: { east: yamlGroup } } },
+          } as Partial<TCustomConfig>,
+          ['endpoints.azureOpenAI.groups'],
+        ),
+      ).toEqual({ endpoints: { azureOpenAI: {} } });
+    });
+  });
+
   it('leaves groups that do not resolve unread, with a warning', () => {
     const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
     const merged = mergeConfigOverrides(base, [
@@ -2685,6 +2749,7 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
       endpoints: {
         azureOpenAI: {
           ...base.endpoints?.azureOpenAI,
+          groupMap: { east: { ...yamlGroup, assistants: true } },
           assistants: true,
           assistantModels: ['gpt-4o'],
           assistantGroups: ['east'],
@@ -2742,6 +2807,75 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
       expect(merged.endpoints?.azureOpenAI?.modelNames).toEqual(['gpt-4o']);
       warn.mockRestore();
     });
+
+    it('turns them off when the groups are tombstoned', () => {
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+      const merged = mergeConfigOverrides(assistantsBase, [
+        fakeConfig({}, 10, ['endpoints.azureOpenAI.groups']),
+      ]);
+
+      expect(merged.endpoints?.azureOpenAI?.assistants).toBe(false);
+      expect(merged.endpoints?.azureOpenAI?.assistantModels).toEqual([]);
+      warn.mockRestore();
+    });
+
+    it('keeps only the assistant models an override names that a merged group serves them with', () => {
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+      const missing = mergeConfigOverrides(assistantsBase, [
+        fakeConfig({ endpoints: { azureOpenAI: { assistantModels: ['missing'] } } }, 10),
+      ]);
+      const mixed = mergeConfigOverrides(assistantsBase, [
+        fakeConfig(
+          {
+            endpoints: {
+              azureOpenAI: {
+                assistantModels: ['missing', 'gpt-4o'],
+                assistantGroups: ['nowhere', 'east'],
+              },
+            },
+          },
+          10,
+        ),
+      ]);
+
+      expect(missing.endpoints?.azureOpenAI).toMatchObject({
+        assistants: false,
+        assistantModels: [],
+        assistantGroups: [],
+      });
+      expect(mixed.endpoints?.azureOpenAI).toMatchObject({
+        assistants: true,
+        assistantModels: ['gpt-4o'],
+        assistantGroups: ['east'],
+      });
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Leaving out of endpoints.azureOpenAI.assistantModels, endpoints.azureOpenAI.assistantGroups for role/',
+        ),
+      );
+      warn.mockRestore();
+    });
+  });
+
+  it('lists only the models a merged group serves, whatever an override writes to the lists', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const listed = mergeConfigOverrides(base, [
+      fakeConfig({ endpoints: { azureOpenAI: { modelNames: ['missing', 'gpt-4o'] } } }, 10),
+    ]);
+    const unmapped = mergeConfigOverrides(base, [
+      fakeConfig(
+        { endpoints: { azureOpenAI: { modelGroupMap: { 'gpt-4o': { group: 'nowhere' } } } } },
+        10,
+      ),
+    ]);
+    const untouched = mergeConfigOverrides(base, [
+      fakeConfig({ interface: { customWelcome: 'hi' } }, 10),
+    ]);
+
+    expect(listed.endpoints?.azureOpenAI?.modelNames).toEqual(['gpt-4o']);
+    expect(unmapped.endpoints?.azureOpenAI?.modelNames).toEqual([]);
+    expect(untouched.endpoints?.azureOpenAI).toEqual(base.endpoints?.azureOpenAI);
+    warn.mockRestore();
   });
 });
 

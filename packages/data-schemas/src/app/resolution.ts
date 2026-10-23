@@ -12,10 +12,12 @@ import {
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AdminConfigMergeRules, AppConfig, Config, TWebSearchKeys } from '~/types';
+import type { AzureResolvedGroupField } from './azure';
 import type { ConfigFieldWrite } from './mutations';
 import {
   AZURE_RESOLVED_GROUP_FIELDS,
   lacksAzureAssistantModels,
+  narrowAzureServedModels,
   resolveAzureGroups,
 } from './azure';
 import { isBaseConfigPrincipal, sortByConfigPrecedence } from './precedence';
@@ -43,6 +45,48 @@ const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 /** Filters are a fail-closed security boundary even during mixed-package rollouts. */
 const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(['filters', ...BASE_ONLY_CONFIG_SECTIONS]);
 const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
+
+/** Where the resolved Azure config sits in an AppConfig. */
+const AZURE_CONFIG_PATH = `endpoints.${EModelEndpoint.azureOpenAI}`;
+
+/** The resolved Azure fields a layer's `groups` replace, as AppConfig paths. */
+const AZURE_RESOLVED_PATHS: readonly string[] = AZURE_RESOLVED_GROUP_FIELDS.map(
+  (field) => `${AZURE_CONFIG_PATH}.${field}`,
+);
+
+/** Azure `groups`, as a librechat.yaml path (the same in an AppConfig). */
+const AZURE_GROUPS_PATH = `${AZURE_CONFIG_PATH}.groups`;
+
+/**
+ * The paths a tombstone removes: its own, and for Azure `groups` every field they resolve to
+ * (`AZURE_RESOLVED_PATHS`), which the Azure clients and model lists read in their place. A
+ * tombstone removes the groups whole, as a layer's own `groups` replace them.
+ */
+function getTombstoneRemovals(path: string): readonly string[] {
+  return path === AZURE_GROUPS_PATH ? [path, ...AZURE_RESOLVED_PATHS] : [path];
+}
+
+/**
+ * `merged` with its Azure groups resolved to none, when it has an Azure endpoint: every field the
+ * groups resolve to stays, empty, so the Azure clients and model lists serve no group. Their
+ * absence would read differently: the model lists fall back to the environment's default Azure
+ * models, which the Azure client, configured by librechat.yaml, cannot map to a group.
+ */
+function withoutAzureGroups<T extends AnyObject>(merged: T): T {
+  const segments = AZURE_CONFIG_PATH.split('.');
+  const azure = getPath(merged, segments);
+  if (!isPlainObject(azure)) {
+    return merged;
+  }
+  const empty: Record<AzureResolvedGroupField, object> = {
+    groupMap: {},
+    modelGroupMap: {},
+    modelNames: [],
+    assistantModels: [],
+    assistantGroups: [],
+  };
+  return setPath(merged, segments, { ...azure, ...empty }) as T;
+}
 
 /**
  * Paths within the config tree where arrays of objects should be merged by
@@ -981,6 +1025,7 @@ export function applyConfigTombstones(
 ): Partial<TCustomConfig> {
   return (tombstones ?? [])
     .filter((path): path is string => typeof path === 'string' && !cleared.has(path))
+    .flatMap(getTombstoneRemovals)
     .reduce((current, path) => deletePath(current, path), base as AnyObject);
 }
 
@@ -1433,14 +1478,6 @@ function withAcceptedSections(config: ConfigOverrideLayer): ConfigOverrideLayer 
   return { ...config, overrides, tombstones };
 }
 
-/** Where the resolved Azure config sits in an AppConfig. */
-const AZURE_CONFIG_PATH = `endpoints.${EModelEndpoint.azureOpenAI}`;
-
-/** The resolved Azure fields a layer's `groups` replace, as AppConfig paths. */
-const AZURE_RESOLVED_PATHS: readonly string[] = AZURE_RESOLVED_GROUP_FIELDS.map(
-  (field) => `${AZURE_CONFIG_PATH}.${field}`,
-);
-
 /**
  * A layer's `endpoints` override with its Azure `groups` resolved as AppService resolves
  * librechat.yaml's (`resolveAzureGroups`): the Azure clients read `groupMap`, `modelGroupMap` and
@@ -1479,27 +1516,46 @@ function resolveLayerAzureGroups(
 }
 
 /**
- * `merged` with Azure assistants turned off when none of the models it serves supports them
- * (`lacksAzureAssistantModels`), a combination `azureConfigSetup` refuses in librechat.yaml. A
- * layer's `groups` replace the groups below whole, so groups without an assistant model under an
- * inherited `assistants: true` would leave the Azure Assistants client no model to default to.
- * Judged on the merged result, so a later layer whose groups serve assistants keeps them on.
+ * `merged` with the Azure model lists narrowed to what its groups serve
+ * (`narrowAzureServedModels`), and Azure assistants turned off when none of the models it serves
+ * supports them (`lacksAzureAssistantModels`), a combination `azureConfigSetup` refuses in
+ * librechat.yaml. A list an override writes directly, or one whose groups a later layer replaced
+ * or tombstoned, could otherwise name a model no group serves, and groups without an assistant
+ * model under an inherited `assistants: true` would leave the Azure Assistants client no model to
+ * default to. Judged on the merged result, so a later layer whose groups serve assistants keeps
+ * them on.
  */
-function withServedAzureAssistants<T extends AppConfig>(
+function withServedAzureModels<T extends AppConfig>(
   merged: T,
   configs: readonly ConfigOverrideLayer[],
 ): T {
   const endpoints = merged.endpoints;
   const azure = endpoints?.[EModelEndpoint.azureOpenAI];
-  if (!endpoints || !azure || !lacksAzureAssistantModels(azure)) {
+  if (!endpoints || !azure) {
     return merged;
   }
-  logger.warn(
-    `[mergeConfigOverrides] Turning off ${AZURE_CONFIG_PATH}.assistants for ${configs.map(describePrincipal).join(', ')}: none of the Azure models they serve supports assistants`,
-  );
+  const principals = configs.map(describePrincipal).join(', ');
+  const { config: served, narrowed } = narrowAzureServedModels(azure);
+  if (narrowed.length > 0) {
+    logger.warn(
+      `[mergeConfigOverrides] Leaving out of ${narrowed.map((field) => `${AZURE_CONFIG_PATH}.${field}`).join(', ')} for ${principals} the Azure models and groups no merged group serves`,
+    );
+  }
+  const assistantsOff = lacksAzureAssistantModels(served);
+  if (assistantsOff) {
+    logger.warn(
+      `[mergeConfigOverrides] Turning off ${AZURE_CONFIG_PATH}.assistants for ${principals}: none of the Azure models they serve supports assistants`,
+    );
+  }
+  if (narrowed.length === 0 && !assistantsOff) {
+    return merged;
+  }
   return {
     ...merged,
-    endpoints: { ...endpoints, [EModelEndpoint.azureOpenAI]: { ...azure, assistants: false } },
+    endpoints: {
+      ...endpoints,
+      [EModelEndpoint.azureOpenAI]: assistantsOff ? { ...served, assistants: false } : served,
+    },
   };
 }
 
@@ -1537,10 +1593,15 @@ function foldConfigLayers<T extends AnyObject>(
           !isBaseOnlyOverridePath(path) &&
           (isBasePrincipal || !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(path.split('.')[0]))
         ) {
-          const mappedPath = remapOverridePath(path);
-          removed.push(mappedPath);
-          merged = deleteConfigPath(merged, mappedPath);
-          raw = deletePath(raw as AnyObject, path) as Partial<TCustomConfig>;
+          for (const removedPath of getTombstoneRemovals(path)) {
+            const mappedPath = remapOverridePath(removedPath);
+            removed.push(mappedPath);
+            merged = deleteConfigPath(merged, mappedPath);
+            raw = deletePath(raw as AnyObject, removedPath) as Partial<TCustomConfig>;
+          }
+          if (path === AZURE_GROUPS_PATH) {
+            merged = withoutAzureGroups(merged);
+          }
           recordWebSearchTombstone(webSearchWriters, path, removal);
         }
       }
@@ -1636,8 +1697,9 @@ function foldConfigLayers<T extends AnyObject>(
  * Configs merge in precedence order (`compareConfigPrecedence`): Base first, then ascending
  * priority, then role < group < user, then document identity; the last layer wins. Each
  * config's `overrides` is deep-merged into the base config in that order. A stored web search
- * key is dropped when a layer other than its own decides the URL it is sent to, and Azure
- * assistants none of the merged models supports are turned off (`withServedAzureAssistants`).
+ * key is dropped when a layer other than its own decides the URL it is sent to, the Azure model
+ * lists name only models the merged groups serve, and Azure assistants none of those supports
+ * are turned off (`withServedAzureModels`).
  */
 export function mergeConfigOverrides(
   baseConfig: AppConfig,
@@ -1672,7 +1734,7 @@ export function mergeConfigOverrides(
       }),
   );
   const merged = bindWebSearchKeys(
-    withServedAzureAssistants(folded.merged, configs),
+    withServedAzureModels(folded.merged, configs),
     folded.webSearchWriters,
     options.onWebSearchKeyUnbound,
   );

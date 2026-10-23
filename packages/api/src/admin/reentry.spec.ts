@@ -195,6 +195,45 @@ describe('findSecretReentry', () => {
       }),
     ).toMatchObject({ fields: ['apiKey.authorization_type', 'apiKey.custom_header'] });
   });
+
+  it('binds a kept OAuth client secret to the proxy its access token is sent through', () => {
+    const oauthStored: StoredDocument = {
+      overrides: {
+        mcpServers: {
+          tools: {
+            oauth: {
+              client_id: 'client',
+              client_secret: STORED_KEY,
+              authorization_url: 'https://auth.example/authorize',
+              token_url: 'https://auth.example/token',
+            },
+          },
+        },
+      },
+      tombstones: [],
+    };
+    const proxy: ConfigFieldWrite = {
+      segments: ['mcpServers', 'tools', 'proxy'],
+      value: 'http://proxy.evil.example:8080',
+    };
+
+    expect(check([proxy], yaml, oauthStored)).toMatchObject({
+      code: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
+      server: 'tools',
+      fields: ['proxy'],
+    });
+    expect(
+      check(
+        [
+          proxy,
+          { segments: ['mcpServers', 'tools', 'oauth', 'client_secret'], value: ENTERED_KEY },
+        ],
+        yaml,
+        oauthStored,
+      ),
+    ).toBeNull();
+  });
+
   describe('a key is judged by the value the document ends up with, not by the paths written', () => {
     const GOOD = 'https://good.example/mcp';
     const EVIL = 'https://evil.example/mcp';
@@ -362,6 +401,30 @@ describe('getAzureGroupReentryIssues', () => {
       ),
     ).toEqual([]);
     expect(tombstoned.map(({ path, secretPath }) => [path, secretPath])).toEqual([
+      [
+        'endpoints.azureOpenAI.groupMap.east.instanceName',
+        'endpoints.azureOpenAI.groupMap.east.apiKey',
+      ],
+    ]);
+  });
+
+  it('judges a groupMap key without the groups librechat.yaml resolves once they are tombstoned', () => {
+    const mapped: StoredDocument = {
+      overrides: { endpoints: { azureOpenAI: { groupMap: { east: { apiKey: STORED_KEY } } } } },
+      tombstones: [],
+    };
+
+    const issues = getAzureGroupReentryIssues({
+      stored: mapped,
+      candidate: {
+        ...toConfigOverrideState(mapped),
+        tombstones: ['endpoints.azureOpenAI.groups'],
+      },
+      baseGroupMap: yamlGroupMap,
+      entered: new Set(),
+    });
+
+    expect(issues.map(({ path, secretPath }) => [path, secretPath])).toEqual([
       [
         'endpoints.azureOpenAI.groupMap.east.instanceName',
         'endpoints.azureOpenAI.groupMap.east.apiKey',

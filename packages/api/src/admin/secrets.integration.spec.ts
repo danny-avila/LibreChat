@@ -18,6 +18,7 @@ let handlers: AdminConfigHandlers;
 let basePrincipalId: string;
 let decryptV3: DataSchemas['decryptV3'];
 let loadOCRConfig: DataSchemas['loadOCRConfig'];
+let loadWebSearchConfig: DataSchemas['loadWebSearchConfig'];
 let patchConfigFields: ConfigMethods['patchConfigFields'];
 let getSecretPreview: typeof import('./secrets').getSecretPreview;
 let encryptConfigSecretFields: typeof import('./secrets').encryptConfigSecretFields;
@@ -256,7 +257,12 @@ function nextPrincipalId(): string {
 beforeAll(async () => {
   jest.resetModules();
   const dataSchemas = await import('@librechat/data-schemas');
-  ({ decryptV3, loadOCRConfig, BASE_CONFIG_PRINCIPAL_ID: basePrincipalId } = dataSchemas);
+  ({
+    decryptV3,
+    loadOCRConfig,
+    loadWebSearchConfig,
+    BASE_CONFIG_PRINCIPAL_ID: basePrincipalId,
+  } = dataSchemas);
   jest.spyOn(dataSchemas.logger, 'error').mockReturnValue(dataSchemas.logger);
   jest.spyOn(dataSchemas.logger, 'warn').mockReturnValue(dataSchemas.logger);
   jest.spyOn(dataSchemas.logger, 'info').mockReturnValue(dataSchemas.logger);
@@ -2106,6 +2112,45 @@ describe('env reference allowlist on admin writes', () => {
     expect(refused.statusCode).toBe(400);
     expect(refused.body).toMatchObject({
       issues: [{ path: 'ocr.apiKey', code: 'env_reference_not_allowed' }],
+    });
+  });
+
+  it('accepts the web search section GET /base returns, with the defaults loading fills in', async () => {
+    const yamlHandlers = createRealHandlers({
+      overrideEnvAllowlist: '',
+      getAppConfig: async () =>
+        ({ config: {}, webSearch: loadWebSearchConfig(undefined) }) as never,
+    });
+    const base = await send(yamlHandlers.getBaseConfig, {});
+    const webSearch = (base.body!.config as { webSearch: Record<string, unknown> }).webSearch;
+    expect(webSearch.searxngInstanceUrl).toBe('${SEARXNG_INSTANCE_URL}');
+
+    const principalId = nextPrincipalId();
+    const patched = await patch(
+      principalId,
+      [{ fieldPath: 'webSearch', value: webSearch }],
+      {},
+      yamlHandlers,
+    );
+    expect(patched.statusCode).toBe(200);
+    const batch = await send(yamlHandlers.applyConfigChanges, {
+      params: { principalType: 'role', principalId },
+      body: { ops: [{ op: 'set', fieldPath: 'webSearch', value: webSearch }] },
+    });
+    expect(batch.statusCode).toBe(200);
+    expect(getAtPath(await readRawOverrides(principalId), 'webSearch.searxngInstanceUrl')).toBe(
+      '${SEARXNG_INSTANCE_URL}',
+    );
+
+    const elsewhere = await patch(
+      nextPrincipalId(),
+      [{ fieldPath: 'webSearch.firecrawlApiUrl', value: '${SEARXNG_INSTANCE_URL}' }],
+      {},
+      yamlHandlers,
+    );
+    expect(elsewhere.statusCode).toBe(400);
+    expect(elsewhere.body).toMatchObject({
+      issues: [{ path: 'webSearch.firecrawlApiUrl', code: 'env_reference_not_allowed' }],
     });
   });
 
