@@ -322,6 +322,7 @@ const toContentPart = (item: ChildActivityItem): TMessageContentParts => {
       type: ContentTypes.STEER,
       steer: item.steer,
       steerId: item.steerId,
+      clientSteerId: item.clientSteerId,
       createdAt: item.createdAt,
     };
   }

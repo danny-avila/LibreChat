@@ -1000,3 +1000,47 @@ it.each(['failed', 'rejected'] as const)(
     expect(screen.getByText(`com_ui_subagent_control_status_${status}`)).toBeVisible();
   },
 );
+
+it.each(['submitted', 'failed'] as const)(
+  'retains the durable client identity to retire an already-applied %s receipt',
+  (status) => {
+    render(
+      <SubagentActivity
+        activity={{
+          ...base,
+          items: [
+            {
+              type: 'steer',
+              steer: 'Durably applied guidance.',
+              steerId: 'server-control',
+              clientSteerId: 'client-invocation',
+              createdAt: 100,
+            },
+            { type: 'writing', text: 'Later durable work.' },
+          ],
+          controls: [
+            {
+              invocationId: 'client-invocation',
+              action: 'steer',
+              status,
+              message: 'Durably applied guidance.',
+              createdAt: '2026-10-23T00:00:00Z',
+              updatedAt: '2026-10-23T00:00:01Z',
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.queryByTestId('shared-steer-part')).not.toBeInTheDocument();
+    expect(mockContentParts.mock.calls.at(-1)?.[0].content).toEqual([
+      {
+        type: ContentTypes.STEER,
+        steer: 'Durably applied guidance.',
+        steerId: 'server-control',
+        clientSteerId: 'client-invocation',
+        createdAt: 100,
+      },
+      { type: ContentTypes.TEXT, text: 'Later durable work.' },
+    ]);
+  },
+);
