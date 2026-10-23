@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -19,6 +19,7 @@ const output = (...args) => execFileSync('docker', args, { cwd: root, encoding: 
 const composeFile = join(scratch, 'compose.json');
 const compose = (...args) => docker('compose', '-p', project, '-f', composeFile, ...args);
 let imageBuilt = false;
+let callerProcess;
 try {
   const overlay = yaml.load(readFileSync(join(root, 'docker-compose.extraction.yml'), 'utf8'));
   assert.deepEqual(overlay.services.api.group_add, ['10001']);
@@ -33,7 +34,10 @@ try {
   );
   process.env.EXTRACTION_IMAGE = image;
   await build({
-    entry: [join(root, 'packages/api/src/files/extraction/client.ts')],
+    entry: [
+      join(root, 'packages/api/src/files/extraction/client.ts'),
+      join(root, 'packages/api/src/files/extraction/upload.ts'),
+    ],
     config: false,
     outDir: scratch,
     clean: false,
@@ -75,8 +79,9 @@ try {
   console.log(
     'Shipped processor network, mounts, identity, resource caps and security flags verified',
   );
-  docker(
+  const callerArgs = [
     'run',
+    '-i',
     '--rm',
     '--name',
     caller,
@@ -104,6 +109,65 @@ try {
     'node',
     image,
     '/client.cjs',
+  ];
+
+  let ready;
+  const cancellationReady = new Promise((resolve) => {
+    ready = resolve;
+  });
+  callerProcess = spawn('docker', callerArgs, { cwd: root, stdio: ['pipe', 'pipe', 'inherit'] });
+  let progress = '';
+  callerProcess.stdout.on('data', (bytes) => {
+    process.stdout.write(bytes);
+    progress += bytes;
+    if (progress.includes('CANCEL_PROBE_READY')) ready();
+  });
+  const callerExit = new Promise((resolve, reject) => {
+    callerProcess.once('error', reject);
+    callerProcess.once('exit', resolve);
+  });
+  await Promise.race([
+    cancellationReady,
+    callerExit.then((code) => {
+      throw new Error(`Caller exited before cancellation probe (${code})`);
+    }),
+  ]);
+  // Freeze a real parser worker so cancellation, not a naturally fast parse, must retire it.
+  const worker = output(
+    'exec',
+    id,
+    'node',
+    '-e',
+    `
+    const fs=require('node:fs');
+    (async()=>{for(let attempt=0;attempt<300;attempt++){
+      for(const pid of fs.readdirSync('/proc').filter(p=>/^\\d+$/.test(p))){
+        let args;try{args=fs.readFileSync('/proc/'+pid+'/cmdline','utf8').split('\\0');}catch{continue;}
+        if(args[0]?.includes('python')&&args.includes('/opt/extraction/extract.py')&&args.includes('pdf')){
+          process.kill(Number(pid),'SIGSTOP');console.log(pid);return;
+        }
+      }
+      await new Promise(resolve=>setTimeout(resolve,10));
+    }throw new Error('No live PDF worker observed');})().catch(e=>{console.error(e.message);process.exitCode=1});
+  `,
+  );
+  assert.match(worker, /^\d+$/);
+  callerProcess.stdin.end('cancel\n');
+  assert.equal(await callerExit, 0);
+  docker(
+    'exec',
+    id,
+    'node',
+    '-e',
+    `
+    const fs=require('node:fs');
+    (async()=>{for(let attempt=0;attempt<200;attempt++){
+      if(!fs.existsSync('/proc/${worker}')&&fs.readdirSync('/jobs').length===0){
+        console.log('Observed parser worker termination and scratch cleanup after caller disconnect');return;
+      }
+      await new Promise(resolve=>setTimeout(resolve,10));
+    }throw new Error('Cancelled worker or scratch survived');})().catch(e=>{console.error(e.message);process.exitCode=1});
+  `,
   );
   docker(
     'exec',
@@ -114,6 +178,7 @@ try {
   );
 } finally {
   try {
+    if (callerProcess?.exitCode === null) docker('rm', '-f', caller);
     compose('down', '-v', '--remove-orphans');
     if (imageBuilt) docker('image', 'rm', image);
   } finally {

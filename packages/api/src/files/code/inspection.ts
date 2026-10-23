@@ -9,6 +9,7 @@ import {
   getExtractionFormat,
 } from '~/files/extraction/client';
 import { extractCodeArtifactRawText, extractCodeArtifactInspectionText } from './extract';
+import { withExtractionLifetime } from '~/files/extraction/lifetime';
 import { sanitizeArtifactPath } from '~/utils/files';
 import { classifyCodeArtifact } from './classify';
 
@@ -60,7 +61,10 @@ export async function prepareCodeOutputBufferForInspection({
   const leafName = path.basename(safeName);
   const format = getExtractionFormat(leafName, detectedMimeType ?? fallbackType);
   if (extractor && format) {
-    const result = await extractor.extract(buffer, format, signal);
+    const result = await withExtractionLifetime(
+      { signal, deadlineMs: extractor.deadlineMs },
+      (signal) => extractor.extract(buffer, format, signal),
+    );
     return {
       buffer,
       extractedTextComplete: true,

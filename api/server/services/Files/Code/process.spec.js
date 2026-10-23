@@ -375,6 +375,97 @@ describe('Code Process', () => {
       expect(getStrategyFunctions).not.toHaveBeenCalled();
     });
 
+    it('closes the remote extraction socket on run abort without creating persistable output', async () => {
+      const {
+        fixture,
+        reply,
+        capabilities,
+      } = require('../../../../../packages/api/src/files/extraction/fixture.helper');
+      let ready;
+      let closed;
+      const admitted = new Promise((resolve) => {
+        ready = resolve;
+      });
+      const remoteClosed = new Promise((resolve) => {
+        closed = resolve;
+      });
+      const processor = await fixture((req, res) => {
+        req.resume();
+        if (req.method === 'GET') return reply(res, capabilities);
+        res.once('close', closed);
+        ready();
+      });
+      const controller = new AbortController();
+      const req = {
+        ...mockReq,
+        config: {
+          ...mockReq.config,
+          fileConfig: {
+            extractionService: {
+              enabled: true,
+              socketPath: processor.socketPath,
+            },
+          },
+        },
+      };
+      determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
+      mockAxios.mockResolvedValueOnce({ data: Buffer.from('PDF input') });
+      try {
+        const pending = prepareCodeOutputForInspection({
+          ...baseParams,
+          req,
+          name: 'report.pdf',
+          signal: controller.signal,
+        });
+        const rejected = pending.catch((error) => error);
+        await admitted;
+        controller.abort();
+        await expect(rejected).resolves.toMatchObject({ code: 'CANCELLED' });
+        await remoteClosed;
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({ signal: controller.signal }),
+        );
+        expect(mockExtractCodeArtifactRawText).not.toHaveBeenCalled();
+        expect(mockExtractCodeArtifactInspectionText).not.toHaveBeenCalled();
+        expect(mockClaimCodeFile).not.toHaveBeenCalled();
+        expect(mockCommitCodeFile).not.toHaveBeenCalled();
+      } finally {
+        await processor.close();
+      }
+    });
+
+    it('keeps detached inspection independent of the old HTTP response lifetime', async () => {
+      const {
+        fixture,
+        reply,
+        capabilities,
+        result,
+      } = require('../../../../../packages/api/src/files/extraction/fixture.helper');
+      const bytes = Buffer.from('PDF input');
+      const processor = await fixture((req, res) => {
+        req.resume();
+        reply(res, req.method === 'GET' ? capabilities : result(bytes));
+      });
+      const req = {
+        ...mockReq,
+        aborted: true,
+        res: { destroyed: true, writableFinished: false },
+        config: {
+          ...mockReq.config,
+          fileConfig: { extractionService: { enabled: true, socketPath: processor.socketPath } },
+        },
+      };
+      determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
+      mockAxios.mockResolvedValueOnce({ data: bytes });
+      try {
+        await expect(
+          prepareCodeOutputForInspection({ ...baseParams, req, name: 'report.pdf' }),
+        ).resolves.toMatchObject({ extractedTextComplete: true, file: { extractedText: '你好!' } });
+      } finally {
+        await processor.close();
+      }
+    });
+
     it('persists the exact preflight buffer without downloading it again', async () => {
       const preparedBuffer = Buffer.from('already inspected');
 

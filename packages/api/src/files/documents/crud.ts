@@ -3,6 +3,7 @@ import yauzl from 'yauzl';
 import { megabyte, excelMimeTypes, FileSources } from 'librechat-data-provider';
 import type { ExtractionServiceConfig } from 'librechat-data-provider';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
+import type { ExtractionLifetime } from '~/files/extraction/lifetime';
 import type { DocumentExtractor } from '~/files/extraction/client';
 import type { MistralOCRUploadResult } from '~/types';
 import {
@@ -11,6 +12,7 @@ import {
   getExtractionFormat,
   readExtractionInput,
 } from '~/files/extraction/client';
+import { withExtractionLifetime } from '~/files/extraction/lifetime';
 import { assertSafeZipSize } from './zipSafety';
 
 type FileParseFn = (file: Express.Multer.File) => Promise<string>;
@@ -27,29 +29,38 @@ const ODT_MAX_DECOMPRESSED_SIZE = 50 * megabyte;
 export async function parseDocument({
   file,
   req,
+  res,
   extractor = createDocumentExtractor(req?.config?.fileConfig?.extractionService),
   signal,
 }: {
   file: Express.Multer.File;
-  req?: { config?: { fileConfig?: { extractionService?: ExtractionServiceConfig } } };
+  req?: ExtractionLifetime['request'] & {
+    config?: { fileConfig?: { extractionService?: ExtractionServiceConfig } };
+  };
+  res?: ExtractionLifetime['response'];
   extractor?: DocumentExtractor;
   signal?: AbortSignal;
 }): Promise<MistralOCRUploadResult> {
   const format = getExtractionFormat(file.originalname, file.mimetype);
   if (extractor && format) {
-    const result = await extractor.extract(
-      await readExtractionInput(file, extractor, signal),
-      format,
-      signal,
+    return withExtractionLifetime(
+      { request: req, response: res, signal, deadlineMs: extractor.deadlineMs },
+      async (signal) => {
+        const result = await extractor.extract(
+          await readExtractionInput(file, extractor, signal),
+          format,
+          signal,
+        );
+        const text = extractionText(result);
+        return {
+          filename: file.originalname,
+          bytes: Buffer.byteLength(text, 'utf8'),
+          filepath: FileSources.document_parser,
+          text,
+          images: [],
+        };
+      },
     );
-    const text = extractionText(result);
-    return {
-      filename: file.originalname,
-      bytes: Buffer.byteLength(text, 'utf8'),
-      filepath: FileSources.document_parser,
-      text,
-      images: [],
-    };
   }
   const parseFn = getParserForMimeType(file.mimetype);
   if (!parseFn) {

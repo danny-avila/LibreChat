@@ -1,6 +1,7 @@
 import { request } from 'node:http';
+import { constants } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import { extractionServiceSchema } from 'librechat-data-provider';
 import type { ExtractionServiceConfig } from 'librechat-data-provider';
 
@@ -20,6 +21,7 @@ export interface ExtractionResult {
 }
 export interface DocumentExtractor {
   readonly maxInputBytes: number;
+  readonly deadlineMs?: number;
   extract(bytes: Buffer, format: ExtractionFormat, signal?: AbortSignal): Promise<ExtractionResult>;
 }
 
@@ -95,92 +97,110 @@ export function createDocumentExtractor(
   const options = parsed.data;
   if (!options.enabled) return undefined;
 
-  const exchange = (
+  const exchange = async (
     path: '/v1/capabilities' | '/v1/extract-text',
     signal: AbortSignal,
     limit: number,
     body?: Buffer,
     format?: ExtractionFormat,
-  ): Promise<unknown> =>
-    new Promise((resolve, reject) => {
-      const req = transport(
-        {
-          socketPath: options.socketPath,
-          path,
-          method: body ? 'POST' : 'GET',
-          agent: false,
-          maxHeaderSize: 4096,
-          signal,
-          headers: {
-            Host: 'localhost',
-            Connection: 'close',
-            ...(body
-              ? {
-                  'Content-Type': 'application/octet-stream',
-                  'Content-Length': body.length,
-                  'X-Extraction-Version': '1',
-                  'X-Extraction-Format': format,
-                }
-              : {}),
+  ): Promise<unknown> => {
+    let drained = Promise.resolve();
+    try {
+      return await new Promise((resolve, reject) => {
+        let responseEnded = false;
+        const req = transport(
+          {
+            socketPath: options.socketPath,
+            path,
+            method: body ? 'POST' : 'GET',
+            agent: false,
+            maxHeaderSize: 4096,
+            signal,
+            headers: {
+              Host: 'localhost',
+              Connection: 'close',
+              ...(body
+                ? {
+                    'Content-Type': 'application/octet-stream',
+                    'Content-Length': body.length,
+                    'X-Extraction-Version': '1',
+                    'X-Extraction-Format': format,
+                  }
+                : {}),
+            },
           },
-        },
-        (res) => {
-          const length = res.headers['content-length'];
-          if (
-            res.headers['transfer-encoding'] ||
-            res.headers['content-encoding'] ||
-            res.headers['content-type'] !== 'application/json; charset=utf-8' ||
-            typeof length !== 'string' ||
-            !/^[1-9]\d*$/.test(length) ||
-            !positive(Number(length), limit)
-          ) {
-            reject(new ExtractionServiceError('INVALID_RESPONSE'));
-            res.destroy();
-            req.destroy();
-            return;
-          }
-          let size = 0;
-          const chunks: Buffer[] = [];
-          res.on('data', (chunk: Buffer) => {
-            size += chunk.length;
-            if (size > limit || size > Number(length)) {
-              reject(new ExtractionServiceError('RESPONSE_LIMIT'));
+          (res) => {
+            const length = res.headers['content-length'];
+            if (
+              res.headers['transfer-encoding'] ||
+              res.headers['content-encoding'] ||
+              res.headers['content-type'] !== 'application/json; charset=utf-8' ||
+              typeof length !== 'string' ||
+              !/^[1-9]\d*$/.test(length) ||
+              !positive(Number(length), limit)
+            ) {
+              reject(new ExtractionServiceError('INVALID_RESPONSE'));
               res.destroy();
               req.destroy();
               return;
             }
-            chunks.push(chunk);
-          });
-          res.once('error', () => reject(new ExtractionServiceError('INVALID_RESPONSE')));
-          res.once('end', () => {
-            try {
-              if (size !== Number(length)) return fail();
-              const value = decode(Buffer.concat(chunks, size));
-              if (res.statusCode !== 200) {
-                if (
-                  !record(value) ||
-                  !keys(value, ['error']) ||
-                  !record(value.error) ||
-                  !keys(value.error, ['code']) ||
-                  typeof value.error.code !== 'string' ||
-                  statuses[value.error.code] !== res.statusCode
-                )
-                  return fail();
-                return fail(value.error.code);
+            let size = 0;
+            const chunks: Buffer[] = [];
+            res.on('data', (chunk: Buffer) => {
+              size += chunk.length;
+              if (size > limit || size > Number(length)) {
+                reject(new ExtractionServiceError('RESPONSE_LIMIT'));
+                res.destroy();
+                req.destroy();
+                return;
               }
-              resolve(value);
-            } catch (error) {
-              reject(error);
-            }
-          });
-        },
-      );
-      req.once('error', () => reject(new ExtractionServiceError('UNAVAILABLE')));
-      req.end(body);
-    });
+              chunks.push(chunk);
+            });
+            res.once('error', () => {
+              reject(new ExtractionServiceError('INVALID_RESPONSE'));
+              req.destroy();
+            });
+            res.once('end', () => {
+              responseEnded = true;
+              try {
+                if (size !== Number(length)) return fail();
+                const value = decode(Buffer.concat(chunks, size));
+                if (res.statusCode !== 200) {
+                  if (
+                    !record(value) ||
+                    !keys(value, ['error']) ||
+                    !record(value.error) ||
+                    !keys(value.error, ['code']) ||
+                    typeof value.error.code !== 'string' ||
+                    statuses[value.error.code] !== res.statusCode
+                  )
+                    return fail();
+                  return fail(value.error.code);
+                }
+                resolve(value);
+              } catch (error) {
+                reject(error);
+              }
+            });
+          },
+        );
+        drained = new Promise<void>((done) =>
+          req.once('close', () => {
+            if (!responseEnded) reject(new ExtractionServiceError('UNAVAILABLE'));
+            done();
+          }),
+        );
+        req.once('error', () => reject(new ExtractionServiceError('UNAVAILABLE')));
+        req.end(body);
+      });
+    } finally {
+      await drained;
+    }
+  };
 
   return {
     maxInputBytes: options.maxInputBytes,
+    deadlineMs: options.deadlineMs,
     async extract(input, format, signal) {
       if (format !== 'pdf' && format !== 'docx') return fail('UNSUPPORTED_FORMAT');
       if (!input.length || input.length > options.maxInputBytes) return fail('INPUT_LIMIT');
@@ -304,15 +324,23 @@ export async function readExtractionInput(
   extractor: DocumentExtractor,
   signal?: AbortSignal,
 ): Promise<Buffer> {
+  signal?.throwIfAborted();
   if (file.buffer) {
     if (!file.buffer.length || file.buffer.length > extractor.maxInputBytes)
       return fail('INPUT_LIMIT');
     return file.buffer;
   }
+  const handle = await open(file.path, constants.O_RDONLY | constants.O_NONBLOCK).catch(() =>
+    fail('INPUT_UNAVAILABLE'),
+  );
   try {
+    signal?.throwIfAborted();
+    const stat = await handle.stat();
+    if (!stat.isFile()) return fail('INPUT_UNAVAILABLE');
+    if (!stat.size || stat.size > extractor.maxInputBytes) return fail('INPUT_LIMIT');
     const chunks: Buffer[] = [];
     let size = 0;
-    for await (const chunk of createReadStream(file.path, { signal })) {
+    for await (const chunk of handle.createReadStream({ signal, autoClose: false })) {
       const bytes = chunk as Buffer;
       size += bytes.length;
       if (size > extractor.maxInputBytes) return fail('INPUT_LIMIT');
@@ -323,6 +351,8 @@ export async function readExtractionInput(
   } catch (error) {
     if (error instanceof ExtractionServiceError) throw error;
     return fail(signal?.aborted ? 'CANCELLED' : 'INPUT_UNAVAILABLE');
+  } finally {
+    await handle.close();
   }
 }
 

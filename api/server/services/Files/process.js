@@ -1098,6 +1098,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       resolveUploadDocumentText({
         file,
         config: appConfig?.fileConfig?.extractionService,
+        request: req,
+        response: res,
         configuredOCR: shouldUseConfiguredOCR,
         configuredText: shouldUseConfiguredText,
         extractOCR: () =>
@@ -1172,11 +1174,18 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     const { text } = await extractInspectableFileText({
       filters: appConfig?.filters,
       extract: () =>
-        parseText({
-          req,
+        resolveUploadDocumentText({
           file,
-          file_id,
-          allowNativeFallback: isNativelyReadableText(file.mimetype),
+          config: appConfig?.fileConfig?.extractionService,
+          request: req,
+          response: res,
+          extract: () =>
+            parseText({
+              req,
+              file,
+              file_id,
+              allowNativeFallback: isNativelyReadableText(file.mimetype),
+            }),
         }),
     });
     return await createTextFile({ text });
@@ -1191,6 +1200,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     isMessageAttachment: messageAttachment,
     endpointConfig,
     extractionService: appConfig?.fileConfig?.extractionService,
+    request: req,
+    response: res,
     filters: appConfig?.filters,
   });
 

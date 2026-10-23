@@ -6,6 +6,7 @@ import type {
   EndpointFileConfig,
   TDefaultLLMDeliveryPath,
 } from 'librechat-data-provider';
+import type { ExtractionLifetime } from '~/files/extraction/lifetime';
 import {
   extractInspectableFileText,
   getFileExtractionLogDetails,
@@ -13,6 +14,7 @@ import {
 } from '~/files/extract';
 import { extractFileContent } from '~/protection/adapters/submissions';
 import { resolveUploadDocumentText } from '~/files/extraction/upload';
+import { assertExtractionActive } from '~/files/extraction/lifetime';
 import { hasActiveFileFieldPolicy } from '~/protection/files';
 import { parseDocument } from '~/files/documents/crud';
 import { inspectContent } from '~/protection/runtime';
@@ -93,10 +95,16 @@ export async function resolveUploadFallbackText({
   filters,
   extractors = builtInExtractors,
   extractionService,
+  request,
+  response,
+  signal,
   ...route
 }: Omit<UploadFallbackTextRoute, 'mimeType'> & {
   file: Express.Multer.File;
   extractionService?: ExtractionServiceConfig;
+  request?: ExtractionLifetime['request'];
+  response?: ExtractionLifetime['response'];
+  signal?: AbortSignal;
   fileId: string;
   filters?: FiltersConfig;
   extractors?: UploadFallbackTextExtractors;
@@ -129,10 +137,10 @@ export async function resolveUploadFallbackText({
         resolveUploadDocumentText({
           file,
           config: extractionService,
-          extractDocument: extract,
-          extractOCR: extract,
-          extractConfiguredText: extract,
-          onFailure: () => {},
+          request,
+          response,
+          signal,
+          extract,
         }),
     });
     const text = result?.text;
@@ -151,6 +159,7 @@ export async function resolveUploadFallbackText({
     }
     return text;
   } catch (error) {
+    assertExtractionActive({ request, response, signal });
     return skip('extraction failed', error);
   }
 }

@@ -7,6 +7,7 @@ const {
   isContentFilterError,
   isActiveExpirationDate,
   getConversationExpirationDate,
+  withExtractionLifetime,
 } = require('@librechat/api');
 const {
   Tools,
@@ -185,7 +186,9 @@ const callTool = async (req, res) => {
     assertDirectToolOutputAllowed(appConfig?.filters, toolId, content);
     const hasGeneratedArtifacts = toolId === Tools.execute_code && Array.isArray(artifact?.files);
     const generatedFiles = hasGeneratedArtifacts
-      ? await preflightCodeOutputBatch({ req, artifact })
+      ? await withExtractionLifetime({ request: req, response: res, deadlineMs: false }, (signal) =>
+          preflightCodeOutputBatch({ req, artifact, signal }),
+        )
       : [];
     const toolCallData = {
       toolId,

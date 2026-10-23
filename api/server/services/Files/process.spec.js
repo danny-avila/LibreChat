@@ -555,6 +555,66 @@ describe('processAgentFileUpload', () => {
       },
     );
 
+    test.each([
+      ['report.pdf', 'text/plain'],
+      ['report.pdf', 'text/markdown'],
+      ['report.docx', 'text/plain'],
+      ['report.docx', 'text/markdown'],
+    ])(
+      'does not bypass filename-selected extraction for %s with %s MIME',
+      async (name, mimetype) => {
+        const { parseText } = require('@librechat/api');
+        const ragUrl = process.env.RAG_API_URL;
+        delete process.env.RAG_API_URL;
+        mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: [mimetype] }));
+        const req = makeReq({ mimetype });
+        req.file.originalname = name;
+        req.file.buffer = Buffer.from('raw text must not win');
+        req.config.fileConfig.extractionService = { enabled: true };
+        try {
+          await expect(
+            processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+          ).rejects.toThrow('Document extraction failed (BUSY).');
+          expect(extract).toHaveBeenCalledTimes(1);
+          expect(parseText).not.toHaveBeenCalled();
+          expect(db.createFile).not.toHaveBeenCalled();
+        } finally {
+          if (ragUrl === undefined) delete process.env.RAG_API_URL;
+          else process.env.RAG_API_URL = ragUrl;
+        }
+      },
+    );
+
+    test('preserves native plaintext behavior when extraction service selection is disabled', async () => {
+      const { parseText } = require('@librechat/api');
+      clientModule.createDocumentExtractor.mockReturnValueOnce(undefined);
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: ['text/plain'] }));
+      parseText.mockResolvedValueOnce({ text: 'native plaintext', bytes: 16 });
+      const req = makeReq({ mimetype: 'text/plain' });
+      req.file.originalname = 'report.pdf';
+      req.config.fileConfig.extractionService = { enabled: false };
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+      expect(extract).not.toHaveBeenCalled();
+      expect(parseText).toHaveBeenCalledWith(
+        expect.objectContaining({ allowNativeFallback: true }),
+      );
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'native plaintext' }),
+        true,
+      );
+    });
+
+    test('retains file-type rejection before executing a filename-selected extractor', async () => {
+      const req = makeReq({ mimetype: 'text/plain' });
+      req.file.originalname = 'report.pdf';
+      req.config.fileConfig.extractionService = { enabled: true };
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toThrow('not supported for text parsing');
+      expect(extract).not.toHaveBeenCalled();
+      expect(db.createFile).not.toHaveBeenCalled();
+    });
+
     test('does not bypass context authorization to reach the service', async () => {
       checkCapability.mockResolvedValue(false);
       const req = makeReq();
@@ -598,6 +658,80 @@ describe('processAgentFileUpload', () => {
       expect(mockRes.status).toHaveBeenCalledWith(400);
       expect(db.addAgentResourceFile).not.toHaveBeenCalled();
       expect(db.createFile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('extraction service HTTP lifetime', () => {
+    test('cancels extraction on a real HTTP disconnect without success persistence', async () => {
+      const { createServer, request } = require('node:http');
+      const express = require('express');
+      const {
+        fixture,
+        reply,
+        capabilities,
+      } = require('../../../../packages/api/src/files/extraction/fixture.helper');
+      const bytes = Buffer.from('uploaded document');
+      let remoteClosed = false;
+      let ready;
+      const admitted = new Promise((resolve) => {
+        ready = resolve;
+      });
+      const processor = await fixture((req, res) => {
+        req.resume();
+        if (req.method === 'GET') return reply(res, capabilities);
+        res.once('close', () => {
+          remoteClosed = true;
+        });
+        ready();
+      });
+      let finished;
+      const settled = new Promise((resolve) => {
+        finished = resolve;
+      });
+      const app = express();
+      app.use(express.raw({ type: '*/*' }));
+      app.post('/upload', async (req, res) => {
+        Object.assign(req, makeReq());
+        req.file.buffer = bytes;
+        req.config.fileConfig.extractionService = {
+          enabled: true,
+          socketPath: processor.socketPath,
+        };
+        try {
+          await processAgentFileUpload({ req, res, metadata: makeMetadata() });
+          finished({ ok: true });
+        } catch (error) {
+          finished({ ok: false, code: error.code });
+        }
+      });
+      const http = createServer(app);
+      await new Promise((resolve) => http.listen(0, '127.0.0.1', resolve));
+      const caller = request({
+        hostname: '127.0.0.1',
+        port: http.address().port,
+        path: '/upload',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+      });
+      caller.on('error', () => {});
+      caller.end('upload');
+      try {
+        await admitted;
+        caller.destroy();
+        await new Promise((resolve) => setTimeout(resolve, 75));
+        const remoteClosedAfterDisconnect = remoteClosed;
+        expect(remoteClosedAfterDisconnect).toBe(true);
+        const outcome = await settled;
+        expect(outcome).toMatchObject({ ok: false, code: 'CANCELLED' });
+        expect(db.createFile).not.toHaveBeenCalled();
+        expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+        expect(getStrategyFunctions).not.toHaveBeenCalled();
+      } finally {
+        caller.destroy();
+        http.closeAllConnections();
+        await new Promise((resolve) => http.close(resolve));
+        await processor.close();
+      }
     });
   });
 
