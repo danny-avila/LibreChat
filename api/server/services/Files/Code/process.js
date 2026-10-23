@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
 const {
   withTimeout,
+  withFileProvisioning,
   getBasePath,
   logAxiosError,
   hasOfficeHtmlPath,
@@ -57,6 +58,7 @@ const {
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getFiles, updateFile, claimCodeFile, commitCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { getFileStorage } = require('~/server/services/Files/operations');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { determineFileType } = require('~/server/utils');
@@ -596,6 +598,7 @@ const processCodeOutput = (params) =>
     determineFileType,
     claimCodeFile,
     commitCodeFile,
+    fileStorage: getFileStorage(),
     finalizePreview,
     hasOfficeHtmlPath,
     sanitizeArtifactPath,
@@ -805,82 +808,101 @@ const primeFiles = async (options) => {
 
     const reuploadFile = async () => {
       try {
-        const { getDownloadStream } = getStrategyFunctions(file.source);
-        const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
-          FileSources.execute_code,
-        );
-        /* Reupload preserves the resource identity from the existing
-         * ref so codeapi re-buckets under the same sessionKey shape
-         * (skill stays skill, user stays user). Without this, a
-         * skill-cache-miss reupload would land in the user bucket
-         * and never re-shareable cross-user. */
-        const uploaded = await withCodeApiUploadRecovery({
-          registry: req.app?.locals?.codeApiUploadRegistry,
-          scope: uploadOptions.scope,
-          concurrency: uploadOptions.concurrency,
-          label: `re-uploading file ${file.file_id} to the code environment`,
-          budget: uploadRateLimitBudget,
-          signal,
-          onWait: (waitMs) =>
-            logger.warn(
-              `[primeCodeFiles] Rate-limited reupload requestId=${getPrimingCorrelation(req).requestId} ` +
-                `runId=${getPrimingCorrelation(req).runId}; retrying in ${waitMs}ms`,
-            ),
-          openSource: async () => {
-            signal?.throwIfAborted();
-            return getDownloadStream(options.req, resolveDownloadPath(file), { signal });
-          },
-          upload: (stream) =>
-            uploadCodeEnvFile({
-              req: options.req,
-              stream,
-              filename: sandboxName,
+        const newRef = await withFileProvisioning({
+          file,
+          userId: req.user.id,
+          storage: getFileStorage(),
+          destination: JSON.stringify([
+            'code',
+            executionRouteKey,
+            sourceRef.kind,
+            sourceRef.id,
+            sourceRef.kind === 'skill' ? sourceRef.version : null,
+            sandboxName,
+          ]),
+          operation: async (_claim, onUploadStart) => {
+            const { getDownloadStream } = getStrategyFunctions(file.source);
+            const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
+              FileSources.execute_code,
+            );
+            /* Reupload preserves the resource identity from the existing
+             * ref so codeapi re-buckets under the same sessionKey shape
+             * (skill stays skill, user stays user). Without this, a
+             * skill-cache-miss reupload would land in the user bucket
+             * and never re-shareable cross-user. */
+            const uploaded = await withCodeApiUploadRecovery({
+              registry: req.app?.locals?.codeApiUploadRegistry,
+              scope: uploadOptions.scope,
+              concurrency: uploadOptions.concurrency,
+              label: `re-uploading file ${file.file_id} to the code environment`,
+              budget: uploadRateLimitBudget,
+              signal,
+              onWait: (waitMs) =>
+                logger.warn(
+                  `[primeCodeFiles] Rate-limited reupload requestId=${getPrimingCorrelation(req).requestId} ` +
+                    `runId=${getPrimingCorrelation(req).runId}; retrying in ${waitMs}ms`,
+                ),
+              openSource: async () => {
+                signal?.throwIfAborted();
+                return getDownloadStream(options.req, resolveDownloadPath(file), { signal });
+              },
+              upload: (stream) =>
+                uploadCodeEnvFile({
+                  req: options.req,
+                  stream,
+                  filename: sandboxName,
+                  kind: sourceRef.kind,
+                  id: sourceRef.id,
+                  ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
+                  codeApiBaseUrl,
+                  executionProfile,
+                  bridgeWorkerId,
+                  signal,
+                  onUploadStart,
+                }),
+            });
+
+            /**
+             * Use the FRESH `(storage_session_id, file_id)` from the
+             * reupload response and route it through the persisted record
+             * and the in-memory `files` list. The
+             * original ref captured at the top of this iteration refers
+             * to the old, expired/missing sandbox object — using it here
+             * would silently re-introduce the bug `Graph.sessions`
+             * seeding is supposed to fix.
+             *
+             * `kind`, `id`, `version` survive the round-trip: the
+             * upload preserves the resource identity, only the storage
+             * pointer changes.
+             */
+            const newRef = {
               kind: sourceRef.kind,
               id: sourceRef.id,
-              ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
-              codeApiBaseUrl,
+              storage_session_id: uploaded.storage_session_id,
+              file_id: uploaded.file_id,
+              sandboxFilename: getUploadedCodeEnvFilename(uploaded, sandboxName),
               executionProfile,
-              bridgeWorkerId,
-              signal,
-            }),
+              ...(executionRouteKey !== executionProfile ? { executionRouteKey } : {}),
+              ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
+            };
+
+            const updatedRefs = mergeCodeEnvRef(file.metadata, newRef);
+
+            return {
+              value: newRef,
+              commit: {
+                code: {
+                  routeKey: executionRouteKey,
+                  ref: newRef,
+                  legacyRef: updatedRefs.codeEnvRef,
+                },
+              },
+            };
+          },
         });
-
-        /**
-         * Use the FRESH `(storage_session_id, file_id)` from the
-         * reupload response and route it through the persisted record
-         * and the in-memory `files` list. The
-         * original ref captured at the top of this iteration refers
-         * to the old, expired/missing sandbox object — using it here
-         * would silently re-introduce the bug `Graph.sessions`
-         * seeding is supposed to fix.
-         *
-         * `kind`, `id`, `version` survive the round-trip: the
-         * upload preserves the resource identity, only the storage
-         * pointer changes.
-         */
-        const newRef = {
-          kind: sourceRef.kind,
-          id: sourceRef.id,
-          storage_session_id: uploaded.storage_session_id,
-          file_id: uploaded.file_id,
-          sandboxFilename: getUploadedCodeEnvFilename(uploaded, sandboxName),
-          executionProfile,
-          ...(executionRouteKey !== executionProfile ? { executionRouteKey } : {}),
-          ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
-        };
-
-        const updatedRefs = mergeCodeEnvRef(file.metadata, newRef);
-
-        await updateFile({
-          file_id: file.file_id,
-          'metadata.codeEnvRef': updatedRefs.codeEnvRef,
-          [`metadata.codeEnvRefs.${executionRouteKey}`]: newRef,
-        });
+        file.metadata = { ...file.metadata, ...mergeCodeEnvRef(file.metadata, newRef) };
         pushFile(newRef.storage_session_id, newRef.file_id, newRef.sandboxFilename);
-        logger.debug(
-          `[primeCodeFiles] file=${file.file_id} path=reupload-success ` +
-            `oldSession=${session_id} newSession=${newRef.storage_session_id} newFileId=${newRef.file_id}`,
-        );
+        logger.debug(`[primeCodeFiles] file=${file.file_id} path=reupload-success`);
       } catch (error) {
         /* Cancellation is an operation outcome, not a recoverable per-file
          * miss. Swallowing it here would keep walking and could dispatch more
