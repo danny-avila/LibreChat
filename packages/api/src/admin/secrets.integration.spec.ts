@@ -3864,7 +3864,7 @@ describe('a document an MCP removal creates', () => {
       expect(tombstoned.statusCode).toBe(404);
       expect(tombstoned.body).toMatchObject({ code: 'PRINCIPAL_NOT_FOUND' });
       expect(unset.statusCode).toBe(404);
-      expect(unset.body).toEqual({ error: 'Config not found' });
+      expect(unset.body).toEqual({ error: 'Config not found', code: 'CONFIG_NOT_FOUND' });
       expect(await mongoose.models.Config.findOne({ principalId })).toBeNull();
     },
   );
