@@ -113,6 +113,17 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
     "cn('md:peer-disabled:opacity-70', 'md:peer-theme-disabled:opacity-100')",
     "import { cva } from 'class-variance-authority'; cva(disabledFillClasses, { variants: { size: { sm: 'disabled:opacity-50' } } })",
     "cn('disabled:opacity-50', ...[disabledFillClasses])",
+    "cn('disabled:opacity-50', ...([disabledFillClasses] as const))",
+    "cn('disabled:opacity-50', ...([disabledFillClasses] satisfies string[]))",
+    "cn('disabled:opacity-50', { ...({ [disabledFillClasses]: true } as const) })",
+    "cn('disabled:opacity-50', { [disabledFillClasses]: true as const })",
+    "cn('[.foo_&]:disabled:opacity-50', 'theme-disabled:opacity-100!')",
+    "cn('[.foo_&]:[.bar_&]:disabled:opacity-50', '[.bar_&]:[.foo_&]:theme-disabled:opacity-100')",
+    "cn('[&:hover]:disabled:opacity-50')",
+    "cn('[@media(hover:hover)]:disabled:opacity-50')",
+    "cn('[&:disabled:hover]:opacity-50')",
+    "cn('[&:not(:disabled)]:hover:opacity-50 [&:disabled:hover]:opacity-50')",
+    "cn(disabled && '[.foo_&]:opacity-50')",
     "const faded = 'opacity-50'; cn(busy && faded, busy && disabledFillClasses)",
     "const faded = 'opacity-50'; cn(faded)",
     "cn('[&:is(:disabled)]:opacity-50 [&:where(:disabled)]:opacity-40', disabledFillClasses)",
@@ -197,10 +208,6 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
     {
       code: "cn('data-[state=disabled]:opacity-50')",
       errors: [missing('data-[state=disabled]:opacity-50')],
-    },
-    {
-      code: "cn('[.foo_&]:[.bar_&]:disabled:opacity-50', '[.bar_&]:[.foo_&]:theme-disabled:opacity-100')",
-      errors: [missing('[.foo_&]:[.bar_&]:disabled:opacity-50')],
     },
     {
       code: "cn('hover:[&_button]:disabled:opacity-50', '[&_button]:hover:theme-disabled:opacity-100')",
@@ -443,10 +450,6 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
       errors: [missing('opacity-50')],
     },
     {
-      code: "cn('[&:not(:disabled)]:hover:opacity-50 [&:disabled:hover]:opacity-50')",
-      errors: [missing('[&:disabled:hover]:opacity-50')],
-    },
-    {
       code: "cn('md:disabled:opacity-50', 'lg:theme-disabled:opacity-100')",
       errors: [missing('md:disabled:opacity-50')],
     },
@@ -460,6 +463,10 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
     },
     {
       code: "cn('disabled:opacity-50', [...disabledFillClasses])",
+      errors: [missing('disabled:opacity-50')],
+    },
+    {
+      code: "cn('disabled:opacity-50', [...(disabledFillClasses as string)])",
       errors: [missing('disabled:opacity-50')],
     },
     {

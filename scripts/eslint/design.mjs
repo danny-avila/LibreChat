@@ -3,6 +3,12 @@ import { dirname, resolve } from 'node:path';
 /**
  * Design rules `@shadcn/lint` does not cover, registered as the `design` plugin in
  * `eslint.config.mjs` and recorded in `eslint-suppressions.json` like its rules.
+ *
+ * `disabled-recipe` reports only the shapes it reads positively and skips the rest: a utility
+ * under an arbitrary variant it cannot place (an enclosing selector such as `[.foo_&]:` or
+ * `[&:hover]:`, a media or supports query in brackets, or a disabled selector other than the
+ * recipes' markers, an ancestor `[..._&]` or a `:has()`) is neither a dim nor a recipe, because
+ * whether a recipe outranks it depends on selector order and specificity the rule cannot see.
  */
 
 /** The shared disabled recipes (`packages/client/src/utils/theme.ts`) and the element each one
@@ -73,6 +79,18 @@ const WITHIN_MARKERS = /^(?:has-\[:disabled\]|has-disabled|\[&:has\(:disabled\)\
  *  control restores. */
 const isDescendantModifier = (variant) => /^\[&[\s_>~+]/.test(variant) || /^\*{1,2}$/.test(variant);
 
+/** Whether the rule can place an arbitrary variant: a descendant modifier, a recipe marker, an
+ *  ancestor that is disabled (`[tr[data-disabled=true]_&]`) or a disabled `:has()`. Plain
+ *  variants (`md`, `hover`, `group-disabled`) are always placed. */
+const isPlaced = (variant) =>
+  !variant.startsWith('[') ||
+  isDescendantModifier(variant) ||
+  (isDisabledVariant(variant) &&
+    (SELF_MARKERS.test(variant) ||
+      WITHIN_MARKERS.test(variant) ||
+      /_&\]$/.test(variant) ||
+      /:has\(/.test(variant)));
+
 /** The disabled markers `theme-disabled` matches (`:disabled`, `[data-disabled]`,
  *  `[aria-disabled='true']`, and `[&:is(:disabled)]`, which implies one); a self variant spelled
  *  with another marker, such as `data-[state=disabled]`, is one no recipe restores. */
@@ -130,6 +148,7 @@ const isImportant = (base) => base.startsWith('!') || base.endsWith('!');
 function variantDims(value) {
   return value.split(/\s+/).flatMap((token) => {
     const { variants, base } = splitVariants(token);
+    if (!variants.every(isPlaced)) return [];
     const selecting = isOpacity(base) ? variants.filter(isDisabledVariant) : [];
     if (selecting.length === 0) return [];
     /** A stacked utility (`disabled:group-disabled:opacity-50`) needs the recipe for its most
@@ -147,7 +166,9 @@ function variantDims(value) {
 function bareDims(value, topology) {
   return value.split(/\s+/).flatMap((token) => {
     const { variants, base } = splitVariants(token);
-    if (!isOpacity(base) || variants.some(isDisabledVariant)) return [];
+    if (!isOpacity(base) || variants.some(isDisabledVariant) || !variants.every(isPlaced)) {
+      return [];
+    }
     const distant = variants.some(isDescendantModifier);
     return [{ dim: token, topology: distant ? 'group' : topology, important: isImportant(base) }];
   });
@@ -159,10 +180,10 @@ const enclosingOf = (variants) => variants.filter((variant) => !isDisabledVarian
 
 /** Whether `value` spells out a recipe's full-opacity override for the element `need` fades.
  *  The override may sit under fewer enclosing variants than the dim, since it is then active
- *  whenever the dim is, but not under variants the dim lacks. */
+ *  whenever the dim is, but not under variants the dim lacks. A dim under a descendant modifier
+ *  fades another element, which no recipe restores, so the order of variants never matters. */
 function spellsRecipe(value, need) {
-  const dim = splitVariants(need.dim ?? '');
-  const dimEnclosing = enclosingOf(dim.variants);
+  const dimEnclosing = enclosingOf(splitVariants(need.dim ?? '').variants);
   return value.split(/\s+/).some((token) => {
     const { variants, base } = splitVariants(token);
     const match = /^(!?)opacity-100(!?)$/.exec(base);
@@ -171,16 +192,9 @@ function spellsRecipe(value, need) {
     const recipe = RECIPE_VARIANTS.get(variants[marker]);
     if (!(need.topology === 'any' || recipe === need.topology)) return false;
     if (need.important && !match[1] && !match[2]) return false;
-    if (!dimEnclosing.some((variant) => variant.startsWith('[') || /^\*{1,2}$/.test(variant))) {
-      return variants
-        .filter((_, i) => i !== marker)
-        .every((variant) => dimEnclosing.includes(variant));
-    }
-    return (
-      marker === dim.variants.findIndex(isDisabledVariant) &&
-      variants.length === dim.variants.length &&
-      variants.every((variant, i) => i === marker || variant === dim.variants[i])
-    );
+    return variants
+      .filter((_, i) => i !== marker)
+      .every((variant) => dimEnclosing.includes(variant));
   });
 }
 
@@ -188,6 +202,13 @@ function spellsRecipe(value, need) {
  *  `!important`, which no shared recipe outranks. */
 const covers = (recipe, need) =>
   recipe !== undefined && !need.important && (need.topology === 'any' || recipe === need.topology);
+
+/** The expression under TypeScript wrappers that do not change its value: `[recipe] as const`,
+ *  `map satisfies ClassMap`, `value!`. */
+const unwrap = (node) =>
+  ['TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression'].includes(node?.type)
+    ? unwrap(node.expression)
+    : node;
 
 /** The variable a name resolves to from `scope`, or `undefined` when nothing declares it. */
 function findVariable(scope, name) {
@@ -507,8 +528,10 @@ function recipeReader(context) {
         );
       case 'ObjectExpression':
         return node.properties.some((property) => mapEntryAlways(property, topology));
-      case 'SpreadElement':
-        return node.argument.type === 'ArrayExpression' && always(node.argument, topology);
+      case 'SpreadElement': {
+        const argument = unwrap(node.argument);
+        return argument.type === 'ArrayExpression' && always(argument, topology);
+      }
       case 'ChainExpression':
       case 'TSAsExpression':
       case 'TSSatisfiesExpression':
@@ -522,12 +545,13 @@ function recipeReader(context) {
   /** A class-map entry that is always on and names a covering recipe. */
   const mapEntryAlways = (property, topology) => {
     if (property.type === 'SpreadElement') {
-      return property.argument.type === 'ObjectExpression' && always(property.argument, topology);
+      const argument = unwrap(property.argument);
+      return argument.type === 'ObjectExpression' && always(argument, topology);
     }
     return (
       property.type === 'Property' &&
-      property.value.type === 'Literal' &&
-      property.value.value === true &&
+      unwrap(property.value).type === 'Literal' &&
+      unwrap(property.value).value === true &&
       (property.computed
         ? always(property.key, topology)
         : stringCovers(property.key.value, topology))

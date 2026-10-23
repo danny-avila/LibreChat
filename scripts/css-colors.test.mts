@@ -220,6 +220,26 @@ test('reads angle channels in a custom property triplet', () => {
   assert.deepEqual(literals('a { --h: 0 90deg 0; }'), []);
 });
 
+test('reads rounding and other math functions over angles in a hue triplet', () => {
+  assert.deepEqual(literals('a { --h: round(to-zero, 90deg, 1deg) 50% 50%; }'), [
+    'round(to-zero, 90deg, 1deg) 50% 50%',
+  ]);
+  assert.deepEqual(literals('a { --h: round(up, 90.5deg) 50% 50%; }'), [
+    'round(up, 90.5deg) 50% 50%',
+  ]);
+  assert.deepEqual(literals('a { --h: mod(400deg, 360deg) 50% 50%; }'), [
+    'mod(400deg, 360deg) 50% 50%',
+  ]);
+  assert.deepEqual(literals('a { --h: atan2(1, 1) 50% 50%; }'), ['atan2(1, 1) 50% 50%']);
+  assert.deepEqual(literals('a { --h: calc(pi * 1rad) 50% 50%; }'), ['calc(pi * 1rad) 50% 50%']);
+  assert.deepEqual(literals('a { --h: round(future-strategy, 90deg) 50% 50%; }'), [
+    'round(future-strategy, 90deg) 50% 50%',
+  ]);
+  assert.deepEqual(literals('a { --h: round(to-zero, 90px, 1px) 50% 50%; }'), []);
+  assert.deepEqual(literals('a { --h: round(to-zero, var(--angle), 1deg) 50% 50%; }'), []);
+  assert.deepEqual(literals('a { --h: env(hue, 90deg) 50% 50%; }'), []);
+});
+
 test('a token source exempts its custom properties only', () => {
   const css = ':root { --x: 255 0 0; --y: #fff; }\na { color: #fff; width: calc(1 * 2); }';
   assert.deepEqual(findCssColorLiterals(css, [], true), [{ line: 2, literal: '#fff' }]);

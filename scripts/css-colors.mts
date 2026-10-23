@@ -53,24 +53,21 @@ const FUNCTION = new RegExp(
 const RELATIVE_COLOR = /(?<![\w-])(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(\s*from\s+/gi;
 const CHANNEL_KEYWORD = /(?<![\w-])(?:[rgbhslwcaxyz]|alpha)(?![\w-])/i;
 const CHANNEL = '[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:e[+-]?\\d+)?%?';
-/** An innermost math function, or grouping parenthesis, over numbers alone: no `var()` and no unit. */
-const NUMERIC_MATH = new RegExp(
-  String.raw`(?<![\w-])(?:${MATH_FUNCTIONS})?\((?:[\d.%+*/,\s-]|e|pi|infinity|nan|nearest|up|down|to-zero)*\)`,
-  'gi',
-);
 const ANGLE_UNIT = '(?:deg|grad|rad|turn)';
 /** An angle is a number with a unit; it is a hue when it leads a triplet. */
 const ANGLE = `[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:e[+-]?\\d+)?${ANGLE_UNIT}`;
-/** A trigonometric function over numbers and angles returns a number. */
-const TRIG_MATH = new RegExp(
-  String.raw`(?<![\w-])(?:sin|cos|tan)\((?:[\d.%+*/,\s-]|e|pi|infinity|nan|${ANGLE_UNIT})*\)`,
-  'gi',
+/** An innermost function or grouping parenthesis: a body with no nested call. */
+const INNERMOST = /(?<![\w-])([a-z][\w-]*)?\(([^()]*)\)/gi;
+const MATH = new Set(
+  MATH_FUNCTIONS.split('|').flatMap((name) => (name === 'atan2?' ? ['atan', 'atan2'] : [name])),
 );
-/** An innermost math function over numbers and at least one angle is itself an angle. */
-const ANGLE_MATH = new RegExp(
-  String.raw`(?<![\w-])(?:${MATH_FUNCTIONS})?\((?=[^()]*\d${ANGLE_UNIT})(?:[\d.%+*/,\s-]|e|pi|infinity|nan|${ANGLE_UNIT})*\)`,
-  'gi',
-);
+const TRIG = new Set(['sin', 'cos', 'tan']);
+const INVERSE_TRIG = new Set(['asin', 'acos', 'atan', 'atan2']);
+/** A math body token: a number with its unit, an identifier (a constant such as `pi` or a
+ *  rounding strategy such as `to-zero`), or an operator or separator. */
+const MATH_TOKEN =
+  /\s*(?:([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)(%|[a-z]+)?|(-?[a-z][\w-]*)|([+*/,-]))/iy;
+const ANGLE_UNITS = new Set(['deg', 'grad', 'rad', 'turn']);
 const SEPARATOR = '(?:\\s*,\\s*|\\s+)';
 const BARE_TRIPLET = `(?:${CHANNEL}|${ANGLE})${SEPARATOR}${CHANNEL}${SEPARATOR}${CHANNEL}(?:\\s*/\\s*(?:${CHANNEL}|var\\([^)]*\\)))?`;
 /** The whole value is three bare channels, or one is the fallback of a `var()`. */
@@ -86,12 +83,38 @@ const NON_COLOR_PROPERTY =
 
 const blank = (match: string): string => match.replace(/[^\n]/g, ' ');
 
-/** A math function over numbers (`calc(255)`, `min(100, max(0, 255))`) is a fixed channel, so it reads as one; so is a trigonometric result and an angle. */
+/** What a math body yields: a number, an angle, or `undefined` when it holds a length, another
+ *  dimension, or text that is not math. Any identifier is a keyword, so a new rounding strategy or
+ *  constant still reads as a channel and is reported rather than skipped. */
+function mathKind(body: string): 'number' | 'angle' | undefined {
+  let kind: 'number' | 'angle' = 'number';
+  MATH_TOKEN.lastIndex = 0;
+  while (MATH_TOKEN.lastIndex < body.trimEnd().length) {
+    const token = MATH_TOKEN.exec(body);
+    if (!token) return undefined;
+    const unit = token[2]?.toLowerCase();
+    if (unit && unit !== '%' && !ANGLE_UNITS.has(unit)) return undefined;
+    if (unit && ANGLE_UNITS.has(unit)) kind = 'angle';
+  }
+  return kind;
+}
+
+/** A math function over numbers (`calc(255)`, `min(100, max(0, 255))`) is a fixed channel, so it
+ *  reads as one; a trigonometric result is a number, and a function over an angle, or an inverse
+ *  trigonometric one, is an angle. */
 function collapseMath(text: string): string {
-  const collapsed = text
-    .replace(TRIG_MATH, '0')
-    .replace(ANGLE_MATH, '0deg')
-    .replace(NUMERIC_MATH, '0');
+  const collapsed = text.replace(
+    INNERMOST,
+    (match: string, name: string | undefined, body: string) => {
+      const fn = name?.toLowerCase();
+      if (fn !== undefined && !MATH.has(fn)) return match;
+      const kind = mathKind(body);
+      if (kind === undefined) return match;
+      if (fn !== undefined && TRIG.has(fn)) return '0';
+      if (kind === 'angle' || (fn !== undefined && INVERSE_TRIG.has(fn))) return '0deg';
+      return '0';
+    },
+  );
   return collapsed === text ? text : collapseMath(collapsed);
 }
 
