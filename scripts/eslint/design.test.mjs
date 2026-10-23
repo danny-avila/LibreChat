@@ -117,6 +117,7 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
     "cn('disabled:opacity-50', ...([disabledFillClasses] satisfies string[]))",
     "cn('disabled:opacity-50', { ...({ [disabledFillClasses]: true } as const) })",
     "cn('disabled:opacity-50', { [disabledFillClasses]: true as const })",
+    "cn('disabled:opacity-50', { [disabledFillClasses]: true, [other]: busy, 'px-2': true })",
     "cn('[.foo_&]:disabled:opacity-50', 'theme-disabled:opacity-100!')",
     "cn('[.foo_&]:[.bar_&]:disabled:opacity-50', '[.bar_&]:[.foo_&]:theme-disabled:opacity-100')",
     "cn('[&:hover]:disabled:opacity-50')",
@@ -450,6 +451,14 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
       errors: [missing('opacity-50')],
     },
     {
+      code: "const faded = 'opacity-50' as const; <button disabled={busy} className={cn(busy && faded)} />",
+      errors: [missing('opacity-50')],
+    },
+    {
+      code: "const faded = 'opacity-50' satisfies string; <button disabled className={faded} />",
+      errors: [missing('opacity-50')],
+    },
+    {
       code: "cn('md:disabled:opacity-50', 'lg:theme-disabled:opacity-100')",
       errors: [missing('md:disabled:opacity-50')],
     },
@@ -467,6 +476,22 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
     },
     {
       code: "cn('disabled:opacity-50', [...(disabledFillClasses as string)])",
+      errors: [missing('disabled:opacity-50')],
+    },
+    {
+      code: "cn('disabled:opacity-50', { ...{ [disabledFillClasses]: true }, [disabledFillClasses]: false })",
+      errors: [missing('disabled:opacity-50')],
+    },
+    {
+      code: "cn('disabled:opacity-50', { [disabledFillClasses]: true, [disabledFillClasses]: busy })",
+      errors: [missing('disabled:opacity-50')],
+    },
+    {
+      code: "cn('disabled:opacity-50', { [disabledFillClasses]: true, ...overrides })",
+      errors: [missing('disabled:opacity-50')],
+    },
+    {
+      code: "cn('disabled:opacity-50', { 'theme-disabled:opacity-100': true, ['theme-disabled:opacity-100']: false })",
       errors: [missing('disabled:opacity-50')],
     },
     {

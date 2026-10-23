@@ -542,8 +542,32 @@ function recipeReader(context) {
     }
   };
 
-  /** A class-map entry that is always on and names a covering recipe. */
-  const mapEntryAlways = (property, topology) => {
+  /** The keys a class-map entry sets, by name or by the source of a computed key; a spread sets
+   *  the keys of the object it spreads. */
+  const entryKeys = (property) => {
+    if (property.type === 'Property') {
+      const literal = property.key.type === 'Literal' ? String(property.key.value) : undefined;
+      if (!property.computed || literal !== undefined) return [literal ?? keyName(property)];
+      return [`[${source.getText(property.key)}]`];
+    }
+    const argument = unwrap(property.argument);
+    return argument.type === 'ObjectExpression' ? argument.properties.flatMap(entryKeys) : [];
+  };
+
+  /** Whether a later entry of the same map can overwrite `property`: a spread, or a key it sets. */
+  const overwritten = (property) => {
+    const { properties } = property.parent;
+    const keys = new Set(entryKeys(property));
+    return properties
+      .slice(properties.indexOf(property) + 1)
+      .some((later) => later.type === 'SpreadElement' || keys.has(entryKeys(later)[0]));
+  };
+
+  /** A class-map entry that is always on, names a covering recipe, and is not overwritten. */
+  const mapEntryAlways = (property, topology) =>
+    !overwritten(property) && mapEntryOn(property, topology);
+
+  const mapEntryOn = (property, topology) => {
     if (property.type === 'SpreadElement') {
       const argument = unwrap(property.argument);
       return argument.type === 'ObjectExpression' && always(argument, topology);
@@ -815,7 +839,7 @@ const disabledRecipe = {
       if (declarator?.type !== 'VariableDeclarator' || declarator.parent.kind !== 'const') {
         return undefined;
       }
-      const init = declarator.init;
+      const init = unwrap(declarator.init);
       let value = init?.type === 'Literal' ? init.value : undefined;
       if (init?.type === 'TemplateLiteral' && init.expressions.length === 0) {
         value = init.quasis[0].value.cooked;
