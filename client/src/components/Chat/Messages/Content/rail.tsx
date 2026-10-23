@@ -55,7 +55,7 @@ export function RailGlyph({ hover, children }: { hover: RailHover; children: Rea
       <span className={cn('flex', hovered && 'invisible')}>{children}</span>
       {hovered && (
         <span
-          className={cn(ROW_GLYPH_SLOT, 'text-text-primary absolute inset-y-0 left-0')}
+          className={cn(ROW_GLYPH_SLOT, 'text-text-primary absolute inset-y-0 inset-s-0')}
           data-testid="fold-rail-knob"
         >
           <CircleMinus size={16} />
@@ -94,7 +94,7 @@ export function FoldRail({
       tabIndex={-1}
       aria-hidden="true"
       disabled={!expanded}
-      className="group/rail absolute inset-y-0 left-0 w-6 cursor-pointer disabled:pointer-events-none"
+      className="group/rail absolute inset-y-0 inset-s-0 w-6 cursor-pointer disabled:pointer-events-none"
       onMouseDown={(event) => event.preventDefault()}
       onMouseEnter={() => expanded && hover.set(true)}
       onMouseLeave={() => hover.set(false)}
@@ -105,11 +105,11 @@ export function FoldRail({
       data-testid="fold-rail"
       data-fold-rail=""
     >
-      <span className="bg-border-medium group-hover/rail:bg-text-secondary absolute top-0.5 bottom-1.5 left-[11px] w-px transition-colors duration-150 motion-reduce:transition-none" />
+      <span className="bg-border-medium group-hover/rail:bg-text-secondary absolute inset-s-[11px] top-0.5 bottom-1.5 w-px transition-colors duration-150 motion-reduce:transition-none" />
       {/* The lit path (`useFoldPath`): from the header down to the hovered row, turning
           into that row when it is this fold's own. */}
       <span
-        className="border-text-secondary pointer-events-none absolute top-0.5 left-[11px] h-(--fold-lit) border-l opacity-0 transition-opacity duration-150 group-data-fold-lit/rail:opacity-100 group-data-[fold-lit=end]/rail:w-2 group-data-[fold-lit=end]/rail:rounded-bl-md group-data-[fold-lit=end]/rail:border-b motion-reduce:transition-none"
+        className="border-text-secondary pointer-events-none absolute inset-s-[11px] top-0.5 h-(--fold-lit) border-s opacity-0 transition-opacity duration-150 group-data-fold-lit/rail:opacity-100 group-data-[fold-lit=end]/rail:w-2 group-data-[fold-lit=end]/rail:rounded-es-md group-data-[fold-lit=end]/rail:border-b motion-reduce:transition-none"
         data-testid="fold-rail-path"
       />
     </button>

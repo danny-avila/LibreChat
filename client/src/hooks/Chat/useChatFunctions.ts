@@ -31,10 +31,16 @@ import type {
 import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import {
+  logger,
+  requestChatFocus,
+  markPasteSubmitted,
+  isSubmittableMessage,
+  bindComposerLaunch,
+} from '~/utils';
+import {
   withSubmittedCodeDecision,
   resolveSubmittedCodeApprovalMode,
 } from '~/hooks/Agents/codeDecision';
-import { logger, requestChatFocus, markPasteSubmitted, isSubmittableMessage } from '~/utils';
 import { activeUsageResponseIdFamily } from '~/components/Chat/Input/TokenUsage/store';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import useGetConversation from '~/hooks/Conversations/useGetConversation';
@@ -460,6 +466,7 @@ export default function useChatFunctions({
      *  completion synchronously, which is the whole window it has to cover. */
     askInFlightRef.current = true;
     setSubmissionStart(Date.now());
+    bindComposerLaunch(submission.conversation, index);
     setSubmission(submission);
     logger.dir('message_stream', {
       conversationId,
