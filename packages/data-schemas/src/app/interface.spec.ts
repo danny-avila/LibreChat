@@ -125,13 +125,17 @@ describe('loadDefaultInterface', () => {
     });
     expect(defaultInterface?.historyCacheTtlMs).toBe(60_000);
     expect(defaultInterface?.historyCacheRecent).toBe(1);
+    expect(defaultInterface?.historyCacheMaxBytes).toBe(8 * 1024 * 1024);
 
     const configuredInterface = await loadDefaultInterface({
-      config: { interface: { historyCacheTtlMs: 0, historyCacheRecent: 3 } },
+      config: {
+        interface: { historyCacheTtlMs: 0, historyCacheRecent: 3, historyCacheMaxBytes: 0 },
+      },
       configDefaults,
     });
     expect(configuredInterface?.historyCacheTtlMs).toBe(0);
     expect(configuredInterface?.historyCacheRecent).toBe(3);
+    expect(configuredInterface?.historyCacheMaxBytes).toBe(0);
   });
 
   it('uses and preserves the schema default for steer arm confirmation', async () => {

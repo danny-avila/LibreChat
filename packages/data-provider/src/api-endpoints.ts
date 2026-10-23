@@ -50,6 +50,10 @@ export const userPlugins = () => `${BASE_URL}/api/user/plugins`;
 
 export const deleteUser = () => `${BASE_URL}/api/user/delete`;
 export const codeEnvironments = () => `${BASE_URL}/api/code-environments`;
+export const codeSetupAttempt = (attemptId: string) =>
+  `${codeEnvironments()}/setup/${encodeURIComponent(attemptId)}`;
+export const codeSetupApprove = (attemptId: string) => `${codeSetupAttempt(attemptId)}/approve`;
+export const codeSetupDeny = (attemptId: string) => `${codeSetupAttempt(attemptId)}/deny`;
 export const codeEnvironmentPairings = () => `${codeEnvironments()}/pairings`;
 export const codeEnvironmentById = (id: string) =>
   `${codeEnvironments()}/${encodeURIComponent(id)}`;
@@ -165,6 +169,18 @@ export const subagentThread = (
   const endpoint = `${conversationsRoot}/${encodeURIComponent(parentConversationId)}/subagents/${encodeURIComponent(threadId)}`;
   if (taskId != null) return `${endpoint}?taskId=${encodeURIComponent(taskId)}`;
   return cursor == null ? endpoint : `${endpoint}?cursor=${encodeURIComponent(cursor)}`;
+};
+
+export const subagentTaskContent = (
+  parentConversationId: string,
+  threadId: string,
+  taskId: string,
+  afterSequence?: number,
+  cursor?: string,
+) => {
+  const endpoint = `${parentSubagents(parentConversationId)}/${encodeURIComponent(threadId)}/tasks/${encodeURIComponent(taskId)}/content`;
+  if (cursor != null) return `${endpoint}?cursor=${encodeURIComponent(cursor)}`;
+  return afterSequence == null ? endpoint : `${endpoint}?afterSequence=${afterSequence}`;
 };
 
 export const subagentControl = (parentConversationId: string, threadId: string) =>

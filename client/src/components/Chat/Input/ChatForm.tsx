@@ -1,7 +1,7 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
-import { useAtom } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useWatch } from 'react-hook-form';
+import { useAtom, useAtomValue } from 'jotai';
 import { useNavigate } from 'react-router-dom';
 import { useDirection } from '@radix-ui/react-direction';
 import { useSteering, showStopButtonByIndex, useComposerRestoreHost } from '@librechat/chat/react';
@@ -62,6 +62,7 @@ import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import useComposerItems from '~/hooks/Input/useComposerItems';
 import useAttachTarget from '~/hooks/Input/useAttachTarget';
+import { chatDirectionAtom } from '~/store/chatDirection';
 import Hints, { composerHintId } from './Composer/Hints';
 import PastedTextDialog from './Files/PastedTextDialog';
 import DuringRunSendButton from './DuringRunSendButton';
@@ -170,6 +171,7 @@ const ChatForm = memo(function ChatForm({
 }: ChatFormProps) {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const approvalTriggerRef = useRef<HTMLButtonElement>(null);
   /** The palette anchors to the whole composer, not to its own button, so it
    *  spans the composer width and sits flush above it. */
   const composerBoxRef = useRef<HTMLDivElement>(null);
@@ -187,7 +189,7 @@ const ChatForm = memo(function ChatForm({
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
-  const chatDirection = useRecoilValue(store.chatDirection);
+  const chatDirection = useAtomValue(chatDirectionAtom);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const { isTemporary } = useChatSettings();
@@ -807,7 +809,10 @@ const ChatForm = memo(function ChatForm({
               <AskUserQuestionPopover conversationId={conversationId} textAreaRef={textAreaRef} />
             )}
             {index === 0 && conversationId != null && (
-              <PendingToolApprovalPanel conversationId={conversationId} />
+              <PendingToolApprovalPanel
+                conversationId={conversationId}
+                triggerRef={approvalTriggerRef}
+              />
             )}
             <SkillsCommand
               index={index}
@@ -1010,7 +1015,10 @@ const ChatForm = memo(function ChatForm({
                         disabled={disableInputs}
                       />
                       {index === 0 && conversationId != null && (
-                        <PendingToolApprovalButton conversationId={conversationId} />
+                        <PendingToolApprovalButton
+                          conversationId={conversationId}
+                          triggerRef={approvalTriggerRef}
+                        />
                       )}
                     </div>
                   }
@@ -1057,9 +1065,9 @@ function ChatFormWrapper({
   project,
   routePending = false,
   isLandingPage,
-  /** Enter sends unless told otherwise, so call sites that predate this prop,
-   *  mainly tests, keep their prior behavior without passing it explicitly.
-   *  ChatView always passes the user's preference, whose default is false. */
+  /** Defaults to the atom's own default (`atomWithLocalStorage('enterToSend',
+   *  true)`) so call sites that predate this prop, mainly tests, keep their
+   *  prior behavior without passing it explicitly. */
   enterToSend = true,
   /** Same reason, from `atomWithLocalStorage('autoSendText', -1)`. */
   autoSendText = -1,

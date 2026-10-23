@@ -386,6 +386,7 @@ describe('resolveAllMcpConfigs', () => {
         cfg_srv: { name: 'cfg_srv' },
       },
       'user',
+      { idOnTheSource: undefined },
     );
   });
 
@@ -397,7 +398,9 @@ describe('resolveAllMcpConfigs', () => {
     const result = await resolveAllMcpConfigs('u1', { id: 'u1' });
 
     expect(result).toEqual({ yaml_srv: { name: 'yaml_srv' } });
-    expect(mockRegistry.getAllServerConfigs).toHaveBeenCalledWith('u1', {});
+    expect(mockRegistry.getAllServerConfigs).toHaveBeenCalledWith('u1', {}, undefined, {
+      idOnTheSource: undefined,
+    });
   });
 
   it('propagates getAllServerConfigs failures', async () => {

@@ -255,6 +255,18 @@ describe('maybeUninstallOAuthMCP', () => {
     expect(mockDeleteFlowAndStateMapping).toHaveBeenCalledTimes(1);
   });
 
+  test('resolves the server past a profile hide, so revocation still reaches it', async () => {
+    setupOAuthServerFound();
+    mockGetClientInfoAndMetadata.mockResolvedValue(null);
+
+    await maybeUninstallOAuthMCP(userId, pluginKey, appConfig);
+
+    expect(mockGetServerConfig).toHaveBeenCalledWith(serverName, userId, undefined, undefined, {
+      includeHidden: true,
+    });
+    expect(mockGetOAuthServers).toHaveBeenCalledWith(userId, { includeHidden: true });
+  });
+
   test('scopes metadata-missing cleanup to token records snapshotted before flow cancellation', async () => {
     setupOAuthServerFound();
     mockGetClientInfoAndMetadata.mockResolvedValue(null);

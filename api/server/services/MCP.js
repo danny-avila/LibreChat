@@ -560,11 +560,12 @@ async function resolveAllMcpConfigs(userId, user) {
   } catch {
     logger.warn('[resolveAllMcpConfigs] Config server resolution failed; continuing without');
   }
+  const lookup = { idOnTheSource: user?.idOnTheSource };
   if (user?.role) {
-    return await registry.getAllServerConfigs(userId, configServers, user.role);
+    return await registry.getAllServerConfigs(userId, configServers, user.role, lookup);
   }
 
-  return await registry.getAllServerConfigs(userId, configServers);
+  return await registry.getAllServerConfigs(userId, configServers, undefined, lookup);
 }
 
 /**
@@ -1115,7 +1116,16 @@ async function createMCPTools({
 }) {
   let recoveryPolicy;
   const serverConfig =
-    config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
+    config ??
+    (await getMCPServersRegistry().getServerConfig(
+      serverName,
+      user?.id,
+      configServers,
+      user?.role,
+      {
+        idOnTheSource: user?.idOnTheSource,
+      },
+    ));
 
   if (serverConfig?.url) {
     const appConfig = await getAppConfig({
@@ -1273,8 +1283,16 @@ async function createMCPTool({
   let serverName = resolvedServerName ?? parsedServerName;
   const toolName = parsedToolName;
 
+  const lookup = { idOnTheSource: user?.idOnTheSource };
   let serverConfig =
-    config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
+    config ??
+    (await getMCPServersRegistry().getServerConfig(
+      serverName,
+      user?.id,
+      configServers,
+      user?.role,
+      lookup,
+    ));
   /** DIRECT-FIRST alias fallback: only when the parsed name resolves to no
    *  server is it treated as the normalized spelling of a raw config name —
    *  a user-DB server named like an operator server's normalized form must
@@ -1288,6 +1306,8 @@ async function createMCPTool({
         aliasedName,
         user?.id,
         configServers,
+        user?.role,
+        lookup,
       );
       if (serverConfig) {
         serverName = aliasedName;
@@ -1764,12 +1784,12 @@ function createToolInstance({
  * Get MCP setup data including config, connections, and OAuth servers.
  * Resolves config-source servers from admin Config overrides when tenant context is available.
  * @param {string} userId - The user ID
- * @param {{ role?: string, tenantId?: string, appConfig?: object }} [options] - Optional request context
+ * @param {{ role?: string, idOnTheSource?: string | null, tenantId?: string, appConfig?: object }} [options] - Optional request context
  * @returns {Object} Object containing mcpConfig, appConnections, userConnections, and oauthServers
  */
 async function getMCPSetupData(userId, options = {}) {
   const registry = getMCPServersRegistry();
-  const { role, tenantId } = options;
+  const { role, tenantId, idOnTheSource } = options;
 
   const appConfig = options.appConfig ?? (await getAppConfig({ role, tenantId, userId }));
   const capabilityProfile = resolveMCPClientCapabilityProfile(
@@ -1785,9 +1805,9 @@ async function getMCPSetupData(userId, options = {}) {
     ),
   );
   const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
-  const mcpConfig = role
-    ? await registry.getAllServerConfigs(userId, configServers, role)
-    : await registry.getAllServerConfigs(userId, configServers);
+  const mcpConfig = await registry.getAllServerConfigs(userId, configServers, role || undefined, {
+    idOnTheSource,
+  });
   const mcpManager = getMCPManager(userId);
   /** @type {Map<string, import('@librechat/api').MCPConnection>} */
   let appConnections = new Map();

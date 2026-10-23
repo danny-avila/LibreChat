@@ -120,6 +120,7 @@ describe('URL elicitation (-32042) integration', () => {
     // requirement out of the test.
     jest.spyOn(MCPServersRegistry, 'getInstance').mockReturnValue({
       isAppServerConfig: jest.fn().mockResolvedValue(false),
+      isHiddenFromPrincipal: jest.fn().mockResolvedValue(false),
     } as unknown as MCPServersRegistry);
   });
 

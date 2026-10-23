@@ -94,6 +94,27 @@ describe('LibreChat Tailwind preset', () => {
     expect(rule(css, 'animate-loading-dot')).toContain('1.2s ease-in-out');
   });
 
+  it('negates the switch thumb travel so an RTL track can mirror it', async () => {
+    const css = await generate(['-translate-x-theme-switch-travel']);
+
+    expect(rule(css, '-translate-x-theme-switch-travel')).toContain('--theme-switch-width');
+    expect(rule(css, '-translate-x-theme-switch-travel')).toContain('* -1)');
+  });
+
+  it('mirrors the switch thumb by the element direction, not any RTL ancestor', async () => {
+    const candidate = 'dir-rtl:data-[state=checked]:-translate-x-theme-switch-travel';
+    const css = await generate([candidate]);
+    const [modern, fallback] = css.split('@supports not selector(:dir(rtl))');
+
+    /** Tailwind's `rtl:` also matches `[dir="rtl"] *`, which reaches into an LTR island. */
+    expect(modern).toContain(':dir(rtl)');
+    expect(modern).toContain('--theme-switch-width');
+    expect(modern).not.toContain("[dir='rtl']");
+    /** Only a browser without `:dir()` falls back to the attribute. */
+    expect(fallback).toContain('@container style(--dir-fallback: rtl)');
+    expect(fallback).toContain('--theme-switch-width');
+  });
+
   it('generates every component animation and its keyframes together', async () => {
     const names = ['loading-dot', 'accordion-down', 'accordion-up', 'caret-blink'];
     const css = await generate(names.map((name) => `animate-${name}`));
