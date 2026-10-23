@@ -27,6 +27,7 @@ const {
   getCodeApiAuthHeaders,
   getReplayablePendingMCPOAuthStart,
   getMCPServerNamesFromTools,
+  createMCPOAuthDeferral,
   buildMCPAuthToolCall,
   buildMCPAuthStepId,
   buildMCPAuthRunStepEvent,
@@ -75,6 +76,7 @@ const {
   splitAssistantMCPToolResult,
   appendAssistantMCPAppArtifact,
   resolveMCPClientCapabilityProfile,
+  getOutboundTimeoutMs,
 } = require('@librechat/api');
 const {
   Time,
@@ -699,6 +701,7 @@ async function processRequiredActions(client, requiredActions) {
         encrypted, // Pass the encrypted values for OAuth flow
         useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
         allowedAddresses: _allowedAddresses,
+        timeoutMs: getOutboundTimeoutMs(appConfig, 'actionsMs'),
       });
       if (!tool) {
         logger.warn(
@@ -1166,6 +1169,16 @@ async function loadToolDefinitionsWrapper({
    *  spellings itself (direct identity first, alias fallback), so this
    *  closure must look up EXACTLY the name it is given. */
   const approvalMetadata = createMCPToolApprovalMetadata();
+  const oauthDeferral = createMCPOAuthDeferral({
+    tools: defsFilteredTools,
+    toolOptions: agent.tool_options,
+    deferredToolsEnabled,
+    backgroundToolsEnabled: checkCapability(AgentCapabilities.run_in_background),
+    knownServerNames: [...(mcpServerNames ?? []), ...mcpRawServerNames],
+    pendingOAuthServers,
+    pendingOAuthStarts,
+    rememberAvailableTools: rememberMCPAvailableTools,
+  });
   const getOrFetchMCPServerTools = async (userId, serverName) => {
     const addPendingOAuthServer = async () => {
       const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
@@ -1188,6 +1201,8 @@ async function loadToolDefinitionsWrapper({
         serverName,
         userId,
         configServers,
+        req.user?.role,
+        { idOnTheSource: req.user?.idOnTheSource },
       );
     } catch {
       logger.warn(
@@ -1226,12 +1241,17 @@ async function loadToolDefinitionsWrapper({
     const cached = await getMCPServerTools(userId, serverName, serverConfig, capabilityProfile);
     if (cached) {
       rememberMCPAvailableTools(serverName, cached);
-      await addPendingOAuthServer();
+      await oauthDeferral.promptUnlessDeferred(
+        serverName,
+        serverConfig,
+        cached,
+        addPendingOAuthServer,
+      );
       return cached;
     }
 
     if (await addPendingOAuthServer()) {
-      return null;
+      return oauthDeferral.deferSignIn(serverName, serverConfig);
     }
 
     const oauthStart = async (authURL, options) => {
@@ -1261,11 +1281,11 @@ async function loadToolDefinitionsWrapper({
     });
 
     rememberMCPAvailableTools(serverName, result?.availableTools);
-    return result?.availableTools || null;
+    return oauthDeferral.resolveReconnectTools(serverName, serverConfig, result?.availableTools);
   };
 
   const refreshMCPServerTools = async (_userId, serverName) => {
-    if (pendingOAuthServers.has(serverName)) {
+    if (oauthDeferral.hasSignInDecision(serverName)) {
       return null;
     }
 
@@ -1402,7 +1422,7 @@ async function loadToolDefinitionsWrapper({
   /** OAuth discovery must not reconnect (or prompt for) a server whose
    *  definitions the collision filter deliberately rejected. */
   for (const serverName of getMCPServerNamesFromTools(defsFilteredTools, mcpServerNames)) {
-    if (pendingOAuthServers.has(serverName)) {
+    if (oauthDeferral.hasSignInDecision(serverName)) {
       continue;
     }
 
@@ -1535,9 +1555,10 @@ async function loadToolDefinitionsWrapper({
    * sandbox can't see the prior turn's generated artifacts on first read.
    */
   let primedCodeFiles;
+  let codeContextEntries;
   if (hasExecuteCode && tool_resources) {
     try {
-      const { toolContext, files } = await primeCodeFiles({
+      const { toolContext, files, contextFiles } = await primeCodeFiles({
         req,
         tool_resources,
         agentId: agent.id,
@@ -1557,6 +1578,7 @@ async function loadToolDefinitionsWrapper({
       if (files?.length) {
         primedCodeFiles = files;
       }
+      codeContextEntries = contextFiles;
     } catch (error) {
       if (isFatalAgentInitializationError(error, { signal })) {
         throw error;
@@ -1628,6 +1650,7 @@ async function loadToolDefinitionsWrapper({
     mcpToolAliases,
     actionsEnabled,
     primedCodeFiles,
+    codeContextEntries,
     oauthActionToolNames,
     codeExecutionContext: resolvedCodeExecutionContext,
     repositoryInstructionSource: createRepositoryInstructionSource({
@@ -2077,6 +2100,7 @@ async function loadAgentTools({
       jobCreatedAt,
       useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
       allowedAddresses: _allowedAddresses,
+      timeoutMs: getOutboundTimeoutMs(appConfig, 'actionsMs'),
     });
 
     if (!tool) {
@@ -2677,6 +2701,7 @@ async function loadActionToolsForExecution({
       description: functionSignature.description,
       useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
       allowedAddresses,
+      timeoutMs: getOutboundTimeoutMs(appConfig, 'actionsMs'),
     });
 
     if (!tool) {

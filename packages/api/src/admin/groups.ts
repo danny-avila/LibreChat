@@ -4,7 +4,7 @@ import { logger, isValidObjectIdString } from '@librechat/data-schemas';
 import type {
   IGroup,
   IUser,
-  IConfig,
+  ConfigRecord,
   CreateGroupRequest,
   UpdateGroupRequest,
   GroupFilterOptions,
@@ -84,21 +84,21 @@ export interface AdminGroupsDeps {
   deleteConfig: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-  ) => Promise<IConfig | null>;
+  ) => Promise<ConfigRecord | null>;
   deleteAclEntries: (filter: {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
   }) => Promise<DeleteResult>;
   /** Re-creates a removed config override in full, only if none exists, when the group
    * deletion cannot finish. ACL entries are never restored. Resolves to whether it inserted. */
-  restoreConfig?: (snapshot: Record<string, unknown>) => Promise<boolean>;
+  restoreConfig?: (snapshot: ConfigRecord) => Promise<boolean>;
   /** Reads the override before it is removed, so a rejected removal whose commit was
    * lost in transit can still be put back. */
   findConfigByPrincipal?: (
     principalType: PrincipalType,
     principalId: string,
     options?: { includeInactive?: boolean },
-  ) => Promise<object | null>;
+  ) => Promise<ConfigRecord | null>;
   /** Optional audit emission for group mutations; fail-open unless `auditFailClosed`. */
   recordAuditEntry?: RecordAuditEntry;
   /** When true, a failed audit write surfaces as a 5xx after the mutation has
@@ -424,10 +424,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
                   if (!config) {
                     return;
                   }
-                  const snapshot = (config as { toObject?: () => unknown }).toObject?.() ?? config;
                   let restored: boolean;
                   try {
-                    restored = await restoreConfig(snapshot as Record<string, unknown>);
+                    restored = await restoreConfig(config);
                     restoreFailed = false;
                   } catch (error) {
                     restoreFailed = true;
