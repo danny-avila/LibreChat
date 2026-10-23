@@ -63,8 +63,7 @@ function isMCPAuthenticationError(error: unknown): error is Error {
     error instanceof MCPAuthenticationRejectedError ||
     error instanceof MCPAuthenticationRefreshError ||
     error instanceof MCPTransportAuthenticationError ||
-    error instanceof OboTokenResolutionError ||
-    error instanceof OpenIDReauthRequiredError
+    error instanceof OboTokenResolutionError
   );
 }
 
@@ -72,6 +71,7 @@ function isMCPAuthenticationError(error: unknown): error is Error {
 function hasTrustedMessage(error: object): boolean {
   return (
     isMCPAuthenticationError(error) ||
+    error instanceof OpenIDReauthRequiredError ||
     error instanceof SubagentResolutionError ||
     error instanceof CodeWorkspaceSelectionError
   );
@@ -112,13 +112,21 @@ export function describeErrorCauses(error: unknown): SafeErrorCause[] {
   return errorChain(error).map(describeCause);
 }
 
-/** Where an error was thrown: its stack frames alone, without the message line above them. */
+/**
+ * Where an error was thrown: the frames V8 appends after the `name: message` header. A stack
+ * whose header no longer matches its name and message is skipped, because a message line that
+ * looks like a frame could then pass for one.
+ */
 export function describeStackFrames(error: unknown): string[] {
-  const stack = error instanceof Error ? error.stack : undefined;
-  if (typeof stack !== 'string') {
+  if (!(error instanceof Error) || typeof error.stack !== 'string') {
     return [];
   }
-  return stack
+  const header = error.message === '' ? error.name : `${error.name}: ${error.message}`;
+  if (!error.stack.startsWith(`${header}\n`)) {
+    return [];
+  }
+  return error.stack
+    .slice(header.length + 1)
     .split('\n')
     .filter((line) => STACK_FRAME.test(line))
     .slice(0, MAX_STACK_FRAMES)

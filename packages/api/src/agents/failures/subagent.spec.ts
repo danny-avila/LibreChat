@@ -9,6 +9,7 @@ import {
 } from './subagent';
 import { MCPAuthenticationRefreshError, MCPAuthenticationRejectedError } from '~/mcp/errors';
 import { ReauthenticationRequiredError } from '~/mcp/oauth/tokens';
+import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
 const SECRET = 'provider-secret-value';
 
@@ -80,6 +81,18 @@ describe('describeStackFrames', () => {
     expect(JSON.stringify(frames)).not.toContain(SECRET);
     expect(describeStackFrames('not an error')).toEqual([]);
   });
+
+  it('never mistakes a message line shaped like a frame for one', () => {
+    const injected = new Error(`provider said:${String.fromCharCode(10)}    at api_key=${SECRET}`);
+    const frames = describeStackFrames(injected);
+    expect(frames.length).toBeGreaterThan(0);
+    expect(JSON.stringify(frames)).not.toContain(SECRET);
+
+    const rewritten = new Error('original');
+    void rewritten.stack;
+    rewritten.message = `rewritten ${SECRET}`;
+    expect(describeStackFrames(rewritten)).toEqual([]);
+  });
 });
 
 describe('findMCPAuthenticationFailure', () => {
@@ -110,6 +123,9 @@ describe('findMCPAuthenticationFailure', () => {
       findMCPAuthenticationFailure(Object.assign(new Error('401 invalid_grant'), { status: 401 })),
     ).toBeUndefined();
     expect(findMCPAuthenticationFailure(new Error('Model not found'))).toBeUndefined();
+    expect(
+      findMCPAuthenticationFailure(new OpenIDReauthRequiredError('OpenID ID token is expired')),
+    ).toBeUndefined();
   });
 });
 
