@@ -1,6 +1,5 @@
 import { getConfigMergeRules } from '@librechat/data-schemas';
 import {
-  Time,
   Constants,
   configSchema,
   PERMISSION_SUB_KEYS,
@@ -10,16 +9,19 @@ import {
   PROCESS_MCP_SERVER_FIELDS,
   INTERFACE_PERMISSION_FIELDS,
   BASE_PRINCIPAL_CONFIG_SECTIONS,
+  DEFAULT_CATALOG_MODELS_TTL_MS,
   RUNTIME_CONFIG_INTERFACE_FIELDS,
 } from 'librechat-data-provider';
-import type { AdminConfigFeatures, AdminConfigMeta } from '@librechat/data-schemas';
+import type { AppConfig, AdminConfigFeatures, AdminConfigMeta } from '@librechat/data-schemas';
 import { getConfigSecretRules } from './secrets';
 
 /**
  * How long `GET /catalog` reuses a scope's model lists while its endpoint config is unchanged:
- * the two minutes a provider's model list is cached for (`fetchModels`).
+ * `endpoints.catalogModelsTtlMs`, which only librechat.yaml sets, or two minutes.
  */
-export const CATALOG_MODELS_TTL_MS = Time.TWO_MINUTES;
+export function getCatalogModelsTtlMs(config: AppConfig | undefined): number {
+  return config?.endpoints?.catalogModelsTtlMs ?? DEFAULT_CATALOG_MODELS_TTL_MS;
+}
 
 /**
  * The admin config behaviours this server has. A change flips its own flag when it wires the

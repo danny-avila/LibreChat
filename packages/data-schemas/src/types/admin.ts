@@ -777,7 +777,8 @@ export type AdminConfigMeta = {
     overrideCacheTtlMs: number;
     /**
      * How long `GET /catalog` reuses a scope's model lists while its endpoint config is
-     * unchanged, as a provider's model list is cached for (`catalogApi`).
+     * unchanged (`catalogApi`): librechat.yaml's `endpoints.catalogModelsTtlMs`, two minutes by
+     * default; `0` when every read resolves them.
      */
     catalogModelsTtlMs: number;
   };

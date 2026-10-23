@@ -51,7 +51,7 @@ import { resolveServedCustomEndpoints } from '~/endpoints/custom/config';
 import { listAvailableTools } from '~/tools/available';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { resolveConfigSecret } from './secrets';
-import { CATALOG_MODELS_TTL_MS } from './meta';
+import { getCatalogModelsTtlMs } from './meta';
 import { isUserProvided } from '~/utils';
 
 /**
@@ -423,14 +423,19 @@ export function createAdminConfigCatalogHandlers(deps: AdminConfigCatalogDeps): 
   }
 
   /**
-   * A scope's model lists, reused for `CATALOG_MODELS_TTL_MS` while its endpoint config (and so
-   * every provider request) is the same: a save that changes an endpoint resolves anew, and reads
-   * of one scope in a row share one round of provider requests. Only a hash of the config is kept.
+   * A scope's model lists, reused for the lifetime librechat.yaml gives them
+   * (`getCatalogModelsTtlMs`, none at `0`) while its endpoint config (and so every provider
+   * request) is the same: a save that changes an endpoint resolves anew, and reads of one scope in
+   * a row share one round of provider requests. Only a hash of the config is kept.
    */
   function getModels(
     request: CatalogScopeRequest,
     scope: string,
   ): Promise<Record<string, AdminCatalogModels>> {
+    const ttlMs = getCatalogModelsTtlMs(request.config);
+    if (ttlMs === 0) {
+      return loadModels(request);
+    }
     const key = createHash('sha256')
       .update(JSON.stringify([scope, request.user, request.config.endpoints ?? null]))
       .digest('hex');
@@ -447,7 +452,7 @@ export function createAdminConfigCatalogHandlers(deps: AdminConfigCatalogDeps): 
       }
     }
     const models = loadModels(request);
-    modelsCache.set(key, { expires: now + CATALOG_MODELS_TTL_MS, models });
+    modelsCache.set(key, { expires: now + ttlMs, models });
     models.catch(() => {
       if (modelsCache.get(key)?.models === models) {
         modelsCache.delete(key);

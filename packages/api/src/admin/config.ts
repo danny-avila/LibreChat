@@ -145,7 +145,7 @@ import {
   isWebSearchBindingPath,
   getWebSearchReentryIssues,
 } from './binding';
-import { buildAdminConfigMeta, CATALOG_MODELS_TTL_MS } from './meta';
+import { buildAdminConfigMeta, getCatalogModelsTtlMs } from './meta';
 import { createAdminAuditEmitter, configTarget } from './audit';
 import { DEFAULT_OVERRIDE_CACHE_TTL } from '~/app/service';
 import { getSafeErrorMetadata } from '~/utils/errors';
@@ -1903,13 +1903,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     logPrefix: '[adminConfig]',
   });
 
-  const meta = buildAdminConfigMeta({
-    maxPatchEntries: MAX_PATCH_ENTRIES,
-    maxChangeOps: MAX_CONFIG_CHANGE_OPS,
-    overrideCacheTtlMs,
-    catalogModelsTtlMs: CATALOG_MODELS_TTL_MS,
-  });
-
   function readStoredConfig(
     principalType: PrincipalType,
     principalId: string,
@@ -2407,6 +2400,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
+      const baseConfig = await getBaseAppConfig(user.tenantId);
+      const meta = buildAdminConfigMeta({
+        maxPatchEntries: MAX_PATCH_ENTRIES,
+        maxChangeOps: MAX_CONFIG_CHANGE_OPS,
+        overrideCacheTtlMs,
+        catalogModelsTtlMs: getCatalogModelsTtlMs(baseConfig),
+      });
       return res.status(200).json(meta);
     } catch (error) {
       logger.error('[adminConfig] getConfigMeta error:', getSafeErrorMetadata(error));

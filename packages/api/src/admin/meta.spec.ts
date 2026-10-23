@@ -279,6 +279,16 @@ describe('GET /api/admin/config/meta', () => {
     expect(res.body).toEqual({ error: 'Failed to get config meta' });
   });
 
+  it('reports the catalog model-list lifetime librechat.yaml sets', async () => {
+    const getAppConfig = jest
+      .fn()
+      .mockResolvedValue({ config: {}, endpoints: { catalogModelsTtlMs: 600_000 } });
+    const res = mockRes();
+    await createHandlers({ getAppConfig }).getConfigMeta(mockReq(), res);
+    expect((res.body as AdminConfigMeta).limits.catalogModelsTtlMs).toBe(600_000);
+    expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ baseOnly: true }));
+  });
+
   it('keeps its response keys stable', async () => {
     const { status, meta } = await getMeta();
     expect(status).toBe(200);

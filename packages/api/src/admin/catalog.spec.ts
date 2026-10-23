@@ -349,6 +349,59 @@ describe('GET /catalog', () => {
     expect(fetchModels).toHaveBeenCalledTimes(3);
   });
 
+  describe('with a model-list lifetime in librechat.yaml', () => {
+    let original: AppConfig;
+
+    async function withLifetime(catalogModelsTtlMs: number) {
+      appConfig = await dataSchemas.AppService({
+        config: {
+          ...structuredClone(YAML),
+          endpoints: { ...structuredClone(YAML.endpoints), catalogModelsTtlMs },
+        },
+      });
+      const { handlers, fetchModels } = await catalog({});
+      const read = (query: Record<string, string> = {}) =>
+        handlers.getConfigCatalog(mockReq({ query }), mockRes());
+      return { read, fetchModels };
+    }
+
+    beforeEach(() => {
+      original = appConfig;
+    });
+
+    afterEach(() => {
+      appConfig = original;
+    });
+
+    it('keeps a scope model lists for that lifetime, or loads them on every read at zero', async () => {
+      const long = await withLifetime(10 * 60_000);
+      const now = Date.now();
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(now + 3 * 60_000);
+      try {
+        await long.read();
+        expect(long.fetchModels).toHaveBeenCalledTimes(1);
+        clock.mockReturnValue(now + 11 * 60_000);
+        await long.read();
+        expect(long.fetchModels).toHaveBeenCalledTimes(2);
+      } finally {
+        clock.mockRestore();
+      }
+
+      const none = await withLifetime(0);
+      await none.read();
+      expect(none.fetchModels).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the lifetime librechat.yaml sets whatever a profile says', async () => {
+      documents[1] = roleDocument('editors', { endpoints: { catalogModelsTtlMs: 0 } });
+      const kept = await withLifetime(10 * 60_000);
+      const editors = { principalType: ROLE, principalId: 'editors' };
+      await kept.read(editors);
+      await kept.read(editors);
+      expect(kept.fetchModels).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('reports each duplicated custom endpoint name from the definition the endpoint config serves', async () => {
     const original = appConfig;
     const endpoint = (name: string, key: string, models: string[], iconURL?: string) => ({
