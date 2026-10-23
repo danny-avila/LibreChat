@@ -217,10 +217,14 @@ const mockUpdateFile = jest.fn();
 const mockAcquireFileProvision = jest.fn(async () => true);
 const mockReleaseFileProvision = jest.fn(async () => true);
 const mockCommitFileProvision = jest.fn();
+const mockAcquireFileDeletion = jest.fn();
+const mockReleaseFileDeletion = jest.fn();
 let mockProvisionRecovery;
 jest.mock('~/server/services/Files/operations', () => ({
   getFileStorage: () => ({
     recovery: mockProvisionRecovery,
+    acquireFileDeletion: (...args) => mockAcquireFileDeletion(...args),
+    releaseFileDeletion: (...args) => mockReleaseFileDeletion(...args),
     acquireFileProvision: (...args) => mockAcquireFileProvision(...args),
     releaseFileProvision: (...args) => mockReleaseFileProvision(...args),
     commitFileProvision: (...args) => mockCommitFileProvision(...args),
@@ -316,6 +320,8 @@ describe('Code Process', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockProvisionRecovery = jest.requireActual('@librechat/api').createFileProvisionRecovery();
+    mockAcquireFileDeletion.mockReset().mockResolvedValue({ resumed: false });
+    mockReleaseFileDeletion.mockReset().mockResolvedValue(true);
     mockAcquireFileProvision.mockReset().mockResolvedValue(true);
     mockReleaseFileProvision.mockReset().mockResolvedValue(true);
     mockCommitFileProvision
@@ -625,6 +631,272 @@ describe('Code Process', () => {
         await processor.close();
       }
     });
+  });
+
+  describe('PDF cache cancellation before metadata dispatch', () => {
+    it.each(['storage', 'retention'])(
+      'cleans owned bytes without committing cache metadata when cancelled during %s',
+      async (stage) => {
+        const owner = new AbortController();
+        let enter;
+        let finish;
+        const entered = new Promise((resolve) => {
+          enter = resolve;
+        });
+        const gate = new Promise((resolve) => {
+          finish = resolve;
+        });
+        const saveBuffer = jest.fn(async () => {
+          if (stage === 'storage') {
+            enter();
+            await gate;
+          }
+          return '/uploads/user-123/new-cache.pdf';
+        });
+        const deleteFile = jest.fn(async () => undefined);
+        getStrategyFunctions.mockReturnValue({ saveBuffer, deleteFile });
+        getRetentionExpiry.mockImplementationOnce(async () => {
+          if (stage === 'retention') {
+            setImmediate(enter);
+            await gate;
+          }
+          return {};
+        });
+        mockExtractCodeArtifactText.mockResolvedValueOnce('cached PDF text');
+        determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
+        const pending = processCodeOutput({
+          ...baseParams,
+          name: 'cache.pdf',
+          preparedBuffer: Buffer.from('PDF bytes'),
+          signal: owner.signal,
+        });
+        const outcome = pending.catch((error) => error);
+        await entered;
+        owner.abort();
+        finish();
+        await expect(outcome).resolves.toMatchObject({ name: 'AbortError' });
+        expect(mockCommitCodeFile).not.toHaveBeenCalled();
+        expect(mockCommitFileProvision).not.toHaveBeenCalled();
+        expect(deleteFile).toHaveBeenCalledWith(
+          mockReq,
+          expect.objectContaining({
+            file_id: 'mock-uuid-1234',
+            filepath: '/uploads/user-123/new-cache.pdf',
+            user: 'user-123',
+            source: 'local',
+          }),
+        );
+        expect(mockReleaseFileProvision).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each(['foreground', 'publication', 'combined'])(
+      'discards only its unpublished attempt when %s ownership ends during storage',
+      async (mode) => {
+        const foreground = new AbortController(),
+          run = new AbortController();
+        const discard = jest.fn(async () => undefined);
+        const publish = jest.fn();
+        const publication = {
+          signal: run.signal,
+          scope: {
+            userId: 'user-123',
+            conversationId: baseParams.conversationId,
+            runId: 'run',
+            executionId: 'execution',
+            agentId: 'agent',
+            sourceFileId: 'source',
+          },
+          provenance: {},
+          publish,
+          discard,
+          find: jest.fn(async () => null),
+        };
+        getStrategyFunctions.mockReturnValue({
+          saveBuffer: jest.fn(async () => {
+            (mode === 'publication' ? run : foreground).abort();
+            return '/uploads/unpublished.pdf';
+          }),
+        });
+        mockExtractCodeArtifactText.mockResolvedValueOnce('cache text');
+        determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
+        await expect(
+          processCodeOutput({
+            ...baseParams,
+            name: 'cache.pdf',
+            preparedBuffer: Buffer.from('PDF bytes'),
+            publication,
+            signal: mode === 'publication' ? undefined : foreground.signal,
+          }),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+        expect(publish).not.toHaveBeenCalled();
+        expect(mockCommitFileProvision).not.toHaveBeenCalled();
+        expect(discard).toHaveBeenCalledWith(
+          expect.objectContaining({ filepath: '/uploads/unpublished.pdf' }),
+        );
+      },
+    );
+
+    it('does not delete storage already owned by a reused artifact record', async () => {
+      const owner = new AbortController();
+      mockClaimCodeFile.mockResolvedValueOnce({ file_id: 'reused-id', user: 'user-123' });
+      const deleteFile = jest.fn();
+      getStrategyFunctions.mockReturnValue({
+        saveBuffer: jest.fn(async () => {
+          owner.abort();
+          return '/uploads/existing.pdf';
+        }),
+        deleteFile,
+      });
+      mockExtractCodeArtifactText.mockResolvedValueOnce('cache text');
+      determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
+      await expect(
+        processCodeOutput({
+          ...baseParams,
+          name: 'cache.pdf',
+          preparedBuffer: Buffer.from('PDF bytes'),
+          signal: owner.signal,
+        }),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      expect(mockCommitCodeFile).not.toHaveBeenCalled();
+      expect(mockCommitFileProvision).not.toHaveBeenCalled();
+      expect(deleteFile).not.toHaveBeenCalled();
+      expect(mockReleaseFileProvision).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['busy', 'resumed', 'failed-delete'])(
+      'preserves bytes without dispatching metadata when cancellation cleanup is %s',
+      async (mode) => {
+        const owner = new AbortController();
+        const deleteFile = jest.fn(async () => {
+          if (mode === 'failed-delete') throw new Error('delete outcome unknown');
+        });
+        getStrategyFunctions.mockReturnValue({
+          saveBuffer: jest.fn(async () => {
+            owner.abort();
+            return '/uploads/cancelled.pdf';
+          }),
+          deleteFile,
+        });
+        mockAcquireFileDeletion.mockResolvedValueOnce(
+          mode === 'busy' ? null : { resumed: mode === 'resumed' },
+        );
+        mockExtractCodeArtifactText.mockResolvedValueOnce('cache text');
+        determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
+        await expect(
+          processCodeOutput({
+            ...baseParams,
+            name: 'cache.pdf',
+            preparedBuffer: Buffer.from('PDF bytes'),
+            signal: owner.signal,
+          }),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+        expect(mockCommitFileProvision).not.toHaveBeenCalled();
+        expect(mockCommitCodeFile).not.toHaveBeenCalled();
+        expect(deleteFile).toHaveBeenCalledTimes(mode === 'failed-delete' ? 1 : 0);
+        expect(mockReleaseFileDeletion).toHaveBeenCalledTimes(mode === 'busy' ? 0 : 1);
+        if (mode !== 'busy')
+          expect(mockReleaseFileDeletion).toHaveBeenCalledWith(
+            expect.objectContaining({
+              retainDeletion: true,
+              userId: 'user-123',
+              file_id: 'mock-uuid-1234',
+            }),
+          );
+      },
+    );
+
+    it('waits for physical deletion of only its fenced uncommitted bytes', async () => {
+      const fs = require('node:fs/promises');
+      const { join } = require('node:path');
+      const directory = await fs.mkdtemp(join(process.env.TMPDIR, 'cache-cancel-'));
+      const owned = join(directory, 'owned.pdf'),
+        other = join(directory, 'unrelated.pdf');
+      const owner = new AbortController();
+      let enter, finish;
+      const entered = new Promise((resolve) => {
+        enter = resolve;
+      });
+      const gate = new Promise((resolve) => {
+        finish = resolve;
+      });
+      await fs.writeFile(other, 'unrelated');
+      const deleteFile = jest.fn(async (_req, file) => {
+        expect(file.filepath).toBe(owned);
+        expect(mockReleaseFileProvision).toHaveBeenCalledTimes(1);
+        expect(mockAcquireFileDeletion).toHaveBeenCalledTimes(1);
+        enter();
+        await gate;
+        await fs.unlink(file.filepath);
+      });
+      getStrategyFunctions.mockReturnValue({
+        saveBuffer: jest.fn(async () => {
+          await fs.writeFile(owned, 'new output');
+          owner.abort();
+          return owned;
+        }),
+        deleteFile,
+      });
+      mockExtractCodeArtifactText.mockResolvedValueOnce('cache text');
+      determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
+      let settled = false;
+      const pending = processCodeOutput({
+        ...baseParams,
+        name: 'cache.pdf',
+        preparedBuffer: Buffer.from('PDF bytes'),
+        signal: owner.signal,
+      }).finally(() => {
+        settled = true;
+      });
+      const outcome = pending.catch((error) => error);
+      try {
+        await entered;
+        expect(settled).toBe(false);
+        await expect(fs.readFile(owned, 'utf8')).resolves.toBe('new output');
+        finish();
+        await expect(outcome).resolves.toMatchObject({ name: 'AbortError' });
+        await expect(fs.stat(owned)).rejects.toMatchObject({ code: 'ENOENT' });
+        await expect(fs.readFile(other, 'utf8')).resolves.toBe('unrelated');
+        expect(mockCommitFileProvision).not.toHaveBeenCalled();
+        expect(mockReleaseFileDeletion).toHaveBeenCalledWith(
+          expect.objectContaining({ retainDeletion: false }),
+        );
+      } finally {
+        finish();
+        await outcome;
+        await fs.rm(directory, { recursive: true, force: true });
+      }
+    });
+
+    it.each(['acknowledged', 'uncertain'])(
+      'retains bytes once the metadata commit was dispatched (%s)',
+      async (mode) => {
+        const owner = new AbortController();
+        const deleteFile = jest.fn();
+        getStrategyFunctions.mockReturnValue({
+          saveBuffer: jest.fn(async () => '/uploads/committed.pdf'),
+          deleteFile,
+        });
+        mockExtractCodeArtifactText.mockResolvedValueOnce('cache text');
+        determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });
+        mockCommitFileProvision.mockImplementation(async () => {
+          owner.abort();
+          if (mode === 'uncertain') throw new Error('lost commit acknowledgement');
+          return true;
+        });
+        await expect(
+          processCodeOutput({
+            ...baseParams,
+            name: 'cache.pdf',
+            preparedBuffer: Buffer.from('PDF bytes'),
+            signal: owner.signal,
+          }),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+        expect(mockCommitFileProvision).toHaveBeenCalledTimes(mode === 'uncertain' ? 2 : 1);
+        expect(deleteFile).not.toHaveBeenCalled();
+        expect(mockReleaseFileProvision).toHaveBeenCalledTimes(mode === 'uncertain' ? 0 : 1);
+      },
+    );
   });
 
   describe('code output inspection preflight', () => {

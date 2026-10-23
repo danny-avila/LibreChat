@@ -13,7 +13,7 @@ import type {
   FileSources,
   getEndpointFileConfig,
 } from 'librechat-data-provider';
-import type { CodeFileCommitData } from '@librechat/data-schemas';
+import type { CodeFileCommitData, FileStorageMethods } from '@librechat/data-schemas';
 import type {
   CodeOutputResult,
   CodeOutputStoredFile,
@@ -29,6 +29,7 @@ import type { hasOfficeHtmlPath, getExtractedTextFormat } from './extract';
 import type { RetentionExpiry } from '~/files/retention';
 import type { extractCodeArtifactText } from './extract';
 import type { logAxiosError } from '~/utils/axios';
+import type { StoredUploadRef } from '../orphan';
 import type { ServerRequest } from '~/types';
 import { withFileProvisioning, FileProvisionPersistenceError } from '../operations';
 import { createCodeOutputPersistence } from './publication';
@@ -65,7 +66,8 @@ type DownloadFallbackInput = Pick<
 > & { expiresAt: number };
 
 export interface CodeOutputProcessorDeps {
-  fileStorage: FileProvisionStorage;
+  fileStorage: FileProvisionStorage &
+    Partial<Pick<FileStorageMethods, 'acquireFileDeletion' | 'releaseFileDeletion'>>;
   getCodeOutputFileSettings: (req: ServerRequest) => {
     endpointFileConfig: ReturnType<typeof getEndpointFileConfig>;
     fileSizeLimit: number;
@@ -92,6 +94,7 @@ export interface CodeOutputProcessorDeps {
       basePath: string;
       tenantId?: string;
     }) => Promise<string>;
+    deleteFile?: (req: ServerRequest, file: StoredUploadRef) => Promise<unknown>;
   };
   determineFileType: (
     buffer: Buffer,
@@ -194,7 +197,9 @@ export async function processCodeOutput(
         }),
       };
     }
-    const retentionExpiryPromise = getRetentionExpiry(req);
+    const retentionExpiryPromise = Promise.resolve(getRetentionExpiry(req));
+    // Downloads or extraction can end before this independently-started lookup.
+    void retentionExpiryPromise.catch(() => undefined);
     const buffer =
       preparedBuffer ??
       (await downloadCodeOutputBuffer({
@@ -275,7 +280,7 @@ export async function processCodeOutput(
     const sourceDispatchedAt = freshClaimAfter ?? Date.now();
 
     const outputPersistence = createCodeOutputPersistence({
-      publication,
+      publication: publication == null ? undefined : { ...publication, signal: ownerSignal },
       claim: claimCodeFile,
       commit: commitCodeFile,
     });
@@ -320,6 +325,57 @@ export async function processCodeOutput(
 
     /** Retain the completed output for token-qualified persistence after storage settles. */
     let pendingOutput: CodeOutputStoredFile | undefined;
+    let storedOutput: StoredUploadRef | undefined;
+    const trackStored = (file: CodeOutputStoredFile) => {
+      storedOutput = {
+        file_id: file.file_id,
+        filepath: file.filepath,
+        source: file.source ?? appConfig.fileStrategy,
+        storageKey: file.storageKey,
+        storageRegion: file.storageRegion,
+        user: req.user.id,
+        tenantId: req.user.tenantId,
+      };
+      outputPersistence.trackStored(file);
+    };
+    const cleanupCancelledOutput = async () => {
+      // Reused object keys may still be owned by a durable record.
+      if (!storedOutput || isUpdate) return;
+      const { acquireFileDeletion, releaseFileDeletion } = fileStorage;
+      const { deleteFile } = getStrategyFunctions(appConfig.fileStrategy);
+      if (!acquireFileDeletion || !releaseFileDeletion || !deleteFile) {
+        logger.warn('[processCodeOutput] Cancelled output storage requires cleanup');
+        return;
+      }
+      const claim = {
+        file_id,
+        userId: req.user.id,
+        tenantId: req.user.tenantId,
+        updatedAt: claimed.updatedAt,
+        token: v4(),
+      };
+      let acquired = false;
+      let retainDeletion = true;
+      try {
+        const deletion = await acquireFileDeletion(claim);
+        if (!deletion) return; // Another writer or newer record may own these bytes.
+        acquired = true;
+        if (deletion.resumed) return;
+        await deleteFile(req, storedOutput);
+        retainDeletion = false;
+      } catch {
+        logger.warn('[processCodeOutput] Cancelled output cleanup was not confirmed');
+      } finally {
+        if (acquired) {
+          try {
+            if (!(await releaseFileDeletion({ ...claim, retainDeletion })))
+              logger.warn('[processCodeOutput] Cancelled output cleanup claim was not released');
+          } catch {
+            logger.warn('[processCodeOutput] Cancelled output cleanup claim was not released');
+          }
+        }
+      }
+    };
     async function commitCodeFile(fileData: CodeOutputStoredFile): Promise<boolean> {
       pendingOutput = structuredClone(fileData);
       return true;
@@ -357,7 +413,7 @@ export async function processCodeOutput(
           storageKey: _file.storageKey,
           storageRegion: _file.storageRegion,
         });
-        outputPersistence.trackStored({
+        trackStored({
           ..._file,
           ...storageMetadata,
           file_id,
@@ -485,7 +541,7 @@ export async function processCodeOutput(
         filepath,
         source: appConfig.fileStrategy,
       });
-      outputPersistence.trackStored({
+      trackStored({
         file_id,
         filepath,
         ...storageMetadata,
@@ -601,6 +657,8 @@ export async function processCodeOutput(
       file: { file_id, user: req.user.id, tenantId: req.user.tenantId },
       userId: req.user.id,
       storage: fileStorage,
+      signal: ownerSignal,
+      onCancelled: cleanupCancelledOutput,
       destination: JSON.stringify(['generated-output', sourceDispatchedAt, id]),
       operation: async (_claim, onUploadStart) => {
         const value = await writeOutput(onUploadStart);

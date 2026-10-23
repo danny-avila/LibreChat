@@ -6,11 +6,24 @@ const { classifyCodeArtifact } = require('/test/classify.cjs');
 const extraction = require('/test/extract.cjs');
 const { cancellablePdf } = require('/client.cjs');
 
-function cacheFixture() {
+function cacheFixture(stage, controller) {
+  const cleanup = { deletes: 0, locks: 0 };
+  let finishRetention = () => {};
+  const retention =
+    stage === 'retention'
+      ? new Promise((resolve) => {
+          finishRetention = resolve;
+        })
+      : Promise.resolve({});
   const counters = { writes: 0, commits: 0, releases: 0 };
   const deps = {
     fileStorage: {
       recovery: createFileProvisionRecovery(),
+      acquireFileDeletion: async () => {
+        cleanup.locks++;
+        return { resumed: false };
+      },
+      releaseFileDeletion: async () => true,
       acquireFileProvision: async () => true,
       releaseFileProvision: async () => {
         counters.releases++;
@@ -31,13 +44,22 @@ function cacheFixture() {
     createDownloadFallback: () => {
       throw new Error('No successful cache fallback expected');
     },
-    getRetentionExpiry: async () => ({}),
+    getRetentionExpiry: () => retention,
     convertImage: async () => {
       throw new Error('Not an image');
     },
     getStrategyFunctions: () => ({
+      deleteFile: async () => {
+        cleanup.deletes++;
+      },
       saveBuffer: async () => {
         counters.writes++;
+        if (stage === 'storage') controller.abort();
+        if (stage === 'retention')
+          setImmediate(() => {
+            controller.abort();
+            finishRetention({});
+          });
         return '/owned/cache.pdf';
       },
     }),
@@ -79,7 +101,7 @@ function cacheFixture() {
       },
       deps,
     );
-  return { run, counters };
+  return { run, counters, cleanup };
 }
 
 async function main() {
@@ -94,6 +116,17 @@ async function main() {
   assert.equal(output.file.textFormat, 'text');
   assert.deepEqual(success.counters, { writes: 1, commits: 1, releases: 1 });
   console.log('Actual PDF cache/custom socket/closed old HTTP connection: exact text persisted');
+
+  for (const stage of ['storage', 'retention']) {
+    const owner = new AbortController();
+    const ended = cacheFixture(stage, owner);
+    await assert.rejects(ended.run(fs.readFileSync('/fixtures/pages.pdf'), owner.signal), {
+      name: 'AbortError',
+    });
+    assert.deepEqual(ended.counters, { writes: 1, commits: 0, releases: 1 });
+    assert.deepEqual(ended.cleanup, { locks: 1, deletes: 1 });
+    console.log(`Actual PDF cache ${stage} cancellation: guarded cleanup, no metadata dispatch`);
+  }
 
   const cancelled = cacheFixture();
   const controller = new AbortController();
