@@ -5332,7 +5332,7 @@ describe('initializeAgent — run-scoped MCP tool definitions', () => {
       ...names.map((name) => [name, { approval_mode: 'ask' as const }]),
       ['web_search', { approval_mode: 'ask' as const }],
     ]);
-    req.config = { mcpConfig: { '!': {} } } as NonNullable<typeof req.config>;
+    req.config!.mcpConfig = { '!': { type: 'stdio', command: 'node', args: [] } };
     db.getAccessibleMcpServerNames = jest.fn().mockResolvedValue(['!']);
     const result = await initializeAgent(
       {
