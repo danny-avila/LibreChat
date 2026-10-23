@@ -16,6 +16,7 @@ import {
 } from './service';
 import { loadCustomEndpointsConfig } from '~/endpoints/custom/config';
 import { getProviderConfig } from '~/endpoints/config/providers';
+import { expandCustomEndpoint } from './params';
 
 /** Extends AppConfig with mock fields used by merge behavior tests. */
 /** `version` is a plain string section, so a test can mark which override layer it read. */
@@ -2053,5 +2054,233 @@ describe('message App budget reader composition', () => {
     a.initialize(jest.fn().mockResolvedValue({}));
     expect(await a.getBudget()).toBeUndefined();
     await expect(b.getBudget()).rejects.toThrow('not been initialized');
+  });
+});
+
+describe('what getAppConfig derives again for the parts profiles write', () => {
+  type Yaml = NonNullable<Parameters<typeof AppService>[0]>['config'];
+  const spec = (name: string, endpoint: string) => ({
+    name,
+    label: name,
+    preset: { endpoint, model: 'm' },
+  });
+  const profile = (overrides: Record<string, unknown>, tombstones: string[] = []) => ({
+    principalType: PrincipalType.ROLE,
+    principalId: 'USER',
+    priority: 10,
+    isActive: true,
+    overrides,
+    tombstones,
+  });
+  function serviceOver(
+    yaml: Record<string, unknown>,
+    layers: ReturnType<typeof profile>[],
+    options: { rederiveEndpoints?: boolean } = {},
+  ) {
+    return createAppConfigService(
+      createDeps({
+        loadBaseConfig: () =>
+          AppService({ config: structuredClone(yaml) as Yaml, expandCustomEndpoint }),
+        getApplicableConfigs: jest.fn().mockResolvedValue(layers),
+        ...options,
+      }),
+    );
+  }
+  const specControls = (config: AppConfig) => {
+    const { modelSelect, parameters, presets } = config.interfaceConfig ?? {};
+    return { modelSelect, parameters, presets };
+  };
+  const ON = { modelSelect: true, parameters: true, presets: true };
+  const OFF = { modelSelect: false, parameters: false, presets: false };
+
+  it('turns the spec-dependent interface controls off for a profile that adds specs', async () => {
+    const added = await serviceOver({}, [
+      profile({ modelSpecs: { list: [spec('s', 'openAI')] } }),
+    ]).getAppConfig({ role: 'USER' });
+    const withEndpoints = await serviceOver({}, [
+      profile({ modelSpecs: { list: [spec('s', 'openAI')], addedEndpoints: ['openAI'] } }),
+    ]).getAppConfig({ role: 'USER' });
+    const explicit = await serviceOver({}, [
+      profile({ modelSpecs: { list: [spec('s', 'openAI')] }, interface: { parameters: true } }),
+    ]).getAppConfig({ role: 'USER' });
+
+    expect(specControls(await serviceOver({}, []).getAppConfig({ role: 'USER' }))).toEqual(ON);
+    expect(specControls(added)).toEqual(OFF);
+    expect(specControls(withEndpoints)).toEqual({ ...OFF, modelSelect: true });
+    expect(specControls(explicit)).toEqual({ ...OFF, parameters: true });
+  });
+
+  it('turns them back on when a profile removes every spec librechat.yaml serves', async () => {
+    const yaml = { modelSpecs: { list: [spec('s', 'openAI')] } };
+    const tombstoned = await serviceOver(yaml, [profile({}, ['modelSpecs'])]).getAppConfig({
+      role: 'USER',
+    });
+    const emptied = await serviceOver(yaml, [profile({ modelSpecs: { list: [] } })]).getAppConfig({
+      role: 'USER',
+    });
+
+    expect(specControls(await serviceOver(yaml, []).getAppConfig({ role: 'USER' }))).toEqual(OFF);
+    expect(specControls(tombstoned)).toEqual(ON);
+    expect(specControls(emptied)).toEqual(ON);
+  });
+
+  it('derives a control a profile unsets from the specs it is served', async () => {
+    const yaml = {
+      interface: { parameters: true, presets: true },
+      modelSpecs: { list: [spec('s', 'openAI')] },
+    };
+    const unset = await serviceOver(yaml, [profile({}, ['interface.parameters'])]).getAppConfig({
+      role: 'USER',
+    });
+    const unsetWithoutSpecs = await serviceOver(yaml, [
+      profile({}, ['interface.parameters', 'modelSpecs']),
+    ]).getAppConfig({ role: 'USER' });
+
+    expect(specControls(await serviceOver(yaml, []).getAppConfig({ role: 'USER' }))).toEqual({
+      modelSelect: false,
+      parameters: true,
+      presets: true,
+    });
+    expect(specControls(unset)).toEqual({ modelSelect: false, parameters: false, presets: true });
+    expect(specControls(unsetWithoutSpecs)).toEqual(ON);
+  });
+
+  it("turns them back on when tenant scoping hides the only endpoint a profile's specs use", async () => {
+    const yaml = {
+      endpoints: {
+        custom: [
+          {
+            name: 'TenantOnly',
+            tenantId: 'tenant-a',
+            apiKey: 'k',
+            baseURL: 'https://t',
+            models: { default: ['m'] },
+          },
+        ],
+      },
+    };
+    const service = serviceOver(yaml, [
+      profile({ modelSpecs: { list: [spec('s', 'TenantOnly')] } }),
+    ]);
+
+    const owner = await service.getAppConfig({ role: 'USER', tenantId: 'tenant-a' });
+    const other = await service.getAppConfig({ role: 'USER', tenantId: 'tenant-b' });
+
+    expect(specControls(owner)).toEqual(OFF);
+    expect(other.modelSpecs).toBeUndefined();
+    expect(specControls(other)).toEqual(ON);
+  });
+
+  it('expands the parameters a profile writes, and OpenRouter defaults for an endpoint only it defines', async () => {
+    const gateway = {
+      name: 'Gateway',
+      apiKey: 'gateway-key',
+      baseURL: 'https://gateway.example.com/v1',
+      models: { default: ['m1'] },
+      customParams: {
+        defaultParamsEndpoint: 'anthropic',
+        paramDefinitions: [{ key: 'temperature', default: 0.2 }],
+      },
+    };
+    const service = serviceOver({ endpoints: { custom: [gateway] } }, [
+      profile({
+        endpoints: {
+          custom: [
+            { name: 'Gateway', customParams: { defaultParamsEndpoint: 'openAI' } },
+            {
+              ...gateway,
+              name: 'Router',
+              baseURL: 'https://openrouter.ai/api/v1',
+              customParams: undefined,
+            },
+          ],
+        },
+      }),
+    ]);
+
+    const base = await service.getAppConfig({ baseOnly: true });
+    const config = await service.getAppConfig({ role: 'USER' });
+    const served = (name: string) => config.endpoints?.custom?.find((entry) => entry.name === name);
+
+    expect(base.config.endpoints?.custom?.[0]?.customParams).toEqual(gateway.customParams);
+    expect(served('Gateway')?.customParams?.defaultParamsEndpoint).toBe('openAI');
+    expect(served('Gateway')?.customParams?.paramDefinitions?.[0]).toMatchObject({
+      key: 'temperature',
+      default: 0.2,
+      optionType: 'custom',
+      component: 'slider',
+    });
+    expect(served('Router')?.customParams).toMatchObject({
+      defaultParamsEndpoint: 'openrouter',
+      paramDefinitions: [expect.objectContaining({ key: 'promptCache', default: true })],
+    });
+  });
+
+  it('derives Vertex AI a profile writes only when the service re-derives endpoints', async () => {
+    const yaml = {
+      endpoints: {
+        anthropic: {
+          vertex: { projectId: 'yaml-project', region: 'us-east5', models: ['claude-sonnet-4-6'] },
+        },
+      },
+    };
+    const layers = [
+      profile({ endpoints: { anthropic: { vertex: { models: ['claude-opus-4-6'] } } } }),
+    ];
+    const served = async (rederiveEndpoints: boolean) => {
+      const service = serviceOver(yaml, layers, { rederiveEndpoints });
+      expect(service.rederiveEndpoints).toBe(rederiveEndpoints);
+      return (await service.getAppConfig({ role: 'USER' })).endpoints?.anthropic?.models;
+    };
+
+    expect(await served(false)).toEqual(['claude-sonnet-4-6']);
+    expect(await served(true)).toEqual(['claude-opus-4-6']);
+  });
+
+  describe('Vertex AI settings a profile references a variable in', () => {
+    const saved = { ...process.env };
+    const yaml = {
+      endpoints: {
+        anthropic: { vertex: { projectId: '${GCP_PROJECT}', models: ['claude-sonnet-4-6'] } },
+      },
+    };
+    const vertexOf = async (vertex: Record<string, unknown>) =>
+      (
+        await serviceOver(yaml, [profile({ endpoints: { anthropic: { vertex } } })], {
+          rederiveEndpoints: true,
+        }).getAppConfig({ role: 'USER' })
+      ).endpoints?.anthropic?.vertexConfig;
+    beforeEach(() => {
+      process.env.OPENAI_API_KEY = 'sk-deployment-openai-key';
+      process.env.GCP_PROJECT = 'yaml-gcp-project';
+    });
+    afterEach(() => {
+      process.env = { ...saved };
+    });
+
+    it('never resolves a credential into the derived vertexConfig a read returns', async () => {
+      const vertexConfig = await vertexOf({
+        projectId: '${OPENAI_API_KEY}',
+        deploymentName: '${OPENAI_API_KEY}',
+        models: ['claude-opus-4-6'],
+      });
+
+      expect(vertexConfig?.modelNames).toEqual(['claude-opus-4-6']);
+      expect(JSON.stringify(vertexConfig)).not.toContain('sk-deployment-openai-key');
+      /** The reference resolves to nothing, as an unset variable: librechat.yaml's value stays. */
+      expect(vertexConfig?.projectId).toBe('yaml-gcp-project');
+      expect(vertexConfig?.deploymentName).toBeUndefined();
+      expect(vertexConfig?.modelDeploymentMap).toEqual({ 'claude-opus-4-6': 'claude-opus-4-6' });
+    });
+
+    it("resolves the variables librechat.yaml's own Vertex AI settings reference", async () => {
+      const vertexConfig = await vertexOf({
+        deploymentName: '${GCP_PROJECT}',
+        models: ['claude-opus-4-6'],
+      });
+
+      expect(vertexConfig?.projectId).toBe('yaml-gcp-project');
+      expect(vertexConfig?.modelDeploymentMap).toEqual({ 'claude-opus-4-6': 'yaml-gcp-project' });
+    });
   });
 });

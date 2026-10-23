@@ -124,13 +124,23 @@ export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
  * or tenant config document can neither change nor remove them. The pull request provider and
  * host decide where the deployment's token is sent, the OAuth app which credentials users grant
  * and which environment secret is sent with them, and the shared cache's slot count where every
- * replica looks for a shared answer. */
+ * replica looks for a shared answer. Vertex AI always authenticates with the deployment's service
+ * account: its key file (a path, inline JSON or a URL the server fetches) and its region, which
+ * is part of the API host, stay librechat.yaml's. */
 export const BASE_ONLY_CONFIG_PATHS = [
   'endpoints.agents.pullRequests.provider',
   'endpoints.agents.pullRequests.host',
   'endpoints.agents.pullRequests.oauth',
   'endpoints.agents.pullRequests.sharedCacheSlots',
+  'endpoints.anthropic.vertex.serviceKeyFile',
+  'endpoints.anthropic.vertex.region',
 ] as const;
+/** Fields the server derives from another librechat.yaml field, which no config document writes:
+ * the merge leaves a document's value or tombstone there out and derives them itself, and writes
+ * skip them (`derived_path`). `vertexConfig` is what `endpoints.anthropic.vertex` resolves to,
+ * its service key file included, which the Anthropic client loads (a path, inline JSON or a URL
+ * it fetches). Each is both an override path and an AppConfig path: its section keeps its name. */
+export const DERIVED_CONFIG_PATHS = ['endpoints.anthropic.vertexConfig'] as const;
 
 export const defaultRetrievalModels = [
   'gpt-4o',
@@ -2324,13 +2334,42 @@ export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, 'groups'> &
   TAzureConfigValidationResult;
 
 /**
+ * A Vertex AI location as it appears in the API host (`<region>-aiplatform.googleapis.com`):
+ * letters, digits and hyphens only, so no value can name another host.
+ */
+export const VERTEX_REGION_PATTERN = /^[A-Za-z0-9-]+$/;
+
+/**
+ * A Vertex AI project ID or deployment (model) name, each one segment of the request path:
+ * letters, digits, `.`, `_`, `:` (domain-scoped projects), `@` (model versions) and `-`, and not
+ * only dots, so no value can leave its segment.
+ */
+export const VERTEX_PATH_SEGMENT_PATTERN = /^(?!\.+$)[A-Za-z0-9._:@-]+$/;
+
+/**
+ * A whole `${VAR}` reference to one environment variable: a name of letters, digits and
+ * underscores, with nothing around it. Text that only starts with `${` and ends with `}`
+ * (`${A}/x#${A}`) is not one.
+ */
+export const ENV_VAR_REFERENCE_PATTERN = /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/;
+
+/** A Vertex AI setting: a value matching `pattern`, or a whole `${VAR}` reference resolved at load. */
+function vertexSettingSchema(pattern: RegExp, label: string) {
+  return z
+    .string()
+    .refine((value) => ENV_VAR_REFERENCE_PATTERN.test(value) || pattern.test(value), {
+      message: `Must be a valid Vertex AI ${label} or a \${ENV_VAR} reference`,
+    });
+}
+
+/**
  * Vertex AI model configuration - similar to Azure model config
  * Allows specifying deployment name for each model
  */
 export const vertexModelConfigSchema = z
   .object({
     /** The actual model ID/deployment name used by Vertex AI API */
-    deploymentName: z.string().optional(),
+    deploymentName: vertexSettingSchema(VERTEX_PATH_SEGMENT_PATTERN, 'deployment name').optional(),
   })
   .or(z.boolean());
 
@@ -2344,18 +2383,42 @@ export const vertexAISchema = z.object({
   /** Enable Vertex AI mode for Anthropic (defaults to true when vertex config is present) */
   enabled: z.boolean().optional(),
   /** Google Cloud Project ID (optional - auto-detected from service key file if not provided) */
-  projectId: z.string().optional(),
+  projectId: vertexSettingSchema(VERTEX_PATH_SEGMENT_PATTERN, 'project ID').optional(),
   /** Vertex AI region (e.g., 'us-east5', 'europe-west1') */
-  region: z.string().default('us-east5'),
+  region: vertexSettingSchema(VERTEX_REGION_PATTERN, 'region').default('us-east5'),
   /** Optional: Path to service account key file */
   serviceKeyFile: z.string().optional(),
   /** Optional: Default deployment name for all models (can be overridden per model) */
-  deploymentName: z.string().optional(),
+  deploymentName: vertexSettingSchema(VERTEX_PATH_SEGMENT_PATTERN, 'deployment name').optional(),
   /** Optional: Available models - can be string array or object with deploymentName mapping */
   models: z.union([z.array(z.string()), z.record(z.string(), vertexModelConfigSchema)]).optional(),
 });
 
 export type TVertexAISchema = z.infer<typeof vertexAISchema>;
+
+/**
+ * The deployment name a Vertex AI request for `modelName` sends, which the client puts in the
+ * request path as written: a `models` record entry's own `deploymentName`, else the default
+ * `deploymentName` for an entry that is `true` or has none, else (a `models` array, an entry set
+ * to `false`, a model not listed) the model name itself.
+ */
+export function getVertexDeploymentName(
+  modelName: string,
+  vertexConfig?: Pick<TVertexAISchema, 'models' | 'deploymentName'>,
+): string {
+  const models = vertexConfig?.models;
+  if (models == null || Array.isArray(models)) {
+    return modelName;
+  }
+  const modelConfig = models[modelName];
+  if (!modelConfig) {
+    return modelName;
+  }
+  if (typeof modelConfig === 'boolean') {
+    return vertexConfig?.deploymentName || modelName;
+  }
+  return modelConfig.deploymentName || vertexConfig?.deploymentName || modelName;
+}
 
 export type TVertexModelMap = Record<string, string>;
 

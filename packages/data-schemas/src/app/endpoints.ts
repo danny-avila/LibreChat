@@ -5,6 +5,7 @@ import type {
   TAgentsEndpoint,
   TAnthropicEndpoint,
 } from 'librechat-data-provider';
+import type { ConfigDerivation } from './derive';
 import type { AppConfig } from '~/types';
 import { azureAssistantsDefaults, assistantsConfigSetup } from './assistants';
 import { agentsConfigSetup } from './agents';
@@ -15,10 +16,13 @@ import { azureConfigSetup } from './azure';
  * Loads custom config endpoints
  * @param [config]
  * @param [agentsDefaults]
+ * @param [expandCustomEndpoint] - Expands each custom endpoint's `customParams` into the copy
+ * served, so `config` keeps them as librechat.yaml writes them.
  */
 export const loadEndpoints = (
   config: Partial<TCustomConfig>,
   agentsDefaults?: Partial<TAgentsEndpoint>,
+  expandCustomEndpoint?: ConfigDerivation['expandCustomEndpoint'],
 ): {
   allowedAddresses?: string[];
   openAI?: Partial<import('librechat-data-provider').TEndpoint>;
@@ -78,12 +82,7 @@ export const loadEndpoints = (
     };
   }
 
-  const endpointKeys = [
-    EModelEndpoint.openAI,
-    EModelEndpoint.google,
-    EModelEndpoint.custom,
-    EModelEndpoint.bedrock,
-  ];
+  const endpointKeys = [EModelEndpoint.openAI, EModelEndpoint.google, EModelEndpoint.bedrock];
 
   endpointKeys.forEach((key) => {
     const currentKey = key as keyof typeof endpoints;
@@ -91,6 +90,13 @@ export const loadEndpoints = (
       loadedEndpoints[currentKey] = endpoints[currentKey];
     }
   });
+
+  const custom = endpoints?.[EModelEndpoint.custom] as TEndpoint[] | undefined;
+  if (custom) {
+    loadedEndpoints[EModelEndpoint.custom] = expandCustomEndpoint
+      ? custom.map(expandCustomEndpoint)
+      : custom;
+  }
 
   if (endpoints?.all) {
     /**

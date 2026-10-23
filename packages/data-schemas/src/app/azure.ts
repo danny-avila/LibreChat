@@ -114,6 +114,56 @@ export function resolveAzureGroups(groups: unknown): ResolvedAzureGroups {
   return { ...validation, assistantModels, assistantGroups: Array.from(assistantGroups) };
 }
 
+/**
+ * {@link resolveAzureGroups}, also refusing groups a request could not be built from, as
+ * `azureConfigSetup` refuses them in librechat.yaml at startup: a model whose group lacks the
+ * instance, deployment name or version it needs, or a `${VAR}` reference no environment variable
+ * answers. Only the models of `checked` groups are tried (every group's without it): groups
+ * librechat.yaml alone defines passed at startup. The first such problem is added to `errors`,
+ * with `isValid: false`.
+ */
+export function resolveServedAzureGroups(
+  groups: unknown,
+  checked?: ReadonlySet<string>,
+): ResolvedAzureGroups {
+  const resolved = resolveAzureGroups(groups);
+  if (!resolved.isValid) {
+    return resolved;
+  }
+  const { modelGroupMap, groupMap } = resolved;
+  for (const modelName of resolved.modelNames) {
+    const group = modelGroupMap[modelName]?.group;
+    if (checked != null && (group == null || !checked.has(group))) {
+      continue;
+    }
+    try {
+      mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ...resolved, isValid: false, errors: [...resolved.errors, message] };
+    }
+  }
+  return resolved;
+}
+
+/**
+ * A `groups` item as the Azure clients read it once resolved (a `groupMap` entry): its fields
+ * with the defaults `validateAzureGroups` gives them, without its `group` name. Unknown fields
+ * stay, so a key's companions (`apiKeyPreview`, `apiKeyBinding`) travel with it.
+ */
+export function toAzureGroupMapEntry(item: Record<string, unknown>): Record<string, unknown> {
+  const {
+    group: _group,
+    instanceName = '',
+    deploymentName = '',
+    version = '',
+    baseURL = '',
+    serverless = false,
+    ...rest
+  } = item;
+  return { ...rest, instanceName, deploymentName, version, baseURL, serverless };
+}
+
 /** The lists of a resolved Azure config that name models or groups its maps must serve. */
 type AzureServedList = Extract<
   AzureResolvedGroupField,

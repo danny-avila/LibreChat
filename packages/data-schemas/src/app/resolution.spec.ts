@@ -1,9 +1,16 @@
 import {
+  OptionTypes,
   PermissionTypes,
   SearchProviders,
+  AgentCapabilities,
   INTERFACE_PERMISSION_FIELDS,
 } from 'librechat-data-provider';
-import type { TCustomConfig, TWebSearchConfigInput } from 'librechat-data-provider';
+import type {
+  TEndpoint,
+  DeepPartial,
+  TCustomConfig,
+  TWebSearchConfigInput,
+} from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
 import {
   resolveRawConfig,
@@ -26,6 +33,7 @@ import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { toConfigOverrideState } from './mutations';
 import { applyConfigChanges } from './changes';
 import { loadWebSearchConfig } from './web';
+import { AppService } from './service';
 import logger from '~/config/winston';
 
 function fakeConfig(
@@ -1780,8 +1788,10 @@ describe('getConfigOverrideIssues', () => {
             groups: [
               {
                 group: 'eastus',
-                apiKey: '${AZURE_KEY}',
+                apiKey: 'azure-key',
                 instanceName: 'east',
+                deploymentName: 'gpt-41',
+                version: '2024-10-21',
                 models: { 'gpt-4.1': true, 'gpt-4.1-mini': { deploymentName: 'mini' } },
                 addParams: { 'reasoning.effort': 'high' },
               },
@@ -2095,13 +2105,14 @@ describe('getDottedSectionIssues', () => {
 describe('getConfigMergeRules', () => {
   it('names merge paths by their override (YAML) keys', () => {
     expect(getConfigMergeRules()).toEqual({
-      arrayMergeKeys: { 'endpoints.custom': 'name' },
+      arrayMergeKeys: { 'endpoints.custom': 'name', 'endpoints.azureOpenAI.groups': 'group' },
       atomicMergePaths: ['interface.theme'],
       overrideKeyMap: {
         mcpServers: 'mcpConfig',
         interface: 'interfaceConfig',
         turnstile: 'turnstileConfig',
       },
+      derivedPaths: ['endpoints.anthropic.vertexConfig'],
     });
   });
 });
@@ -2582,6 +2593,13 @@ describe('mergeConfigOverrides: afterLayer', () => {
   });
 });
 
+/** The merge as `CONFIG_REDERIVE_ENDPOINTS` runs it: a layer's Azure groups resolved. */
+function mergeWithGroups(
+  ...[baseConfig, configs, options]: Parameters<typeof mergeConfigOverrides>
+) {
+  return mergeConfigOverrides(baseConfig, configs, { rederiveEndpoints: true, ...options });
+}
+
 describe('mergeConfigOverrides: Azure groups an override writes', () => {
   const yamlGroup = {
     group: 'east',
@@ -2614,20 +2632,23 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
     models: { 'gpt-5': true, 'o3-mini': { deploymentName: 'o3' } },
   };
 
-  it('resolves them into the fields the Azure clients read, replacing what lay below', () => {
-    const merged = mergeConfigOverrides(base, [
+  it('merges them by group over the groups below and resolves them into the fields the Azure clients read', () => {
+    const merged = mergeWithGroups(base, [
       fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 10),
     ]);
 
     const azure = merged.endpoints?.azureOpenAI;
     expect(azure?.groupMap).toEqual({
+      east: base.endpoints?.azureOpenAI?.groupMap?.east,
       west: expect.objectContaining({ apiKey: 'v3:stored-west-key', instanceName: 'west' }),
     });
+    expect(azure?.groupMap?.east).toBe(base.endpoints?.azureOpenAI?.groupMap?.east);
     expect(azure?.modelGroupMap).toEqual({
+      'gpt-4o': { group: 'east' },
       'gpt-5': { group: 'west' },
       'o3-mini': { group: 'west' },
     });
-    expect(azure?.modelNames).toEqual(['gpt-5', 'o3-mini']);
+    expect(azure?.modelNames).toEqual(['gpt-4o', 'gpt-5', 'o3-mini']);
     expect(azure?.assistantModels).toEqual(['gpt-5', 'o3-mini']);
     expect(azure?.assistantGroups).toEqual(['west']);
     expect(azure?.titleModel).toBe('gpt-4o');
@@ -2635,7 +2656,7 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
   });
 
   it("merges a groupMap the same layer writes over its own groups', and a later layer's over them", () => {
-    const merged = mergeConfigOverrides(base, [
+    const merged = mergeWithGroups(base, [
       fakeConfig(
         { endpoints: { azureOpenAI: { groups: [west], groupMap: { west: { version: 'v2' } } } } },
         10,
@@ -2650,20 +2671,42 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
     });
   });
 
-  it("shows the layer alone with its groups in place of librechat.yaml's", () => {
+  it("shows the layer alone with its groups merged over librechat.yaml's", () => {
     let aloneGroups: unknown;
-    mergeConfigOverrides(
-      base,
-      [fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 10)],
-      {
-        afterLayer: (step) => {
-          aloneGroups = Object.keys(step.alone().endpoints?.azureOpenAI?.groupMap ?? {});
-          return step.merged;
-        },
+    mergeWithGroups(base, [fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 10)], {
+      afterLayer: (step) => {
+        aloneGroups = Object.keys(step.alone().endpoints?.azureOpenAI?.groupMap ?? {});
+        return step.merged;
       },
-    );
+    });
 
-    expect(aloneGroups).toEqual(['west']);
+    expect(aloneGroups).toEqual(['east', 'west']);
+  });
+
+  it('leaves them and a tombstone of them inert without CONFIG_REDERIVE_ENDPOINTS', () => {
+    const layers = [
+      fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 10),
+      fakeConfig({}, 20, ['endpoints.azureOpenAI.groups'], 't20'),
+    ];
+    const written = mergeConfigOverrides(base, [layers[0]]);
+    const tombstoned = mergeConfigOverrides(base, [layers[1]]);
+    /** The served Azure endpoint without the stray `groups` the clients never read. */
+    const resolved = (merged: AppConfig): Record<string, unknown> => {
+      const { groups: _groups, ...azure } = (merged.endpoints?.azureOpenAI ?? {}) as Record<
+        string,
+        unknown
+      >;
+      return azure;
+    };
+
+    expect(resolved(written)).toEqual(base.endpoints?.azureOpenAI);
+    expect(resolved(tombstoned)).toEqual(base.endpoints?.azureOpenAI);
+    expect(resolved(mergeConfigOverrides(base, layers))).toEqual(base.endpoints?.azureOpenAI);
+    expect(resolved(mergeWithGroups(base, [layers[0]])).modelNames).toEqual([
+      'gpt-4o',
+      'gpt-5',
+      'o3-mini',
+    ]);
   });
 
   describe('a tombstone of the groups', () => {
@@ -2671,7 +2714,7 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
       fakeConfig({}, priority, ['endpoints.azureOpenAI.groups'], `t${priority}`);
 
     it('resolves the groups to none, so no Azure model or group is served', () => {
-      const merged = mergeConfigOverrides(base, [tombstone()]);
+      const merged = mergeWithGroups(base, [tombstone()]);
 
       expect(merged.endpoints?.azureOpenAI).toEqual({
         titleModel: 'gpt-4o',
@@ -2685,20 +2728,18 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
     });
 
     it('creates no Azure endpoint where none is configured', () => {
-      const merged = mergeConfigOverrides({ config: {}, endpoints: {} } as AppConfig, [
-        tombstone(),
-      ]);
+      const merged = mergeWithGroups({ config: {}, endpoints: {} } as AppConfig, [tombstone()]);
 
       expect(merged.endpoints).toEqual({});
     });
 
     it("lets the same layer's groups, or a later layer's, resolve in their place", () => {
-      const same = mergeConfigOverrides(base, [
+      const same = mergeWithGroups(base, [
         fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 10, [
           'endpoints.azureOpenAI.groups',
         ]),
       ]);
-      const later = mergeConfigOverrides(base, [
+      const later = mergeWithGroups(base, [
         tombstone(10),
         fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 20),
       ]);
@@ -2711,7 +2752,7 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
 
     it('shows the layer alone without the groups, and removes them from the YAML floor', () => {
       let alone: unknown;
-      mergeConfigOverrides(base, [tombstone()], {
+      mergeWithGroups(base, [tombstone()], {
         afterLayer: (step) => {
           alone = step.alone().endpoints?.azureOpenAI;
           return step.merged;
@@ -2732,7 +2773,7 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
 
   it('leaves groups that do not resolve unread, with a warning', () => {
     const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
-    const merged = mergeConfigOverrides(base, [
+    const merged = mergeWithGroups(base, [
       fakeConfig({ endpoints: { azureOpenAI: { groups: [west, { ...west, group: 'w2' }] } } }, 10),
     ]);
 
@@ -2746,6 +2787,7 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
     /** As AppService resolves librechat.yaml's `assistants: true` over a group that serves them. */
     const assistantsBase = {
       ...base,
+      config: { endpoints: { azureOpenAI: { groups: [{ ...yamlGroup, assistants: true }] } } },
       endpoints: {
         azureOpenAI: {
           ...base.endpoints?.azureOpenAI,
@@ -2767,8 +2809,10 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
 
     it('turns them off for groups none of whose models supports them, with a warning', () => {
       const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
-      const merged = mergeConfigOverrides(assistantsBase, [
-        fakeConfig({ endpoints: { azureOpenAI: { groups: [plain] } } }, 10),
+      const merged = mergeWithGroups(assistantsBase, [
+        fakeConfig({ endpoints: { azureOpenAI: { groups: [plain] } } }, 10, [
+          'endpoints.azureOpenAI.groups',
+        ]),
       ]);
 
       const azure = merged.endpoints?.azureOpenAI;
@@ -2783,23 +2827,25 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
     });
 
     it("keeps them on when the groups serve them, or a later layer's groups serve them again", () => {
-      const own = mergeConfigOverrides(assistantsBase, [
+      const own = mergeWithGroups(assistantsBase, [
         fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 10),
       ]);
-      const later = mergeConfigOverrides(assistantsBase, [
-        fakeConfig({ endpoints: { azureOpenAI: { groups: [plain] } } }, 10),
+      const later = mergeWithGroups(assistantsBase, [
+        fakeConfig({ endpoints: { azureOpenAI: { groups: [plain] } } }, 10, [
+          'endpoints.azureOpenAI.groups',
+        ]),
         fakeConfig({ endpoints: { azureOpenAI: { groups: [west] } } }, 20),
       ]);
 
-      for (const merged of [own, later]) {
-        expect(merged.endpoints?.azureOpenAI?.assistants).toBe(true);
-        expect(merged.endpoints?.azureOpenAI?.assistantModels).toEqual(['gpt-5', 'o3-mini']);
-      }
+      expect(own.endpoints?.azureOpenAI?.assistants).toBe(true);
+      expect(own.endpoints?.azureOpenAI?.assistantModels).toEqual(['gpt-4o', 'gpt-5', 'o3-mini']);
+      expect(later.endpoints?.azureOpenAI?.assistants).toBe(true);
+      expect(later.endpoints?.azureOpenAI?.assistantModels).toEqual(['gpt-5', 'o3-mini']);
     });
 
     it('turns off a layer that turns them on over models none of which supports them', () => {
       const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
-      const merged = mergeConfigOverrides(base, [
+      const merged = mergeWithGroups(base, [
         fakeConfig({ endpoints: { azureOpenAI: { assistants: true } } }, 10),
       ]);
 
@@ -2810,7 +2856,7 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
 
     it('turns them off when the groups are tombstoned', () => {
       const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
-      const merged = mergeConfigOverrides(assistantsBase, [
+      const merged = mergeWithGroups(assistantsBase, [
         fakeConfig({}, 10, ['endpoints.azureOpenAI.groups']),
       ]);
 
@@ -2821,10 +2867,10 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
 
     it('keeps only the assistant models an override names that a merged group serves them with', () => {
       const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
-      const missing = mergeConfigOverrides(assistantsBase, [
+      const missing = mergeWithGroups(assistantsBase, [
         fakeConfig({ endpoints: { azureOpenAI: { assistantModels: ['missing'] } } }, 10),
       ]);
-      const mixed = mergeConfigOverrides(assistantsBase, [
+      const mixed = mergeWithGroups(assistantsBase, [
         fakeConfig(
           {
             endpoints: {
@@ -2859,16 +2905,16 @@ describe('mergeConfigOverrides: Azure groups an override writes', () => {
 
   it('lists only the models a merged group serves, whatever an override writes to the lists', () => {
     const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
-    const listed = mergeConfigOverrides(base, [
+    const listed = mergeWithGroups(base, [
       fakeConfig({ endpoints: { azureOpenAI: { modelNames: ['missing', 'gpt-4o'] } } }, 10),
     ]);
-    const unmapped = mergeConfigOverrides(base, [
+    const unmapped = mergeWithGroups(base, [
       fakeConfig(
         { endpoints: { azureOpenAI: { modelGroupMap: { 'gpt-4o': { group: 'nowhere' } } } } },
         10,
       ),
     ]);
-    const untouched = mergeConfigOverrides(base, [
+    const untouched = mergeWithGroups(base, [
       fakeConfig({ interface: { customWelcome: 'hi' } }, 10),
     ]);
 
@@ -3501,5 +3547,540 @@ describe('isAcceptedOverrideSection', () => {
     for (const key of ['', 'toString', 'constructor', '__proto__']) {
       expect(isAcceptedOverrideSection(key)).toBe(false);
     }
+  });
+});
+
+/** librechat.yaml as AppService resolves it at startup, the base every merge below starts from. */
+function loadBase(config: DeepPartial<TCustomConfig>, expand?: (endpoint: TEndpoint) => TEndpoint) {
+  return AppService({ config: structuredClone(config), expandCustomEndpoint: expand });
+}
+
+describe('Azure groups merge by group', () => {
+  const east = {
+    group: 'east',
+    apiKey: 'east-key',
+    instanceName: 'east',
+    version: '2024-10-21',
+    deploymentName: 'gpt-4o',
+    models: { 'gpt-4o': true },
+  };
+  const yaml = { endpoints: { azureOpenAI: { groups: [east] } } };
+  const groups = (...items: Record<string, unknown>[]) => ({
+    endpoints: { azureOpenAI: { groups: items } },
+  });
+
+  it('requires a unique group on every item, and refuses a write that addresses one by index', () => {
+    expect(getConfigOverrideIssues(groups({ models: {} }, east, east))).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'endpoints.azureOpenAI.groups.0',
+          code: 'missing_merge_key',
+        }),
+        expect.objectContaining({
+          path: 'endpoints.azureOpenAI.groups.1',
+          code: 'duplicate_merge_key',
+        }),
+      ]),
+    );
+    expect(
+      getConfigFieldIssues({ 'endpoints.azureOpenAI.groups.0.instanceName': 'x' }, yaml),
+    ).toEqual([
+      {
+        path: 'endpoints.azureOpenAI.groups',
+        segments: ['endpoints', 'azureOpenAI', 'groups'],
+        code: 'indexed_merge_key_write',
+      },
+    ]);
+  });
+
+  it('merges a partial item over the group of its name, which a write validates on', () => {
+    expect(
+      getConfigOverrideIssues(
+        groups({ group: 'east', models: { 'gpt-4o-mini': { deploymentName: 'mini' } } }),
+        yaml,
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses groups that do not resolve over the groups below, and leaves them out at merge', async () => {
+    const duplicateModel = { ...east, group: 'west', instanceName: 'west' };
+    const blankDeployment = { group: 'east', deploymentName: '' };
+    const issue = [
+      {
+        path: 'endpoints.azureOpenAI.groups',
+        segments: ['endpoints', 'azureOpenAI', 'groups'],
+        code: 'invalid_azure_groups',
+      },
+    ];
+    expect(getConfigOverrideIssues(groups(duplicateModel), yaml)).toEqual(issue);
+    expect(getConfigOverrideIssues(groups(blankDeployment), yaml)).toEqual(issue);
+    expect(
+      getConfigOverrideIssues(groups({ ...east, apiKey: '${AZURE_UNSET_KEY_1}' }), yaml),
+    ).toEqual(issue);
+
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const base = await loadBase(yaml);
+    const merged = mergeWithGroups(base, [fakeConfig(groups(blankDeployment), 10)]);
+    expect(merged.endpoints?.azureOpenAI?.groupMap).toEqual(base.endpoints?.azureOpenAI?.groupMap);
+    expect(merged.endpoints?.azureOpenAI?.modelNames).toEqual(['gpt-4o']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('invalid_azure_groups'));
+    warn.mockRestore();
+  });
+
+  it('keeps groups a layer does not name, appends new ones and merges models by name', async () => {
+    const base = await loadBase({
+      endpoints: {
+        azureOpenAI: {
+          groups: [east, { ...east, group: 'north', instanceName: 'north', models: { o3: true } }],
+        },
+      },
+    });
+    const merged = mergeWithGroups(base, [
+      fakeConfig(
+        groups(
+          { group: 'east', models: { 'gpt-4o-mini': { deploymentName: 'mini' } } },
+          {
+            ...east,
+            group: 'west',
+            instanceName: 'west',
+            apiKey: 'west-key',
+            models: { 'gpt-5': true },
+          },
+        ),
+        10,
+      ),
+    ]);
+
+    const azure = merged.endpoints?.azureOpenAI;
+    expect(Object.keys(azure?.groupMap ?? {})).toEqual(['east', 'north', 'west']);
+    expect(azure?.groupMap?.north).toBe(base.endpoints?.azureOpenAI?.groupMap?.north);
+    expect(azure?.groupMap?.east).toMatchObject({
+      apiKey: 'east-key',
+      models: { 'gpt-4o': true, 'gpt-4o-mini': { deploymentName: 'mini' } },
+    });
+    expect(azure?.modelNames).toEqual(['gpt-4o', 'gpt-4o-mini', 'o3', 'gpt-5']);
+    expect(azure?.modelGroupMap?.['gpt-4o-mini']).toEqual({ group: 'east' });
+  });
+});
+
+describe('Vertex AI derived from overrides (rederiveEndpoints)', () => {
+  const yaml = {
+    endpoints: {
+      anthropic: {
+        models: ['claude-direct'],
+        vertex: {
+          projectId: 'yaml-project',
+          region: 'us-east5',
+          serviceKeyFile: '/keys/vertex.json',
+          models: ['claude-sonnet-4-6'],
+        },
+      },
+    },
+  };
+  const vertex = (settings: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+    endpoints: { anthropic: { vertex: settings, ...extra } },
+  });
+  const merge = async (
+    overrides: Record<string, unknown>,
+    rederiveEndpoints = true,
+    tombstones?: string[],
+  ) =>
+    mergeConfigOverrides(await loadBase(yaml), [fakeConfig(overrides, 10, tombstones)], {
+      rederiveEndpoints,
+    }).endpoints?.anthropic;
+
+  it('leaves Vertex AI overrides inert without it', async () => {
+    const anthropic = await merge(vertex({ models: ['claude-opus-4-6'] }), false);
+
+    expect(anthropic?.models).toEqual(['claude-sonnet-4-6']);
+    expect(anthropic?.vertexConfig?.modelNames).toEqual(['claude-sonnet-4-6']);
+  });
+
+  it('derives the models and vertexConfig a layer writes', async () => {
+    const anthropic = await merge(
+      vertex({ models: ['claude-opus-4-6'], deploymentName: 'opus-deploy' }),
+    );
+
+    expect(anthropic?.models).toEqual(['claude-opus-4-6']);
+    expect(anthropic?.vertexConfig).toMatchObject({
+      projectId: 'yaml-project',
+      region: 'us-east5',
+      serviceKeyFile: '/keys/vertex.json',
+      modelNames: ['claude-opus-4-6'],
+      modelDeploymentMap: { 'claude-opus-4-6': 'opus-deploy' },
+    });
+  });
+
+  it("keeps librechat.yaml's region and key file whatever a layer stores", async () => {
+    const anthropic = await merge(
+      vertex({ region: 'attacker', serviceKeyFile: 'http://169.254.169.254/key' }),
+    );
+
+    expect(anthropic?.vertexConfig).toMatchObject({
+      region: 'us-east5',
+      serviceKeyFile: '/keys/vertex.json',
+    });
+    expect(anthropic?.vertex).toMatchObject({
+      region: 'us-east5',
+      serviceKeyFile: '/keys/vertex.json',
+    });
+  });
+
+  it('turns Vertex AI off with enabled: false or a tombstone, serving the YAML-shaped models', async () => {
+    const disabled = await merge(vertex({ enabled: false }));
+    const tombstoned = await merge({}, true, ['endpoints.anthropic.vertex']);
+
+    for (const anthropic of [disabled, tombstoned]) {
+      expect(anthropic?.vertexConfig).toBeUndefined();
+      expect(anthropic?.models).toEqual(['claude-direct']);
+    }
+  });
+
+  it("serves the models a layer sets in endpoints.anthropic.models over Vertex AI's", async () => {
+    const anthropic = await merge(
+      vertex({ models: ['claude-opus-4-6'] }, { models: ['claude-x'] }),
+    );
+
+    expect(anthropic?.models).toEqual(['claude-x']);
+    expect(anthropic?.vertexConfig?.modelNames).toEqual(['claude-opus-4-6']);
+  });
+
+  it.each([false, true])(
+    "never applies a layer's own vertexConfig (rederiveEndpoints: %s)",
+    async (rederiveEndpoints) => {
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+      const base = await loadBase(yaml);
+      const written = mergeConfigOverrides(
+        base,
+        [
+          fakeConfig(
+            {
+              endpoints: {
+                anthropic: {
+                  vertexConfig: {
+                    serviceKeyFile: 'http://169.254.169.254/key',
+                    region: 'evil.example',
+                  },
+                },
+              },
+            },
+            10,
+          ),
+        ],
+        { rederiveEndpoints },
+      );
+      const tombstoned = mergeConfigOverrides(
+        base,
+        [fakeConfig({}, 10, ['endpoints.anthropic.vertexConfig'])],
+        { rederiveEndpoints },
+      );
+
+      expect(written.endpoints?.anthropic?.vertexConfig).toEqual(
+        base.endpoints?.anthropic?.vertexConfig,
+      );
+      expect(tombstoned.endpoints?.anthropic?.vertexConfig).toEqual(
+        base.endpoints?.anthropic?.vertexConfig,
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Ignoring endpoints.anthropic.vertexConfig for role/test'),
+      );
+      warn.mockRestore();
+    },
+  );
+
+  it('refuses a setup that does not load on write, and keeps the one below at merge', async () => {
+    const unset = vertex({ projectId: '${VERTEX_UNSET_PROJECT_1}' });
+    expect(getConfigOverrideIssues(unset, yaml)).toEqual([
+      {
+        path: 'endpoints.anthropic.vertex',
+        segments: ['endpoints', 'anthropic', 'vertex'],
+        code: 'invalid_vertex_config',
+      },
+    ]);
+    expect(getConfigOverrideIssues(vertex({ projectId: 'a/../b' }), yaml)).toEqual([
+      expect.objectContaining({ path: 'endpoints.anthropic.vertex.projectId', code: 'custom' }),
+    ]);
+
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const anthropic = await merge(unset);
+    expect(anthropic?.vertexConfig).toMatchObject({ projectId: 'yaml-project' });
+    warn.mockRestore();
+  });
+
+  describe('where librechat.yaml configures no Vertex AI', () => {
+    const direct = { endpoints: { anthropic: { models: ['claude-direct'] } } };
+    const usable = vertex({ projectId: 'profile-project', models: ['claude-opus-4-6'] });
+
+    it("refuses a write that turns it on, the deployment's default Google credentials unchosen", async () => {
+      const floor = resolveRawConfig(direct, []);
+      const issue = {
+        path: 'endpoints.anthropic.vertex',
+        segments: ['endpoints', 'anthropic', 'vertex'],
+        code: 'invalid_vertex_config',
+      };
+
+      expect(getConfigOverrideIssues(usable, floor, { vertexConfigured: false })).toEqual([issue]);
+      expect(
+        getConfigOverrideIssues(vertex({ enabled: false }), floor, { vertexConfigured: false }),
+      ).toEqual([]);
+      expect(getConfigOverrideIssues(usable, yaml, { vertexConfigured: true })).toEqual([]);
+    });
+
+    it('never turns it on at merge, a Base layer included, and warns of the stored override', async () => {
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+      const base = await loadBase(direct);
+      const layers = [
+        fakeConfig(usable, 0, undefined, BASE_CONFIG_PRINCIPAL_ID),
+        fakeConfig(vertex({ models: ['claude-x'] }), 10),
+      ];
+      const merged = mergeConfigOverrides(base, layers, { rederiveEndpoints: true });
+
+      expect(merged.endpoints?.anthropic?.vertexConfig).toBeUndefined();
+      expect(merged.endpoints?.anthropic?.models).toEqual(['claude-direct']);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('(invalid_vertex_config)'));
+      warn.mockRestore();
+    });
+  });
+});
+
+describe('Azure Assistants derived from overrides (rederiveEndpoints)', () => {
+  const east = {
+    group: 'east',
+    apiKey: 'east-key',
+    instanceName: 'east',
+    version: '2024-10-21',
+    deploymentName: 'gpt-4o',
+    assistants: true,
+    models: { 'gpt-4o': true },
+  };
+  const yaml = { endpoints: { azureOpenAI: { groups: [east] } } };
+
+  it('derives the Azure Assistants endpoint a layer turns on, and drops it when turned off', async () => {
+    const base = await loadBase(yaml);
+    const on = (rederiveEndpoints: boolean) =>
+      mergeConfigOverrides(
+        base,
+        [fakeConfig({ endpoints: { azureOpenAI: { assistants: true } } }, 10)],
+        {
+          rederiveEndpoints,
+        },
+      );
+
+    expect(base.endpoints?.azureAssistants).toBeUndefined();
+    expect(on(false).endpoints?.azureAssistants).toBeUndefined();
+    expect(on(true).endpoints?.azureAssistants).toMatchObject({
+      capabilities: expect.arrayContaining(['tools', 'actions', 'code_interpreter']),
+    });
+
+    const assistantsBase = await loadBase({
+      endpoints: { azureOpenAI: { ...yaml.endpoints.azureOpenAI, assistants: true } },
+    });
+    const off = mergeConfigOverrides(
+      assistantsBase,
+      [fakeConfig({ endpoints: { azureOpenAI: { assistants: false } } }, 10)],
+      { rederiveEndpoints: true },
+    );
+    const tombstoned = mergeConfigOverrides(
+      assistantsBase,
+      [fakeConfig({}, 10, ['endpoints.azureOpenAI'])],
+      { rederiveEndpoints: true },
+    );
+    expect(assistantsBase.endpoints?.azureAssistants).toBeDefined();
+    expect(off.endpoints?.azureAssistants).toBeUndefined();
+    expect(tombstoned.endpoints?.azureOpenAI).toBeUndefined();
+    expect(tombstoned.endpoints?.azureAssistants).toBeUndefined();
+  });
+});
+
+describe('custom endpoint parameters expanded for overrides', () => {
+  /** Records which defaults each definition was completed from; refuses a key named `invalid`. */
+  const expand = (endpoint: TEndpoint): TEndpoint => {
+    const params = endpoint.customParams;
+    if (params == null) {
+      return endpoint.name.startsWith('OpenRouter')
+        ? {
+            ...endpoint,
+            customParams: {
+              defaultParamsEndpoint: 'openrouter',
+              paramDefinitions: [
+                { key: 'promptCache', default: true, optionType: OptionTypes.Custom },
+              ],
+            },
+          }
+        : { ...endpoint };
+    }
+    const from = params.defaultParamsEndpoint ?? 'custom';
+    return {
+      ...endpoint,
+      customParams: {
+        ...params,
+        defaultParamsEndpoint: from,
+        paramDefinitions: (params.paramDefinitions ?? []).map((definition) => {
+          if (definition.key === 'invalid') {
+            throw new Error('invalid key');
+          }
+          return {
+            ...definition,
+            label: `${from}:${definition.key}`,
+            optionType: OptionTypes.Custom,
+          };
+        }),
+      },
+    };
+  };
+  const gateway = {
+    name: 'Gateway',
+    apiKey: 'gateway-key',
+    baseURL: 'https://gateway.example.com/v1',
+    models: { default: ['m1'] },
+    customParams: {
+      defaultParamsEndpoint: 'anthropic',
+      paramDefinitions: [{ key: 'temperature', default: 0.2 }],
+    },
+  };
+  const other = { ...gateway, name: 'Other' };
+  const yaml = { endpoints: { custom: [gateway, other] } };
+  const merge = async (custom: unknown[]) => {
+    const base = await loadBase(yaml, expand);
+    const merged = mergeConfigOverrides(base, [fakeConfig({ endpoints: { custom } }, 10)], {
+      expandCustomEndpoint: expand,
+    });
+    return {
+      base,
+      served: (name: string) => merged.endpoints?.custom?.find((entry) => entry.name === name),
+    };
+  };
+
+  it('keeps librechat.yaml as written and serves the expanded copy', async () => {
+    const base = await loadBase(yaml, expand);
+
+    expect(base.config.endpoints?.custom?.[0]).toEqual(gateway);
+    expect(base.endpoints?.custom?.[0]?.customParams?.paramDefinitions).toEqual([
+      { key: 'temperature', default: 0.2, label: 'anthropic:temperature', optionType: 'custom' },
+    ]);
+  });
+
+  it("expands a layer's compact definitions, and leaves endpoints it does not write as they were", async () => {
+    const { base, served } = await merge([
+      { name: 'Gateway', customParams: { paramDefinitions: [{ key: 'top_p' }] } },
+    ]);
+
+    expect(served('Gateway')?.customParams?.paramDefinitions).toEqual([
+      { key: 'top_p', label: 'anthropic:top_p', optionType: 'custom' },
+    ]);
+    expect(served('Other')).toEqual(base.endpoints?.custom?.[1]);
+  });
+
+  it('expands again for a defaultParamsEndpoint a layer changes, from the definitions as written', async () => {
+    const { served } = await merge([
+      { name: 'Gateway', customParams: { defaultParamsEndpoint: 'openAI' } },
+    ]);
+
+    expect(served('Gateway')?.customParams).toEqual({
+      defaultParamsEndpoint: 'openAI',
+      paramDefinitions: [
+        { key: 'temperature', default: 0.2, label: 'openAI:temperature', optionType: 'custom' },
+      ],
+    });
+  });
+
+  it("adds defaults to an endpoint only a layer defines, and keeps librechat.yaml's for invalid ones", async () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const { base, served } = await merge([
+      { ...gateway, name: 'OpenRouter DB', customParams: undefined },
+      { name: 'Gateway', customParams: { paramDefinitions: [{ key: 'invalid' }] } },
+    ]);
+
+    expect(served('OpenRouter DB')?.customParams?.paramDefinitions).toEqual([
+      { key: 'promptCache', default: true, optionType: 'custom' },
+    ]);
+    expect(served('Gateway')?.customParams).toEqual(base.endpoints?.custom?.[0]?.customParams);
+    expect(
+      getConfigOverrideIssues(
+        {
+          endpoints: {
+            custom: [{ name: 'Gateway', customParams: { paramDefinitions: [{ key: 'invalid' }] } }],
+          },
+        },
+        yaml,
+        { expandCustomEndpoint: expand },
+      ),
+    ).toEqual([
+      {
+        path: 'endpoints.custom.0.customParams',
+        segments: ['endpoints', 'custom', '0', 'customParams'],
+        code: 'invalid_param_definitions',
+      },
+    ]);
+    warn.mockRestore();
+  });
+});
+
+describe('the agents memory capability follows the merged memory config', () => {
+  const capabilities = (config: AppConfig) => config.endpoints?.agents?.capabilities ?? [];
+
+  it('offers memory to a profile that turns it on, and not to one that turns it off', async () => {
+    const disabledBase = await loadBase({ memory: { disabled: true } });
+    const enabledBase = await loadBase({ memory: { disabled: false, personalize: true } });
+
+    expect(capabilities(disabledBase)).not.toContain(AgentCapabilities.memory);
+    expect(capabilities(enabledBase)).toContain(AgentCapabilities.memory);
+    expect(
+      capabilities(
+        mergeConfigOverrides(disabledBase, [fakeConfig({ memory: { disabled: false } }, 10)]),
+      ),
+    ).toContain(AgentCapabilities.memory);
+    expect(
+      capabilities(
+        mergeConfigOverrides(enabledBase, [fakeConfig({ memory: { disabled: true } }, 10)]),
+      ),
+    ).not.toContain(AgentCapabilities.memory);
+    expect(
+      capabilities(
+        mergeConfigOverrides(disabledBase, [
+          fakeConfig(
+            {
+              endpoints: {
+                agents: { capabilities: [AgentCapabilities.memory, AgentCapabilities.tools] },
+              },
+            },
+            10,
+          ),
+        ]),
+      ),
+    ).toEqual([AgentCapabilities.tools]);
+  });
+});
+
+describe('model spec endpoints', () => {
+  const spec = (endpoint: string) => ({
+    name: endpoint,
+    label: endpoint,
+    preset: { endpoint, model: 'm' },
+  });
+
+  it('refuses a spec for an endpoint that is not configured on write, and serves it as stored', () => {
+    const yaml = {
+      endpoints: {
+        custom: [
+          { name: 'Gateway', apiKey: 'k', baseURL: 'https://g', models: { default: ['m'] } },
+        ],
+      },
+    };
+    expect(
+      getConfigOverrideIssues({ modelSpecs: { list: [spec('Gateway'), spec('openAI')] } }, yaml),
+    ).toEqual([]);
+    expect(getConfigOverrideIssues({ modelSpecs: { list: [spec('Nowhere')] } }, yaml)).toEqual([
+      {
+        path: 'modelSpecs.list.0.preset.endpoint',
+        segments: ['modelSpecs', 'list', '0', 'preset', 'endpoint'],
+        code: 'unknown_spec_endpoint',
+      },
+    ]);
+
+    const merged = mergeConfigOverrides({ config: yaml } as unknown as AppConfig, [
+      fakeConfig({ modelSpecs: { list: [spec('Nowhere')] } }, 10),
+    ]);
+    expect(merged.modelSpecs?.list?.map(({ name }) => name)).toEqual(['Nowhere']);
   });
 });

@@ -2,6 +2,7 @@ import {
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_PATHS,
+  DERIVED_CONFIG_PATHS,
   configSchema,
   PrincipalType,
   PrincipalModel,
@@ -60,6 +61,8 @@ import {
   BASE_CONFIG_PRINCIPAL_ID,
   isConfigRevisionConflict,
   isConfigOverrideStateEmpty,
+  isDerivedConfigPath,
+  isVertexConfigured,
   toConfigDraft,
   toConfigIdentityPath,
   renameConfigIdentityPath,
@@ -92,6 +95,7 @@ import type {
   ConfigMutationOutcome,
   ConfigMutationPlan,
   ConfigIdentityStep,
+  ConfigDerivation,
 } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Response } from 'express';
@@ -149,6 +153,7 @@ import { createAdminAuditEmitter, configTarget } from './audit';
 import { DEFAULT_OVERRIDE_CACHE_TTL } from '~/app/service';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { mergeOverrideLayers } from '~/app/overrides';
+import { expandCustomEndpoint } from '~/app/params';
 import { buildAdminConfigMeta } from './meta';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
@@ -509,11 +514,24 @@ function getFieldSkipReason(fieldPath: string): AdminConfigSkipReason | null {
   return isInterfacePermissionPath(fieldPath) ? 'interface_permission' : null;
 }
 
+/**
+ * Why PATCH or the tombstone route leaves a field alone: {@link getFieldSkipReason}, or a field the
+ * server derives from another one (`rules.derivedPaths`), which the merge never applies.
+ */
+function getWriteSkipReason(target: FieldTarget): AdminConfigSkipReason | null {
+  return (
+    getFieldSkipReason(target.fieldPath) ??
+    (isDerivedConfigPath(target.segments) ? 'derived_path' : null)
+  );
+}
+
 const SKIP_DESCRIPTIONS: Readonly<Record<AdminConfigSkipReason, string>> = {
   base_only_section: 'base-only config field %s - configure it in librechat.yaml instead',
   base_only_path: 'base-only config path %s - configure it in librechat.yaml instead',
   dedicated_section: 'dedicated tenant-wide config field %s in the generic config API',
   interface_permission: 'interface permission field %s — use role permissions instead',
+  derived_path:
+    'derived config path %s - the server derives it from the field it resolves, write that instead',
 };
 
 /** Logs a skipped path; `action` is how the route words it (`Stripping`, `Ignoring tombstone for`). */
@@ -528,23 +546,42 @@ const BASE_ONLY_PATHS: ReadonlyArray<readonly string[]> = BASE_ONLY_CONFIG_PATHS
   path.split('.'),
 );
 
-/** Whether `segments` is a base-only field or lies inside one. */
-function isBaseOnlyPath(segments: readonly string[]): boolean {
-  return BASE_ONLY_PATHS.some((path) => isSegmentPrefix(path, segments));
+/** A field the generic config API never stores a value at, and why. */
+interface HeldPath {
+  segments: readonly string[];
+  reason: Extract<AdminConfigSkipReason, 'base_only_path' | 'derived_path'>;
+}
+
+/** Fields the server derives from another one (`rules.derivedPaths`), which no write stores. */
+const DERIVED_HELD_PATHS: readonly HeldPath[] = DERIVED_CONFIG_PATHS.map((path) => ({
+  segments: path.split('.'),
+  reason: 'derived_path',
+}));
+
+/** Base-only fields (`rules.baseOnlyPaths`) and derived fields, which a change batch skips. */
+const HELD_PATHS: readonly HeldPath[] = [
+  ...BASE_ONLY_PATHS.map((segments): HeldPath => ({ segments, reason: 'base_only_path' })),
+  ...DERIVED_HELD_PATHS,
+];
+
+/** Why a change batch skips a write at `segments`: a held field, or a path inside one. */
+function getHeldPathReason(segments: readonly string[]): HeldPath['reason'] | null {
+  return HELD_PATHS.find((held) => isSegmentPrefix(held.segments, segments))?.reason ?? null;
 }
 
 /**
- * Removes the base-only fields below `segments` from a value written there (`endpoints.agents`
- * carrying `pullRequests.provider`), with the objects that leaves empty. Returns the value to
- * store and the full paths it removed.
+ * Removes the held fields (`paths`) below `segments` from a value written there (`endpoints.agents`
+ * carrying `pullRequests.provider`, `endpoints.anthropic` carrying `vertexConfig`), with the
+ * objects that leaves empty. Returns the value to store and each full path it removed, with why.
  */
-function stripBaseOnlyPaths(
+function stripHeldPaths(
   segments: readonly string[],
   value: unknown,
-): { value: unknown; stripped: string[][] } {
+  paths: readonly HeldPath[] = HELD_PATHS,
+): { value: unknown; stripped: HeldPath[] } {
   let result = value;
-  const stripped: string[][] = [];
-  for (const path of BASE_ONLY_PATHS) {
+  const stripped: HeldPath[] = [];
+  for (const { segments: path, reason } of paths) {
     if (path.length <= segments.length || !isSegmentPrefix(segments, path)) {
       continue;
     }
@@ -553,9 +590,25 @@ function stripBaseOnlyPaths(
       continue;
     }
     result = pruneEmptyAncestors(unsetAtPath(result, relative), relative);
-    stripped.push([...path]);
+    stripped.push({ segments: [...path], reason });
   }
   return { value: result, stripped };
+}
+
+/**
+ * A value PUT or PATCH writes at `segments` without the derived fields it holds
+ * (`DERIVED_CONFIG_PATHS`), each logged as skipped: the merge never applies them.
+ */
+function withoutDerivedFields(
+  action: string,
+  segments: readonly string[],
+  value: unknown,
+): unknown {
+  const { value: kept, stripped } = stripHeldPaths(segments, value, DERIVED_HELD_PATHS);
+  for (const path of stripped) {
+    logSkippedField(action, path.segments.join('.'), path.reason);
+  }
+  return kept;
 }
 
 /**
@@ -678,6 +731,22 @@ export interface AdminConfigDeps {
    * app config service is given, so a write is judged by the policy its values resolve under.
    */
   overrideEnvAllowlist?: string;
+  /**
+   * Whether the app config service derives Azure groups, Vertex AI and the Azure Assistants
+   * endpoint from overrides again (`CONFIG_REDERIVE_ENDPOINTS`): `GET /meta` reports it as
+   * `features.endpointRederive`, and write responses judge what a write drops by the same merge.
+   */
+  rederiveEndpoints?: boolean;
+}
+
+/**
+ * What writes over `yaml` (librechat.yaml) are checked against beyond the schema: the custom
+ * endpoint parameter definitions startup would expand (`invalid_param_definitions`), and whether
+ * librechat.yaml configures the Vertex AI a write may turn on, besides the derived checks the
+ * store always runs (Azure groups, Vertex AI, model spec endpoints).
+ */
+function getWriteDerivation(yaml: Partial<TCustomConfig> | null): ConfigDerivation {
+  return { expandCustomEndpoint, vertexConfigured: isVertexConfigured(yaml) };
 }
 
 // ── Validation helpers ───────────────────────────────────────────────
@@ -1248,7 +1317,10 @@ function getKeptKeyReentryIssues(
       stored,
       candidate,
       entered,
-      baseGroupMap: baseConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.groupMap,
+      base: {
+        groups: baseConfig?.config?.endpoints?.[EModelEndpoint.azureOpenAI]?.groups,
+        groupMap: baseConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.groupMap,
+      },
     }),
     ...getBoundKeyReentryIssues({ stored, candidate, entered, baseConfig }),
   ];
@@ -1409,9 +1481,9 @@ function prepareSet(
     }
     value = filtered.value ?? value;
   }
-  const stripped = stripBaseOnlyPaths(target.segments, value);
-  for (const segments of stripped.stripped) {
-    skipped.push({ ...ref, segments, reason: 'base_only_path' });
+  const stripped = stripHeldPaths(target.segments, value);
+  for (const { segments, reason } of stripped.stripped) {
+    skipped.push({ ...ref, segments: [...segments], reason });
   }
   if (
     stripped.stripped.length > 0 &&
@@ -1571,11 +1643,7 @@ function prepareChange(raw: unknown, index: number): PreparedRead {
     | PreparedRead
     | { ok: true; change: PreparedChange | null; skipped: SkippedChange[] };
   if (op === 'set') {
-    prepared = prepareSet(
-      raw,
-      base,
-      sectionSkip ?? (isBaseOnlyPath(target.segments) ? 'base_only_path' : null),
-    );
+    prepared = prepareSet(raw, base, sectionSkip ?? getHeldPathReason(target.segments));
   } else if (isEntryOp(op)) {
     prepared = prepareEntryChange(raw, base, sectionSkip);
   } else {
@@ -1599,10 +1667,9 @@ function prepareChange(raw: unknown, index: number): PreparedRead {
     if (removalError) {
       return changeFailure(index, removalError.error, removalError.code);
     }
-    /** Unsetting a stored base-only field is cleanup, so only a tombstone of one is skipped. */
+    /** Unsetting a stored base-only or derived field is cleanup, so only a tombstone is skipped. */
     const skipReason =
-      sectionSkip ??
-      (op === 'tombstone' && isBaseOnlyPath(target.segments) ? 'base_only_path' : null);
+      sectionSkip ?? (op === 'tombstone' ? getHeldPathReason(target.segments) : null);
     prepared = skipReason
       ? { ok: true, change: null, skipped: [{ ...toChangeRef(base), reason: skipReason }] }
       : { ok: true, change: { ...base, paths: getRemovalPaths(target) }, skipped: [] };
@@ -1893,6 +1960,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     auditFailClosed,
     overrideCacheTtlMs = DEFAULT_OVERRIDE_CACHE_TTL,
     overrideEnvAllowlist,
+    rederiveEndpoints = false,
   } = deps;
 
   const envAllowlist = parseEnvAllowlist(overrideEnvAllowlist);
@@ -1903,11 +1971,14 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     logPrefix: '[adminConfig]',
   });
 
-  const meta = buildAdminConfigMeta({
-    maxPatchEntries: MAX_PATCH_ENTRIES,
-    maxChangeOps: MAX_CONFIG_CHANGE_OPS,
-    overrideCacheTtlMs,
-  });
+  const meta = buildAdminConfigMeta(
+    {
+      maxPatchEntries: MAX_PATCH_ENTRIES,
+      maxChangeOps: MAX_CONFIG_CHANGE_OPS,
+      overrideCacheTtlMs,
+    },
+    { rederiveEndpoints },
+  );
 
   function readStoredConfig(
     principalType: PrincipalType,
@@ -2120,6 +2191,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const ignored: AdminConfigIgnoredSecret[] = [];
       mergeOverrideLayers(baseConfig, floor ? [floor, written] : [written], {
         envPolicy,
+        rederiveEndpoints,
         onRebinding: (rebinding) => {
           if (
             rebinding.layer.principalType === written.principalType &&
@@ -2147,7 +2219,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    * beside it. A profile can then enter its own key for an endpoint, server or service Base
    * defines without restating the destination, and the key is dropped again once Base, or any
    * layer below the profile, moves that destination. Base merges first, so nothing moves its
-   * keys from below.
+   * keys from below. Destinations are judged as with `CONFIG_REDERIVE_ENDPOINTS` on, whatever
+   * this deployment runs with, so a key entered for an Azure group while the groups are inert
+   * keeps its destination once they apply.
    */
   function bindPlannedSecrets(params: {
     principalType: PrincipalType;
@@ -2178,6 +2252,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     };
     mergeOverrideLayers(params.baseConfig ?? ({} as AppConfig), [base, layer], {
       envPolicy: params.envPolicy,
+      rederiveEndpoints: true,
       onRebinding: (rebinding) => {
         if (
           rebinding.binding != null &&
@@ -2286,7 +2361,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (yaml == null) {
         return {};
       }
-      return base ? resolveRawConfig(yaml, [base]) : yaml;
+      return base ? resolveRawConfig(yaml, [base], getWriteDerivation(yaml)) : yaml;
     };
     const outcome = await runConfigMutation<T>(
       {
@@ -2601,6 +2676,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           delete (filteredOverrides as Record<string, unknown>).interface;
         }
       }
+      for (const [section, value] of Object.entries(filteredOverrides)) {
+        const kept = withoutDerivedFields('Stripping', [section], value);
+        if (kept === value) {
+          continue;
+        }
+        if (isPlainRecord(kept) && Object.keys(kept).length === 0) {
+          delete (filteredOverrides as Record<string, unknown>)[section];
+        } else {
+          (filteredOverrides as Record<string, unknown>)[section] = kept;
+        }
+      }
 
       const overrideSections = Object.keys(filteredOverrides);
       /** A create-only request is a lifecycle write even when it carries nothing. */
@@ -2689,6 +2775,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             const issues = getConfigOverrideIssues(
               preserved,
               applyConfigTombstones(floor, stored?.tombstones),
+              getWriteDerivation(yaml),
             );
             if (issues.length > 0) {
               return { draft: null, result: { status: 400, issues } };
@@ -2868,18 +2955,19 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      const validEntries = targets
-        .map(({ target, value }) => ({
-          target,
-          value: normalizeInterfaceFieldPatch(target.fieldPath, value),
-        }))
-        .filter(({ target: { fieldPath } }) => {
-          const skipReason = getFieldSkipReason(fieldPath);
-          if (skipReason) {
-            logSkippedField('Stripping', fieldPath, skipReason);
-          }
-          return skipReason == null;
-        });
+      /** An entry whose whole value is a derived field is skipped, as one at that field is. */
+      const validEntries = targets.flatMap(({ target, value }) => {
+        const skipReason = getWriteSkipReason(target);
+        if (skipReason) {
+          logSkippedField('Stripping', target.fieldPath, skipReason);
+          return [];
+        }
+        const normalized = normalizeInterfaceFieldPatch(target.fieldPath, value);
+        const kept = withoutDerivedFields('Stripping', target.segments, normalized);
+        const emptied =
+          kept !== normalized && isPlainRecord(kept) && Object.keys(kept).length === 0;
+        return emptied ? [] : [{ target, value: kept }];
+      });
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 
@@ -2991,7 +3079,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
               }
             }
             const writes = toOrderedWrites(validEntries, preservedFields);
-            const fieldIssues = getConfigFieldIssues(writes, floor, stored);
+            const fieldIssues = getConfigFieldIssues(
+              writes,
+              floor,
+              stored,
+              getWriteDerivation(baseYaml),
+            );
             if (fieldIssues.length > 0) {
               return { draft: null, result: { status: 400, issues: fieldIssues } };
             }
@@ -3164,7 +3257,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         });
       }
 
-      const skipReason = getFieldSkipReason(fieldPath);
+      const skipReason = getWriteSkipReason(read.target);
       if (skipReason) {
         logSkippedField('Ignoring tombstone for', fieldPath, skipReason);
         return noopResponse(
@@ -3610,7 +3703,14 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         }
         let planned = state;
         if (documentChanged) {
-          const issues = getConfigChangeIssues(state, floor, stored, written);
+          const issues = getConfigChangeIssues(
+            state,
+            floor,
+            stored,
+            written,
+            [],
+            getWriteDerivation(baseYaml),
+          );
           if (issues.length > 0) {
             return { draft: null, result: { stop: { kind: 'issues', issues } } };
           }

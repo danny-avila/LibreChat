@@ -17,7 +17,8 @@ import { getConfigSecretRules } from './secrets';
 /**
  * The admin config behaviours this server has. A change flips its own flag when it wires the
  * behaviour; `meta.spec.ts` checks every flag against the behaviour itself, so a flag cannot
- * claim what the server does not do, nor stay off once it does.
+ * claim what the server does not do, nor stay off once it does. `endpointRederive` is reported
+ * only where the deployment turns it on (`buildAdminConfigMeta`).
  */
 export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   dottedKeys: true,
@@ -39,13 +40,30 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   yamlSecretPreview: true,
   envAllowlist: true,
   secretRebinding: true,
+  azureGroupMergeKey: true,
+  customParamsExpansion: true,
+  specInterfaceRederive: true,
+  endpointRederive: true,
 };
+
+/** How this server runs, for the behaviours a deployment switches on. */
+export interface AdminConfigRuntime {
+  /**
+   * `CONFIG_REDERIVE_ENDPOINTS`: Azure groups, Vertex AI and Azure Assistants derived from
+   * overrides again.
+   */
+  rederiveEndpoints?: boolean;
+}
 
 /**
  * The contract `GET /api/admin/config/meta` reports, built from the constants the server
- * enforces rather than restated, so the rules a client mirrors cannot drift from them.
+ * enforces rather than restated, so the rules a client mirrors cannot drift from them. A flag a
+ * deployment switches on (`endpointRederive`) is on only when it is, and implemented.
  */
-export function buildAdminConfigMeta(limits: AdminConfigMeta['limits']): AdminConfigMeta {
+export function buildAdminConfigMeta(
+  limits: AdminConfigMeta['limits'],
+  runtime: AdminConfigRuntime = {},
+): AdminConfigMeta {
   return {
     metaVersion: 1,
     versions: {
@@ -53,7 +71,11 @@ export function buildAdminConfigMeta(limits: AdminConfigMeta['limits']): AdminCo
       dataProvider: DATA_PROVIDER_VERSION,
       configSchema: String(Constants.CONFIG_VERSION),
     },
-    features: { ...ADMIN_CONFIG_FEATURES },
+    features: {
+      ...ADMIN_CONFIG_FEATURES,
+      endpointRederive:
+        ADMIN_CONFIG_FEATURES.endpointRederive && runtime.rederiveEndpoints === true,
+    },
     limits: { ...limits },
     rules: {
       acceptedSections: Object.keys(configSchema.shape),

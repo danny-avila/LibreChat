@@ -11,6 +11,7 @@ const {
 const {
   getAppConfig,
   overrideCacheTtl,
+  rederiveEndpoints,
   invalidateConfigCaches,
 } = require('~/server/services/Config');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -39,6 +40,7 @@ const handlers = createAdminConfigHandlers({
   auditFailClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
   overrideCacheTtlMs: overrideCacheTtl,
   overrideEnvAllowlist: process.env.CONFIG_OVERRIDE_ENV_ALLOWLIST,
+  rederiveEndpoints,
 });
 
 router.use(requireJwtAuth, requireAdminAccess, rejectUnsafeConfigKeys);
