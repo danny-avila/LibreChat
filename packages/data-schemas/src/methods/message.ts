@@ -3017,7 +3017,34 @@ export function createMessageMethods(
       };
       const activityProjectionAvailable = {
         $and: [
-          { $eq: ['$subagentActivityProjection.version', 1] },
+          { $in: ['$subagentActivityProjection.version', [1, 2]] },
+          {
+            $or: [
+              { $eq: ['$subagentActivityProjection.version', 2] },
+              {
+                $cond: [
+                  {
+                    $and: [
+                      '$_subagentTranscriptSourceIsString',
+                      {
+                        $lte: [
+                          '$_subagentTranscriptSourceBytes',
+                          SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+                        ],
+                      },
+                    ],
+                  },
+                  {
+                    $lt: [
+                      { $indexOfBytes: ['$subagentTranscript.messagesJson', '"source":"steer"'] },
+                      0,
+                    ],
+                  },
+                  true,
+                ],
+              },
+            ],
+          },
           '$_subagentActivityProjectionSourceIsString',
           {
             $lte: [
@@ -3093,17 +3120,14 @@ export function createMessageMethods(
         message: {
           $cond: [
             { $eq: [{ $type: '$$receipt.message' }, 'string'] },
-            boundedString('$$receipt.message', SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT),
+            boundedString('$$receipt.message', MAX_SUBAGENT_CONTROL_MESSAGE_LENGTH),
             null,
           ],
         },
         messageTruncated: {
           $or: [
             { $eq: ['$$receipt.messageTruncated', true] },
-            stringProjectionTruncated(
-              '$$receipt.message',
-              SUBAGENT_VIEW_CONTROL_STRING_CODE_POINT_LIMIT,
-            ),
+            stringProjectionTruncated('$$receipt.message', MAX_SUBAGENT_CONTROL_MESSAGE_LENGTH),
           ],
         },
       };

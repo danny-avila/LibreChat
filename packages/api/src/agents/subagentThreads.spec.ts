@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
+import { Constants, EModelEndpoint, ContentTypes } from 'librechat-data-provider';
 import { AIMessage, HumanMessage, ToolMessage } from '@librechat/agents/langchain/messages';
 import {
   createMethods,
@@ -296,6 +296,207 @@ beforeEach(async () => {
 });
 
 describe('SubagentThreadTaskStore', () => {
+  it.each([1, 2])(
+    'publishes applied guidance at SDK drain boundaries once and shifts only new steps (width %s)',
+    async (width) => {
+      const userId = 'steer-order-user';
+      const parentConversationId = randomUUID();
+      await saveParent(userId, parentConversationId);
+      const store = new SubagentThreadTaskStore(methods);
+      const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+      let runtime!: SubagentTaskRuntime;
+      let finish!: (result: { content: string; messages: BaseMessage[] }) => void;
+      const result = new Promise<{ content: string; messages: BaseMessage[] }>((resolve) => {
+        finish = resolve;
+      });
+      const started = store.start(
+        taskRequest(config.scopeId, {
+          run: async (childRuntime) => {
+            runtime = childRuntime;
+            return result;
+          },
+        }),
+      );
+      const taskId = requireAccepted(started).task.taskId;
+      const threadId = requireThreadId(started);
+      const events: SubagentActivityEnvelope[] = [];
+      const subscription = store.subscribeActivity(threadId, taskId, {
+        onEvent: (event) => {
+          if (event.event === 'on_subagent_update') events.push(event);
+        },
+      });
+      await subscription.ready;
+      await waitUntil(() => runtime != null, 'the controlled runtime');
+      const progress = (id: string, index: number): SubagentUpdateEvent => ({
+        runId: 'root',
+        parentRunId: 'parent',
+        subagentRunId: 'child-run',
+        subagentType: 'worker',
+        subagentAgentId: 'agent',
+        phase: 'run_step',
+        timestamp: '2026-10-23T00:00:00.000Z',
+        data: {
+          id,
+          index,
+          stepDetails: { type: 'message_creation', message_creation: { message_id: id } },
+        },
+      });
+      const before = progress('before', 0);
+      if (width === 2)
+        before.data = {
+          id: 'before',
+          index: 0,
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [
+              { id: 'parallel-1', name: 'first', args: {}, type: 'tool_call' },
+              { id: 'parallel-2', name: 'second', args: {}, type: 'tool_call' },
+            ],
+          },
+        };
+      runtime.reportProgress(before);
+      const queued = await store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'queue', message: 'Queued' },
+        'queue-id',
+      );
+      const steered = await store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'steer', message: 'Steered' },
+        'steer-id',
+      );
+      const interrupted = await store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'interrupt', message: 'Interrupted' },
+        'interrupt-id',
+      );
+      const withdrawn = await store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'queue', message: 'Withdrawn' },
+        'withdrawn-id',
+      );
+      if (withdrawn.status !== 'accepted' || withdrawn.controlId == null)
+        throw new Error('Expected pending control');
+      await store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'cancel_message', controlId: withdrawn.controlId },
+        'withdraw-id',
+      );
+      await expect(
+        store.controlTask(
+          config.scopeId,
+          'wrong-task',
+          { action: 'steer', message: 'Wrong' },
+          'wrong-id',
+        ),
+      ).resolves.toMatchObject({ status: 'not_found' });
+      const preempt = runtime.drain('preempt');
+      expect(preempt.map(({ content }) => content)).toEqual(['Interrupted']);
+      runtime.reportProgress(progress('middle', 1));
+      const tool = runtime.drain('tool');
+      expect(tool.map(({ content }) => content)).toEqual(['Steered']);
+      const turn = runtime.drain('turn');
+      expect(turn.map(({ content }) => content)).toEqual(['Queued']);
+      expect(runtime.drain('turn')).toEqual([]);
+      runtime.reportProgress(before);
+      runtime.reportProgress(progress('after', 2));
+      await store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'queue', message: 'Not applied' },
+        'failed-id',
+      );
+      finish({
+        content: 'Done',
+        messages: [
+          new AIMessage('Before'),
+          ...[...preempt, ...tool, ...turn].map((injected) => {
+            if (typeof injected.content !== 'string') throw new Error('Expected string guidance');
+            return new HumanMessage({
+              content: injected.content,
+              additional_kwargs: { injected: true, source: injected.source, role: injected.role },
+            });
+          }),
+          new AIMessage('After'),
+        ],
+      });
+      await waitForSettled(store, config.scopeId, started);
+      await waitUntil(() => events.length === 7, 'the ordered activity tail');
+      expect(events.map(({ data }) => data.phase)).toEqual([
+        'run_step',
+        'steer_applied',
+        'run_step',
+        'steer_applied',
+        'steer_applied',
+        'run_step',
+        'run_step',
+      ]);
+      expect(events.map(({ data }) => (data.data as { index: number }).index)).toEqual([
+        0,
+        width,
+        width + 1,
+        width + 2,
+        width + 3,
+        0,
+        width + 4,
+      ]);
+      expect(events.map(({ data }) => data.activitySequence)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+      expect(events[1].data).toMatchObject({
+        subagentRunId: 'child-run',
+        activityEventId: `${taskId}:1`,
+        data: {
+          index: width,
+          steerId: interrupted.status === 'accepted' ? interrupted.controlId : '',
+          clientSteerId: 'interrupt-id',
+          responseMessageId: `${taskId}:assistant`,
+          conversationId: threadId,
+          part: {
+            type: ContentTypes.STEER,
+            steer: 'Interrupted',
+            clientSteerId: 'interrupt-id',
+            createdAt: expect.any(Number),
+          },
+        },
+      });
+      expect(
+        events
+          .filter(({ data }) => data.phase === 'steer_applied')
+          .map(({ data }) => (data.data as { part: { steer: string } }).part.steer),
+      ).toEqual(['Interrupted', 'Steered', 'Queued']);
+      expect(queued.status).toBe('accepted');
+      expect(steered.status).toBe('accepted');
+      expect(before.data).toMatchObject({ index: 0 });
+      const [saved] = await methods.getMessages(
+        { user: userId, conversationId: threadId, messageId: `${taskId}:assistant` },
+        '+subagentActivityProjection +subagentTranscript',
+      );
+      expect(saved.subagentActivityProjection?.version).toBe(2);
+      expect(
+        JSON.parse(saved.subagentTranscript!.messagesJson)
+          .filter((message: { type: string }) => message.type === 'human')
+          .map(
+            (message: { data: { additional_kwargs: { clientSteerId: string } } }) =>
+              message.data.additional_kwargs.clientSteerId,
+          ),
+      ).toEqual(['interrupt-id', 'steer-id', 'queue-id']);
+      expect(JSON.parse(saved.subagentActivityProjection!.activityJson)).toEqual([
+        { type: 'writing', text: 'Before' },
+        ...events
+          .filter(({ data }) => data.phase === 'steer_applied')
+          .map(({ data }) => (data.data as { part: object }).part),
+        { type: 'writing', text: 'After' },
+      ]);
+      expect(saved.subagentContent).toBeUndefined();
+      subscription.unsubscribe();
+      store.destroyActivityStream();
+    },
+  );
+
   it('records the automatic delivery contract without hiding routed store operations', async () => {
     const store = new SubagentThreadTaskStore(methods);
     const scope = { userId: 'delivery-user', parentConversationId: randomUUID() };
@@ -529,7 +730,7 @@ describe('SubagentThreadTaskStore', () => {
     });
     expect(messages[1].subagentActivityProjection).toEqual({
       taskId: requireAccepted(started).task.taskId,
-      version: 1,
+      version: 2,
       activityJson: JSON.stringify([{ type: 'writing', text: 'Completed the investigation.' }]),
       truncated: false,
     });

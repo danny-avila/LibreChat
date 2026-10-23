@@ -87,6 +87,41 @@ const createRequest = (
   }) as ServerRequest;
 
 describe('subagent thread parent-scoped view', () => {
+  it('keeps complete stored Unicode control messages and omits whole old receipts to fit the budget', async () => {
+    const input = message('task-1:user', 'running', true);
+    input.subagentTask!.controlReceipts = Array.from({ length: 32 }, (_, index) => ({
+      invocationId: `full-${index}`,
+      fingerprint: 'private',
+      controlId: `control-${index}`,
+      action: 'steer',
+      status: 'applied',
+      createdAt: new Date('2026-10-23T00:00:00Z'),
+      updatedAt: new Date('2026-10-23T00:00:01Z'),
+      message: '🧭'.repeat(2048),
+    }));
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+      getMessagesForSubagentThreadView: jest
+        .fn()
+        .mockResolvedValue([message('task-1:assistant', 'completed'), input]),
+    });
+    const { response, json } = createResponse();
+    await handler(createRequest({}, { taskId: 'task-1' }), response);
+    const body = json.mock.calls[0][0];
+    expect(body.controlReceipts.length).toBeGreaterThan(0);
+    expect(body.controlReceipts.length).toBeLessThan(32);
+    expect(body.controlReceiptsTruncated).toBe(true);
+    expect(body.controlReceipts.at(-1).invocationId).toBe('full-31');
+    for (const receipt of body.controlReceipts) {
+      expect(receipt.message).toBe('🧭'.repeat(2048));
+      expect(receipt.messageTruncated).not.toBe(true);
+    }
+    expect(Buffer.byteLength(JSON.stringify(body), 'utf8')).toBeLessThanOrEqual(
+      SUBAGENT_THREAD_VIEW_LIMITS.responseBytes,
+    );
+  });
+
   it.each([
     [false, true, false],
     [true, false, true],
@@ -482,7 +517,6 @@ describe('subagent thread parent-scoped view', () => {
           action: 'steer',
           status: 'applied',
           boundary: 'tool',
-          messageTruncated: true,
         }),
       ]),
     );
@@ -490,7 +524,8 @@ describe('subagent thread parent-scoped view', () => {
       (receipt: { invocationId: string }) => receipt.invocationId === 'invocation-1',
     );
     expect(projected).toBeDefined();
-    expect(Buffer.byteLength(projected?.message ?? '', 'utf8')).toBeLessThanOrEqual(512);
+    expect(projected?.message).toBe('x'.repeat(1_000));
+    expect(projected?.messageTruncated).not.toBe(true);
     expect(view.controlReceipts).toHaveLength(32);
     expect(view.controlReceiptsTruncated).toBe(true);
     expect(JSON.stringify(view)).not.toContain('private-reservation');

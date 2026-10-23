@@ -25,6 +25,15 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
 
+jest.mock('~/components/Chat/Messages/Content/Parts/SteerPart', () => ({
+  __esModule: true,
+  default: ({ steer, receiptState }: { steer: string; receiptState?: string }) => (
+    <div data-testid="shared-steer-part" data-receipt={receiptState}>
+      {steer}
+    </div>
+  ),
+}));
+
 jest.mock('~/components/Chat/Messages/Content/Parts', () => ({
   EmptyText: () => <div data-testid="thinking-cursor" />,
 }));
@@ -493,7 +502,12 @@ describe('SubagentActivity', () => {
     expect(screen.getByText('com_ui_subagent_control_status_accepted')).toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_control_status_applied')).toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_control_status_rejected')).toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_control_message_truncated')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_control_message_truncated')).not.toBeInTheDocument();
+    expect(
+      screen
+        .getAllByTestId('shared-steer-part')
+        .some((part) => part.textContent === 'Add a citation.'),
+    ).toBe(true);
     expect(screen.getByText('com_ui_subagent_control_reason_task_completed')).toBeInTheDocument();
 
     const accepted = screen.getByText('com_ui_subagent_control_status_accepted');
@@ -708,7 +722,7 @@ it('does not claim delivery or application before the server confirms it', () =>
       }}
     />,
   );
-  expect(screen.getByTestId('steer-receipt')).toHaveAttribute('data-receipt-state', 'sending');
+  expect(screen.getByTestId('shared-steer-part')).toHaveAttribute('data-receipt', 'sending');
 });
 
 it('preserves empty recovered slots when rendering applied control receipts', () => {
@@ -740,4 +754,37 @@ it('preserves empty recovered slots when rendering applied control receipts', ()
   expect(screen.getAllByTestId('regular-content-parts').length).toBeGreaterThan(0);
   expect(mockContentParts.mock.calls[0][0].content[0]).toBeNull();
   expect(mockContentParts.mock.calls[0][0].content[1].tool_call.id).toBe('retained');
+});
+
+it('renders applied controls inline once instead of repeating them below all current activity', () => {
+  const part = {
+    type: ContentTypes.STEER as const,
+    steer: 'Apply now.',
+    steerId: 'control',
+    createdAt: 100,
+  };
+  render(
+    <SubagentActivity
+      activity={{
+        ...base,
+        content: [part, { type: ContentTypes.TEXT, text: 'Work after guidance.' }],
+        controls: [
+          {
+            invocationId: 'invocation',
+            controlId: 'control',
+            action: 'steer',
+            status: 'applied',
+            message: 'Apply now.',
+            createdAt: '2026-08-24T12:00:00.000Z',
+            updatedAt: '2026-08-24T12:00:01.000Z',
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.queryByTestId('shared-steer-part')).not.toBeInTheDocument();
+  expect(mockContentParts.mock.calls.at(-1)?.[0].content).toEqual([
+    part,
+    { type: ContentTypes.TEXT, text: 'Work after guidance.' },
+  ]);
 });

@@ -397,3 +397,86 @@ describe('durable subagent activity projection', () => {
     ]);
   });
 });
+
+describe('applied child guidance projection', () => {
+  const stored = (type: string, content: string, additional_kwargs = {}) => ({
+    type,
+    data: { content, additional_kwargs },
+  });
+
+  it('keeps trusted SDK-injected steer humans between assistant content after reload', () => {
+    const messages = [
+      stored('human', 'Old task'),
+      stored('ai', 'Old answer'),
+      stored('human', 'Current task'),
+      stored('ai', 'Before'),
+      stored('human', 'Apply guidance', { injected: true, source: 'steer', role: 'user' }),
+      stored('ai', 'After'),
+    ];
+    const projection = projectSubagentActivity(JSON.stringify(messages), 'replace', 'Current task');
+    expect(projection).toEqual({
+      activity: [
+        { type: 'writing', text: 'Before' },
+        { type: 'steer', steer: 'Apply guidance' },
+        { type: 'writing', text: 'After' },
+      ],
+      truncated: false,
+    });
+    expect(projectPersistedMessageActivityJson(JSON.stringify(projection.activity))).toEqual(
+      projection,
+    );
+  });
+
+  it('does not expose raw prompts or untrusted injected humans as applied guidance', () => {
+    const messages = [
+      stored('human', 'Prompt'),
+      stored('human', 'Unmarked', { source: 'steer' }),
+      stored('human', 'Synthetic', { injected: true, source: 'tool' }),
+      stored('human', 'Generic', { injected: true }),
+      stored('ai', 'Answer'),
+    ];
+    expect(projectSubagentActivity(JSON.stringify(messages)).activity).toEqual([
+      { type: 'writing', text: 'Answer' },
+    ]);
+  });
+
+  it('bounds escaped and multibyte guidance without weakening the projection budget', () => {
+    const result = projectSubagentActivity(
+      JSON.stringify([
+        stored('human', '\u0001😀'.repeat(40000), { injected: true, source: 'steer' }),
+      ]),
+    );
+    expect(result.activity[0]).toMatchObject({ type: 'steer', textTruncated: true });
+    expect(Buffer.byteLength(JSON.stringify(result.activity))).toBeLessThanOrEqual(
+      SUBAGENT_ACTIVITY_LIMITS.bytes,
+    );
+  });
+});
+
+it('stamps trusted injected guidance only when authoritative apply order is complete', () => {
+  const messages = JSON.stringify([
+    { type: 'ai', data: { content: 'Before' } },
+    {
+      type: 'human',
+      data: { content: 'Same text', additional_kwargs: { injected: true, source: 'steer' } },
+    },
+    {
+      type: 'human',
+      data: { content: 'Same text', additional_kwargs: { injected: true, source: 'steer' } },
+    },
+    { type: 'ai', data: { content: 'After' } },
+  ]);
+  const controls = [
+    { steerId: 'control-1', clientSteerId: 'invocation-1', createdAt: 10 },
+    { steerId: 'control-2', clientSteerId: 'invocation-2', createdAt: 10 },
+  ];
+  expect(projectSubagentActivity(messages, 'append', undefined, controls).activity).toEqual([
+    { type: 'writing', text: 'Before' },
+    { type: 'steer', steer: 'Same text', ...controls[0] },
+    { type: 'steer', steer: 'Same text', ...controls[1] },
+    { type: 'writing', text: 'After' },
+  ]);
+  expect(
+    projectSubagentActivity(messages, 'append', undefined, controls.slice(1)).activity[1],
+  ).toEqual({ type: 'steer', steer: 'Same text' });
+});

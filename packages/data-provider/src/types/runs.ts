@@ -552,7 +552,8 @@ export type SubagentUpdatePhase =
   | 'message_delta'
   | 'reasoning_delta'
   | 'stop'
-  | 'error';
+  | 'error'
+  | 'steer_applied';
 
 /** Structured root-to-leaf identity for one nested subagent execution. */
 export interface SubagentAncestryEntry {

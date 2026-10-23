@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { InMemorySubagentTaskStore } from '@librechat/agents';
 import { logger, tenantStorage } from '@librechat/data-schemas';
-import { EModelEndpoint, Constants, subagentActivityConfigSchema } from 'librechat-data-provider';
+import { createContentAggregator, GraphEvents, InMemorySubagentTaskStore } from '@librechat/agents';
+import {
+  EModelEndpoint,
+  Constants,
+  ContentTypes,
+  subagentActivityConfigSchema,
+} from 'librechat-data-provider';
 import {
   mapChatMessagesToStoredMessages,
   mapStoredMessagesToChatMessages,
@@ -28,8 +33,8 @@ import type {
   ConversationMethods,
   SubagentTaskResultClaim,
 } from '@librechat/data-schemas';
+import type { TSubagentActivityConfig, TSteerAppliedEvent, Agents } from 'librechat-data-provider';
 import type { BaseMessage, StoredMessage } from '@librechat/agents/langchain/messages';
-import type { TSubagentActivityConfig } from 'librechat-data-provider';
 import type { ScheduledMCPIdentity } from 'librechat-data-provider';
 import type {
   SubagentActivityUpdateEvent,
@@ -42,6 +47,7 @@ import type { RequestScopedMCPConnectionStore } from '~/mcp/types';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { HostSubagentTaskConfig } from './subagentDelivery';
 import type { ActivitySnapshot, ActivityTree } from './digest';
+import type { AppliedSubagentSteer } from './activity';
 import {
   boundedClaim,
   boundedTaskList,
@@ -194,6 +200,8 @@ type ControlInvocationRecord = {
   fingerprint: string;
   command: SubagentTaskControlCommand;
   commandMessageTruncated: boolean;
+  /** Original SDK-accepted body, released at the authoritative terminal transition. */
+  pendingMessage?: string;
   result: SubagentTaskControlResult;
   createdAt: number;
   /** Last authoritative SDK transition, retained for idempotent retries even
@@ -219,6 +227,7 @@ interface TaskThreadLease {
   /** Resolves only after child persistence and lease cleanup finish. */
   execution?: Promise<void>;
   content?: SubagentContentJournal;
+  publishAppliedSteer?: (data: Omit<TSteerAppliedEvent, 'index'>, timestamp: string) => void;
   /** Ordered observational tail; canonical child settlement never awaits it. */
   activityTail?: Promise<void>;
   activityWorkerActive?: boolean;
@@ -464,6 +473,8 @@ function serializeTranscript(
   taskId: string,
   initialMessages: StoredMessage[],
   resultMessages: BaseMessage[] | undefined,
+  appliedSteers?: readonly AppliedSubagentSteer[],
+  expectedTaskInput?: string,
 ): IMessage['subagentTranscript'] {
   if (resultMessages == null) {
     return undefined;
@@ -480,7 +491,54 @@ function serializeTranscript(
   if (messages.length === 0) {
     return undefined;
   }
-  const messagesJson = append ? JSON.stringify(messages) : storedResultJson;
+  let start = 0;
+  if (!append) {
+    start = -1;
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index];
+      if (
+        (message.type === 'human' || message.type === 'user') &&
+        message.data.additional_kwargs?.injected !== true
+      ) {
+        if (message.data.content === expectedTaskInput) start = index + 1;
+        break;
+      }
+    }
+  }
+  if (appliedSteers != null && start >= 0) {
+    const injectedIndices: number[] = [];
+    for (let index = start; index < messages.length; index++) {
+      const message = messages[index];
+      const metadata = message.data.additional_kwargs;
+      if (
+        (message.type === 'human' || message.type === 'user') &&
+        metadata?.injected === true &&
+        metadata.source === 'steer'
+      )
+        injectedIndices.push(index);
+    }
+    if (injectedIndices.length === appliedSteers.length) {
+      injectedIndices.forEach((messageIndex, controlIndex) => {
+        const message = messages[messageIndex];
+        messages[messageIndex] = {
+          ...message,
+          data: {
+            ...message.data,
+            additional_kwargs: {
+              ...message.data.additional_kwargs,
+              ...appliedSteers[controlIndex],
+            },
+          },
+        };
+      });
+    }
+  }
+  const messagesJson = JSON.stringify(messages);
+  if (Buffer.byteLength(messagesJson, 'utf8') > MAX_TRANSCRIPT_BYTES) {
+    throw new SubagentThreadPublicError(
+      'Subagent thread transcript is too large to persist safely.',
+    );
+  }
   return {
     taskId,
     mode: append ? 'append' : 'replace',
@@ -763,8 +821,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       durable,
       this.get(scopeId, taskId)?.pendingControls,
     );
+    const message = receipt.status === 'accepted' ? undefined : invocation.pendingMessage;
     if (receipt.status !== 'accepted') {
       this.controlInvocationByReceipt.delete(controlReceiptKey(scopeId, taskId, receipt.controlId));
+      invocation.pendingMessage = undefined;
     }
     invocation.receiptPersisted = false;
     const persistence = this.queueControlReceipt(scopeId, taskId, threadId, durable).then(() => {
@@ -774,6 +834,34 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       if (invocation.receiptPersistence === tracked) invocation.receiptPersistence = undefined;
     });
     invocation.receiptPersistence = tracked;
+    try {
+      if (receipt.status === 'applied' && message != null) {
+        const lease = this.activeThreads.get(`${scopeId}\u0000${threadId}`);
+        if (lease?.taskId === taskId) {
+          lease.publishAppliedSteer?.(
+            {
+              steerId: receipt.controlId,
+              clientSteerId: invocation.invocationId,
+              part: {
+                type: ContentTypes.STEER,
+                steer: message,
+                steerId: receipt.controlId,
+                clientSteerId: invocation.invocationId,
+                createdAt: receipt.createdAt,
+              },
+              responseMessageId: `${taskId}:assistant`,
+              conversationId: threadId,
+            },
+            new Date(receipt.updatedAt).toISOString(),
+          );
+        }
+      }
+    } catch (error) {
+      logger.warn(
+        '[subagentThreads] Failed to publish applied child guidance',
+        getSafeErrorMetadata(error),
+      );
+    }
     return tracked;
   }
 
@@ -1342,7 +1430,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     lease: TaskThreadLease,
     threadId: string,
     taskId: string,
-    event: SubagentUpdateEvent,
+    event: SubagentActivityUpdateEvent,
   ): void {
     if (lease.activityAdmissionClosed === true) return;
     const boundedEvent = boundSubagentActivityUpdate(event);
@@ -1539,6 +1627,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             lease.running = true;
             const detachedUsage: UsageMetadata[] = [];
             let prepared: PreparedThread | undefined;
+            let appliedSteers: AppliedSubagentSteer[] | undefined = [];
             let activityTerminal: SubagentActivityTerminalStatus = 'failed';
             try {
               if (runtime.signal.aborted) {
@@ -1627,24 +1716,135 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                     ),
                 });
               }
+              let maxContentIndex = -1;
+              let contentOffset = 0;
+              const stepIndices = new Map<string, number>();
+              const slots = createContentAggregator();
+              let identity: Omit<
+                SubagentActivityUpdateEvent,
+                'phase' | 'data' | 'label' | 'timestamp'
+              > = {
+                runId: request.parentRunId,
+                parentRunId: request.parentRunId,
+                subagentRunId: runtime.taskId,
+                parentToolCallId: request.parentToolCallId,
+                parentAgentId: request.parentAgentId,
+                subagentType: request.subagentType,
+                subagentKind: request.subagentKind,
+                subagentAgentId: request.subagentType,
+              };
+              const publish = (event: SubagentActivityUpdateEvent): void => {
+                const sequence = activitySequence++;
+                const activityEvent: SubagentActivityUpdateEvent = {
+                  ...event,
+                  activityEventId: `${runtime.taskId}:${sequence}`,
+                  activitySequence: sequence,
+                };
+                lease.content?.record(activityEvent, sequence);
+                this.publishActivity(
+                  lease,
+                  preparedThread.conversation.conversationId,
+                  runtime.taskId,
+                  activityEvent,
+                );
+              };
+              lease.publishAppliedSteer = (data, timestamp) => {
+                if (appliedSteers != null) {
+                  if (appliedSteers.length >= MAX_CONTROL_INVOCATIONS) {
+                    appliedSteers = undefined;
+                  } else {
+                    appliedSteers.push({
+                      steerId: data.steerId,
+                      clientSteerId: data.clientSteerId!,
+                      createdAt: data.part.createdAt!,
+                    });
+                  }
+                }
+                const index = ++maxContentIndex;
+                slots.contentParts[index] = { type: ContentTypes.STEER, steer: '' };
+                contentOffset++;
+                publish({
+                  ...identity,
+                  phase: 'steer_applied',
+                  data: { ...data, index },
+                  timestamp,
+                });
+              };
               const activityRuntime: SubagentTaskRuntime = {
                 ...runtime,
                 reportProgress: (event) => {
-                  const sequence = activitySequence++;
-                  const activityEvent: SubagentActivityUpdateEvent = {
-                    ...event,
-                    activityEventId: `${runtime.taskId}:${sequence}`,
-                    activitySequence: sequence,
-                  };
-                  lease.content?.record(activityEvent, sequence);
-                  runtime.reportProgress(activityEvent);
-                  recordActivity(recorder, activityEvent);
-                  this.publishActivity(
-                    lease,
-                    preparedThread.conversation.conversationId,
-                    runtime.taskId,
-                    activityEvent,
-                  );
+                  const {
+                    phase: _phase,
+                    data: _data,
+                    label: _label,
+                    timestamp: _timestamp,
+                    ...metadata
+                  } = event;
+                  identity = metadata;
+                  let normalized = event;
+                  if (event.phase === 'run_step') {
+                    const step = event.data as Agents.RunStep | undefined;
+                    if (step != null && Number.isSafeInteger(step.index) && step.index >= 0) {
+                      let index = stepIndices.get(step.id);
+                      if (index == null) {
+                        index = Math.max(step.index + contentOffset, maxContentIndex + 1);
+                        stepIndices.set(step.id, index);
+                        const width =
+                          step.stepDetails.type === 'tool_calls'
+                            ? Math.max(1, step.stepDetails.tool_calls?.length ?? 0)
+                            : 1;
+                        maxContentIndex = Math.max(maxContentIndex, index + width - 1);
+                      }
+                      normalized = { ...event, data: { ...step, index } };
+                      // Reuse SDK slot allocation without retaining arguments, deltas or output.
+                      slots.aggregateContent({
+                        event: GraphEvents.ON_RUN_STEP,
+                        data: {
+                          id: step.id,
+                          index,
+                          stepDetails:
+                            step.stepDetails.type === 'tool_calls'
+                              ? {
+                                  type: 'tool_calls',
+                                  tool_calls: step.stepDetails.tool_calls?.map(({ id }) => ({
+                                    id,
+                                    name: 'tool',
+                                    args: {},
+                                    type: 'tool_call',
+                                  })),
+                                }
+                              : {
+                                  type: 'message_creation',
+                                  message_creation: { message_id: step.id },
+                                },
+                        } as Parameters<typeof slots.aggregateContent>[0]['data'],
+                      });
+                    }
+                  }
+                  if (event.phase === 'run_step_delta') {
+                    const delta = event.data as Agents.RunStepDeltaEvent | undefined;
+                    if (delta != null && slots.stepMap.has(delta.id)) {
+                      slots.aggregateContent({
+                        event: GraphEvents.ON_RUN_STEP_DELTA,
+                        data: {
+                          id: delta.id,
+                          delta: {
+                            type: 'tool_calls',
+                            tool_calls: delta.delta.tool_calls?.map(({ id, index }) => ({
+                              id,
+                              index,
+                              name: 'tool',
+                              args: '',
+                            })),
+                          },
+                        } as Parameters<typeof slots.aggregateContent>[0]['data'],
+                      });
+                    }
+                  }
+                  maxContentIndex = Math.max(maxContentIndex, slots.contentParts.length - 1);
+                  runtime.reportProgress(normalized);
+                  recordActivity(recorder, normalized);
+                  publish(normalized);
                 },
               };
               const result = await runWithDetachedSubagentUsage(detachedUsage, () =>
@@ -1668,6 +1868,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 result,
                 detachedUsage,
                 lease.content?.throughSequence,
+                appliedSteers,
               );
               activityTerminal = 'completed';
               return result;
@@ -1735,6 +1936,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                   activityTerminal,
                 );
               }
+              lease.publishAppliedSteer = undefined;
               await this.stopAndReleaseSharedLease(scope, threadId, lease);
               if (this.activeThreads.get(lockKey) === lease) {
                 this.activeThreads.delete(lockKey);
@@ -2204,6 +2406,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       invocationId,
       fingerprint,
       command: boundedControlCommand(command),
+      ...('message' in command ? { pendingMessage: command.message } : {}),
       commandMessageTruncated:
         'message' in command && command.message.length > MAX_DURABLE_CONTROL_MESSAGE_CHARS,
       result,
@@ -3424,6 +3627,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     result: { content: string; messages?: BaseMessage[] },
     detachedUsage: UsageMetadata[],
     contentThroughSequence?: number,
+    appliedSteers?: readonly AppliedSubagentSteer[],
   ): Promise<void> {
     if (prepared.userMessageId == null) {
       throw new Error('The child-thread input was not prepared.');
@@ -3433,6 +3637,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       taskId,
       prepared.initialStoredMessages,
       result.messages,
+      appliedSteers,
+      request.input,
     );
     const activityProjection =
       subagentTranscript == null
@@ -3441,13 +3647,14 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             subagentTranscript.messagesJson,
             subagentTranscript.mode,
             request.input,
+            appliedSteers,
           );
     const subagentActivityProjection =
       activityProjection == null
         ? undefined
         : {
             taskId,
-            version: 1 as const,
+            version: 2 as const,
             activityJson: JSON.stringify(activityProjection.activity),
             truncated: activityProjection.truncated,
           };

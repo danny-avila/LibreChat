@@ -13,6 +13,12 @@ type Projection = {
   truncated: boolean;
 };
 
+export type AppliedSubagentSteer = {
+  steerId: string;
+  clientSteerId: string;
+  createdAt: number;
+};
+
 type MutableToolActivity = Extract<SubagentActivityItem, { type: 'tool' }>;
 type ProjectedActivityEntry = { item: SubagentActivityItem; active: boolean };
 type MutableToolProjection = {
@@ -96,6 +102,9 @@ const fitNewestItemToSerializedBudget = (item: SubagentActivityItem): SubagentAc
   if (item.type === 'writing' || item.type === 'reasoning') {
     return shrinkStringField(item, 'text', 'textTruncated');
   }
+  if (item.type === 'steer') {
+    return shrinkStringField(item, 'steer', 'textTruncated');
+  }
   if (item.type === 'activity_label') {
     const withoutAssociations = { ...item, toolCallIds: undefined, agentIds: undefined };
     return shrinkStringField(withoutAssociations, 'label', 'labelTruncated');
@@ -165,6 +174,29 @@ export function projectPersistedMessageActivity(
     if (!isRecord(candidate) || typeof candidate.type !== 'string') {
       truncated = true;
       return [];
+    }
+    if (candidate.type === 'steer') {
+      if (typeof candidate.steer !== 'string') {
+        truncated = true;
+        return [];
+      }
+      const text = truncateUtf8(candidate.steer, MAX_ACTIVITY_TEXT_BYTES);
+      return [
+        {
+          type: 'steer',
+          steer: text.value,
+          ...(typeof candidate.steerId === 'string'
+            ? { steerId: truncateUtf8(candidate.steerId, MAX_TOOL_CALL_ID_BYTES).value }
+            : {}),
+          ...(typeof candidate.clientSteerId === 'string'
+            ? { clientSteerId: truncateUtf8(candidate.clientSteerId, MAX_TOOL_CALL_ID_BYTES).value }
+            : {}),
+          ...(nonNegativeTiming(candidate.createdAt) == null
+            ? {}
+            : { createdAt: nonNegativeTiming(candidate.createdAt) }),
+          ...(text.truncated || candidate.textTruncated === true ? { textTruncated: true } : {}),
+        },
+      ];
     }
     if (candidate.type === 'writing') {
       if (typeof candidate.text !== 'string') {
@@ -352,6 +384,11 @@ const uniqueToolActivityId = (
   return candidate;
 };
 
+const isInjectedSteer = (data: Record<string, unknown>): boolean =>
+  isRecord(data.additional_kwargs) &&
+  data.additional_kwargs.injected === true &&
+  data.additional_kwargs.source === 'steer';
+
 /**
  * Converts one server-private LangChain transcript into a bounded public
  * activity projection. Visible text, bounded reasoning text, and declared
@@ -362,6 +399,7 @@ export function projectSubagentActivity(
   messagesJson: string | undefined,
   mode: 'append' | 'replace' = 'append',
   expectedTaskInput?: string,
+  appliedSteers?: readonly AppliedSubagentSteer[],
 ): Projection {
   if (messagesJson == null) return { activity: [], truncated: false };
   let parsed: unknown;
@@ -377,7 +415,12 @@ export function projectSubagentActivity(
     let latestInputIndex = -1;
     for (let index = parsed.length - 1; index >= 0; index -= 1) {
       const stored = parsed[index];
-      if (isRecord(stored) && (stored.type === 'human' || stored.type === 'user')) {
+      if (
+        isRecord(stored) &&
+        isRecord(stored.data) &&
+        (stored.type === 'human' || stored.type === 'user') &&
+        !isInjectedSteer(stored.data)
+      ) {
         latestInputIndex = index;
         break;
       }
@@ -397,6 +440,7 @@ export function projectSubagentActivity(
   }
 
   const activity: ProjectedActivityEntry[] = [];
+  const steerItems: Array<Extract<SubagentActivityItem, { type: 'steer' }>> = [];
   const toolsByRawId = new Map<string, MutableToolQueue>();
   const usedToolActivityIds = new Set<string>();
   // A global cursor makes collision probing amortized linear even when many
@@ -415,6 +459,29 @@ export function projectSubagentActivity(
       continue;
     }
     const { data } = stored;
+    if ((stored.type === 'human' || stored.type === 'user') && isInjectedSteer(data)) {
+      const metadata = isRecord(data.additional_kwargs) ? data.additional_kwargs : {};
+      const text = truncateUtf8(visibleContent(data.content).text, MAX_ACTIVITY_TEXT_BYTES);
+      if (text.value !== '') {
+        const item: Extract<SubagentActivityItem, { type: 'steer' }> = {
+          type: 'steer',
+          steer: text.value,
+          ...(typeof metadata.steerId === 'string'
+            ? { steerId: truncateUtf8(metadata.steerId, MAX_TOOL_CALL_ID_BYTES).value }
+            : {}),
+          ...(typeof metadata.clientSteerId === 'string'
+            ? { clientSteerId: truncateUtf8(metadata.clientSteerId, MAX_TOOL_CALL_ID_BYTES).value }
+            : {}),
+          ...(nonNegativeTiming(metadata.createdAt) == null
+            ? {}
+            : { createdAt: nonNegativeTiming(metadata.createdAt) }),
+          ...(text.truncated ? { textTruncated: true } : {}),
+        };
+        steerItems.push(item);
+        append(item);
+      }
+      continue;
+    }
     if (stored.type === 'ai' || stored.type === 'assistant') {
       const content = visibleContent(data.content);
       if (content.hasReasoning) {
@@ -479,6 +546,10 @@ export function projectSubagentActivity(
     append(orphan);
   }
 
+  // SDK conversion strips control IDs. Only a complete apply-order correspondence is safe.
+  if (appliedSteers != null && steerItems.length === appliedSteers.length) {
+    steerItems.forEach((item, index) => Object.assign(item, appliedSteers[index]));
+  }
   const boundedActivity = activity.filter((entry) => entry.active).map((entry) => entry.item);
   return boundActivity(boundedActivity, truncated);
 }

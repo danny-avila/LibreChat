@@ -356,6 +356,26 @@ test.describe('subagent chat retained-history parity', () => {
           0,
         );
 
+        const guidance = `Additional parent design checks:\n${'Keep parent guidance in transcript order and preserve complete text.\n'.repeat(18)}END_OF_PARENT_GUIDANCE_${label}`;
+        if (threadPath) {
+          const [threadEndpoint, query] = threadPath.split('?');
+          const controlledTaskId = new URLSearchParams(query).get('taskId');
+          const controlled = await requestJson<{ receipt: { status: string } }>(activePage, {
+            path: `${threadEndpoint}/control`,
+            token: viewerToken,
+            method: 'POST',
+            body: {
+              taskId: controlledTaskId,
+              invocationId: `history-guidance-${label}`,
+              action: 'steer',
+              message: guidance,
+            },
+          });
+          expect(controlled.receipt.status).toBe('accepted');
+          await expect(
+            surface.getByText('Message shortened for display.', { exact: true }),
+          ).toHaveCount(0);
+        }
         await gates.signal('advance');
         await gates.wait('live', { timeoutMs: 15_000 });
         await assertHistoryCalls(surface, label, history.CALL_COUNT + 1);
@@ -400,6 +420,63 @@ test.describe('subagent chat retained-history parity', () => {
         );
         await assertHistoryCalls(surface, label, history.CALL_COUNT + 1);
         await assertFullToolDetails(surface, label, 0);
+        if (threadPath) {
+          const steer = surface
+            .locator('[data-steer-render]')
+            .filter({ hasText: `END_OF_PARENT_GUIDANCE_${label}` });
+          await expect(steer).toHaveCount(1);
+          const expand = steer.getByRole('button', { name: 'Show more', exact: true });
+          if (await expand.isVisible()) await expand.click();
+          await expect(steer).toContainText(`END_OF_PARENT_GUIDANCE_${label}`);
+          await expect(
+            surface.getByText('Message shortened for display.', { exact: true }),
+          ).toHaveCount(0);
+          const precedingText = history.liveText(label);
+          expect(
+            await steer.evaluate((node, text) => {
+              const root = node.closest('[data-subagent-conversation]')!;
+              const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+              let current: Node | null;
+              while ((current = walker.nextNode())) {
+                if (
+                  current.textContent === text &&
+                  current instanceof HTMLElement &&
+                  current.children.length === 0
+                ) {
+                  return Boolean(
+                    current.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING,
+                  );
+                }
+              }
+              return false;
+            }, precedingText),
+          ).toBe(true);
+          const completion = surface.getByText(history.completionText(label), { exact: true });
+          expect(
+            await steer.evaluate(
+              (node, completedText) => {
+                const walker = document.createTreeWalker(
+                  node.closest('[data-subagent-conversation]')!,
+                  NodeFilter.SHOW_ELEMENT,
+                );
+                let current: Node | null;
+                while ((current = walker.nextNode())) {
+                  if (
+                    current.textContent === completedText &&
+                    current instanceof HTMLElement &&
+                    current.children.length === 0
+                  ) {
+                    return Boolean(
+                      node.compareDocumentPosition(current) & Node.DOCUMENT_POSITION_FOLLOWING,
+                    );
+                  }
+                }
+                return false;
+              },
+              await completion.textContent(),
+            ),
+          ).toBe(true);
+        }
 
         if (mode !== 'normal chat') {
           await surface.getByRole('button', { name: 'Close', exact: true }).click();
@@ -411,6 +488,16 @@ test.describe('subagent chat retained-history parity', () => {
             : await openHistoryChild(activePage, label);
         await assertHistoryCalls(restored, label, history.CALL_COUNT + 1);
         await assertFullToolDetails(restored, label, 0);
+        if (threadPath) {
+          await expect(
+            restored
+              .locator('[data-steer-render]')
+              .filter({ hasText: `END_OF_PARENT_GUIDANCE_${label}` }),
+          ).toHaveCount(1);
+          await expect(
+            restored.getByText('Message shortened for display.', { exact: true }),
+          ).toHaveCount(0);
+        }
         await expect(
           restored.getByText(history.completionText(label), { exact: true }),
         ).toHaveCount(1);

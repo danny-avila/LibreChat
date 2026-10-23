@@ -18,11 +18,11 @@ import { ToolContentQueryContext } from '~/components/Chat/Messages/Content/disc
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
+import SteerPart from '~/components/Chat/Messages/Content/Parts/SteerPart';
 import { useMessagePartsHost } from '~/Providers/MessagePartsHostContext';
 import Container from '~/components/Chat/Messages/Content/Container';
 import { EmptyText } from '~/components/Chat/Messages/Content/Parts';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
-import SteerReceipt from '~/components/Chat/Steering/Receipt';
 import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -88,43 +88,41 @@ function SubagentControlHistory({
         ) {
           return null;
         }
+        const legacyInlineGuidance =
+          control.status === 'applied' &&
+          content.some((part) => part?.type === ContentTypes.STEER && part.steerId == null);
         const pending = control.status === 'submitted' || control.status === 'accepted';
         let receiptState: SteerReceiptState | undefined;
         if (control.action !== 'cancel' && control.action !== 'cancel_message') {
           if (control.status === 'submitted') receiptState = 'sending';
-          else if (control.status === 'accepted') receiptState = 'delivered';
+          else if (control.status === 'accepted')
+            receiptState = control.action === 'interrupt' ? 'interrupting' : 'delivered';
           else if (control.status === 'applied') receiptState = 'applied';
         }
         return (
-          <div key={control.invocationId} className="group my-3 flex flex-col items-end text-sm">
-            {control.message != null && control.message !== '' && (
-              <div className="rounded-theme-surface rounded-ee-theme-control bg-surface-user-message px-theme-normal max-w-[90%] py-2.5 sm:max-w-[85%]">
-                <ContentParts
-                  content={[{ type: ContentTypes.TEXT, text: control.message }]}
-                  messageId={`control:${control.invocationId}`}
-                  conversationId={null}
-                  isCreatedByUser
-                  isLast={false}
-                  isSubmitting={false}
-                  isLatestMessage={false}
-                  showThinking={false}
-                />
-                {control.messageTruncated === true && (
-                  <div className="text-text-secondary mt-1 text-xs italic">
-                    {localize('com_ui_subagent_control_message_truncated')}
-                  </div>
-                )}
-              </div>
+          <div
+            key={control.invocationId}
+            className={cn('group flex flex-col items-end text-sm', pending && 'opacity-60')}
+          >
+            {!legacyInlineGuidance && control.message != null && control.message !== '' && (
+              <SteerPart
+                steer={control.message}
+                steerId={control.controlId ?? control.invocationId}
+                createdAt={Date.parse(control.createdAt)}
+                receiptState={receiptState ?? 'delivered'}
+                isSubmitting={pending}
+              />
             )}
-            <div className="text-text-secondary mt-1 flex min-h-8 flex-wrap items-center justify-end gap-2 text-xs">
+            <div className="text-text-secondary flex flex-wrap items-center justify-end gap-2 text-xs">
               <span className={control.message ? 'sr-only' : undefined}>
                 {localize(CONTROL_ACTION_LABELS[control.action])}
               </span>
-              <MessageTimestamp value={control.createdAt} className="ms-0" />
+              {(legacyInlineGuidance || !control.message) && (
+                <MessageTimestamp value={control.createdAt} className="ms-0" />
+              )}
               <span className={receiptState == null ? undefined : 'sr-only'} aria-live="polite">
                 {localize(CONTROL_STATUS_LABELS[control.status])}
               </span>
-              {receiptState != null && <SteerReceipt state={receiptState} live={pending} />}
               {control.status === 'accepted' &&
                 control.controlId != null &&
                 onCancelControl != null && (
@@ -232,6 +230,14 @@ export function SubagentActivityScrollSurface({
 }
 
 const toContentPart = (item: ChildActivityItem): TMessageContentParts => {
+  if (item.type === 'steer') {
+    return {
+      type: ContentTypes.STEER,
+      steer: item.steer,
+      steerId: item.steerId,
+      createdAt: item.createdAt,
+    };
+  }
   if (item.type === 'writing') {
     return {
       type: ContentTypes.TEXT,

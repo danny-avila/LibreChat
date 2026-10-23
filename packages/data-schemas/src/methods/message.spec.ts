@@ -3643,8 +3643,8 @@ describe('Message Operations', () => {
           ),
       );
       for (const receipt of message.subagentTask?.controlReceipts ?? []) {
-        expect(Buffer.byteLength(receipt.message ?? '', 'utf8')).toBeLessThanOrEqual(512);
-        expect(receipt.messageTruncated).toBe(true);
+        expect(receipt.message).toHaveLength(4_096);
+        expect(receipt.messageTruncated).not.toBe(true);
         expect(receipt).not.toHaveProperty('fingerprint');
       }
       expect(message.subagentTask).not.toHaveProperty('attemptKey');
@@ -3760,6 +3760,56 @@ describe('Message Operations', () => {
       expect(messages[0]).not.toHaveProperty('subagentTranscript');
       expect(messages[0].subagentTranscriptProjectionTruncated).toBe(true);
     });
+
+    it.each([1, 2] as const)(
+      'uses projection version %s with steering-aware legacy catch-up',
+      async (version) => {
+        const conversationId = uuidv4();
+        const transcript = JSON.stringify([
+          { type: 'human', data: { content: 'Initial task' } },
+          { type: 'ai', data: { content: 'Before guidance' } },
+          {
+            type: 'human',
+            data: { content: 'Guidance', additional_kwargs: { injected: true, source: 'steer' } },
+          },
+          { type: 'ai', data: { content: 'After guidance' } },
+        ]);
+        const projection = JSON.stringify([
+          { type: 'writing', text: 'Earlier incomplete projection' },
+        ]);
+        await saveMessage(mockCtx, {
+          messageId: 'task-steering:assistant',
+          conversationId,
+          user: 'user123',
+          text: 'Final',
+          subagentTranscript: {
+            taskId: 'task-steering',
+            mode: 'replace',
+            messagesJson: transcript,
+          },
+          subagentActivityProjection: {
+            taskId: 'task-steering',
+            version,
+            activityJson: projection,
+            truncated: false,
+          },
+        });
+        const [message] = await getMessagesForSubagentThreadView({
+          user: 'user123',
+          conversationId,
+          selectedTaskId: 'task-steering',
+          limit: 1,
+          textCodePointLimit: 8192,
+        });
+        if (version === 1) {
+          expect(message.subagentTranscript?.messagesJson).toBe(transcript);
+          expect(message.subagentActivityProjectionJson).toBeUndefined();
+        } else {
+          expect(message.subagentActivityProjectionJson).toBe(projection);
+          expect(message.subagentTranscript).toBeUndefined();
+        }
+      },
+    );
 
     it('prefers the bounded settlement projection without materializing its private transcript', async () => {
       const conversationId = uuidv4();
