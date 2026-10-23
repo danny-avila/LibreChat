@@ -11,12 +11,15 @@
  *     was pushed, or on its commit, that is queued, running or finished with shards that could
  *     report (success or failure). A vote checks out dev's head when it is created, so it holds
  *     every merge before it. A cancelled run is no trial (the codegraph shadow records none), so
- *     it covers nothing.
+ *     it covers nothing. Neither is a push run that has not finished: while throttled it is the
+ *     merge's own handoff, created beside this gate's run, whose vote job will be skipped.
  *   - Otherwise a vote starts once the newest started vote is N hours old. A merge inside the
  *     window waits, and the hourly catch-up starts the vote for the newest merge once the window
  *     opens, so the last merge of a burst is voted within about N + 1 hours even when nothing
  *     merges after it. Every started run holds the window, cancelled ones too, so a vote that
- *     keeps failing to finish is retried at most once per N hours.
+ *     keeps failing to finish is retried at most once per N hours. A handoff still in flight
+ *     started no vote, so it holds nothing. (A push run that was already voting when the
+ *     variable was set is read as a handoff too; the vote the gate starts then waits behind it.)
  *   - While the catch-up has not run for CATCHUP_LIVE_HOURS (its workflow is not on the default
  *     branch yet, or GitHub stopped scheduling it), a merge starts a vote as before: the gate never
  *     holds back a merge it cannot come back for. A push whose history cannot be read fails open
@@ -54,6 +57,9 @@ export const startedVote = (run) => !(run.status === 'completed' && run.conclusi
 export const isTrial = (run) =>
   run.status !== 'completed' || run.conclusion === 'success' || run.conclusion === 'failure';
 
+/** While throttled, an unfinished push run is a handoff: its vote job will be skipped. */
+export const handoffInFlight = (run) => run.event === 'push' && run.status !== 'completed';
+
 const ms = (iso) => Date.parse(iso);
 const stamp = (t) => new Date(t).toISOString().replace(/\.\d{3}Z$/, 'Z');
 const hours = (t) => Math.round((t / HOUR) * 10) / 10;
@@ -77,7 +83,8 @@ export function decide({ event, minHours, now, runs, merge, catchupAt }) {
   if (!merge) {
     return { dispatch: false, reason: 'no merge on record' };
   }
-  const covering = runs.find(
+  const votes = runs.filter((run) => !handoffInFlight(run));
+  const covering = votes.find(
     (run) => isTrial(run) && (run.head_sha === merge.sha || ms(run.created_at) > ms(merge.at)),
   );
   if (covering) {
@@ -86,7 +93,7 @@ export function decide({ event, minHours, now, runs, merge, catchupAt }) {
       reason: `run ${covering.id} (${state(covering)}) already covers ${merge.sha.slice(0, 10)}`,
     };
   }
-  const last = runs
+  const last = votes
     .filter(startedVote)
     .reduce(
       (newest, run) => (!newest || ms(run.created_at) > ms(newest.created_at) ? run : newest),

@@ -88,6 +88,7 @@ test('a vote created after the newest merge, or on its commit, covers it', () =>
     run(0.5, { status: 'queued', conclusion: null }),
     run(0.5, { status: 'in_progress', conclusion: null }),
     run(0.5, { conclusion: 'failure' }),
+    run(0.5, { event: 'push' }),
     run(3, { sha: 'merge-sha' }),
   ]) {
     const decision = decide({ ...base, event: 'schedule', runs: [covering], merge: merge(1) });
@@ -104,6 +105,22 @@ test('a handed-off push run neither holds the window nor covers the merge', () =
   const handoff = run(0.2, { conclusion: 'skipped', sha: 'merge-sha', event: 'push' });
   const decision = decide({ ...base, event: 'push', runs: [handoff, run(3)], merge: merge(0.2) });
   assert.equal(decision.dispatch, true);
+});
+
+test('a handoff still in flight neither covers its merge nor holds the window', () => {
+  for (const status of ['queued', 'in_progress']) {
+    const handoff = run(0, { status, conclusion: null, sha: 'merge-sha', event: 'push' });
+    const decision = decide({ ...base, event: 'push', runs: [handoff, run(3)], merge: merge(0) });
+    assert.equal(decision.dispatch, true, `${status}: ${decision.reason}`);
+  }
+  const earlier = run(0.2, { status: 'in_progress', conclusion: null, sha: 'prev', event: 'push' });
+  const decision = decide({
+    ...base,
+    event: 'schedule',
+    runs: [earlier, run(3)],
+    merge: merge(0.1),
+  });
+  assert.equal(decision.dispatch, true, decision.reason);
 });
 
 test('a cancelled vote covers nothing but holds the window, so it is retried once per window', () => {
