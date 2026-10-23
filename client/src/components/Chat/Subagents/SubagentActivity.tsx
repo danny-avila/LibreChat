@@ -59,7 +59,7 @@ const CONTROL_REASON_LABELS: Record<string, TranslationKeys> = {
 
 type ControlMessageProps = {
   control: NonNullable<ChildActivity['controls']>[number];
-  receiptState: SteerReceiptState;
+  receiptState: SteerReceiptState | null;
   pending: boolean;
 };
 
@@ -162,12 +162,15 @@ function SubagentControlHistory({
     <section aria-label={localize('com_ui_subagent_control_history')} className="mb-3 space-y-2">
       {chronologicalControls.map((control) => {
         if (
-          control.status === 'applied' &&
+          (control.action === 'steer' ||
+            control.action === 'queue' ||
+            control.action === 'interrupt') &&
           content.some(
             (part) =>
               part?.type === ContentTypes.STEER &&
-              part.steerId != null &&
-              (part.steerId === control.controlId || part.steerId === control.invocationId),
+              ((part.steerId != null &&
+                (part.steerId === control.controlId || part.steerId === control.invocationId)) ||
+                part.clientSteerId === control.invocationId),
           )
         ) {
           return null;
@@ -193,7 +196,7 @@ function SubagentControlHistory({
             {!legacyInlineGuidance && control.message != null && control.message !== '' && (
               <ControlMessage
                 control={control}
-                receiptState={receiptState ?? 'delivered'}
+                receiptState={receiptState ?? null}
                 pending={pending}
               />
             )}

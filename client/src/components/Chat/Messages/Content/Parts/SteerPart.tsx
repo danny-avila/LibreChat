@@ -48,7 +48,7 @@ const SteerPart = memo(function SteerPart({
    *  to timestamp gray (always settled on reload, share, and search). */
   isSubmitting?: boolean;
   /** Pending renderer state must never claim server application early. */
-  receiptState?: SteerReceiptState;
+  receiptState?: SteerReceiptState | null;
 }) {
   const localize = useLocalize();
   const { useUser, useFileMap, useUserTextPreferences, useLiveAppliedSteer } =
@@ -177,7 +177,9 @@ const SteerPart = memo(function SteerPart({
          *  width changes as the relative string ticks. */}
         <div className="text-text-secondary mt-1 flex min-h-8 items-center justify-end gap-2">
           <MessageTimestamp value={timestamp} className="ms-0" />
-          <SteerReceipt state={receiptState} live={isSubmitting} animateIn={animateIn} />
+          {receiptState != null && (
+            <SteerReceipt state={receiptState} live={isSubmitting} animateIn={animateIn} />
+          )}
         </div>
       </div>
       {otherFiles.length > 0 && (

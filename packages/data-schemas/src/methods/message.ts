@@ -809,6 +809,7 @@ export interface MessageMethods {
     taskId: string;
     invocationId: string;
     tenantId?: string;
+    activeOnly?: boolean;
   }): Promise<NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number] | null>;
   getSubagentTaskControlReplay(input: {
     userId: string;
@@ -2662,12 +2663,14 @@ export function createMessageMethods(
     taskId,
     invocationId,
     tenantId,
+    activeOnly = false,
   }: {
     userId: string;
     conversationId: string;
     taskId: string;
     invocationId: string;
     tenantId?: string;
+    activeOnly?: boolean;
   }): Promise<StoredSubagentControlReceipt | null> {
     if (
       userId.length === 0 ||
@@ -2682,6 +2685,7 @@ export function createMessageMethods(
     }
     const Message = mongoose.models.Message as Model<IMessage>;
     const input = await Message.findOne({
+      ...(activeOnly ? activeExpirationFilter<IMessage>() : {}),
       user: userId,
       conversationId,
       ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),

@@ -13,6 +13,7 @@ const Wrapper = ({ children }: { children: React.ReactNode }) => (
 );
 const render = (ui: React.ReactElement) => rtlRender(ui, { wrapper: Wrapper });
 
+const mockShowMore = 'com_ui_show_more';
 const mockReadControl = jest.fn();
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -47,7 +48,7 @@ jest.mock('~/components/Chat/Messages/Content/Parts/SteerPart', () => ({
     onExpand,
   }: {
     steer: string;
-    receiptState?: string;
+    receiptState?: string | null;
     hasMore?: boolean;
     onExpand?: () => void;
   }) => (
@@ -55,7 +56,7 @@ jest.mock('~/components/Chat/Messages/Content/Parts/SteerPart', () => ({
       {steer}
       {hasMore && (
         <button type="button" onClick={onExpand}>
-          Show more
+          {mockShowMore}
         </button>
       )}
     </div>
@@ -901,7 +902,7 @@ it('loads a budgeted retained body only after expansion while keeping Withdraw a
     </QueryClientProvider>,
   );
   expect(mockReadControl).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+  fireEvent.click(screen.getByRole('button', { name: mockShowMore }));
   await waitFor(() =>
     expect(screen.getByTestId('shared-steer-part')).toHaveTextContent(full.trim()),
   );
@@ -913,3 +914,89 @@ it('loads a budgeted retained body only after expansion while keeping Withdraw a
   unmount();
   client.clear();
 });
+
+it.each(['submitted', 'accepted', 'failed'] as const)(
+  'retires an already-applied %s receipt by its client identity without waiting for the ledger',
+  (status) => {
+    const applied = {
+      type: ContentTypes.STEER as const,
+      steer: 'Applied guidance.',
+      steerId: 'server-control',
+      clientSteerId: 'client-invocation',
+    };
+    render(
+      <SubagentActivity
+        activity={{
+          ...base,
+          content: [applied, { type: ContentTypes.TEXT, text: 'Later activity.' }],
+          controls: [
+            {
+              invocationId: 'client-invocation',
+              action: 'steer',
+              status,
+              message: 'Applied guidance.',
+              createdAt: '2026-10-23T00:00:00Z',
+              updatedAt: '2026-10-23T00:00:01Z',
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.queryByTestId('shared-steer-part')).not.toBeInTheDocument();
+    expect(mockContentParts.mock.calls.at(-1)?.[0].content).toContainEqual(applied);
+  },
+);
+
+it('does not hide a failed withdrawal just because its target was already applied', () => {
+  render(
+    <SubagentActivity
+      activity={{
+        ...base,
+        content: [
+          { type: ContentTypes.STEER, steer: 'Applied guidance.', steerId: 'server-control' },
+        ],
+        controls: [
+          {
+            invocationId: 'withdrawal',
+            controlId: 'server-control',
+            action: 'cancel_message',
+            status: 'rejected',
+            reason: 'control_not_found',
+            createdAt: '2026-10-23T00:00:00Z',
+            updatedAt: '2026-10-23T00:00:01Z',
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText('com_ui_subagent_control_reason_control_not_found')).toBeInTheDocument();
+});
+
+it.each(['failed', 'rejected'] as const)(
+  'keeps the %s guidance body readable without asserting enqueue or application',
+  (status) => {
+    render(
+      <SubagentActivity
+        activity={{
+          ...base,
+          controls: [
+            {
+              invocationId: 'terminal',
+              action: 'steer',
+              status,
+              message: 'Retained terminal guidance.',
+              reason: status === 'rejected' ? 'withdrawn' : 'owner_unavailable',
+              createdAt: '2026-10-23T00:00:00Z',
+              updatedAt: '2026-10-23T00:00:01Z',
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByTestId('shared-steer-part')).toHaveTextContent(
+      'Retained terminal guidance.',
+    );
+    expect(screen.getByTestId('shared-steer-part')).not.toHaveAttribute('data-receipt');
+    expect(screen.getByText(`com_ui_subagent_control_status_${status}`)).toBeVisible();
+  },
+);

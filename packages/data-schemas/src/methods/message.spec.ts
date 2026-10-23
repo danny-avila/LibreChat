@@ -5129,6 +5129,39 @@ describe('Message Operations', () => {
       });
     };
 
+    it('keeps expired receipt replay private while denying public body reads', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      await recordSubagentTaskControlReceipt({
+        userId: 'user123',
+        conversationId,
+        taskId: 'task-1',
+        receipt: {
+          invocationId: 'expired-read',
+          fingerprint: 'private',
+          controlId: 'control',
+          action: 'steer',
+          status: 'accepted',
+          message: 'retained body',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      const identity = {
+        userId: 'user123',
+        conversationId,
+        taskId: 'task-1',
+        invocationId: 'expired-read',
+      };
+      expect(await getSubagentTaskControlReceipt({ ...identity, activeOnly: true })).not.toBeNull();
+      await Message.updateOne(
+        { user: 'user123', conversationId, messageId: 'task-1:user' },
+        { $set: { expiredAt: new Date(Date.now() - 1000) } },
+      );
+      expect(await getSubagentTaskControlReceipt({ ...identity, activeOnly: true })).toBeNull();
+      expect(await getSubagentTaskControlReceipt(identity)).not.toBeNull();
+    });
+
     it('advances one invocation monotonically and enforces ownership', async () => {
       const conversationId = uuidv4();
       await createTaskInput(conversationId);

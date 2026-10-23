@@ -281,7 +281,12 @@ export function createSubagentControlHandler(deps: Dependencies) {
 }
 
 /** Reads one retained body through its parent without mutating or replaying the control. */
-export function createSubagentControlReceiptHandler(deps: Omit<Dependencies, 'store'>) {
+export function createSubagentControlReceiptHandler(
+  deps: Pick<
+    Dependencies,
+    'getConvoOwnership' | 'getSubagentThreadForParent' | 'getSubagentTaskControlReceipt'
+  >,
+) {
   return async (req: ServerRequest, res: Response): Promise<void> => {
     const userId = req.user?.id;
     const tenantId = req.user?.tenantId || undefined;
@@ -298,7 +303,7 @@ export function createSubagentControlReceiptHandler(deps: Omit<Dependencies, 'st
       return;
     }
     try {
-      const [parent, child, seed] = await Promise.all([
+      const [parent, child] = await Promise.all([
         deps.getConvoOwnership(userId, parentConversationId, tenantId ?? null),
         deps.getSubagentThreadForParent({
           user: userId,
@@ -306,24 +311,12 @@ export function createSubagentControlReceiptHandler(deps: Omit<Dependencies, 'st
           conversationId: threadId,
           tenantId,
         }),
-        deps.getMessages(
-          {
-            user: userId,
-            conversationId: threadId,
-            messageId: `${taskId}:user`,
-            ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
-            $or: [{ expiredAt: null }, { expiredAt: { $gt: new Date() } }],
-          },
-          'messageId',
-          { limit: 1 },
-        ),
       ]);
       if (
         parent == null ||
         child?.subagentThread?.parentConversationId !== parentConversationId ||
         parent.tenantId !== tenantId ||
-        child.tenantId !== tenantId ||
-        seed.length === 0
+        child.tenantId !== tenantId
       ) {
         res.status(404).json({ error: 'Conversation not found' });
         return;
@@ -334,6 +327,7 @@ export function createSubagentControlReceiptHandler(deps: Omit<Dependencies, 'st
         taskId,
         invocationId,
         tenantId,
+        activeOnly: true,
       });
       if (receipt == null || receipt.status === 'reserved') {
         res.status(404).json({ error: 'Control not found' });

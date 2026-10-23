@@ -173,7 +173,6 @@ const subagentTaskContentHandler = createSubagentTaskContentHandler(
 const subagentControlReceiptHandler = createSubagentControlReceiptHandler({
   getConvoOwnership: db.getConvoOwnership,
   getSubagentThreadForParent: db.getSubagentThreadForParent,
-  getMessages: db.getMessages,
   getSubagentTaskControlReceipt: db.getSubagentTaskControlReceipt,
 });
 const subagentControlHandler = createSubagentControlHandler({

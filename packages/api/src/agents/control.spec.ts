@@ -604,13 +604,12 @@ describe('parent-authorized retained control body', () => {
     expect(res.json.mock.calls[0][0].receipt).not.toHaveProperty('fingerprint');
     expect(deps.store.controlTask).not.toHaveBeenCalled();
   });
-  it.each(['parent', 'child', 'seed', 'tenant'] as const)(
+  it.each(['parent', 'child', 'tenant'] as const)(
     'does not read a body without its authorized %s',
     async (missing) => {
       const deps = dependencies();
       if (missing === 'parent') deps.getConvoOwnership.mockResolvedValue(null);
       if (missing === 'child') deps.getSubagentThreadForParent.mockResolvedValue(null);
-      if (missing === 'seed') deps.getMessages.mockResolvedValue([]);
       if (missing === 'tenant')
         deps.getSubagentThreadForParent.mockResolvedValue({ ...child, tenantId: 'other' });
       const res = response();
@@ -619,6 +618,21 @@ describe('parent-authorized retained control body', () => {
       expect(deps.getSubagentTaskControlReceipt).not.toHaveBeenCalled();
     },
   );
+  it('requires an active source receipt from the storage boundary', async () => {
+    const deps = dependencies();
+    const res = response();
+    await createSubagentControlReceiptHandler(deps)(readRequest(), res.value);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(deps.getSubagentTaskControlReceipt).toHaveBeenCalledWith({
+      userId: 'user-1',
+      conversationId: threadId,
+      taskId,
+      invocationId: 'invocation-1',
+      tenantId: 'tenant-1',
+      activeOnly: true,
+    });
+    expect(deps.getMessages).not.toHaveBeenCalled();
+  });
   it('sanitizes unexpected body storage failures', async () => {
     const deps = dependencies();
     deps.getSubagentTaskControlReceipt.mockRejectedValue(new Error('private storage content'));
