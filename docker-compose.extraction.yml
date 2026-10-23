@@ -1,0 +1,30 @@
+# Opt-in: docker compose -f docker-compose.yml -f docker-compose.extraction.yml up --build
+services:
+  api:
+    group_add: ['10001']
+    volumes:
+      - extraction-socket:/socket:ro
+    depends_on:
+      extraction:
+        condition: service_healthy
+  extraction:
+    image: ${EXTRACTION_IMAGE:-librechat-extraction:local}
+    build:
+      context: ${EXTRACTION_BUILD_CONTEXT:-https://github.com/LibreChat-AI/code-interpreter.git#77bcd2ec2e63be523bfab2dfa11159a2ceec0088}
+      dockerfile: packages/extraction/Dockerfile
+      target: runtime
+    init: true
+    user: '10001:10001'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    network_mode: none
+    mem_limit: 768m
+    cpus: 2
+    pids_limit: 32
+    tmpfs:
+      - /jobs:rw,noexec,nosuid,nodev,size=96m,nr_inodes=1024,uid=10001,gid=10001,mode=0700
+    volumes:
+      - extraction-socket:/socket
+volumes:
+  extraction-socket:

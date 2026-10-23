@@ -325,6 +325,7 @@ const prepareCodeOutputForInspection = async ({
     classify: classifyCodeArtifact,
     extractRawText: extractCodeArtifactRawText,
     extractInspectionText: extractCodeArtifactInspectionText,
+    extractionService: req.config?.fileConfig?.extractionService,
   });
 };
 

@@ -659,7 +659,37 @@ const skillFileConfigSchema = z.object({
   deletionCleanupConcurrency: z.number().int().positive().optional(),
 });
 
+export const extractionServiceSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    socketPath: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^\/[^\0\r\n]*$/)
+      .default('/socket/extraction.sock'),
+    deadlineMs: z.number().int().min(1).max(15000).default(12000),
+    maxInputBytes: z
+      .number()
+      .int()
+      .min(1)
+      .max(10 * megabyte)
+      .default(10 * megabyte),
+    maxTextBytes: z.number().int().min(1).max(megabyte).default(megabyte),
+    maxResponseBytes: z
+      .number()
+      .int()
+      .min(1)
+      .max(3 * megabyte)
+      .default(3 * megabyte),
+    maxSegments: z.number().int().min(1).max(128).default(128),
+  })
+  .strict();
+
+export type ExtractionServiceConfig = z.input<typeof extractionServiceSchema>;
+
 export const fileConfigSchema = z.object({
+  extractionService: extractionServiceSchema.optional(),
   /** Enable only after every replica and rollback target reads retained file destinations. */
   retainedFileCleanup: z.boolean().optional(),
   endpoints: z.record(endpointFileConfigSchema).optional(),
@@ -1272,6 +1302,10 @@ function buildMergedFileConfig(dynamic: DynamicFileConfig | undefined): FileConf
   };
   if (!dynamic) {
     return mergedConfig;
+  }
+
+  if (dynamic.extractionService !== undefined) {
+    mergedConfig.extractionService = dynamic.extractionService;
   }
 
   if (dynamic.retainedFileCleanup !== undefined) {

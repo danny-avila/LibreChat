@@ -1,6 +1,13 @@
 import path from 'node:path';
 import { inferMimeType } from 'librechat-data-provider';
+import type { ExtractionServiceConfig } from 'librechat-data-provider';
+import type { DocumentExtractor } from '~/files/extraction/client';
 import type { PreparedCodeOutput } from './preflight';
+import {
+  createDocumentExtractor,
+  extractionText,
+  getExtractionFormat,
+} from '~/files/extraction/client';
 import { extractCodeArtifactRawText, extractCodeArtifactInspectionText } from './extract';
 import { sanitizeArtifactPath } from '~/utils/files';
 import { classifyCodeArtifact } from './classify';
@@ -20,8 +27,14 @@ export async function prepareCodeOutputBufferForInspection({
   classify = classifyCodeArtifact,
   extractRawText = extractCodeArtifactRawText,
   extractInspectionText = extractCodeArtifactInspectionText,
+  extractionService,
+  extractor = createDocumentExtractor(extractionService),
+  signal,
 }: {
   buffer: Buffer;
+  extractionService?: ExtractionServiceConfig;
+  extractor?: DocumentExtractor;
+  signal?: AbortSignal;
   name: string;
   fileSizeLimit: number;
   inspectContent?: boolean;
@@ -45,6 +58,19 @@ export async function prepareCodeOutputBufferForInspection({
   }
 
   const leafName = path.basename(safeName);
+  const format = getExtractionFormat(leafName, detectedMimeType ?? fallbackType);
+  if (extractor && format) {
+    const result = await extractor.extract(buffer, format, signal);
+    return {
+      buffer,
+      extractedTextComplete: true,
+      file: {
+        ...file,
+        type: detectedMimeType ?? fallbackType,
+        extractedText: extractionText(result),
+      },
+    };
+  }
   const unknownText = detectedType == null ? extractRawText(buffer, 'utf8-text') : null;
   const mimeType = unknownText != null ? 'text/plain' : (detectedMimeType ?? fallbackType);
   const category = unknownText != null ? 'utf8-text' : classify(leafName, mimeType);

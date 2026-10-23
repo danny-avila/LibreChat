@@ -1,8 +1,16 @@
 import * as fs from 'fs';
 import yauzl from 'yauzl';
 import { megabyte, excelMimeTypes, FileSources } from 'librechat-data-provider';
+import type { ExtractionServiceConfig } from 'librechat-data-provider';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
+import type { DocumentExtractor } from '~/files/extraction/client';
 import type { MistralOCRUploadResult } from '~/types';
+import {
+  createDocumentExtractor,
+  extractionText,
+  getExtractionFormat,
+  readExtractionInput,
+} from '~/files/extraction/client';
 import { assertSafeZipSize } from './zipSafety';
 
 type FileParseFn = (file: Express.Multer.File) => Promise<string>;
@@ -18,9 +26,31 @@ const ODT_MAX_DECOMPRESSED_SIZE = 50 * megabyte;
  */
 export async function parseDocument({
   file,
+  req,
+  extractor = createDocumentExtractor(req?.config?.fileConfig?.extractionService),
+  signal,
 }: {
   file: Express.Multer.File;
+  req?: { config?: { fileConfig?: { extractionService?: ExtractionServiceConfig } } };
+  extractor?: DocumentExtractor;
+  signal?: AbortSignal;
 }): Promise<MistralOCRUploadResult> {
+  const format = getExtractionFormat(file.originalname, file.mimetype);
+  if (extractor && format) {
+    const result = await extractor.extract(
+      await readExtractionInput(file, extractor, signal),
+      format,
+      signal,
+    );
+    const text = extractionText(result);
+    return {
+      filename: file.originalname,
+      bytes: Buffer.byteLength(text, 'utf8'),
+      filepath: FileSources.document_parser,
+      text,
+      images: [],
+    };
+  }
   const parseFn = getParserForMimeType(file.mimetype);
   if (!parseFn) {
     throw new Error(`Unsupported file type in document parser: ${file.mimetype}`);

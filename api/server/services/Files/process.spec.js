@@ -121,6 +121,7 @@ jest.mock('@librechat/api', () => {
     },
   );
   return {
+    ...jest.requireActual('../../../../packages/api/src/files/extraction/upload'),
     ...jest.requireActual('../../../../packages/api/src/files/storage'),
     ...jest.requireActual('../../../../packages/api/src/files/operations'),
     ...jest.requireActual('../../../../packages/api/src/files/finalize'),
@@ -524,6 +525,80 @@ describe('processAgentFileUpload', () => {
     });
     mergeFileConfig.mockReturnValue(makeFileConfig());
     inspectContent.mockReturnValue(null);
+  });
+
+  describe('opt-in extraction service', () => {
+    const clientModule = require('../../../../packages/api/src/files/extraction/client');
+    let extract;
+    beforeEach(() => {
+      extract = jest.fn().mockRejectedValue(new clientModule.ExtractionServiceError('BUSY'));
+      jest
+        .spyOn(clientModule, 'createDocumentExtractor')
+        .mockReturnValue({ maxInputBytes: 10485760, extract });
+    });
+    afterEach(() => jest.restoreAllMocks());
+
+    test.each([PDF_MIME, DOCX_MIME])(
+      'never persists success or invokes local strategies after remote rejection for %s',
+      async (mimetype) => {
+        const req = makeReq({ mimetype });
+        req.file.buffer = Buffer.from('uploaded bytes');
+        req.config.fileConfig.extractionService = { enabled: true };
+        await expect(
+          processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+        ).rejects.toThrow('Document extraction failed (BUSY).');
+        expect(extract).toHaveBeenCalledTimes(1);
+        expect(getStrategyFunctions).not.toHaveBeenCalled();
+        expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+        expect(db.createFile).not.toHaveBeenCalled();
+        expect(mockRes.json).not.toHaveBeenCalled();
+      },
+    );
+
+    test('does not bypass context authorization to reach the service', async () => {
+      checkCapability.mockResolvedValue(false);
+      const req = makeReq();
+      req.config.fileConfig.extractionService = { enabled: true };
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toThrow('context capability is disabled');
+      expect(extract).not.toHaveBeenCalled();
+      expect(db.createFile).not.toHaveBeenCalled();
+    });
+
+    test('still checks configured OCR capability before remote extraction', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
+      checkCapability.mockImplementation(
+        async (_req, capability) => capability !== AgentCapabilities.ocr,
+      );
+      const req = makeReq({ ocrConfig: { strategy: FileSources.mistral_ocr } });
+      req.config.fileConfig.extractionService = { enabled: true };
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toThrow('OCR capability is not enabled');
+      expect(extract).not.toHaveBeenCalled();
+      expect(db.createFile).not.toHaveBeenCalled();
+    });
+
+    test('still filters remote semantic text before persistence', async () => {
+      const req = makeReq({ filters: { files: { pii: {} } } });
+      req.file.buffer = Buffer.from('uploaded bytes');
+      req.config.fileConfig.extractionService = { enabled: true };
+      extract.mockResolvedValue({
+        textBytes: 7,
+        segments: [{ kind: 'page', index: 1, text: 'PRIVATE' }],
+      });
+      inspectContent.mockReturnValueOnce({
+        label: 'private',
+        source: 'file',
+        field: 'extracted_text',
+      });
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+      expect(extractFileContent).toHaveBeenCalledWith({ extractedText: 'PRIVATE' });
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+      expect(db.createFile).not.toHaveBeenCalled();
+    });
   });
 
   describe('content filtering for extracted context', () => {
