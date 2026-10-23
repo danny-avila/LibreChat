@@ -124,31 +124,93 @@ afterEach(() => {
 
 describe('GET /api/config', () => {
   describe('unauthenticated (no req.user)', () => {
-    it('should call getAppConfig with baseOnly when no tenant context', async () => {
+    it('should resolve the __base__ overrides without runtime augmentation when no tenant context', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       mockGetTenantId.mockReturnValue(undefined);
       const app = createApp(null);
 
       await request(app).get('/api/config');
 
-      expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+      expect(mockGetAppConfig).toHaveBeenCalledWith({ skipRuntimeAugmentation: true });
+      expect(mockGetAppConfig).not.toHaveBeenCalledWith(
+        expect.objectContaining({ failClosed: true }),
+      );
     });
 
-    it('should call getAppConfig with tenantId when tenant context is present', async () => {
+    it('should serve the pre-login config: __base__ socialLogins and interface, YAML Turnstile', async () => {
+      mockGetTenantId.mockReturnValue(undefined);
+      mockResolveBuildInfo.mockReturnValue({
+        commit: 'abc1234def',
+        commitShort: 'abc1234',
+        branch: 'main',
+        buildDate: '2026-01-01T00:00:00.000Z',
+      });
+      /** What the merge hands back: `turnstile` is base-only, so it is librechat.yaml's. */
+      const preLoginConfig = {
+        registration: { socialLogins: ['google', 'openid'] },
+        interfaceConfig: {
+          privacyPolicy: { externalUrl: 'https://base.example/privacy' },
+          theme: 'clickhouse',
+          buildInfo: false,
+          modelSelect: false,
+        },
+        turnstileConfig: { siteKey: 'yaml-site-key' },
+      };
+      mockGetAppConfig.mockResolvedValue(preLoginConfig);
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.statusCode).toBe(200);
+      expect(mockGetAppConfig).toHaveBeenCalledTimes(1);
+      expect(mockGetAppConfig).toHaveBeenCalledWith({ skipRuntimeAugmentation: true });
+      expect(response.body.socialLogins).toEqual(['google', 'openid']);
+      expect(response.body.interface).toEqual({
+        privacyPolicy: { externalUrl: 'https://base.example/privacy' },
+        buildInfo: false,
+        theme: 'clickhouse',
+      });
+      expect(response.body).not.toHaveProperty('buildInfo');
+      expect(response.body.turnstile).toEqual({ siteKey: 'yaml-site-key' });
+    });
+
+    it('should never serve a signed-out visitor a policy link that would run script', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: {
+          privacyPolicy: {
+            externalUrl: '\u00a0javascript:alert(document.domain)',
+            openNewTab: true,
+          },
+          termsOfService: { externalUrl: '\u0001data:text/html,<script>alert(1)</script>' },
+        },
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.interface).toEqual({
+        privacyPolicy: { openNewTab: true },
+        termsOfService: {},
+      });
+    });
+
+    it('should resolve a tenant context in one read without an explicit tenantId', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       mockGetTenantId.mockReturnValue('tenant-abc');
       const app = createApp(null);
 
       await request(app).get('/api/config');
 
-      expect(mockGetAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-abc' });
+      expect(mockGetAppConfig).toHaveBeenCalledTimes(1);
+      expect(mockGetAppConfig).toHaveBeenCalledWith({ skipRuntimeAugmentation: true });
     });
 
     it('should map tenant-scoped config fields in unauthenticated response', async () => {
       const tenantConfig = {
         ...baseAppConfig,
         registration: { socialLogins: ['saml'] },
-        turnstileConfig: { siteKey: 'tenant-key' },
       };
       mockGetAppConfig.mockResolvedValue(tenantConfig);
       mockGetTenantId.mockReturnValue('tenant-abc');
@@ -158,7 +220,7 @@ describe('GET /api/config', () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.body.socialLogins).toEqual(['saml']);
-      expect(response.body.turnstile).toEqual({ siteKey: 'tenant-key' });
+      expect(response.body.turnstile).toEqual({ siteKey: 'test-key' });
       expect(response.body).not.toHaveProperty('modelSpecs');
     });
 
@@ -352,7 +414,7 @@ describe('GET /api/config', () => {
       const response = await request(app).get('/api/config');
 
       expect(response.statusCode).toBe(500);
-      expect(response.body).toHaveProperty('error');
+      expect(response.body).toEqual({ error: 'Failed to load startup config' });
     });
 
     it('should not expose endpointsDropParamsMap to unauthenticated callers', async () => {
@@ -389,6 +451,27 @@ describe('GET /api/config', () => {
       const anonymous = await request(createApp()).get('/api/config');
       expect(anonymous.statusCode).toBe(200);
       expect(anonymous.body).not.toHaveProperty('ragEnabled');
+    });
+
+    it('drops a policy link that would run script and keeps the rest of the interface', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: {
+          privacyPolicy: { externalUrl: 'https://example.com/privacy' },
+          termsOfService: { externalUrl: 'JavaScript:alert(1)', modalAcceptance: true },
+          modelSelect: true,
+        },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.interface).toEqual({
+        privacyPolicy: { externalUrl: 'https://example.com/privacy' },
+        termsOfService: { modalAcceptance: true },
+        modelSelect: true,
+      });
     });
 
     it('should call getAppConfig with role, userId, and tenantId', async () => {

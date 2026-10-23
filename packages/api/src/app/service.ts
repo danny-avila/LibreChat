@@ -1,23 +1,28 @@
 import { createHash } from 'node:crypto';
 import {
+  logger,
+  getTenantId,
+  loadDefaultInterface,
+  tenantStorage,
+  BASE_CONFIG_PRINCIPAL_ID,
+  SYSTEM_TENANT_ID,
+} from '@librechat/data-schemas';
+import {
   PrincipalType,
   materializeModelSpecEndpoints,
   getConfigDefaults,
   normalizeEndpointName,
   setMaxSubagents,
 } from 'librechat-data-provider';
-import {
-  logger,
-  getTenantId,
-  mergeConfigOverrides,
-  loadDefaultInterface,
-  tenantStorage,
-  BASE_CONFIG_PRINCIPAL_ID,
-  SYSTEM_TENANT_ID,
-} from '@librechat/data-schemas';
-import type { AppConfig, IConfig } from '@librechat/data-schemas';
+import type { AppConfig, ConfigOverrideLayer } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
+import type { EnvReferencePolicy } from './allowlist';
 import type { CustomConfigLoadMode } from './loader';
+import type { SecretRebinding } from './rebinding';
+import { createEnvReferencePolicy, parseEnvAllowlist } from './allowlist';
+import { resolveRuntimeConfigSecrets } from '~/admin/secrets';
+import { normalizeEndpointReferences } from './references';
+import { mergeOverrideLayers } from './overrides';
 import { checkAppConfigTheme } from './theme';
 
 const BASE_CONFIG_KEY = '_BASE_';
@@ -189,8 +194,6 @@ function checkOverrideTheme(baseConfig: AppConfig, merged: AppConfig): AppConfig
 /**
  * Materializes inferable model-spec fields (an omitted `preset.endpoint` for
  * agent specs) so every consumer of the effective config reads complete specs.
- * Runs at both assembly points — YAML base load and DB-override merge — because
- * override documents contribute specs the base config never saw.
  */
 function materializeConfigModelSpecs(config: AppConfig): AppConfig {
   const modelSpecs = materializeModelSpecEndpoints(config.modelSpecs);
@@ -198,6 +201,15 @@ function materializeConfigModelSpecs(config: AppConfig): AppConfig {
     return config;
   }
   return { ...config, modelSpecs };
+}
+
+/**
+ * Completes the effective config: inferred spec endpoints, and endpoint references in the
+ * names the runtime serves. Runs at both assembly points — YAML base load and DB-override
+ * merge — because override documents contribute specs and references the base never saw.
+ */
+function completeEffectiveConfig(config: AppConfig): AppConfig {
+  return normalizeEndpointReferences(materializeConfigModelSpecs(config));
 }
 
 export const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
@@ -226,7 +238,7 @@ export interface AppConfigServiceDeps {
   /** The CacheKeys constants from librechat-data-provider. */
   cacheKeys: { APP_CONFIG: string };
   /** Fetch applicable DB config overrides for a set of principals. */
-  getApplicableConfigs: (principals?: AppConfigPrincipal[]) => Promise<IConfig[]>;
+  getApplicableConfigs: (principals?: AppConfigPrincipal[]) => Promise<ConfigOverrideLayer[]>;
   /** Resolve full principal list (user + role + groups) from userId/role. */
   getUserPrincipals: (params: {
     userId: string | Types.ObjectId;
@@ -242,6 +254,12 @@ export interface AppConfigServiceDeps {
   }) => Promise<AppConfig>;
   /** TTL in ms for per-user/role merged config caches. Defaults to 60 000. */
   overrideCacheTtl?: number;
+  /**
+   * Extra env names override values may reference (`CONFIG_OVERRIDE_ENV_ALLOWLIST`: names
+   * separated by commas or whitespace), beyond those librechat.yaml references and the built-in
+   * endpoint credentials.
+   */
+  overrideEnvAllowlist?: string;
 }
 
 export interface GetAppConfigOptions {
@@ -258,6 +276,12 @@ export interface GetAppConfigOptions {
   resolvedPrincipals?: AppConfigPrincipal[];
   /** Skip mutable runtime augmentation when the caller has already loaded that data. */
   skipRuntimeAugmentation?: boolean;
+  /**
+   * Merge the overrides as stored now, neither reading nor writing the per-principal merged
+   * cache. Admin reads use it so they never show a merge from before their own write. Unlike
+   * `refresh`, the YAML base config is not reloaded.
+   */
+  bypassOverrideCache?: boolean;
 }
 
 export interface AppConfigUserLike {
@@ -345,12 +369,46 @@ export function createMessageBudgetReader(): {
   };
 }
 
+/** Most distinct rebinding warnings remembered before the record starts over. */
+const MAX_REBINDING_WARNINGS = 1000;
+
+/**
+ * Logs each secret a layer drops for being sent somewhere other than where it was entered, and
+ * each destination it sets back, once per principal and path for the process's lifetime
+ * (bounded), since every uncached merge does it again.
+ */
+function createRebindingWarner(): (rebinding: SecretRebinding) => void {
+  const warned = new Set<string>();
+  return ({ layer, kind, path }) => {
+    const principal = `${layer.principalType}/${layer.principalId?.toString()}`;
+    const key = `${principal}:${path}`;
+    if (warned.has(key)) {
+      return;
+    }
+    if (warned.size >= MAX_REBINDING_WARNINGS) {
+      warned.clear();
+    }
+    warned.add(key);
+    if (kind === 'destination') {
+      logger.warn(
+        `[getAppConfig] Ignoring "${path}" for ${principal}: it would send a credential to a destination that was not chosen for it`,
+      );
+      return;
+    }
+    logger.warn(
+      `[getAppConfig] Dropping secret "${path}" for ${principal}: the merged config sends it somewhere other than the destination it was entered for`,
+    );
+  };
+}
+
 // ── Service factory ──────────────────────────────────────────────────
 
 export function createAppConfigService(deps: AppConfigServiceDeps): {
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
   clearAppConfigCache: () => Promise<void>;
   clearOverrideCache: (tenantId?: string) => Promise<void>;
+  /** The TTL in ms this service caches per-principal merged configs for. */
+  overrideCacheTtl: number;
 } {
   const {
     loadBaseConfig,
@@ -361,11 +419,90 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     getUserPrincipals,
     augmentConfig,
     overrideCacheTtl = DEFAULT_OVERRIDE_CACHE_TTL,
+    overrideEnvAllowlist,
   } = deps;
 
   const cache = getCache(cacheKeys.APP_CONFIG);
+  const envAllowlist = parseEnvAllowlist(overrideEnvAllowlist);
+  const envPolicies = new WeakMap<AppConfig, Map<string, EnvReferencePolicy>>();
+  const warnRebinding = createRebindingWarner();
+  const runtimeConfigs = new WeakMap<AppConfig, AppConfig>();
+
+  /**
+   * A merged config with its stored credentials decrypted for runtime readers. The override cache
+   * (shared through Redis when `APP_CONFIG` is not kept in memory) holds the config as merged,
+   * with ciphertext; each read decrypts it, once per cached object.
+   */
+  function withRuntimeSecrets(merged: AppConfig): AppConfig {
+    let resolved = runtimeConfigs.get(merged);
+    if (!resolved) {
+      resolved = resolveRuntimeConfigSecrets(merged);
+      runtimeConfigs.set(merged, resolved);
+    }
+    return resolved;
+  }
+
+  /**
+   * The env reference policy for a tenant, built once per loaded librechat.yaml and tenant from
+   * the YAML that tenant sees, so a name only another tenant's endpoint references is not
+   * allowed in this tenant's overrides.
+   */
+  function getEnvPolicy(
+    baseConfig: AppConfig,
+    scopedBaseConfig: AppConfig,
+    tenantId: string | undefined,
+  ): EnvReferencePolicy {
+    let byTenant = envPolicies.get(baseConfig);
+    if (!byTenant) {
+      byTenant = new Map();
+      envPolicies.set(baseConfig, byTenant);
+    }
+    const key = tenantId ?? '';
+    let policy = byTenant.get(key);
+    if (!policy) {
+      policy = createEnvReferencePolicy({
+        config: scopedBaseConfig.config,
+        allowlist: envAllowlist,
+      });
+      byTenant.set(key, policy);
+    }
+    return policy;
+  }
   let lastGoodBaseConfig: AppConfig | undefined;
-  let baseConfigFlight: Promise<AppConfig> | undefined;
+  let baseConfigFlight: { promise: Promise<AppConfig>; generation: number } | undefined;
+
+  /**
+   * Base-config generation: `clearAppConfigCache` bumps it before deleting `_BASE_`. A reload
+   * publishes its result (the cached base, the tools and the last good config) only if no clear
+   * happened while it ran, and a read after a clear never joins a reload started before it, so a
+   * reload that read the old librechat.yaml cannot re-cache it after a later write's clear.
+   */
+  let baseGeneration = 0;
+
+  /**
+   * Override-cache generations: a clear bumps the cleared tenant's (or, for a clear of every
+   * tenant, the global) counter before deleting entries. A merge captures the generation, base
+   * generation included, before it reads the base config or the database, and is cached only if
+   * no clear happened meanwhile, so a request that read just before an admin write cannot
+   * re-cache the old merge, or a merge built on the old base, just after the write's clears.
+   * The check runs again once the write lands, since an async store can apply it after a
+   * clear's delete.
+   */
+  let globalOverrideGeneration = 0;
+  const tenantOverrideGenerations = new Map<string, number>();
+
+  function getOverrideGeneration(tenantId: string | undefined): string {
+    const tenant = tenantId ? (tenantOverrideGenerations.get(tenantId) ?? 0) : 0;
+    return `${baseGeneration}:${globalOverrideGeneration}:${tenant}`;
+  }
+
+  function bumpOverrideGeneration(tenantId: string | undefined): void {
+    if (!tenantId) {
+      globalOverrideGeneration += 1;
+      return;
+    }
+    tenantOverrideGenerations.set(tenantId, (tenantOverrideGenerations.get(tenantId) ?? 0) + 1);
+  }
 
   async function buildPrincipals(
     role?: string,
@@ -389,7 +526,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     return principals;
   }
 
-  async function restoreLastGoodBaseConfig(error: unknown): Promise<AppConfig> {
+  async function restoreLastGoodBaseConfig(error: unknown, generation: number): Promise<AppConfig> {
     const lastGood = lastGoodBaseConfig;
     if (!lastGood) {
       throw error;
@@ -400,6 +537,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       '[ensureBaseConfig] Failed to reload base configuration; keeping the last good configuration.',
       error,
     );
+    if (generation !== baseGeneration) {
+      return lastGood;
+    }
     const restorations = [cache.set(BASE_CONFIG_KEY, lastGood)];
     if (lastGood.availableTools) {
       restorations.push(setCachedTools(lastGood.availableTools));
@@ -410,10 +550,24 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
         logger.error('[ensureBaseConfig] Failed to restore last-good config state:', result.reason);
       }
     }
+    if (generation !== baseGeneration) {
+      await cache.delete(BASE_CONFIG_KEY).catch((deleteError: unknown) => {
+        logger.error('[ensureBaseConfig] Failed to drop an overtaken restoration:', deleteError);
+      });
+    }
     return lastGood;
   }
 
-  async function loadAndCacheBaseConfig(mode: CustomConfigLoadMode): Promise<AppConfig> {
+  /**
+   * Loads the base config and, unless a clear made `generation` stale while it loaded, publishes
+   * it. A stale load still answers the reads that joined it, which started before the clear.
+   * An async store (Redis) can land the write after a clear's delete, so a write a clear
+   * overtook in flight is removed again.
+   */
+  async function loadAndCacheBaseConfig(
+    mode: CustomConfigLoadMode,
+    generation: number,
+  ): Promise<AppConfig> {
     try {
       logger.info('[ensureBaseConfig] Loading base configuration...');
       const loaded = await loadBaseConfig(mode);
@@ -421,24 +575,38 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
         throw new Error('Failed to initialize app configuration through AppService.');
       }
 
-      const baseConfig = materializeConfigModelSpecs(loaded);
+      const baseConfig = completeEffectiveConfig(loaded);
+      if (generation !== baseGeneration) {
+        return baseConfig;
+      }
       if (baseConfig.availableTools) {
         await setCachedTools(baseConfig.availableTools);
       }
+      if (generation !== baseGeneration) {
+        return baseConfig;
+      }
       await cache.set(BASE_CONFIG_KEY, baseConfig);
+      if (generation !== baseGeneration) {
+        await cache.delete(BASE_CONFIG_KEY);
+        return baseConfig;
+      }
       lastGoodBaseConfig = baseConfig;
       return baseConfig;
     } catch (error) {
       if (mode === 'startup') {
         throw error;
       }
-      return restoreLastGoodBaseConfig(error);
+      return restoreLastGoodBaseConfig(error, generation);
     }
   }
 
   /**
    * Ensure the YAML-derived base config is loaded and cached.
    * Returns the `_BASE_` config (YAML + AppService). No DB queries.
+   *
+   * Reads join the load in flight for the current generation. A load for a newer generation
+   * starts once the stale one settles, so the loader's process-wide side effects (such as the
+   * subagent cap) end with the newest librechat.yaml rather than whichever read finished last.
    */
   async function ensureBaseConfig(refresh?: boolean): Promise<AppConfig> {
     const cached = (await cache.get(BASE_CONFIG_KEY)) as AppConfig | undefined;
@@ -449,15 +617,19 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       }
     }
 
-    if (baseConfigFlight) {
-      return baseConfigFlight;
+    const generation = baseGeneration;
+    const previous = baseConfigFlight;
+    if (previous?.generation === generation) {
+      return previous.promise;
     }
 
     const mode: CustomConfigLoadMode = lastGoodBaseConfig ? 'reload' : 'startup';
-    const flight = loadAndCacheBaseConfig(mode);
+    const load = () => loadAndCacheBaseConfig(mode, generation);
+    const promise = previous ? previous.promise.then(load, load) : load();
+    const flight = { promise, generation };
     baseConfigFlight = flight;
     try {
-      return await flight;
+      return await promise;
     } finally {
       if (baseConfigFlight === flight) {
         baseConfigFlight = undefined;
@@ -470,11 +642,14 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    *
    * The base config (from YAML + AppService) is cached indefinitely. Per-principal merged
    * configs are cached with a short TTL (`overrideCacheTtl`, default 60s). On cache miss,
-   * `getApplicableConfigs` queries the DB for matching overrides and merges them by priority.
+   * `getApplicableConfigs` queries the DB for matching overrides, which merge in precedence
+   * order (`compareConfigPrecedence`): Base first, then ascending priority, then role < group <
+   * user, then document identity, the last layer winning.
    *
    * When `baseOnly` is true, returns the YAML-derived config without any DB queries.
    * `role` and `userId` are ignored; tenantId still scopes YAML custom endpoints.
-   * Use this for startup, auth strategies, and other pre-tenant code paths.
+   * Use this for startup and other paths that must not read overrides; sign-in decisions
+   * read the `__base__` override through `resolvePreAuthAppConfig`.
    */
   async function getAppConfig(options: GetAppConfigOptions = {}): Promise<AppConfig> {
     const {
@@ -487,6 +662,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       failClosed,
       resolvedPrincipals,
       skipRuntimeAugmentation,
+      bypassOverrideCache,
     } = options;
 
     const ambientTenantId = getTenantId();
@@ -499,6 +675,8 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       );
     }
 
+    const cacheTenantId = ambientTenantId ?? effectiveTenantId;
+    const generation = getOverrideGeneration(cacheTenantId);
     const baseConfig = await ensureBaseConfig(refresh);
     const scopedBaseConfig = await scopeBaseConfig(baseConfig, effectiveTenantId);
     const hiddenEndpoints = hiddenCustomEndpoints(baseConfig, effectiveTenantId);
@@ -517,9 +695,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       return scopedBaseConfig;
     }
 
-    // Strict isolation + no tenant anywhere (neither param nor ALS) is pathological: a
-    // middleware bypass or an unauthenticated startup call. Pre-tenant calls should use
-    // baseOnly:true and admin calls carry an explicit tenantId. Return the base config
+    // Strict isolation + no tenant anywhere (neither param nor ALS): a middleware bypass,
+    // or a signed-out request that named no tenant (strict mode refuses config reads without
+    // one). Admin calls carry an explicit tenantId. Return the base config
     // without caching it under the shared `__default__` bucket. When ALS has a tenant,
     // overrideCacheKey scopes the key to it, so we fall through and cache per-tenant.
     if (principals.length === 0 && !tenantId && !getTenantId() && isStrictOverrideMode()) {
@@ -563,16 +741,16 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
         ]),
       )
       .digest('hex');
-    const cacheKey = overrideCacheKey(
-      role,
-      userId,
-      ambientTenantId ?? effectiveTenantId,
-      scopeVersion,
-    );
-    if (!refresh) {
+    const cacheKey = overrideCacheKey(role, userId, cacheTenantId, scopeVersion);
+    /**
+     * The key names a role and user, not a principal set: principals resolved elsewhere are
+     * cached only when a user id ties them to the key.
+     */
+    const cacheable = bypassOverrideCache !== true && (resolvedPrincipals == null || !!userId);
+    if (cacheable && !refresh) {
       const cachedMerged = (await cache.get(cacheKey)) as AppConfig | undefined;
       if (cachedMerged) {
-        return await augment(cachedMerged);
+        return await augment(withRuntimeSecrets(cachedMerged));
       }
     }
 
@@ -580,11 +758,12 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     try {
       const configs = await getApplicableConfigs(principals);
       if (configs.length > 0) {
+        const layered = mergeOverrideLayers(scopedBaseConfig, configs, {
+          envPolicy: getEnvPolicy(baseConfig, scopedBaseConfig, effectiveTenantId),
+          onRebinding: warnRebinding,
+        });
         merged = scopeCustomEndpoints(
-          checkOverrideTheme(
-            scopedBaseConfig,
-            materializeConfigModelSpecs(mergeConfigOverrides(scopedBaseConfig, configs)),
-          ),
+          checkOverrideTheme(scopedBaseConfig, completeEffectiveConfig(layered)),
           effectiveTenantId,
           hiddenEndpoints,
         );
@@ -595,8 +774,13 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       return scopedBaseConfig;
     }
 
-    await cache.set(cacheKey, merged, overrideCacheTtl);
-    return await augment(merged);
+    if (cacheable && getOverrideGeneration(cacheTenantId) === generation) {
+      await cache.set(cacheKey, merged, overrideCacheTtl);
+      if (getOverrideGeneration(cacheTenantId) !== generation) {
+        await cache.delete(cacheKey);
+      }
+    }
+    return await augment(withRuntimeSecrets(merged));
   }
 
   /**
@@ -604,8 +788,10 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    * are NOT flushed — they expire naturally via `overrideCacheTtl`. After calling this,
    * the base config will be reloaded from YAML on the next `getAppConfig` call, but
    * users with cached overrides may see stale merged configs for up to `overrideCacheTtl` ms.
+   * Reloads and merges already in flight are not cached afterwards.
    */
   async function clearAppConfigCache(): Promise<void> {
+    baseGeneration += 1;
     await cache.delete(BASE_CONFIG_KEY);
   }
 
@@ -615,6 +801,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    * caches are cleared.
    */
   async function clearOverrideCache(tenantId?: string): Promise<void> {
+    bumpOverrideGeneration(tenantId);
     const namespace = cacheKeys.APP_CONFIG;
     const overrideSegment = tenantId ? `_OVERRIDE_:${tenantId}:tenant:` : '_OVERRIDE_:';
 
@@ -658,6 +845,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     getAppConfig,
     clearAppConfigCache,
     clearOverrideCache,
+    overrideCacheTtl,
   };
 }
 

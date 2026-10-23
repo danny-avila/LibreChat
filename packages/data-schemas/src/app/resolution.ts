@@ -6,22 +6,87 @@ import {
   RUNTIME_CONFIG_INTERFACE_FIELDS,
   PERMISSION_SUB_KEYS,
   isProcessMCPServerConfig,
+  normalizeEndpointName,
+  EModelEndpoint,
   configSchema,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
-import type { AppConfig, IConfig } from '~/types';
-import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
-import { getTombstonePathsToClear } from '~/methods/config';
+import type { AdminConfigMergeRules, AppConfig, Config, TWebSearchKeys } from '~/types';
+import type { AzureResolvedGroupField } from './azure';
+import type { ConfigFieldWrite } from './mutations';
+import {
+  AZURE_RESOLVED_GROUP_FIELDS,
+  lacksAzureAssistantModels,
+  narrowAzureServedModels,
+  resolveAzureGroups,
+} from './azure';
+import { isBaseConfigPrincipal, sortByConfigPrecedence } from './precedence';
+import { setConfigFields, toConfigOverrideState } from './mutations';
+import { webSearchPairedFields, unbindWebSearchKeys } from './web';
+import { parseFieldPath, isDotFreePath } from './paths';
 import logger from '~/config/winston';
 
 type AnyObject = { [key: string]: unknown };
 
+/** The parts of a principal's config document the merge reads, whichever store returned it. */
+export type ConfigOverrideLayer = Pick<Config, 'principalType' | 'priority' | 'overrides'> & {
+  principalId: { toString(): string };
+  tombstones?: readonly unknown[];
+  /** The document's identity: the last tie-break of merge precedence. */
+  _id?: { toString(): string } | null;
+};
+
 const MAX_MERGE_DEPTH = 10;
+const ARRAY_INDEX = /^(?:0|[1-9]\d*)$/;
+/** Schemas whose children the path walk cannot see, so the stored value decides their shape. */
+const OPAQUE_SCHEMA_TYPES = new Set(['ZodAny', 'ZodUnknown', 'ZodIntersection']);
 const MAX_STRIP_PASSES = 16;
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 /** Filters are a fail-closed security boundary even during mixed-package rollouts. */
 const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(['filters', ...BASE_ONLY_CONFIG_SECTIONS]);
 const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
+
+/** Where the resolved Azure config sits in an AppConfig. */
+const AZURE_CONFIG_PATH = `endpoints.${EModelEndpoint.azureOpenAI}`;
+
+/** The resolved Azure fields a layer's `groups` replace, as AppConfig paths. */
+const AZURE_RESOLVED_PATHS: readonly string[] = AZURE_RESOLVED_GROUP_FIELDS.map(
+  (field) => `${AZURE_CONFIG_PATH}.${field}`,
+);
+
+/** Azure `groups`, as a librechat.yaml path (the same in an AppConfig). */
+const AZURE_GROUPS_PATH = `${AZURE_CONFIG_PATH}.groups`;
+
+/**
+ * The paths a tombstone removes: its own, and for Azure `groups` every field they resolve to
+ * (`AZURE_RESOLVED_PATHS`), which the Azure clients and model lists read in their place. A
+ * tombstone removes the groups whole, as a layer's own `groups` replace them.
+ */
+function getTombstoneRemovals(path: string): readonly string[] {
+  return path === AZURE_GROUPS_PATH ? [path, ...AZURE_RESOLVED_PATHS] : [path];
+}
+
+/**
+ * `merged` with its Azure groups resolved to none, when it has an Azure endpoint: every field the
+ * groups resolve to stays, empty, so the Azure clients and model lists serve no group. Their
+ * absence would read differently: the model lists fall back to the environment's default Azure
+ * models, which the Azure client, configured by librechat.yaml, cannot map to a group.
+ */
+function withoutAzureGroups<T extends AnyObject>(merged: T): T {
+  const segments = AZURE_CONFIG_PATH.split('.');
+  const azure = getPath(merged, segments);
+  if (!isPlainObject(azure)) {
+    return merged;
+  }
+  const empty: Record<AzureResolvedGroupField, object> = {
+    groupMap: {},
+    modelGroupMap: {},
+    modelNames: [],
+    assistantModels: [],
+    assistantGroups: [],
+  };
+  return setPath(merged, segments, { ...azure, ...empty }) as T;
+}
 
 /**
  * Paths within the config tree where arrays of objects should be merged by
@@ -34,6 +99,16 @@ const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_S
  */
 const ARRAY_MERGE_KEYS: Record<string, string> = {
   'endpoints.custom': 'name',
+};
+
+/**
+ * How a merge key is folded before items are matched, by `ARRAY_MERGE_KEYS` path: two
+ * spellings the runtime serves as one item are one item to the merge too. Custom endpoint
+ * names fold through `normalizeEndpointName`, so an override `ollama` lands on the YAML
+ * `Ollama` instead of serving beside it with a different baseURL and key.
+ */
+const MERGE_KEY_FOLDS: Record<string, (key: string) => string> = {
+  'endpoints.custom': normalizeEndpointName,
 };
 
 /**
@@ -59,6 +134,31 @@ const OVERRIDE_KEY_MAP: Partial<Record<keyof TCustomConfig, keyof AppConfig>> = 
   turnstile: 'turnstileConfig',
 };
 
+/** AppConfig key → the override (YAML) section merged into it, the inverse of `OVERRIDE_KEY_MAP`. */
+const OVERRIDE_SECTION_BY_APP_KEY = new Map<string, string>(
+  Object.entries(OVERRIDE_KEY_MAP).flatMap(([section, appKey]) =>
+    appKey ? [[appKey, section]] : [],
+  ),
+);
+
+function toOverridePath(appConfigPath: string): string {
+  const [first, ...rest] = appConfigPath.split('.');
+  return [OVERRIDE_SECTION_BY_APP_KEY.get(first) ?? first, ...rest].join('.');
+}
+
+/** The merge rules in override (YAML) key names, for clients that plan writes the way they merge. */
+export function getConfigMergeRules(): AdminConfigMergeRules {
+  return {
+    arrayMergeKeys: Object.fromEntries(
+      Object.entries(ARRAY_MERGE_KEYS).map(([path, key]) => [toOverridePath(path), key]),
+    ),
+    atomicMergePaths: [...ATOMIC_MERGE_PATHS].map(toOverridePath),
+    overrideKeyMap: Object.fromEntries(
+      [...OVERRIDE_SECTION_BY_APP_KEY].map(([appKey, section]) => [section, appKey]),
+    ),
+  };
+}
+
 function isSafePath(path: string): boolean {
   const segments = path.split('.');
   if (
@@ -71,6 +171,47 @@ function isSafePath(path: string): boolean {
     return false;
   }
   return true;
+}
+
+/**
+ * The key field that identifies entries of the merged-by-key array at an override (YAML) path,
+ * such as `name` for `endpoints.custom`; `undefined` for any other path.
+ */
+export function getConfigArrayMergeKey(segments: readonly string[]): string | undefined {
+  const arrayPath = getMergeArrayPath(segments);
+  return arrayPath === undefined ? undefined : ARRAY_MERGE_KEYS[arrayPath];
+}
+
+/** The `ARRAY_MERGE_KEYS` path of the merged-by-key array at an override (YAML) path. */
+function getMergeArrayPath(segments: readonly string[]): string | undefined {
+  if (segments.length === 0 || segments.some((segment) => segment.includes('.'))) {
+    return undefined;
+  }
+  const appConfigPath = remapOverridePath(segments.join('.'));
+  return hasOwn(ARRAY_MERGE_KEYS, appConfigPath) ? appConfigPath : undefined;
+}
+
+/**
+ * The identity entry key `key` of the merged-by-key array at an override (YAML) path has: the
+ * key as the runtime merge folds it (`foldConfigMergeKey`), so `Ollama` and `ollama` name one
+ * custom endpoint to entry changes as they do to the merge. A key at any other path is its own
+ * identity.
+ */
+export function getConfigEntryIdentity(segments: readonly string[], key: string): string {
+  const arrayPath = getMergeArrayPath(segments);
+  return arrayPath === undefined ? key : foldConfigMergeKey(arrayPath, key);
+}
+
+/**
+ * `combineFoldedConfigItems` for the merged-by-key array at an override (YAML) path: stored
+ * items naming one entry in two spellings, combined as the runtime merge combines them.
+ */
+export function combineFoldedConfigEntries(
+  segments: readonly string[],
+  items: unknown[],
+): unknown[] {
+  const arrayPath = getMergeArrayPath(segments);
+  return arrayPath === undefined ? items : combineFoldedConfigItems(arrayPath, items);
 }
 
 function remapOverridePath(path: string): string {
@@ -133,6 +274,89 @@ function deleteConfigPath<T extends AnyObject>(target: T, path: string): T {
   return { ...target, mcpConfig: processServers } as T;
 }
 
+/**
+ * Folds a merge key of the merged-by-key array at `arrayPath` into the identity layers match
+ * on (`Ollama` and `ollama` are one custom endpoint); other keys come back unchanged. Code that
+ * pairs items across writes, such as secret preservation, matches on the same identity.
+ */
+export function foldConfigMergeKey(arrayPath: string, key: string): string {
+  return hasOwn(MERGE_KEY_FOLDS, arrayPath) ? MERGE_KEY_FOLDS[arrayPath](key) : key;
+}
+
+/** The identity an item of the merged-by-key array at `arrayPath` matches on. */
+function getMergeKey(item: AnyObject, keyField: string, arrayPath: string): unknown {
+  const key = item[keyField];
+  return typeof key === 'string' ? foldConfigMergeKey(arrayPath, key) : key;
+}
+
+/**
+ * Combines the items of a stored merged-by-key array that name one item in more than one
+ * spelling of its folded key (`Ollama` and `ollama`): merged in document order, later fields
+ * winning, at the first one's position. A document stored before names were folded kept such
+ * items apart, and the runtime took requests' `baseURL` and key from the first while serving
+ * the later one's metadata, so the combined item keeps what each contributed instead of losing
+ * the earlier one as a duplicate. A key repeated in only one spelling is left as is (the last
+ * item applies). Returns the same array when nothing combines.
+ */
+export function combineFoldedConfigItems(arrayPath: string, items: unknown[]): unknown[] {
+  const keyField = ARRAY_MERGE_KEYS[arrayPath];
+  if (!keyField || !hasOwn(MERGE_KEY_FOLDS, arrayPath)) {
+    return items;
+  }
+  const groups = new Map<string, { spellings: Set<string>; indexes: number[] }>();
+  items.forEach((item, index) => {
+    const key = isPlainObject(item) ? item[keyField] : undefined;
+    if (typeof key !== 'string' || key === '') {
+      return;
+    }
+    const identity = MERGE_KEY_FOLDS[arrayPath](key);
+    const group = groups.get(identity) ?? { spellings: new Set<string>(), indexes: [] };
+    group.spellings.add(key);
+    group.indexes.push(index);
+    groups.set(identity, group);
+  });
+  const depth = arrayPath.split('.').length;
+  const combined = new Map<number, AnyObject>();
+  const absorbed = new Set<number>();
+  for (const { spellings, indexes } of groups.values()) {
+    if (spellings.size < 2) {
+      continue;
+    }
+    const [first, ...rest] = indexes;
+    const merged = rest.reduce<AnyObject>(
+      (item, index) => deepMerge(item, items[index] as AnyObject, depth, arrayPath),
+      items[first] as AnyObject,
+    );
+    combined.set(first, merged);
+    rest.forEach((index) => absorbed.add(index));
+  }
+  if (combined.size === 0) {
+    return items;
+  }
+  return items.flatMap((item, index) => (absorbed.has(index) ? [] : [combined.get(index) ?? item]));
+}
+
+/** `combineFoldedConfigItems` over every folded array of a stored overrides document. */
+function combineStoredFoldedItems(overrides: unknown, principal: string): unknown {
+  let result = overrides;
+  for (const arrayPath of Object.keys(MERGE_KEY_FOLDS)) {
+    const segments = arrayPath.split('.');
+    const items = getPath(result, segments);
+    if (!Array.isArray(items)) {
+      continue;
+    }
+    const combined = combineFoldedConfigItems(arrayPath, items);
+    if (combined === items) {
+      continue;
+    }
+    logger.warn(
+      `[mergeConfigOverrides] Combining "${arrayPath}" items that name one entry in different spellings for ${principal}; a write of this list must name each entry once`,
+    );
+    result = setPath(result, segments, combined);
+  }
+  return result;
+}
+
 function mergeArrayByKey(
   target: AnyObject[],
   source: AnyObject[],
@@ -143,7 +367,7 @@ function mergeArrayByKey(
   const sourceByKey = new Map<unknown, AnyObject>();
   for (const item of source) {
     if (item != null && typeof item === 'object') {
-      const key = item[keyField];
+      const key = getMergeKey(item, keyField, path);
       // Source items without a key value are skipped: no stable identity
       // for matching or appending. (Keyless target items are preserved as-is below.)
       if (key != null) {
@@ -157,13 +381,15 @@ function mergeArrayByKey(
 
   // Pass the array container path (not a per-element path) so item
   // properties build paths like 'endpoints.custom.baseURL' for any
-  // nested ARRAY_MERGE_KEYS lookups.
+  // nested ARRAY_MERGE_KEYS lookups. A matched item keeps the spelling of
+  // its key the layer beneath gave it: an override `ollama` modifies the
+  // YAML `Ollama`, which stays the entry's name.
   for (const item of target) {
     if (item != null && typeof item === 'object') {
-      const key = item[keyField];
+      const key = getMergeKey(item, keyField, path);
       const override = key != null ? sourceByKey.get(key) : undefined;
       if (override) {
-        result.push(deepMerge(item, override, depth + 1, path));
+        result.push({ ...deepMerge(item, override, depth + 1, path), [keyField]: item[keyField] });
         seen.add(key);
       } else {
         result.push({ ...item });
@@ -258,8 +484,9 @@ export type ConfigOverrideIssue = {
   segments: string[];
   /**
    * A stable, machine-readable reason: a zod issue code (`invalid_type`, `custom`, ...),
-   * `missing_merge_key`, `duplicate_merge_key`, `indexed_merge_key_write`, `union_dropped_key`, or `invalid_document`. Schema messages are not carried because
-   * they can echo the submitted values.
+   * `unknown_section`, `missing_merge_key`, `duplicate_merge_key`, `indexed_merge_key_write`,
+   * `union_dropped_key`, `dotted_key`, or `invalid_document`. Schema messages are not carried
+   * because they can echo the submitted values.
    */
   code: string;
 };
@@ -272,6 +499,16 @@ function isPlainObject(value: unknown): value is AnyObject {
 
 function hasOwn(target: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(target, key);
+}
+
+/**
+ * Whether `key` is a top-level section an override may hold: one `configSchema` defines.
+ * Anything else names runtime state the merge would otherwise reach (`paths`, the raw-YAML
+ * `config`, the AppService aliases `interfaceConfig`/`mcpConfig`/`turnstileConfig`), so it is
+ * rejected on write and ignored at merge. Unknown keys inside a known section stay accepted.
+ */
+export function isAcceptedOverrideSection(key: string): boolean {
+  return hasOwn(configSchema.shape, key);
 }
 
 function toIssue(segments: string[], code: string): ConfigOverrideIssue {
@@ -288,15 +525,16 @@ function findItemIndex(
   key: string,
   keyField: string | undefined,
   mergedItem: unknown,
+  arrayPath: string,
 ): number {
   if (keyField) {
+    if (!isPlainObject(mergedItem)) {
+      return -1;
+    }
+    const mergedKey = getMergeKey(mergedItem, keyField, arrayPath);
     for (let index = node.length - 1; index >= 0; index--) {
       const item = node[index];
-      if (
-        isPlainObject(item) &&
-        isPlainObject(mergedItem) &&
-        item[keyField] === mergedItem[keyField]
-      ) {
+      if (isPlainObject(item) && getMergeKey(item, keyField, arrayPath) === mergedKey) {
         return index;
       }
     }
@@ -330,7 +568,7 @@ function attributeIssue(
         ? ARRAY_MERGE_KEYS[arrayPath]
         : undefined;
       const mergedItem = Array.isArray(mergedNode) ? mergedNode[Number(key)] : undefined;
-      const index = findItemIndex(node, key, keyField, mergedItem);
+      const index = findItemIndex(node, key, keyField, mergedItem, arrayPath);
       if (keyField && index < 0) {
         return undefined;
       }
@@ -388,12 +626,15 @@ function getMergeKeyIssues(overrides: AnyObject): ConfigOverrideIssue[] {
       return [];
     }
     const lastIndex = new Map<unknown, number>();
-    node.forEach((item, index) => isPlainObject(item) && lastIndex.set(item[keyField], index));
+    node.forEach(
+      (item, index) =>
+        isPlainObject(item) && lastIndex.set(getMergeKey(item, keyField, arrayPath), index),
+    );
     return node.flatMap((item, index) => {
       if (!isPlainObject(item) || typeof item[keyField] !== 'string' || item[keyField] === '') {
         return [toIssue([...segments, String(index)], 'missing_merge_key')];
       }
-      return lastIndex.get(item[keyField]) === index
+      return lastIndex.get(getMergeKey(item, keyField, arrayPath)) === index
         ? []
         : [toIssue([...segments, String(index)], 'duplicate_merge_key')];
     });
@@ -425,25 +666,28 @@ function expandUnionIssues(issues: SchemaIssue[], depth = 0): SchemaIssue[] {
   });
 }
 
-/** The parts of a zod schema the stripped-key walk reads, without depending on zod. */
+/** The parts of a zod schema the shape walk reads, without depending on zod. */
 type SchemaNode = {
   _def: {
     typeName?: string;
     innerType?: SchemaNode;
     schema?: SchemaNode;
+    getter?: () => SchemaNode;
     type?: SchemaNode;
     valueType?: SchemaNode;
+    left?: SchemaNode;
+    right?: SchemaNode;
     options?: SchemaNode[] | Map<unknown, SchemaNode>;
   };
   shape?: Record<string, SchemaNode>;
   safeParse: (value: unknown) => { success: boolean };
 };
 
-/** The schema beneath optional, nullable, default and refinement wrappers. */
+/** The schema beneath optional, nullable, default, refinement and lazy wrappers. */
 function unwrapSchema(schema: SchemaNode): SchemaNode {
   let node = schema;
   for (let depth = 0; depth < MAX_MERGE_DEPTH; depth++) {
-    const inner = node._def.innerType ?? node._def.schema;
+    const inner = node._def.innerType ?? node._def.schema ?? node._def.getter?.();
     if (!inner) {
       break;
     }
@@ -452,39 +696,206 @@ function unwrapSchema(schema: SchemaNode): SchemaNode {
   return node;
 }
 
+/** The schema one segment below `node`, through objects, records, arrays and union options. */
+function getChildSchema(node: SchemaNode, segment: string, depth = 0): SchemaNode | undefined {
+  const inner = unwrapSchema(node);
+  const { typeName } = inner._def;
+  if (typeName === 'ZodObject' && inner.shape) {
+    return hasOwn(inner.shape, segment) ? inner.shape[segment] : undefined;
+  }
+  if (typeName === 'ZodRecord') {
+    return inner._def.valueType;
+  }
+  if (typeName === 'ZodArray') {
+    return ARRAY_INDEX.test(segment) ? inner._def.type : undefined;
+  }
+  if (
+    (typeName === 'ZodUnion' || typeName === 'ZodDiscriminatedUnion') &&
+    inner._def.options &&
+    depth < MAX_MERGE_DEPTH
+  ) {
+    for (const option of inner._def.options.values()) {
+      const child = getChildSchema(option, segment, depth + 1);
+      if (child) {
+        return child;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Whether {@link getChildSchema} reaches `segment` below `node` through an array. */
+function isArrayStep(node: SchemaNode, segment: string, depth = 0): boolean {
+  const inner = unwrapSchema(node);
+  const { typeName } = inner._def;
+  if (typeName === 'ZodArray') {
+    return true;
+  }
+  if (
+    (typeName !== 'ZodUnion' && typeName !== 'ZodDiscriminatedUnion') ||
+    !inner._def.options ||
+    depth >= MAX_MERGE_DEPTH
+  ) {
+    return false;
+  }
+  for (const option of inner._def.options.values()) {
+    if (getChildSchema(option, segment, depth + 1)) {
+      return isArrayStep(option, segment, depth + 1);
+    }
+  }
+  return false;
+}
+
 /**
- * Keys a union dropped: an object parses with the first union option that accepts it, and
- * that option strips keys it does not define, so a key another option defines (and would
- * type-check) is kept raw in the stored override but never validated. Keys no option defines
- * are unknown keys and stay accepted.
+ * The `configSchema` node an override (YAML) path names (`undefined` when the schema does not
+ * define it), and whether the path continues past an array on the way. Below a field of a
+ * known section that the schema does not define (a key it does not know, or what an
+ * intersection or `any` holds), the stored value decides the shape, so an index segment there
+ * is taken to name an array element.
  */
-function findUnionDroppedKeys(
+function resolveConfigSchemaPath(segments: readonly string[]): {
+  node?: SchemaNode;
+  throughArray: boolean;
+} {
+  const [section, ...rest] = segments;
+  const shape = configSchema.shape as unknown as Record<string, SchemaNode>;
+  if (section === undefined || !hasOwn(shape, section)) {
+    return { throughArray: false };
+  }
+  let node: SchemaNode | undefined = shape[section];
+  let throughArray = false;
+  for (const segment of rest) {
+    if (!node || OPAQUE_SCHEMA_TYPES.has(unwrapSchema(node)._def.typeName ?? '')) {
+      node = undefined;
+      throughArray = throughArray || ARRAY_INDEX.test(segment);
+      continue;
+    }
+    throughArray = throughArray || isArrayStep(node, segment);
+    node = getChildSchema(node, segment);
+  }
+  return { node, throughArray };
+}
+
+/**
+ * Whether an override (YAML) path names a record in `configSchema`: an object whose keys are
+ * names the operator chooses (`mcpServers`, a `headers` map, `inferenceProfiles`), so one key
+ * can be renamed to another without changing what the value means. Fixed-shape objects are not
+ * records.
+ */
+export function isConfigRecordPath(segments: readonly string[]): boolean {
+  const { node } = resolveConfigSchemaPath(segments);
+  return node != null && unwrapSchema(node)._def.typeName === 'ZodRecord';
+}
+
+/**
+ * Whether an override (YAML) path continues past an array of `configSchema`, or may: it names
+ * an element of the array or a path inside one, or has an index segment below a field of a
+ * known section the schema does not define. A tombstone there hides nothing, because the merge
+ * removes inherited values from objects only (a whole array can be hidden).
+ */
+export function isConfigArrayItemPath(segments: readonly string[]): boolean {
+  return resolveConfigSchemaPath(segments).throughArray;
+}
+
+/**
+ * The combined fixed shape of an intersection of objects (`a.and(b)`), or `undefined` when a
+ * side is not an object, so nothing is judged on a shape the walk cannot see whole.
+ */
+function getIntersectionShape(node: SchemaNode, depth = 0): Record<string, SchemaNode> | undefined {
+  if (depth >= MAX_MERGE_DEPTH || !node._def.left || !node._def.right) {
+    return undefined;
+  }
+  const [left, right] = [node._def.left, node._def.right].map((side) => {
+    const inner = unwrapSchema(side);
+    return inner._def.typeName === 'ZodIntersection'
+      ? getIntersectionShape(inner, depth + 1)
+      : inner.shape;
+  });
+  return left && right ? { ...left, ...right } : undefined;
+}
+
+/** Whether a schema accepts arbitrary keys at this level (a record, or a union with one). */
+function isRecordSchema(schema: SchemaNode): boolean {
+  const node = unwrapSchema(schema);
+  const { typeName, options } = node._def;
+  if (typeName === 'ZodRecord') {
+    return true;
+  }
+  return (
+    (typeName === 'ZodUnion' || typeName === 'ZodDiscriminatedUnion') &&
+    options != null &&
+    [...options.values()].some(isRecordSchema)
+  );
+}
+
+type ShapeIssue = { code: 'union_dropped_key' | 'dotted_key'; path: IssuePath };
+
+function toDottedKeyIssues(value: AnyObject, path: IssuePath): ShapeIssue[] {
+  return Object.keys(value)
+    .filter((key) => key.includes('.'))
+    .map((key): ShapeIssue => ({ code: 'dotted_key', path: [...path, key] }));
+}
+
+/**
+ * The walk of an object with a fixed shape: a key holding a dot can only be a mistaken
+ * path (`{ 'webSearch.serperApiKey': ... }`), which the schema strips as unknown and the secret
+ * registry never sees, so it is reported instead of stored as an inert literal key.
+ */
+function findObjectShapeIssues(
+  shape: Record<string, SchemaNode>,
+  value: AnyObject,
+  path: IssuePath,
+  depth: number,
+): ShapeIssue[] {
+  return Object.keys(value).flatMap((key): ShapeIssue[] => {
+    if (key.includes('.')) {
+      return [{ code: 'dotted_key', path: [...path, key] }];
+    }
+    return hasOwn(shape, key)
+      ? findShapeIssues(shape[key], value[key], [...path, key], depth + 1)
+      : [];
+  });
+}
+
+/**
+ * What a schema walk finds that parsing does not report:
+ * - `union_dropped_key`: an object parses with the first union option that accepts it, and
+ *   that option strips keys it does not define, so a key another option defines (and would
+ *   type-check) is kept raw in the stored override but never validated.
+ * - `dotted_key`: a key holding a dot where the schema has a fixed shape. Dots are only
+ *   meaningful in record keys (model names such as `gpt-4.1`, Bedrock inference profiles, MIME
+ *   types, header names), which a record keeps as one segment.
+ *
+ * Keys no schema node defines are unknown keys and stay accepted.
+ */
+function findShapeIssues(
   schema: SchemaNode,
   value: unknown,
   path: IssuePath,
   depth = 0,
-): IssuePath[] {
+): ShapeIssue[] {
   if (depth >= MAX_MERGE_DEPTH) {
     return [];
   }
   const node = unwrapSchema(schema);
   const { typeName } = node._def;
   if (typeName === 'ZodObject' && node.shape && isPlainObject(value)) {
-    const shape = node.shape;
-    return Object.keys(value)
-      .filter((key) => hasOwn(shape, key))
-      .flatMap((key) => findUnionDroppedKeys(shape[key], value[key], [...path, key], depth + 1));
+    return findObjectShapeIssues(node.shape, value, path, depth);
+  }
+  if (typeName === 'ZodIntersection' && isPlainObject(value)) {
+    const shape = getIntersectionShape(node);
+    return shape ? findObjectShapeIssues(shape, value, path, depth) : [];
   }
   if (typeName === 'ZodArray' && node._def.type && Array.isArray(value)) {
     const item = node._def.type;
     return value.flatMap((entry, index) =>
-      findUnionDroppedKeys(item, entry, [...path, index], depth + 1),
+      findShapeIssues(item, entry, [...path, index], depth + 1),
     );
   }
   if (typeName === 'ZodRecord' && node._def.valueType && isPlainObject(value)) {
     const entrySchema = node._def.valueType;
     return Object.entries(value).flatMap(([key, entry]) =>
-      findUnionDroppedKeys(entrySchema, entry, [...path, key], depth + 1),
+      findShapeIssues(entrySchema, entry, [...path, key], depth + 1),
     );
   }
   if (
@@ -497,18 +908,32 @@ function findUnionDroppedKeys(
   const options = [...node._def.options.values()];
   const accepted = options.find((option) => option.safeParse(value).success);
   if (!accepted) {
-    return [];
+    /** A strict option fails on the dotted key itself, and parsing reports it only as unrecognized. */
+    return isRecordSchema(node) ? [] : toDottedKeyIssues(value, path);
   }
   const acceptedShape = unwrapSchema(accepted).shape;
   const defined = new Set(
     options.flatMap((option) => Object.keys(unwrapSchema(option).shape ?? {})),
   );
-  const dropped = acceptedShape
+  const dropped: ShapeIssue[] = acceptedShape
     ? Object.keys(value)
         .filter((key) => !hasOwn(acceptedShape, key) && defined.has(key))
-        .map((key) => [...path, key])
+        .map((key): ShapeIssue => ({ code: 'union_dropped_key', path: [...path, key] }))
     : [];
-  return [...dropped, ...findUnionDroppedKeys(accepted, value, path, depth + 1)];
+  return [...dropped, ...findShapeIssues(accepted, value, path, depth + 1)];
+}
+
+/**
+ * Top-level override keys are section names, never paths: a dotted one would be stored as an
+ * inert literal key, outside the secret registry and every per-section rule.
+ */
+export function getDottedSectionIssues(overrides: unknown): ConfigOverrideIssue[] {
+  if (!isPlainObject(overrides)) {
+    return [];
+  }
+  return Object.keys(overrides)
+    .filter((key) => key.includes('.'))
+    .map((key) => toIssue([key], 'dotted_key'));
 }
 
 /**
@@ -517,7 +942,11 @@ function findUnionDroppedKeys(
  * to the override node that caused it. Unions, refinements, required fields and defaults
  * are therefore judged on the merged result, not on the patch alone. An issue caused only
  * by leaving something out (a required or related field another layer may supply) is not
- * reported, except inside an array the merge replaces, where nothing can supply it. Keys the schema does not define are accepted unchanged.
+ * reported, except inside an array the merge replaces, where nothing can supply it. A top-level
+ * key that is not a `configSchema` section is reported as `unknown_section` (or as `dotted_key`
+ * alone when it holds a dot); keys the schema does not define inside a known section are
+ * accepted unchanged, and a key holding a dot is a `dotted_key` issue unless it sits where the
+ * schema has a record.
  */
 export function getConfigOverrideIssues(
   overrides: unknown,
@@ -527,21 +956,21 @@ export function getConfigOverrideIssues(
     return [toIssue([], 'invalid_document')];
   }
   const merged = deepMerge(base as AnyObject, overrides);
-  const issues = getMergeKeyIssues(overrides);
+  const issues = [...getDottedSectionIssues(overrides), ...getMergeKeyIssues(overrides)];
   const seen = new Set(issues.map((issue) => issue.path));
   const shape = configSchema.shape;
   for (const section of Object.keys(overrides)) {
     if (!hasOwn(shape, section)) {
+      if (!seen.has(section)) {
+        issues.push(toIssue([section], 'unknown_section'));
+      }
       continue;
     }
     const schema = shape[section as keyof typeof shape] as unknown as SchemaNode;
     const result = shape[section as keyof typeof shape].safeParse(merged[section]);
-    const dropped = findUnionDroppedKeys(schema, merged[section], []).map((path) => ({
-      code: 'union_dropped_key',
-      path,
-    }));
+    const shapeIssues = findShapeIssues(schema, merged[section], []);
     const schemaIssues = result.success ? [] : expandUnionIssues(result.error.issues);
-    for (const issue of [...dropped, ...schemaIssues]) {
+    for (const issue of [...shapeIssues, ...schemaIssues]) {
       if (issue.code === 'unrecognized_keys') {
         continue;
       }
@@ -564,7 +993,7 @@ export function getConfigOverrideIssues(
   return issues;
 }
 
-/** Sets a dot-path the way a Mongo `$set` on `overrides.<path>` does, without mutating. */
+/** Sets a path without mutating, replacing whatever is in the way. */
 function setPath(target: unknown, segments: string[], value: unknown): unknown {
   if (segments.length === 0) {
     return value;
@@ -596,54 +1025,148 @@ export function applyConfigTombstones(
 ): Partial<TCustomConfig> {
   return (tombstones ?? [])
     .filter((path): path is string => typeof path === 'string' && !cleared.has(path))
+    .flatMap(getTombstoneRemovals)
     .reduce((current, path) => deletePath(current, path), base as AnyObject);
 }
 
 /**
- * Checks dot-path field writes on top of the principal's stored config, building the
- * result the way `patchConfigFields` stores it: a Mongo `$set` on each `overrides.<path>`,
- * clearing the tombstones those paths clear. The principal's remaining tombstones are
- * applied to the base. An issue is reported when it touches a written path, or when the
- * write introduced it elsewhere (a related field the write made invalid); issues the stored
- * config already had are left to merge time so they do not block an unrelated write.
+ * An item of a merged-by-key array is identified by its key, not its position: a write by index
+ * can rename the stored item, which the runtime merge then treats as a new one. Reports the
+ * array once for any write that addresses inside it by position.
  */
-export function getConfigFieldIssues(
-  fields: Record<string, unknown>,
-  base: Partial<TCustomConfig> = {},
-  stored?: { overrides?: unknown; tombstones?: unknown[] } | null,
+export function getIndexedMergeKeyIssues(
+  written: ReadonlyArray<readonly string[]>,
 ): ConfigOverrideIssue[] {
-  const written = Object.keys(fields).map((fieldPath) => fieldPath.split('.'));
-  const cleared = new Set(Object.keys(fields).flatMap(getTombstonePathsToClear));
-  const effectiveBase = applyConfigTombstones(base, stored?.tombstones, cleared);
-  const storedOverrides = isPlainObject(stored?.overrides) ? stored.overrides : {};
-  const candidate = Object.entries(fields).reduce<unknown>(
-    (current, [fieldPath, value]) => setPath(current, fieldPath.split('.'), value),
-    storedOverrides,
-  );
-  /**
-   * An item of a merged-by-key array is identified by its key, not its position: an indexed
-   * write can rename the stored item, which the runtime merge then treats as a new one.
-   */
-  const indexed = Object.keys(ARRAY_MERGE_KEYS).flatMap((arrayPath) => {
+  return Object.keys(ARRAY_MERGE_KEYS).flatMap((arrayPath) => {
     const arraySegments = arrayPath.split('.');
     return written.some(
       (segments) =>
-        segments.length > arraySegments.length && isRelatedPath(segments, arraySegments),
+        segments.length > arraySegments.length && isRelatedPath([...segments], arraySegments),
     )
       ? [toIssue(arraySegments, 'indexed_merge_key_write')]
       : [];
   });
+}
+
+function hasMergeKey(item: unknown, keyField: string): boolean {
+  return isPlainObject(item) && typeof item[keyField] === 'string' && item[keyField] !== '';
+}
+
+/**
+ * Where an issue sits in `overrides`, in a form that survives entries moving: an item of a
+ * merged-by-key array is named by its key's identity (`getConfigEntryIdentity`), or (without
+ * one) by its place among the keyless items, rather than by its index. Removing one entry
+ * shifts the ones after it, and their issues must still match the ones the stored document
+ * already had.
+ */
+function getIssueLocation(segments: readonly string[], overrides: unknown): string {
+  const location: Array<string | { key: unknown } | { keyless: number }> = [];
+  let node: unknown = overrides;
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index];
+    const keyField = Array.isArray(node)
+      ? getConfigArrayMergeKey(segments.slice(0, index))
+      : undefined;
+    if (Array.isArray(node) && keyField) {
+      const position = Number(segment);
+      const item: unknown = node[position];
+      location.push(
+        hasMergeKey(item, keyField)
+          ? {
+              key: getConfigEntryIdentity(
+                segments.slice(0, index),
+                (item as AnyObject)[keyField] as string,
+              ),
+            }
+          : {
+              keyless: node.slice(0, position).filter((other) => !hasMergeKey(other, keyField))
+                .length,
+            },
+      );
+      node = item;
+      continue;
+    }
+    location.push(segment);
+    if (Array.isArray(node)) {
+      node = node[Number(segment)];
+    } else {
+      node = isPlainObject(node) && hasOwn(node, segment) ? node[segment] : undefined;
+    }
+  }
+  return JSON.stringify(location);
+}
+
+/**
+ * Checks a principal's next override document in its final state: `candidate` merged over
+ * `base` without the candidate's tombstones, so a batch that tombstones a field and sets its
+ * replacement is judged on the end result rather than step by step. An issue is reported when
+ * it touches a `written` path (in either direction), or when the change introduced it
+ * elsewhere (a related field the change made invalid); issues the stored document already had
+ * (at the same location, entries of merged-by-key arrays matched by key) are left to merge
+ * time so they do not block an unrelated change.
+ *
+ * The stored document is judged on the base its own tombstones leave, so an issue that a
+ * removed tombstone brings back counts as new. `lifted` names stored tombstones to treat as
+ * already removed there: tombstones the change replaced with values of its own.
+ */
+export function getConfigChangeIssues(
+  candidate: { overrides?: unknown; tombstones?: unknown[] },
+  base: Partial<TCustomConfig>,
+  stored: { overrides?: unknown; tombstones?: unknown[] } | null | undefined,
+  written: ReadonlyArray<readonly string[]>,
+  lifted: Iterable<string> = [],
+): ConfigOverrideIssue[] {
+  const candidateState = toConfigOverrideState(candidate);
+  const storedState = toConfigOverrideState(stored);
+  const existing = new Set(
+    getConfigOverrideIssues(
+      storedState.overrides,
+      applyConfigTombstones(base, storedState.tombstones, new Set(lifted)),
+    ).map((issue) => getIssueLocation(issue.segments, storedState.overrides)),
+  );
+  return getConfigOverrideIssues(
+    candidateState.overrides,
+    applyConfigTombstones(base, candidateState.tombstones),
+  ).filter(
+    (issue) =>
+      !existing.has(getIssueLocation(issue.segments, candidateState.overrides)) ||
+      written.some((segments) => isRelatedPath(issue.segments, [...segments])),
+  );
+}
+
+/**
+ * Checks field writes on top of the principal's stored config, building the result with the
+ * same transform the write stores (`setConfigFields`): each path set in order, and the
+ * tombstones those paths clear removed. `fields` is either a map of dotted field paths or a
+ * list of segment writes (which can address keys that contain dots). A path the stored
+ * document cannot take (below a scalar, or a named key of an array) throws a
+ * `ConfigPathError`. See {@link getConfigChangeIssues} for which issues are reported.
+ *
+ * A tombstone a write replaces with its own value counts as lifted for the stored document
+ * too, so a client that sends one field per request can switch a union's shape (set the new
+ * field, then reset the old ones). A tombstone a deeper write clears as a side effect does
+ * not: setting `memory.agent.enabled` under a hidden `memory.agent` brings the inherited agent
+ * back, and a conflict with the stored fields is reported instead of being dropped at merge.
+ */
+export function getConfigFieldIssues(
+  fields: Record<string, unknown> | readonly ConfigFieldWrite[],
+  base: Partial<TCustomConfig> = {},
+  stored?: { overrides?: unknown; tombstones?: unknown[] } | null,
+): ConfigOverrideIssue[] {
+  const writes: readonly ConfigFieldWrite[] = Array.isArray(fields)
+    ? fields
+    : Object.entries(fields).map(([fieldPath, value]) => ({
+        segments: parseFieldPath(fieldPath),
+        value,
+      }));
+  const written = writes.map(({ segments }) => [...segments]);
+  const indexed = getIndexedMergeKeyIssues(written);
   if (indexed.length > 0) {
     return indexed;
   }
-  const existing = new Set(
-    getConfigOverrideIssues(storedOverrides, effectiveBase).map((issue) => issue.path),
-  );
-  return getConfigOverrideIssues(candidate, effectiveBase).filter(
-    (issue) =>
-      !existing.has(issue.path) ||
-      written.some((segments) => isRelatedPath(issue.segments, segments)),
-  );
+  const candidate = setConfigFields(toConfigOverrideState(stored), writes);
+  const lifted = written.filter(isDotFreePath).map((segments) => segments.join('.'));
+  return getConfigChangeIssues(candidate, base, stored, written, lifted);
 }
 
 function omitPath(target: unknown, segments: string[]): unknown {
@@ -680,11 +1203,14 @@ function omitPath(target: unknown, segments: string[]): unknown {
  * Drops the override nodes that make the merged config fail `configSchema`, so an invalid
  * stored value (written before write-time validation, by an older server, or one that only
  * fails once layered over other overrides) leaves the value beneath it in place. A layer
- * is not judged on what it leaves out, since a higher-priority layer may supply it.
+ * is not judged on what it leaves out, since a layer that merges after it may supply it.
  */
-function stripInvalidOverrides(config: IConfig, base: Partial<TCustomConfig>): AnyObject {
+function stripInvalidOverrides(
+  config: ConfigOverrideLayer,
+  base: Partial<TCustomConfig>,
+): AnyObject {
   const principal = `${config.principalType}/${config.principalId}`;
-  let stripped: unknown = config.overrides;
+  let stripped: unknown = combineStoredFoldedItems(config.overrides, principal);
   /**
    * Removing a field can make a related field it supplies fail, so check again while
    * removals make progress. If they stop, only the sections that still fail are dropped.
@@ -758,33 +1284,325 @@ function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
   return filtered;
 }
 
-/**
- * Merge DB config overrides into a base AppConfig.
- *
- * Configs are sorted by priority ascending (lowest first, highest wins).
- * Each config's `overrides` is deep-merged into the base config in order.
- */
-export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]): AppConfig {
-  if (!configs || configs.length === 0) {
-    return baseConfig;
+/** One layer's step through {@link mergeConfigOverrides}, as `afterLayer` sees it. */
+export interface ConfigMergeStep {
+  layer: ConfigOverrideLayer;
+  /** The base config the merge started from, before any layer. */
+  base: AppConfig;
+  /** The merged config before this layer applied its tombstones and overrides. */
+  below: AppConfig;
+  /**
+   * What the layer's overrides contributed, under AppConfig section names (`mcpConfig`,
+   * `interfaceConfig`, ...), after invalid, base-only and filtered values were removed.
+   */
+  applied: Readonly<Record<string, unknown>>;
+  /** The merged config with this layer applied. */
+  merged: AppConfig;
+  /**
+   * The base config with only this layer applied (its tombstones, then its overrides; its Azure
+   * `groups` replacing what librechat.yaml's resolved to), as if no other layer were below it.
+   * Computed on first call.
+   */
+  alone: () => AppConfig;
+}
+
+export interface MergeConfigOverridesOptions {
+  /**
+   * Runs after each layer merges; the config it returns is what the next layer merges onto. A
+   * caller uses it to apply a policy that depends on what a layer inherited and what it changed,
+   * such as dropping an inherited credential the layer sends somewhere new.
+   */
+  afterLayer?: (step: ConfigMergeStep) => AppConfig;
+  /**
+   * Told about each stored web search key the merge withholds from the URL it was not entered
+   * for, with the layer whose write moved it: the URL's writer when it is the later layer, and
+   * otherwise the key's own. When given, it reports these instead of the merge's own warning.
+   */
+  onWebSearchKeyUnbound?: (unbound: WebSearchKeyUnbound) => void;
+}
+
+/** A stored web search key the merge withholds, and the layer whose write caused it. */
+export interface WebSearchKeyUnbound {
+  layer: ConfigOverrideLayer;
+  url: TWebSearchKeys;
+  apiKey: TWebSearchKeys;
+}
+
+/** One layer's step through {@link foldConfigLayers}, from which `ConfigMergeStep` is built. */
+interface FoldStep<T> {
+  layer: ConfigOverrideLayer;
+  below: T;
+  /** What the layer's overrides contributed, under AppConfig section names. */
+  applied: AnyObject;
+  merged: T;
+  /**
+   * What the layer removed before its overrides landed, as AppConfig paths: its tombstones that
+   * applied, and the resolved Azure fields its `groups` replace.
+   */
+  removed: readonly string[];
+}
+
+/** The override document that last set or removed a paired web search field, and its merge position. */
+interface WebSearchWriter {
+  config: ConfigOverrideLayer;
+  order: number;
+  removed: boolean;
+}
+
+type WebSearchWriters = Map<TWebSearchKeys, WebSearchWriter>;
+
+const WEB_SEARCH_TOMBSTONE_PREFIX = 'webSearch.';
+
+/** Records `writer` for each paired web search field its applied overrides set. */
+function recordWebSearchWrites(
+  writers: WebSearchWriters,
+  section: unknown,
+  writer: WebSearchWriter,
+): void {
+  if (!isPlainObject(section)) {
+    return;
   }
+  for (const field of webSearchPairedFields) {
+    if (hasOwn(section, field)) {
+      writers.set(field, writer);
+    }
+  }
+}
 
-  const sorted = [...configs].sort((a, b) => a.priority - b.priority);
+/** Records `writer` for each paired web search field an applied tombstone removes. */
+function recordWebSearchTombstone(
+  writers: WebSearchWriters,
+  path: string,
+  writer: WebSearchWriter,
+): void {
+  if (path === 'webSearch') {
+    for (const field of webSearchPairedFields) {
+      writers.set(field, writer);
+    }
+    return;
+  }
+  if (!path.startsWith(WEB_SEARCH_TOMBSTONE_PREFIX)) {
+    return;
+  }
+  const field = path.slice(WEB_SEARCH_TOMBSTONE_PREFIX.length) as TWebSearchKeys;
+  if (webSearchPairedFields.includes(field)) {
+    writers.set(field, writer);
+  }
+}
 
-  let merged = { ...baseConfig };
-  /** The YAML-shaped config the next override lands on, for validating it in place. */
-  let raw: Partial<TCustomConfig> = baseConfig.config ?? {};
-  for (const config of sorted) {
-    const isBasePrincipal = config.principalId?.toString() === BASE_CONFIG_PRINCIPAL_ID;
+function describeLayer(writer?: WebSearchWriter): string {
+  return writer ? `${writer.config.principalType}/${writer.config.principalId}` : 'the base config';
+}
+
+/**
+ * Withholds each stored web search key whose URL a layer other than the key's
+ * own decides (`unbindWebSearchKeys`), so a layer that overrides only a URL
+ * never sends on a key it cannot read. `writers` lists the override document
+ * behind each field; unlisted fields come from the base config.
+ */
+function bindWebSearchKeys(
+  merged: AppConfig,
+  writers: WebSearchWriters,
+  onUnbound?: MergeConfigOverridesOptions['onWebSearchKeyUnbound'],
+): AppConfig {
+  const { webSearch, unbound } = unbindWebSearchKeys(
+    merged.webSearch,
+    (field) => writers.get(field)?.order,
+  );
+  if (unbound.length === 0) {
+    return merged;
+  }
+  for (const { url, apiKey } of unbound) {
+    const urlWriter = writers.get(url);
+    const keyWriter = writers.get(apiKey);
+    if (onUnbound) {
+      const cause = (urlWriter?.order ?? -1) > (keyWriter?.order ?? -1) ? urlWriter : keyWriter;
+      if (cause) {
+        onUnbound({ layer: cause.config, url, apiKey });
+      }
+      continue;
+    }
+    logger.warn(
+      `[mergeConfigOverrides] Ignoring webSearch.${apiKey} from ${describeLayer(keyWriter)}: ` +
+        `webSearch.${url} is ${urlWriter?.removed ? 'removed' : 'set'} by ${describeLayer(urlWriter)}. ` +
+        'Store the key in the same config as the URL.',
+    );
+  }
+  return { ...merged, webSearch };
+}
+
+function describePrincipal(config: ConfigOverrideLayer): string {
+  return `${config.principalType}/${config.principalId}`;
+}
+
+/**
+ * The document with only what the merge may apply: override keys and tombstones under a
+ * top-level section `configSchema` defines. Anything else was stored before writes were
+ * checked (or by another writer) and would reach runtime state no override may set, so it is
+ * dropped here, which neutralizes it without a migration. One warning per document.
+ */
+function withAcceptedSections(config: ConfigOverrideLayer): ConfigOverrideLayer {
+  const ignored = new Set<string>();
+  let overrides = config.overrides;
+  if (isPlainObject(overrides)) {
+    const accepted: AnyObject = {};
+    for (const [key, value] of Object.entries(overrides)) {
+      if (isAcceptedOverrideSection(key)) {
+        accepted[key] = value;
+      } else {
+        ignored.add(key);
+      }
+    }
+    overrides = accepted as Partial<TCustomConfig>;
+  }
+  let tombstones = config.tombstones;
+  if (Array.isArray(tombstones)) {
+    tombstones = tombstones.filter((path) => {
+      if (typeof path !== 'string') {
+        return false;
+      }
+      const section = path.split('.')[0];
+      if (isAcceptedOverrideSection(section)) {
+        return true;
+      }
+      ignored.add(section);
+      return false;
+    });
+  }
+  if (ignored.size === 0) {
+    return config;
+  }
+  logger.warn(
+    `[mergeConfigOverrides] Ignoring unknown config sections ${[...ignored].join(', ')} for ${describePrincipal(config)}`,
+  );
+  return { ...config, overrides, tombstones };
+}
+
+/**
+ * A layer's `endpoints` override with its Azure `groups` resolved as AppService resolves
+ * librechat.yaml's (`resolveAzureGroups`): the Azure clients read `groupMap`, `modelGroupMap` and
+ * the model lists resolved with them, never `groups`. The layer's groups replace the groups below
+ * whole, as its `groups` array does in the YAML-shaped config, so what they resolve to replaces
+ * what those resolved to (the caller removes that first); a resolved field the same layer also
+ * writes directly merges over its own groups' (objects) or replaces it. `null` when the layer
+ * writes no groups, or groups that do not resolve, which then stay unread, with a warning.
+ */
+function resolveLayerAzureGroups(
+  endpoints: unknown,
+  config: ConfigOverrideLayer,
+): AnyObject | null {
+  if (!isPlainObject(endpoints)) {
+    return null;
+  }
+  const azure = endpoints[EModelEndpoint.azureOpenAI];
+  if (!isPlainObject(azure) || !Array.isArray(azure.groups)) {
+    return null;
+  }
+  const resolved = resolveAzureGroups(azure.groups);
+  if (!resolved.isValid) {
+    logger.warn(
+      `[mergeConfigOverrides] Ignoring ${AZURE_CONFIG_PATH}.groups for ${describePrincipal(config)}: ${resolved.errors.join('; ')}`,
+    );
+    return null;
+  }
+  const next: AnyObject = { ...azure };
+  for (const field of AZURE_RESOLVED_GROUP_FIELDS) {
+    const own = azure[field];
+    const derived: unknown = resolved[field];
+    next[field] =
+      isPlainObject(own) && isPlainObject(derived) ? deepMerge(derived, own) : (own ?? derived);
+  }
+  return { ...endpoints, [EModelEndpoint.azureOpenAI]: next };
+}
+
+/**
+ * `merged` with the Azure model lists narrowed to what its groups serve
+ * (`narrowAzureServedModels`), and Azure assistants turned off when none of the models it serves
+ * supports them (`lacksAzureAssistantModels`), a combination `azureConfigSetup` refuses in
+ * librechat.yaml. A list an override writes directly, or one whose groups a later layer replaced
+ * or tombstoned, could otherwise name a model no group serves, and groups without an assistant
+ * model under an inherited `assistants: true` would leave the Azure Assistants client no model to
+ * default to. Judged on the merged result, so a later layer whose groups serve assistants keeps
+ * them on.
+ */
+function withServedAzureModels<T extends AppConfig>(
+  merged: T,
+  configs: readonly ConfigOverrideLayer[],
+): T {
+  const endpoints = merged.endpoints;
+  const azure = endpoints?.[EModelEndpoint.azureOpenAI];
+  if (!endpoints || !azure) {
+    return merged;
+  }
+  const principals = configs.map(describePrincipal).join(', ');
+  const { config: served, narrowed } = narrowAzureServedModels(azure);
+  if (narrowed.length > 0) {
+    logger.warn(
+      `[mergeConfigOverrides] Leaving out of ${narrowed.map((field) => `${AZURE_CONFIG_PATH}.${field}`).join(', ')} for ${principals} the Azure models and groups no merged group serves`,
+    );
+  }
+  const assistantsOff = lacksAzureAssistantModels(served);
+  if (assistantsOff) {
+    logger.warn(
+      `[mergeConfigOverrides] Turning off ${AZURE_CONFIG_PATH}.assistants for ${principals}: none of the Azure models they serve supports assistants`,
+    );
+  }
+  if (narrowed.length === 0 && !assistantsOff) {
+    return merged;
+  }
+  return {
+    ...merged,
+    endpoints: {
+      ...endpoints,
+      [EModelEndpoint.azureOpenAI]: assistantsOff ? { ...served, assistants: false } : served,
+    },
+  };
+}
+
+/**
+ * Folds override layers, in merge precedence order (`compareConfigPrecedence`), into
+ * `merged`, the served config, and `raw`, the YAML-shaped config each layer is validated on
+ * before it lands (`stripInvalidOverrides`). `merged` starts as any object whose `mcpConfig`
+ * is the MCP servers config of `raw`, because the process-MCP filter reads it. A layer's Azure
+ * `groups` resolve into the fields the Azure clients read (`resolveLayerAzureGroups`).
+ * `webSearchWriters` names the layer behind each paired web search field, by its position in
+ * that order. `afterLayer` runs after each layer lands, and the next layer folds onto what it
+ * returns.
+ */
+function foldConfigLayers<T extends AnyObject>(
+  initial: T,
+  initialRaw: Partial<TCustomConfig>,
+  configs: readonly ConfigOverrideLayer[],
+  afterLayer?: (step: FoldStep<T>) => T,
+): { merged: T; raw: Partial<TCustomConfig>; webSearchWriters: WebSearchWriters } {
+  const sorted = sortByConfigPrecedence(configs);
+  let merged = initial;
+  let raw = initialRaw;
+  const webSearchWriters: WebSearchWriters = new Map();
+  for (let order = 0; order < sorted.length; order++) {
+    const config = withAcceptedSections(sorted[order]);
+    const below = merged;
+    let contributed: AnyObject = {};
+    const removed: string[] = [];
+    const isBasePrincipal = isBaseConfigPrincipal(config);
     if (Array.isArray(config.tombstones)) {
+      const removal: WebSearchWriter = { config, order, removed: true };
       for (const path of config.tombstones) {
         if (
           typeof path === 'string' &&
           !isBaseOnlyOverridePath(path) &&
           (isBasePrincipal || !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(path.split('.')[0]))
         ) {
-          merged = deleteConfigPath(merged, remapOverridePath(path));
-          raw = deletePath(raw as AnyObject, path) as Partial<TCustomConfig>;
+          for (const removedPath of getTombstoneRemovals(path)) {
+            const mappedPath = remapOverridePath(removedPath);
+            removed.push(mappedPath);
+            merged = deleteConfigPath(merged, mappedPath);
+            raw = deletePath(raw as AnyObject, removedPath) as Partial<TCustomConfig>;
+          }
+          if (path === AZURE_GROUPS_PATH) {
+            merged = withoutAzureGroups(merged);
+          }
+          recordWebSearchTombstone(webSearchWriters, path, removal);
         }
       }
     }
@@ -792,6 +1610,7 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
     if (config.overrides && typeof config.overrides === 'object') {
       const remapped: AnyObject = {};
       const applied: AnyObject = {};
+      let replacesAzureGroups = false;
       for (const [key, value] of Object.entries(stripInvalidOverrides(config, raw))) {
         if (
           BASE_ONLY_OVERRIDE_SECTIONS.has(key) ||
@@ -802,10 +1621,7 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
         applied[key] = value;
         const mappedKey = OVERRIDE_KEY_MAP[key as keyof typeof OVERRIDE_KEY_MAP] ?? key;
         if (mappedKey === 'mcpConfig') {
-          remapped[mappedKey] = filterMCPServerOverrides(
-            value,
-            (merged as unknown as AnyObject)[mappedKey],
-          );
+          remapped[mappedKey] = filterMCPServerOverrides(value, merged[mappedKey]);
           /** A server the filter removed must not complete a later layer's partial of it. */
           applied[key] = remapped[mappedKey];
         } else if (
@@ -844,16 +1660,103 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
           if (Object.keys(filtered).length > 0) {
             remapped[mappedKey] = filtered;
           }
+        } else if (key === 'endpoints') {
+          const resolved = resolveLayerAzureGroups(value, config);
+          remapped[mappedKey] = resolved ?? value;
+          replacesAzureGroups = resolved != null;
         } else {
           remapped[mappedKey] = value;
         }
       }
+      if (replacesAzureGroups) {
+        for (const path of AZURE_RESOLVED_PATHS) {
+          merged = deletePath(merged, path);
+          removed.push(path);
+        }
+      }
       merged = deepMerge(merged, remapped);
       raw = deepMerge(raw as AnyObject, applied) as Partial<TCustomConfig>;
+      recordWebSearchWrites(webSearchWriters, applied.webSearch, {
+        config,
+        order,
+        removed: false,
+      });
+      contributed = remapped;
+    }
+
+    if (afterLayer) {
+      merged = afterLayer({ layer: config, below, applied: contributed, merged, removed });
     }
   }
+  return { merged, raw, webSearchWriters };
+}
 
+/**
+ * Merge DB config overrides into a base AppConfig.
+ *
+ * Configs merge in precedence order (`compareConfigPrecedence`): Base first, then ascending
+ * priority, then role < group < user, then document identity; the last layer wins. Each
+ * config's `overrides` is deep-merged into the base config in that order. A stored web search
+ * key is dropped when a layer other than its own decides the URL it is sent to, the Azure model
+ * lists name only models the merged groups serve, and Azure assistants none of those supports
+ * are turned off (`withServedAzureModels`).
+ */
+export function mergeConfigOverrides(
+  baseConfig: AppConfig,
+  configs: readonly ConfigOverrideLayer[],
+  options: MergeConfigOverridesOptions = {},
+): AppConfig {
+  if (!configs || configs.length === 0) {
+    return baseConfig;
+  }
+  const { afterLayer } = options;
+  const folded = foldConfigLayers(
+    { ...baseConfig },
+    baseConfig.config ?? {},
+    configs,
+    afterLayer &&
+      (({ layer, below, applied, merged, removed }) => {
+        let alone: AppConfig | undefined;
+        return afterLayer({
+          layer,
+          base: baseConfig,
+          below,
+          applied,
+          merged,
+          alone: () => {
+            alone ??= deepMerge(
+              removed.reduce((current, path) => deleteConfigPath(current, path), { ...baseConfig }),
+              applied,
+            );
+            return alone;
+          },
+        });
+      }),
+  );
+  const merged = bindWebSearchKeys(
+    withServedAzureModels(folded.merged, configs),
+    folded.webSearchWriters,
+    options.onWebSearchKeyUnbound,
+  );
   return preserveBaseOnlyPaths(baseConfig, preserveRuntimeStops(baseConfig, merged));
+}
+
+/**
+ * The YAML-shaped config `configs` resolve to on top of `baseYaml`: exactly the value
+ * {@link mergeConfigOverrides} validates the next layer on, with the same precedence order,
+ * tombstones, base-only and dedicated-section filtering, invalid-override stripping and
+ * process-MCP filtering. It is a validation floor, not the served config (no AppService
+ * derivation runs on it).
+ */
+export function resolveRawConfig(
+  baseYaml: Partial<TCustomConfig>,
+  configs: readonly ConfigOverrideLayer[],
+): Partial<TCustomConfig> {
+  if (configs.length === 0) {
+    return baseYaml;
+  }
+  /** AppService serves `mcpServers` as `mcpConfig` unchanged (or `null`), and the fold reads it there. */
+  return foldConfigLayers({ mcpConfig: baseYaml.mcpServers ?? null }, baseYaml, configs).raw;
 }
 
 function getPath(target: unknown, segments: string[]): unknown {
@@ -902,10 +1805,10 @@ export function isRuntimeDisabled(value: unknown): boolean {
  * override that only flips the client's view produces a panel whose every action fails.
  *
  * Applied here rather than inside the merge deliberately. The merge folds overrides in
- * priority order into an ACCUMULATED value, so a guard there compares against whatever
- * the previous override left — which let a LOW-priority `false` block a HIGH-priority
- * `true` and broke highest-priority-wins. Overrides still order normally among
- * themselves; only the base stop is non-negotiable.
+ * precedence order into an ACCUMULATED value, so a guard there compares against whatever
+ * the previous override left — which let an EARLIER `false` block a LATER `true` and broke
+ * last-layer-wins. Overrides still order normally among themselves; only the base stop is
+ * non-negotiable.
  */
 function preserveRuntimeStops<T extends AppConfig>(baseConfig: AppConfig, merged: T): T {
   const baseInterface = (baseConfig as unknown as AnyObject).interfaceConfig as

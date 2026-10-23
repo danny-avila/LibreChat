@@ -15,8 +15,8 @@ import type { TFile, TConversation } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, ChatFormProvider } from '~/Providers';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import { SteerHostTestProvider } from 'test/steerHost';
 import ChatForm from '../ChatForm';
-import '~/Providers/SteerHostContext';
 
 const conversation = {
   conversationId: 'new',
@@ -26,7 +26,7 @@ const conversation = {
 } as TConversation;
 
 /**
- * The atom keeps its default (`atomWithLocalStorage('enterToSend', false)`)
+ * The atom keeps its default (`atomWithLocalStorage('enterToSend', true)`)
  * here: these tests prove the composer follows the `enterToSend` prop ChatView
  * passes it, not the atom it used to read directly, so each value is covered.
  */
@@ -93,13 +93,15 @@ function renderComposer({ enterToSend }: { enterToSend: boolean }) {
   return render(
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
-        <Router>
-          <AuthContextProvider authConfig={{ loginRedirect: '', test: true }}>
-            <DndProvider backend={HTML5Backend}>
-              <Harness enterToSend={enterToSend} />
-            </DndProvider>
-          </AuthContextProvider>
-        </Router>
+        <SteerHostTestProvider>
+          <Router>
+            <AuthContextProvider authConfig={{ loginRedirect: '', test: true }}>
+              <DndProvider backend={HTML5Backend}>
+                <Harness enterToSend={enterToSend} />
+              </DndProvider>
+            </AuthContextProvider>
+          </Router>
+        </SteerHostTestProvider>
       </RecoilRoot>
     </QueryClientProvider>,
   );
@@ -114,7 +116,7 @@ describe('ChatForm enterToSend prop', () => {
     localStorage.clear();
   });
 
-  test('follows the prop when it agrees with the persisted default', async () => {
+  test('follows the prop when it disagrees with the persisted default', async () => {
     renderComposer({ enterToSend: false });
 
     const textarea = await screen.findByTestId('text-input');
@@ -126,7 +128,7 @@ describe('ChatForm enterToSend prop', () => {
     expect(hint).not.toHaveTextContent('Enter to send');
   }, 20000);
 
-  test('follows the prop when it disagrees with the persisted default', async () => {
+  test('follows the prop when it agrees with the persisted default', async () => {
     renderComposer({ enterToSend: true });
 
     const textarea = await screen.findByTestId('text-input');

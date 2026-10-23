@@ -11,6 +11,7 @@ import type {
   ChatTransportRequest,
 } from 'librechat-data-provider';
 import type { SetStateAction, Dispatch, MouseEvent } from 'react';
+import type { PendingSteer } from '@librechat/chat';
 import type {
   ArmSteerParams,
   ArmSteerResponse,
@@ -32,7 +33,6 @@ import type {
   PtcTrace,
 } from '~/common';
 import type { MessagesEditing } from '~/Providers/MessagesViewContext';
-import type { PendingSteer } from './queue';
 
 /** Options accepted by {@link ChatConversationContract.newConversation}: the shared params plus
  *  the two flags only the root pane's generator honors. */
@@ -193,12 +193,21 @@ export type ChatConfig = {
   queuedSendLockTimeoutMs?: number;
   queuedTurnReconciliationTimeoutMs?: number;
   steerArmConfirmationTimeoutMs?: number;
+  /** Whether the deployment has answered with its config; until then the fields above are
+   *  defaults, and a decision that depends on them (a rebuilt turn's retention) waits. A host
+   *  that leaves it unset has no config to wait for. */
+  loaded?: boolean;
+  /** Whether the deployment tracks token balances, refreshed after each turn. */
+  balanceEnabled?: boolean;
 };
 
 /** The signed-in account, as far as the chat reads it. */
 export type ChatAuth = {
   /** Fills user variables such as `{{current_user}}` in a conversation's prompt prefix. */
   user?: TUser;
+  /** Bearer token the chat's streams and run aborts authenticate with. */
+  token?: string;
+  isAuthenticated?: boolean;
 };
 
 /**

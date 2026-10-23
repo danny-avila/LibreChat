@@ -76,8 +76,8 @@ export interface MessagePartsHost {
   useAutoExpandTools: () => boolean;
   /** Whether the viewer wants LaTeX in markdown rendered as math. */
   useLaTeXParsing: () => boolean;
-  /** The direction the viewer reads chat text in. */
-  useChatDirection: () => 'ltr' | 'rtl';
+  /** The direction chat text is typed in; `auto` resolves it from the text itself. */
+  useChatDirection: () => 'auto' | 'ltr' | 'rtl';
   /** How the viewer prefers user-authored text to display. */
   useUserTextPreferences: () => MessagePartsUserTextPreferences;
   /** The signed-in user. */

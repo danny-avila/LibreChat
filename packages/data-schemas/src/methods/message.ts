@@ -8,10 +8,12 @@ import type { DeleteResult, FilterQuery, Model, Types, UpdateQuery } from 'mongo
 import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { SearchParams } from 'meilisearch';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+import type { ISubagentContentChunk } from '~/models/subagentContent';
 import type { AppConfig, IConversation, IMessage } from '~/types';
 import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { fitBoundAppSnapshots, hasBoundAppSnapshots } from './appSnapshots';
+import { prepareSubagentContentDeletion } from './subagentContent';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { tenantStorage } from '~/config/tenantContext';
 import logger from '~/config/winston';
@@ -320,6 +322,18 @@ function buildMessageSaveUpdate(
   };
 }
 
+/**
+ * A legacy temporary message stores only its deadline; hydration then fills
+ * `isTemporary` with the schema default `false`, which must not read as permanent.
+ */
+function isTemporaryMessage(message: IMessage): boolean {
+  if (message.isTemporary === true) {
+    return true;
+  }
+  const implicit = message.isTemporary == null || message.$isDefault?.('isTemporary') === true;
+  return implicit && message.expiredAt != null;
+}
+
 async function findOneAndMergeMessageProvenance(
   Message: Model<IMessage>,
   identity: FilterQuery<IMessage>,
@@ -591,6 +605,7 @@ export type SubagentThreadViewMessageRecord = Pick<
   | 'subagentTriggerProjection'
 > & {
   textProjectionTruncated?: boolean;
+  contentRecoveryAvailable?: boolean;
   subagentTranscriptProjectionTruncated?: boolean;
   /** Storage-bounded visible content; validated into the public activity type by the API. */
   subagentActivity?: unknown[];
@@ -2542,6 +2557,7 @@ export function createMessageMethods(
         tokenCount: updatedMessage.tokenCount,
         feedback: updatedMessage.feedback,
         endpoint: updatedMessage.endpoint,
+        isTemporary: isTemporaryMessage(updatedMessage),
         langfuseSampled: updatedMessage.langfuseSampled,
         langfuseDestinationIds: updatedMessage.langfuseDestinationIds,
         langfuseRunId: updatedMessage.langfuseRunId,
@@ -3480,6 +3496,12 @@ export function createMessageMethods(
         createdAt: 1,
         error: 1,
         unfinished: 1,
+        contentRecoveryAvailable: {
+          $and: [
+            { $eq: [{ $ifNull: ['$subagentContent.version', 0] }, 1] },
+            { $ne: [{ $ifNull: ['$subagentContent.deleted', false] }, true] },
+          ],
+        },
         subagentTranscriptProjectionTruncated: {
           $cond: [{ $ne: [{ $type: '$subagentTranscript.messagesJson' }, 'missing'] }, true, null],
         },
@@ -4109,6 +4131,62 @@ export function createMessageMethods(
   async function deleteMessages(filter: FilterQuery<IMessage>) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
+      if (typeof filter.messageId === 'string' && !/:(user|assistant)$/.test(filter.messageId)) {
+        return await Message.deleteMany(filter);
+      }
+      const wholeScope =
+        typeof filter.user === 'string' &&
+        Object.keys(filter).every((key) => ['user', 'conversationId', 'tenantId'].includes(key));
+      const contentSources = wholeScope
+        ? []
+        : await Message.find({
+            $and: [filter, { subagentContent: { $exists: true } }],
+          })
+            .select('user tenantId conversationId messageId')
+            .lean<IMessage[]>();
+      const SubagentContent = mongoose.models.SubagentContent as
+        | Model<ISubagentContentChunk>
+        | undefined;
+      if (SubagentContent != null) {
+        if (wholeScope) {
+          await prepareSubagentContentDeletion(mongoose, filter);
+          return await Message.deleteMany(filter);
+        }
+        const scopes = new Map<
+          string,
+          {
+            user: string;
+            conversationId: string;
+            taskId: string;
+            tenantId: string | { $exists: false };
+          }
+        >();
+        for (const source of contentSources) {
+          const taskId = source.messageId.replace(/:(user|assistant)$/, '');
+          if (taskId === source.messageId) continue;
+          scopes.set(`${source.tenantId ?? ''}:${source.user}:${source.conversationId}:${taskId}`, {
+            user: source.user,
+            conversationId: source.conversationId,
+            taskId,
+            tenantId: source.tenantId ?? { $exists: false },
+          });
+        }
+        if (scopes.size > 0) {
+          const contentScopes = [...scopes.values()];
+          /** Revoke the task before cleanup, including appends already admitted.
+           * Retain both markers until payload deletion succeeds so retries rediscover them. */
+          await Message.updateMany(
+            {
+              $or: contentScopes.map(({ taskId, ...scope }) => ({
+                ...scope,
+                messageId: { $in: [`${taskId}:user`, `${taskId}:assistant`] },
+              })),
+            },
+            { $set: { 'subagentContent.deleted': true } },
+          );
+          await SubagentContent.deleteMany({ $or: contentScopes });
+        }
+      }
       return await Message.deleteMany(filter);
     } catch (err) {
       logger.error('Error deleting messages:', err);
