@@ -1902,6 +1902,105 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       },
     );
 
+    it.each(['missing', 'revoked', 'required-missing', 'required-revoked', 'extra-allowed'])(
+      'counts admitted ordinary members before claiming a parent ask: %s',
+      async (state) => {
+        requestConfigOverrides = {
+          endpoints: {
+            agents: {
+              checkpointer: { type: 'mongo' },
+              capabilities: [AgentCapabilities.subagents, AgentCapabilities.subagent_graphs],
+            },
+          },
+          filters: {
+            agentInstructions: {
+              pii: { fields: ['instructions'], starterPatterns: ['sk_prefix'] },
+            },
+          },
+        };
+        const ids = Array.from({ length: 49 }, (_, index) => `member-c19-${index}`);
+        const graphs = [0, 25].map((start) => {
+          const members = ids.slice(start, start + 25);
+          return {
+            type: `team-${start}`,
+            name: 'Team',
+            description: 'Work',
+            agent_ids: members,
+            entry_agent_id: members[0],
+            result_agent_id: members[members.length - 1],
+            edges: members
+              .slice(1)
+              .map((id, index) => ({ from: members[index], to: id, edgeType: 'direct' })),
+          };
+        });
+        endpointAgent.subagents = {
+          enabled: true,
+          graphsEnabled: true,
+          agent_ids: ['child'],
+          graphs,
+        };
+        const child = {
+          _id: 'mongo-child',
+          id: 'child',
+          provider: 'openAI',
+          model: 'test',
+          tools: [],
+          subagents: {
+            enabled: true,
+            agent_ids: ['stale', ...(state === 'extra-allowed' ? ['extra'] : [])],
+            ...(state.startsWith('required')
+              ? {
+                  graphsEnabled: true,
+                  graphs: [
+                    {
+                      type: 'required',
+                      name: 'Required',
+                      description: 'Work',
+                      agent_ids: ['stale'],
+                      entry_agent_id: 'stale',
+                      result_agent_id: 'stale',
+                      edges: [],
+                    },
+                  ],
+                }
+              : {}),
+          },
+        };
+        mockGetAgent.mockImplementation(async ({ id }) => {
+          if (id === 'stale' && !state.endsWith('revoked')) return null;
+          if (id === 'child') return child;
+          return { _id: `mongo-${id}`, id, provider: 'openAI', model: 'test', tools: [] };
+        });
+        mockCheckPermission.mockImplementation(
+          async ({ resourceId }) => resourceId !== 'mongo-stale',
+        );
+        mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserJob());
+        const res = await post({
+          conversationId: CONVO_ID,
+          actionId: ACTION_ID,
+          agent_id: AGENT_ID,
+          endpoint: 'agents',
+          answer: 'continue',
+        });
+        if (state === 'missing' || state === 'revoked') {
+          expect(res.status).toBe(200);
+          await settled;
+          await flush();
+          expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledTimes(1);
+          expect(mockInitializeClient).toHaveBeenCalledTimes(1);
+        } else {
+          expect(res.status).toBe(400);
+          expect(res.body.error).toBe('content_filter_uninspectable');
+          expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+          expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+          expect(mockInitializeClient).not.toHaveBeenCalled();
+          expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+        }
+        expect(mockGetAgent).toHaveBeenCalledWith({ id: 'stale' });
+        if (state === 'extra-allowed') expect(mockGetAgent).toHaveBeenCalledWith({ id: 'extra' });
+      },
+    );
+
     it('blocks current action metadata before consuming approval', async () => {
       requestConfigOverrides = {
         filters: {

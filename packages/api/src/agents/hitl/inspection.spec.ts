@@ -410,6 +410,129 @@ describe('resume agent snapshot budget', () => {
     expect(getAgent).toHaveBeenCalledTimes(1);
   });
 
+  it.each(
+    [48, 49].flatMap((graphCount) =>
+      ['missing', 'revoked'].map((state) => ({ graphCount, state })),
+    ),
+  )(
+    'does not charge unavailable ordinary targets near the admitted-member cap: %j',
+    async ({ graphCount, state }) => {
+      const primary = agent('primary', teams(graphCount));
+      primary.subagents = { ...primary.subagents, enabled: true, agent_ids: ['child'] };
+      const child = agent('child');
+      child.subagents = { enabled: true, agent_ids: ['stale-0', 'stale-1', 'member-0'] };
+      const shared = agent('member-0');
+      shared.subagents = { enabled: true, agent_ids: ['child', 'stale-0'] };
+      const getAgent = jest.fn(async ({ id }: { id: string }) => {
+        if (id.startsWith('stale') && state === 'missing') return null;
+        if (id === 'child') return child;
+        if (id === 'member-0') return shared;
+        return agent(id);
+      });
+      const snapshots = await getResumeAgentSnapshot({
+        primaryAgent: primary,
+        getAgent,
+        capabilities: ['subagents', 'subagent_graphs'],
+        canAccessAgent: async ({ id }) => !id.startsWith('stale'),
+      });
+      expect(snapshots).toHaveLength(graphCount + 2);
+      expect(snapshots.some(({ id }) => id.startsWith('stale'))).toBe(false);
+      expect(getAgent).toHaveBeenCalledTimes(graphCount + 3);
+      expect(new Set(getAgent.mock.calls.map(([{ id }]) => id)).size).toBe(
+        getAgent.mock.calls.length,
+      );
+    },
+  );
+
+  it('allows more read attempts than admissions across a bounded ordinary graph', async () => {
+    const primary = agent('primary');
+    const ids = Array.from({ length: 6 }, (_, index) => `child-${index}`);
+    primary.subagents = { enabled: true, agent_ids: ids };
+    const children = ids.map((id, index) => ({
+      ...agent(id),
+      subagents: {
+        enabled: true,
+        agent_ids: [
+          ids[index === 0 ? 1 : 0],
+          ...Array.from({ length: 9 }, (_, missing) => `stale-${index}-${missing}`),
+        ],
+      },
+    }));
+    const saved = new Map(children.map((child) => [child.id, child]));
+    const getAgent = jest.fn(async ({ id }: { id: string }) => saved.get(id) ?? null);
+    const snapshots = await getResumeAgentSnapshot({
+      primaryAgent: primary,
+      getAgent,
+      capabilities: ['subagents'],
+    });
+    expect(new Set(snapshots.map(({ id }) => id))).toEqual(new Set(['primary', ...ids]));
+    expect(getAgent).toHaveBeenCalledTimes(60);
+    expect(new Set(getAgent.mock.calls.map(([{ id }]) => id)).size).toBe(60);
+  });
+
+  it.each(['missing', 'revoked'])(
+    'keeps cached required graph members fail-closed after an optional ordinary miss: %s',
+    async (state) => {
+      const ordinary = agent('ordinary');
+      ordinary.subagents = { enabled: true, agent_ids: ['member-0'] };
+      const graphRoot = agent('graph', teams(1));
+      for (const roots of [
+        [ordinary, graphRoot],
+        [graphRoot, ordinary],
+      ]) {
+        const getAgent = jest.fn(async ({ id }: { id: string }) =>
+          state === 'missing' ? null : agent(id),
+        );
+        await expect(
+          getResumeAgentSnapshot({
+            primaryAgent: roots[0],
+            additionalRoots: [roots[1]],
+            getAgent,
+            capabilities: ['subagents', 'subagent_graphs'],
+            canAccessAgent: async () => false,
+          }),
+        ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+        expect(getAgent).toHaveBeenCalledTimes(1);
+      }
+    },
+  );
+
+  it('rejects a 51st admitted member after skipping absent ordinary targets', async () => {
+    const primary = agent('primary', teams(49));
+    primary.subagents = { ...primary.subagents, enabled: true, agent_ids: ['child'] };
+    const child = agent('child');
+    child.subagents = { enabled: true, agent_ids: ['stale', 'extra'] };
+    const getAgent = jest.fn(async ({ id }: { id: string }) => {
+      if (id === 'stale') return null;
+      return id === 'child' ? child : agent(id);
+    });
+    await expect(
+      getResumeAgentSnapshot({
+        primaryAgent: primary,
+        getAgent,
+        capabilities: ['subagents', 'subagent_graphs'],
+      }),
+    ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+    expect(getAgent).toHaveBeenCalledWith({ id: 'extra' });
+    expect(getAgent).toHaveBeenCalledTimes(52);
+  });
+
+  it('bounds read attempts by the existing per-agent unique-target ceiling', async () => {
+    const primary = agent('primary');
+    primary.subagents = {
+      enabled: true,
+      agent_ids: Array.from(
+        { length: MAX_SUBAGENT_GRAPH_NODES + 1 },
+        (_, index) => `stale-${index}`,
+      ),
+    };
+    const getAgent = jest.fn(async () => null);
+    await expect(
+      getResumeAgentSnapshot({ primaryAgent: primary, getAgent, capabilities: ['subagents'] }),
+    ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+    expect(getAgent).not.toHaveBeenCalled();
+  });
+
   it.each([0, 2])('rejects budget +1 even with %s additional roots', async (rootCount) => {
     const graphs = teams(MAX_SUBAGENT_GRAPH_NODES + 1);
     const getAgent = jest.fn(async ({ id }: { id: string }) => agent(id));

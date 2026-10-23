@@ -7,11 +7,16 @@ import {
   MAX_SUBAGENT_GRAPH_NODES,
   resolveCodeWorkspaceInheritance,
 } from 'librechat-data-provider';
-import type { CodeWorkspaceSelection, CodeWorkspaceRoutingAgent } from 'librechat-data-provider';
+import type {
+  Agent,
+  CodeWorkspaceSelection,
+  CodeWorkspaceRoutingAgent,
+} from 'librechat-data-provider';
 import type { IAgent } from '@librechat/data-schemas';
 import type { CodeWorkspaceInheritanceRoot, SubagentCodeRoutingAgent } from './inheritance';
 import type { CodeEnvironmentConfig } from '~/agents/execution';
 import { getSpawnableSubagentIds, resolveSubagentCodeWorkspaceInheritance } from './inheritance';
+import { getResumeAgentSnapshot } from '../agents/hitl/inspection';
 import { resolveCodeExecutionContext } from '~/agents/execution';
 
 const SKYNET = 'code-yuwoQAAPhY1WMaDD6oIk';
@@ -660,6 +665,88 @@ describe('resolveSubagentCodeWorkspaceInheritance', () => {
       loadSubagent.mock.calls.length,
     );
   });
+
+  it.each([false, true])(
+    'matches runtime admission when an ordinary target is unavailable, revoked=%s',
+    async (revoked) => {
+      const ids = Array.from(
+        { length: MAX_SUBAGENT_GRAPH_NODES - 1 },
+        (_, index) => `member-c19-${index}`,
+      );
+      const graphs = [0, 25].map((start) => {
+        const members = ids.slice(start, start + 25);
+        return {
+          type: `team-c19-${start}`,
+          name: 'Team',
+          description: 'Work',
+          agent_ids: members,
+          entry_agent_id: members[0],
+          result_agent_id: members[members.length - 1],
+          edges: members
+            .slice(1)
+            .map((id, index) => ({ from: members[index], to: id, edgeType: 'direct' as const })),
+        };
+      });
+      const lia = await seed(LIA, {
+        subagents: { enabled: true, graphsEnabled: true, agent_ids: ['child-c19'], graphs },
+      });
+      await Promise.all(ids.map((id) => seed(id)));
+      await seed('child-c19', { subagents: { enabled: true, agent_ids: ['stale-c19'] } });
+      if (revoked) {
+        await seed('stale-c19');
+        hidden.add('stale-c19');
+      }
+      const planned = await resolveSubagentCodeWorkspaceInheritance({
+        selections: incident,
+        roots: [root(lia)],
+        loadSubagent,
+        environments,
+        allowEnvironmentSelection: true,
+        codeExecutionAvailable: true,
+      });
+      const snapshot = (doc: IAgent): Agent => ({
+        id: doc.id,
+        name: doc.name ?? null,
+        description: doc.description ?? null,
+        avatar: null,
+        created_at: 0,
+        provider: 'openAI',
+        model: 'test',
+        model_parameters: {
+          temperature: null,
+          maxContextTokens: null,
+          max_context_tokens: null,
+          max_output_tokens: null,
+          top_p: null,
+          frequency_penalty: null,
+          presence_penalty: null,
+        },
+        subagents: doc.subagents,
+        edges: doc.edges,
+        agent_ids: doc.agent_ids,
+      });
+      const primary = await methods.getAgentWithVersionCount({ id: LIA });
+      if (!primary) throw new Error('Missing primary fixture');
+      const getAgent = jest.fn(async ({ id }: { id: string }) => {
+        const doc = await methods.getAgentWithVersionCount({ id });
+        return doc ? snapshot(doc) : null;
+      });
+      const inspected = await getResumeAgentSnapshot({
+        primaryAgent: snapshot(primary),
+        getAgent,
+        capabilities: [AgentCapabilities.subagents, AgentCapabilities.subagent_graphs],
+        canAccessAgent: async ({ id }) => !hidden.has(id),
+      });
+      expect(planned.size).toBe(MAX_SUBAGENT_GRAPH_NODES);
+      expect(new Set(inspected.filter(({ id }) => id !== LIA).map(({ id }) => id))).toEqual(
+        new Set(planned.keys()),
+      );
+      expect(getAgent).toHaveBeenCalledTimes(MAX_SUBAGENT_GRAPH_NODES + 1);
+      expect(new Set(getAgent.mock.calls.map(([{ id }]) => id)).size).toBe(
+        getAgent.mock.calls.length,
+      );
+    },
+  );
 
   it('counts only admitted subagents toward the node limit', async () => {
     const verifier = 'agent_finding_verifier';

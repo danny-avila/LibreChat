@@ -493,6 +493,51 @@ describe('graph-member preflight', () => {
     },
   );
 
+  it.each(['missing', 'revoked', 'required-missing', 'required-revoked', 'extra-allowed'])(
+    'counts admitted ordinary members at the real preflight boundary: %s',
+    async (state) => {
+      const ids = Array.from({ length: 49 }, (_, index) => `member-${index}`);
+      const graphs: AgentSubagentGraph[] = [0, 25].map((start) => {
+        const members = ids.slice(start, start + 25);
+        return {
+          ...graph(members[0]),
+          type: `team-${start}`,
+          agent_ids: members,
+          result_agent_id: members[members.length - 1],
+          edges: members
+            .slice(1)
+            .map((id, index) => ({ from: members[index], to: id, edgeType: 'direct' as const })),
+        };
+      });
+      const primary = agent('primary', {
+        enabled: true,
+        graphsEnabled: true,
+        agent_ids: ['child'],
+        graphs,
+      });
+      const child = agent('child', {
+        enabled: true,
+        agent_ids: ['stale', ...(state === 'extra-allowed' ? ['extra'] : [])],
+        ...(state.startsWith('required') ? { graphsEnabled: true, graphs: [graph('stale')] } : {}),
+      });
+      const dependencies = createDependencies();
+      dependencies.getAgent = jest.fn(async ({ id }) => {
+        if (id === 'stale' && !state.endsWith('revoked')) return null;
+        return id === 'child' ? child : agent(id);
+      });
+      dependencies.canAccessAgent = jest.fn(async ({ id }) => id !== 'stale');
+      const result = preflightResumeContent(
+        createInput({ appConfig: policy, endpointOption: { agent: Promise.resolve(primary) } }),
+        dependencies,
+      );
+      if (state === 'missing' || state === 'revoked') await expect(result).resolves.toBeDefined();
+      else await expect(result).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+      expect(dependencies.getAgent).toHaveBeenCalledWith({ id: 'stale' });
+      if (state === 'extra-allowed')
+        expect(dependencies.getAgent).toHaveBeenCalledWith({ id: 'extra' });
+    },
+  );
+
   it('inspects current active members through the real preflight API', async () => {
     const dependencies = createDependencies();
     const member = { ...agent('member'), instructions: 'Use sk-edited-graph-member-secret' };

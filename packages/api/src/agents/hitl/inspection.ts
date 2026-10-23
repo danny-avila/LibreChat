@@ -236,12 +236,8 @@ export async function getResumeAgentSnapshot({
     if (expanded.has(agent.id)) continue;
     expanded.add(agent.id);
     const references = getReferencedAgentIds(agent, capabilities);
-    for (const { id, terminal } of references) {
-      if (rootIds.has(id) && (terminal || id === primary.id)) continue;
-      if (members.has(id)) continue;
-      if (members.size >= MAX_SUBAGENT_GRAPH_NODES) throw new ContentTraversalLimitError();
-      members.add(id);
-    }
+    // Saved configurations already cap unique targets, independently of successful admissions.
+    if (references.length > MAX_SUBAGENT_GRAPH_NODES) throw new ContentTraversalLimitError();
     const children = await Promise.all(references.map(({ id }) => read(id)));
     const connected: ResumeSnapshotAgent[] = [];
     for (let childIndex = 0; childIndex < references.length; childIndex++) {
@@ -250,6 +246,11 @@ export async function getResumeAgentSnapshot({
       if (!child) {
         if (required) throw new ContentTraversalLimitError();
         continue;
+      }
+      const countsAsMember = !rootIds.has(id) || (!terminal && id !== primary.id);
+      if (countsAsMember && !members.has(id)) {
+        if (members.size >= MAX_SUBAGENT_GRAPH_NODES) throw new ContentTraversalLimitError();
+        members.add(id);
       }
       if (!terminal && !expanded.has(id)) pending.push(child);
       connected.push(child);
