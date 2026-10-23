@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { InMemorySubagentTaskStore } from '@librechat/agents';
 import { logger, tenantStorage } from '@librechat/data-schemas';
+import { InMemorySubagentTaskStore, SubagentResolutionError } from '@librechat/agents';
 import { EModelEndpoint, Constants, subagentActivityConfigSchema } from 'librechat-data-provider';
 import {
   mapChatMessagesToStoredMessages,
@@ -56,12 +56,13 @@ import {
 import { boundSubagentActivityUpdate, SubagentActivityStream } from './subagentActivity';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
 import { ActivityRecorder, activityTreeFromProjection } from './digest';
+import { getSafeErrorMetadata, getSafeErrorText } from '~/utils/errors';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createConcurrencyLimiter } from '~/utils/promise';
 import { SubagentContentJournal } from './subagentContent';
+import { describeErrorCauses } from './failures/subagent';
 import { retainMCPRequestContext } from '~/mcp/request';
-import { getSafeErrorMetadata } from '~/utils/errors';
 import { InMemoryEventTransport } from '~/stream';
 import { aggregateEmittedUsage } from './usage';
 
@@ -516,8 +517,9 @@ function childAgentId(request: SubagentTaskStartRequest): string | undefined {
   return request.subagentType === 'self' ? request.parentAgentId : request.subagentType;
 }
 
+/** A subagent that could not start says why in the SDK's fixed, model-facing wording. */
 function publicFailureDetail(error: unknown): string {
-  return error instanceof SubagentThreadPublicError
+  return error instanceof SubagentThreadPublicError || error instanceof SubagentResolutionError
     ? error.message.slice(0, 2_000)
     : 'The child run could not be completed.';
 }
@@ -1701,9 +1703,14 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 throw error;
               }
               logger.error('[subagentThreads] Child-thread execution failed', {
+                taskId: runtime.taskId,
                 detail: publicFailureDetail(error),
                 errorName: error instanceof Error ? error.name : typeof error,
-                ...(error instanceof Error && error.stack != null ? { stack: error.stack } : {}),
+                ...(error instanceof SubagentResolutionError
+                  ? { phase: error.phase, resolutionCause: error.resolutionCause }
+                  : {}),
+                causes: describeErrorCauses(error),
+                error: getSafeErrorText(error),
               });
               if (mayPersist) {
                 await this.persistFailure(

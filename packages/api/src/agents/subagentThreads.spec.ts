@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { SubagentResolutionError } from '@librechat/agents';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { AIMessage, HumanMessage, ToolMessage } from '@librechat/agents/langchain/messages';
 import {
@@ -2525,8 +2526,9 @@ describe('SubagentThreadTaskStore', () => {
     }
   });
 
-  it('does not persist arbitrary executor details into the visible child chat', async () => {
-    loggerErrorSpy.mockClear();
+  it('does not persist or log arbitrary executor details', async () => {
+    /** `restoreMocks` removes the suite-wide spy after the first test. */
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
     const userId = 'safe-error-user';
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
@@ -2552,7 +2554,49 @@ describe('SubagentThreadTaskStore', () => {
     expect(
       JSON.stringify(store.claim(config.scopeId, requireAccepted(started).task.taskId)),
     ).not.toContain('provider-secret');
-    expect(JSON.stringify(loggerErrorSpy.mock.calls)).not.toContain('provider-secret');
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[subagentThreads] Child-thread execution failed',
+      expect.objectContaining({
+        causes: [{ name: 'Error', message: 'Authorization: Bearer [redacted]' }],
+      }),
+    );
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('provider-secret');
+  });
+
+  it('shows why a subagent could not start and logs the failure for its task', async () => {
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    const userId = 'resolution-error-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => {
+          throw new SubagentResolutionError('config', 'workspace_unavailable');
+        },
+      }),
+    );
+    await waitForSettled(store, config.scopeId, started);
+
+    const message =
+      'Subagent error: Workspace unavailable. Retry later or choose another workspace.';
+    const messages = await methods.getMessages({
+      user: userId,
+      conversationId: requireThreadId(started),
+    });
+    expect(messages[messages.length - 1]?.text).toBe(`Subagent task failed: ${message}`);
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[subagentThreads] Child-thread execution failed',
+      expect.objectContaining({
+        taskId: requireAccepted(started).task.taskId,
+        detail: message,
+        errorName: 'SubagentResolutionError',
+        phase: 'config',
+        resolutionCause: 'workspace_unavailable',
+        causes: [{ name: 'SubagentResolutionError', message }],
+      }),
+    );
   });
 
   it('routes live task polling and controls to the replica that owns the execution', async () => {

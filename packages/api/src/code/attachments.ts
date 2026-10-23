@@ -276,6 +276,43 @@ function classifyImportFailure(error: unknown): WorkspaceAttachmentUnavailableRe
   return 'failed';
 }
 
+/**
+ * A worker that cannot create the attachments folder reports it missing: workers before
+ * LibreChat-AI/code-interpreter#360 never created a parent on a root registered by path alone.
+ */
+function classifyIgnoreFailure(error: unknown): WorkspaceAttachmentUnavailableReason {
+  if (
+    error instanceof WorkspaceToolHttpError &&
+    error.reason === 'rejected' &&
+    error.upstreamCode === 'NOT_FOUND'
+  ) {
+    return 'unsupported';
+  }
+  return classifyImportFailure(error);
+}
+
+/** What a failed workspace request may log: its outcome and the worker's error code, never a
+ *  response body, a host path, or file content. */
+interface WorkspaceFailureMetadata {
+  type: string;
+  status?: number;
+  reason?: WorkspaceToolHttpError['reason'];
+  upstreamStatus?: number;
+  upstreamCode?: string;
+}
+
+function getWorkspaceFailureMetadata(error: unknown): WorkspaceFailureMetadata {
+  if (!(error instanceof WorkspaceToolHttpError)) {
+    return getSafeErrorMetadata(error);
+  }
+  return {
+    type: error.name,
+    reason: error.reason,
+    ...(error.upstreamStatus != null ? { upstreamStatus: error.upstreamStatus } : {}),
+    ...(error.upstreamCode != null ? { upstreamCode: error.upstreamCode } : {}),
+  };
+}
+
 /** Admits at most `limit` tasks at once; a finishing task hands its slot to the next waiter. */
 function createLimiter(limit: number): <T>(task: () => Promise<T>) => Promise<T> {
   let active = 0;
@@ -519,6 +556,7 @@ async function importOne({
     const reason = classifyImportFailure(error);
     logger.warn(
       `[workspaceAttachments] Import of file ${file.file_id} into workspace ${target.workspaceId} failed: ${reason}`,
+      getWorkspaceFailureMetadata(error),
     );
     return { status: 'unavailable', reason };
   } finally {
@@ -672,12 +710,13 @@ async function ensureAttachmentsIgnored({
       },
     });
   } catch (error) {
-    if (classifyImportFailure(error) !== 'conflict') {
+    const reason = classifyIgnoreFailure(error);
+    if (reason !== 'conflict') {
       logger.warn(
-        '[workspaceAttachments] Could not create the attachments .gitignore',
-        getSafeErrorMetadata(error),
+        `[workspaceAttachments] Could not create ${WORKSPACE_ATTACHMENTS_GITIGNORE} in workspace ${target.workspaceId}: ${reason}`,
+        getWorkspaceFailureMetadata(error),
       );
-      return classifyImportFailure(error);
+      return reason;
     }
     if (target.context.codeWorkspace?.operations.includes('read_file') !== true) {
       return 'not_ignored';
@@ -703,8 +742,8 @@ async function ensureAttachmentsIgnored({
       }
     } catch (readError) {
       logger.warn(
-        '[workspaceAttachments] Could not read the attachments .gitignore',
-        getSafeErrorMetadata(readError),
+        `[workspaceAttachments] Could not read ${WORKSPACE_ATTACHMENTS_GITIGNORE} in workspace ${target.workspaceId}`,
+        getWorkspaceFailureMetadata(readError),
       );
       return classifyImportFailure(readError);
     }
