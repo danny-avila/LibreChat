@@ -2145,6 +2145,57 @@ describe('what getAppConfig derives again for the parts profiles write', () => {
     expect(specControls(unsetWithoutSpecs)).toEqual(ON);
   });
 
+  describe('a control one profile sets and another tombstones', () => {
+    const above = (tombstones: string[]) => ({ ...profile({}, tombstones), priority: 20 });
+    const served = async (yaml: Record<string, unknown>, layers: ReturnType<typeof profile>[]) =>
+      specControls(await serviceOver(yaml, layers).getAppConfig({ role: 'USER' }));
+    const withSpecs = { modelSpecs: { list: [spec('s', 'openAI')] } };
+
+    it('derives it from the specs served once a higher profile tombstones it', async () => {
+      const hidden = profile({ interface: { parameters: false, presets: false } });
+      const shown = profile({ interface: { parameters: true } });
+      const tombstone = above(['interface.parameters', 'interface.presets']);
+
+      expect(await served({}, [hidden])).toEqual({ ...ON, parameters: false, presets: false });
+      expect(await served({}, [hidden, tombstone])).toEqual(ON);
+      expect(await served(withSpecs, [shown])).toEqual({ ...OFF, parameters: true });
+      expect(await served(withSpecs, [shown, above(['interface.parameters'])])).toEqual(OFF);
+    });
+
+    it('derives it where a profile tombstones a control librechat.yaml leaves unset', async () => {
+      expect(await served({}, [profile({}, ['interface.parameters'])])).toEqual(ON);
+      expect(await served(withSpecs, [profile({}, ['interface.modelSelect'])])).toEqual(OFF);
+    });
+
+    it('keeps what a higher profile sets over a lower tombstone of it', async () => {
+      const tombstone = profile({}, ['interface.parameters']);
+      const sets = (parameters: boolean) => ({
+        ...profile({ interface: { parameters } }),
+        priority: 20,
+      });
+
+      expect(await served({}, [tombstone, sets(false)])).toEqual({ ...ON, parameters: false });
+      expect(await served(withSpecs, [tombstone, sets(true)])).toEqual({
+        ...OFF,
+        parameters: true,
+      });
+      expect(
+        await served({ ...withSpecs, interface: { parameters: true } }, [tombstone, sets(true)]),
+      ).toEqual({ ...OFF, parameters: true });
+    });
+
+    it('follows the specs the profiles leave, added then tombstoned or the reverse', async () => {
+      const adds = (priority: number) => ({
+        ...profile({ modelSpecs: { list: [spec('s2', 'openAI')] } }),
+        priority,
+      });
+      const tombstone = (priority: number) => ({ ...profile({}, ['modelSpecs']), priority });
+
+      expect(await served({}, [adds(10), tombstone(20)])).toEqual(ON);
+      expect(await served(withSpecs, [tombstone(10), adds(20)])).toEqual(OFF);
+    });
+  });
+
   it("turns them back on when tenant scoping hides the only endpoint a profile's specs use", async () => {
     const yaml = {
       endpoints: {

@@ -1736,6 +1736,9 @@ interface FoldResult<T> {
 /** Where Vertex AI sits in librechat.yaml (and, unresolved, in an AppConfig). */
 const VERTEX_SEGMENTS = ['endpoints', EModelEndpoint.anthropic, 'vertex'];
 
+/** The Anthropic models a layer serves over Vertex AI's. */
+const ANTHROPIC_MODELS_SEGMENTS = ['endpoints', EModelEndpoint.anthropic, 'models'];
+
 /** Whether a tombstone path removes Azure `groups`: the groups, or an object holding them. */
 function removesAzureGroups(path: string): boolean {
   return AZURE_GROUPS_PATH === path || AZURE_GROUPS_PATH.startsWith(`${path}.`);
@@ -1749,7 +1752,9 @@ function removesAzureGroups(path: string): boolean {
  * `groups` always merge by `group` over the groups below in `raw`. With
  * `options.rederiveEndpoints`, they also resolve into the fields the Azure clients read
  * (`resolveLayerAzureGroups`), a tombstone of them removes those fields, and a layer that writes
- * or removes `endpoints.anthropic.vertex` has Vertex AI derived again (`deriveVertexEndpoint`);
+ * or removes `endpoints.anthropic.vertex`, or removes `endpoints.anthropic.models`, has Vertex AI
+ * derived again (`deriveVertexEndpoint`), keeping the models a layer set only while no later
+ * layer has removed them;
  * without it, those overrides stay inert in `merged`, as before the merge derived them. Layers
  * are judged with `vertexConfigured` taken from `initialRaw`, librechat.yaml.
  * `webSearchWriters` names the layer behind each paired web search field, by its position in
@@ -1900,11 +1905,16 @@ function foldConfigLayers<T extends AnyObject>(
     }
 
     recordConfigTouches(touches, appliedOverrides, tombstoned);
-    anthropicModelsSet ||=
-      getPath(appliedOverrides, ['endpoints', EModelEndpoint.anthropic, 'models']) !== undefined;
+    const anthropicModelsRemoved = tombstoned.some((path) =>
+      isRelatedPath(path.split('.'), ANTHROPIC_MODELS_SEGMENTS),
+    );
+    anthropicModelsSet =
+      getPath(appliedOverrides, ANTHROPIC_MODELS_SEGMENTS) !== undefined ||
+      (anthropicModelsSet && !anthropicModelsRemoved);
     if (
       derivation.rederiveEndpoints === true &&
-      (getPath(appliedOverrides, VERTEX_SEGMENTS) !== undefined ||
+      (anthropicModelsRemoved ||
+        getPath(appliedOverrides, VERTEX_SEGMENTS) !== undefined ||
         tombstoned.some((path) => isRelatedPath(path.split('.'), VERTEX_SEGMENTS)))
     ) {
       const derived = deriveVertexEndpoint({

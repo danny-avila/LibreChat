@@ -3745,6 +3745,67 @@ describe('Vertex AI derived from overrides (rederiveEndpoints)', () => {
     expect(anthropic?.vertexConfig?.modelNames).toEqual(['claude-opus-4-6']);
   });
 
+  describe('models a later layer removes', () => {
+    const MODELS = 'endpoints.anthropic.models';
+    const layered = async (...layers: IConfig[]) =>
+      mergeConfigOverrides(await loadBase(yaml), layers, { rederiveEndpoints: true }).endpoints
+        ?.anthropic;
+    const setsModels = (extra: Record<string, unknown> = {}) =>
+      fakeConfig({ endpoints: { anthropic: { models: ['claude-x'], ...extra } } }, 10, [], 'low');
+
+    it("serves Vertex AI's models again once a higher layer tombstones a lower layer's", async () => {
+      const anthropic = await layered(setsModels(), fakeConfig({}, 20, [MODELS], 'high'));
+
+      expect(anthropic?.models).toEqual(['claude-sonnet-4-6']);
+      expect(anthropic?.vertexConfig?.modelNames).toEqual(['claude-sonnet-4-6']);
+    });
+
+    it('derives them from the Vertex AI setup the tombstoning layer writes', async () => {
+      const anthropic = await layered(
+        setsModels({ vertex: { models: ['claude-haiku-4-5'] } }),
+        fakeConfig(vertex({ models: ['claude-opus-4-6'] }), 20, [MODELS], 'high'),
+      );
+
+      expect(anthropic?.models).toEqual(['claude-opus-4-6']);
+      expect(anthropic?.vertexConfig?.modelNames).toEqual(['claude-opus-4-6']);
+    });
+
+    it("serves Vertex AI's models where a layer tombstones librechat.yaml's", async () => {
+      const anthropic = await layered(fakeConfig({}, 10, [MODELS]));
+
+      expect(anthropic?.models).toEqual(['claude-sonnet-4-6']);
+    });
+
+    it('keeps the models a higher layer sets over a lower tombstone of them', async () => {
+      const anthropic = await layered(
+        fakeConfig({}, 10, [MODELS], 'low'),
+        fakeConfig(
+          vertex({ models: ['claude-opus-4-6'] }, { models: ['claude-y'] }),
+          20,
+          [],
+          'high',
+        ),
+      );
+      const sameLayer = await layered(
+        fakeConfig(vertex({ models: ['claude-opus-4-6'] }, { models: ['claude-y'] }), 10, [MODELS]),
+      );
+
+      expect(anthropic?.models).toEqual(['claude-y']);
+      expect(anthropic?.vertexConfig?.modelNames).toEqual(['claude-opus-4-6']);
+      expect(sameLayer?.models).toEqual(['claude-y']);
+    });
+
+    it('keeps them inert without rederiveEndpoints, as before', async () => {
+      const anthropic = mergeConfigOverrides(
+        await loadBase(yaml),
+        [setsModels(), fakeConfig({}, 20, [MODELS], 'high')],
+        { rederiveEndpoints: false },
+      ).endpoints?.anthropic;
+
+      expect(anthropic?.models).toBeUndefined();
+    });
+  });
+
   it.each([false, true])(
     "never applies a layer's own vertexConfig (rederiveEndpoints: %s)",
     async (rederiveEndpoints) => {
@@ -4049,6 +4110,79 @@ describe('the agents memory capability follows the merged memory config', () => 
         ]),
       ),
     ).toEqual([AgentCapabilities.tools]);
+  });
+});
+
+describe('derived parts follow what the layers leave, set then tombstoned or the reverse', () => {
+  const low = (overrides: Record<string, unknown>, tombstones: string[] = []) =>
+    fakeConfig(overrides, 10, tombstones, 'low');
+  const high = (overrides: Record<string, unknown>, tombstones: string[] = []) =>
+    fakeConfig(overrides, 20, tombstones, 'high');
+  const east = {
+    group: 'east',
+    apiKey: 'east-key',
+    instanceName: 'east',
+    version: '2024-10-21',
+    deploymentName: 'gpt-4o',
+    assistants: true,
+    models: { 'gpt-4o': true },
+  };
+  const groups = (...items: Record<string, unknown>[]) => ({
+    endpoints: { azureOpenAI: { groups: items } },
+  });
+  const GROUPS = 'endpoints.azureOpenAI.groups';
+
+  it('the agents memory capability', async () => {
+    const offBase = await loadBase({ memory: { disabled: true } });
+    const onBase = await loadBase({ memory: { disabled: false, personalize: true } });
+    const offers = (base: AppConfig, configs: IConfig[]) =>
+      (mergeConfigOverrides(base, configs).endpoints?.agents?.capabilities ?? []).includes(
+        AgentCapabilities.memory,
+      );
+    const on = { memory: { disabled: false } };
+
+    expect(offers(offBase, [low(on), high({}, ['memory'])])).toBe(false);
+    expect(offers(offBase, [low({}, ['memory']), high(on)])).toBe(true);
+    expect(
+      offers(onBase, [low({ memory: { disabled: true } }), high({}, ['memory.disabled'])]),
+    ).toBe(true);
+  });
+
+  it('the Azure Assistants endpoint', async () => {
+    const base = await loadBase({ endpoints: { azureOpenAI: { groups: [east] } } });
+    const assistants = { endpoints: { azureOpenAI: { assistants: true } } };
+    const ASSISTANTS = 'endpoints.azureOpenAI.assistants';
+
+    expect(
+      mergeWithGroups(base, [low(assistants), high({}, [ASSISTANTS])]).endpoints?.azureAssistants,
+    ).toBeUndefined();
+    expect(
+      mergeWithGroups(base, [low({}, [ASSISTANTS]), high(assistants)]).endpoints?.azureAssistants,
+    ).toBeDefined();
+  });
+
+  it('Azure groups', async () => {
+    const base = await loadBase({ endpoints: { azureOpenAI: { groups: [east] } } });
+    const group = (name: string, model: string) => ({
+      ...east,
+      group: name,
+      instanceName: name,
+      apiKey: `${name}-key`,
+      deploymentName: model,
+      models: { [model]: true },
+    });
+    const served = (configs: IConfig[]) => {
+      const azure = mergeWithGroups(base, configs).endpoints?.azureOpenAI;
+      return { groups: Object.keys(azure?.groupMap ?? {}), models: azure?.modelNames };
+    };
+
+    expect(
+      served([low(groups(group('west', 'gpt-5'))), high(groups(group('north', 'o3')), [GROUPS])]),
+    ).toEqual({ groups: ['north'], models: ['o3'] });
+    expect(served([low({}, [GROUPS]), high(groups(group('west', 'gpt-5')))])).toEqual({
+      groups: ['west'],
+      models: ['gpt-5'],
+    });
   });
 });
 

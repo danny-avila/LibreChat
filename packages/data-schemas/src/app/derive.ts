@@ -343,10 +343,10 @@ function setEndpoint<T extends { endpoints?: unknown }>(
  * `endpoints.anthropic.vertex`, with librechat.yaml's base-only values (key file, region), and
  * the models it serves. `enabled: false`, or no `vertex` left, removes `vertexConfig` and serves
  * the `endpoints.anthropic.models` the YAML-shaped config holds (none: the provider's defaults).
- * Models a layer set itself (`modelsOverridden`) stay as merged. Where librechat.yaml configures
- * no Vertex AI ({@link isVertexConfigured}) nothing is derived, so no layer turns it on with the
- * deployment's default Google credentials; a Vertex setup that does not load leaves the endpoint
- * as it was below too, with a warning naming `principal`.
+ * Models a layer set, where no later layer removed them (`modelsOverridden`), stay as merged.
+ * Where librechat.yaml configures no Vertex AI ({@link isVertexConfigured}) nothing is derived,
+ * so no layer turns it on with the deployment's default Google credentials; a Vertex setup that
+ * does not load leaves the endpoint as it was below too, with a warning naming `principal`.
  */
 export function deriveVertexEndpoint<T extends JsonRecord>(params: {
   merged: T;

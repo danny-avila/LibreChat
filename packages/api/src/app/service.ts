@@ -148,7 +148,9 @@ function getSpecState(modelSpecs: AppConfig['modelSpecs']): string {
 /**
  * The spec-dependent interface controls a merge may have changed against `base`, whose own are
  * already derived for the specs it serves: all of them when the specs served change, else those
- * whose librechat.yaml-shaped value (`explicit`) the overrides set or removed.
+ * whose final librechat.yaml-shaped value (`explicit`) or served value differs from `base`'s. A
+ * control a layer sets and a higher layer tombstones is back to librechat.yaml's value in
+ * `explicit`, but the tombstone removed its served value, so it is derived again too.
  */
 function getChangedSpecFields(
   base: AppConfig,
@@ -159,7 +161,11 @@ function getChangedSpecFields(
     return [...SPEC_INTERFACE_FIELDS];
   }
   const written = base.config?.interface;
-  return SPEC_INTERFACE_FIELDS.filter((field) => explicit?.[field] !== written?.[field]);
+  return SPEC_INTERFACE_FIELDS.filter(
+    (field) =>
+      explicit?.[field] !== written?.[field] ||
+      merged.interfaceConfig?.[field] !== base.interfaceConfig?.[field],
+  );
 }
 
 /**
