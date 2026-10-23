@@ -55,6 +55,7 @@ const {
   getScheduleMCPExecution,
   getMCPRequestContext,
   createSubagentCodeRouting,
+  hasEntityEmbeddings,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -116,6 +117,7 @@ const {
 } = require('./backgroundCompletion');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
+const { getFileStorage } = require('~/server/services/Files/operations');
 const { getAppConfig } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -821,6 +823,8 @@ const initializeClientWithProvider = async ({
       provisionToCodeEnv,
       provisionToVectorDB,
       checkSessionsAlive,
+      adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
+      hasEntityEmbeddings,
       loadCodeApiKey,
       updateFile: db.updateFile,
       getRoleByName: db.getRoleByName,
@@ -916,6 +920,8 @@ const initializeClientWithProvider = async ({
         provisionToCodeEnv,
         provisionToVectorDB,
         checkSessionsAlive,
+        adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
+        hasEntityEmbeddings,
         loadCodeApiKey,
         updateFile: db.updateFile,
         getRoleByName: db.getRoleByName,
@@ -1459,6 +1465,8 @@ const initializeClientWithProvider = async ({
             provisionToCodeEnv,
             provisionToVectorDB,
             checkSessionsAlive,
+            adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
+            hasEntityEmbeddings,
             loadCodeApiKey,
             updateFile: db.updateFile,
             getRoleByName: db.getRoleByName,
@@ -1832,6 +1840,7 @@ const initializeClientWithProvider = async ({
           },
           {
             completionWakeups: completionWakeupsEnabled,
+            requestScopedConnections: getMCPRequestContext(req, res),
             scheduleMCPIdentity: getScheduleMCPExecution(getMCPRequestContext(req, res))?.identity,
           },
         )
@@ -1984,11 +1993,14 @@ const initializeClientWithProvider = async ({
     filterFiles: filterFilesByAgentAccess,
     listPublications: db.listRunArtifacts,
     provisioning: {
+      fileStorage: getFileStorage(),
       provisionToCodeEnv,
       provisionToVectorDB,
       updateFile: db.updateFile,
       updateCodeEnvRef: db.updateFileCodeEnvRef,
       addEmbeddedEntity: db.addFileEmbeddedEntity,
+      hasEntityEmbeddings,
+      adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
     },
     fileMethods: {
       claimRunArtifactFile: db.claimRunArtifactFile,

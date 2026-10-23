@@ -12,6 +12,7 @@ const {
   waitForGenerationPersistence,
   createArchiveAllHandler,
   createSubagentActivityStreamHandler,
+  createSubagentTaskContentHandler,
   createSubagentControlHandler,
   isValidSubagentControlRequest,
   exemptAgentTriggerFromIpLimiter,
@@ -20,8 +21,14 @@ const {
   createBackgroundTaskCancelHandler,
   createBackgroundTaskPolicyMiddleware,
   createConversationPullRequestHandler,
-  createGitHubPullRequestSource,
+  createPullRequestSource,
+  createProxyAwareFetch,
   createPullRequestLookup,
+  createPullRequestLookupStore,
+  keyvRedisClient,
+  cacheConfig,
+  createPullRequestUserTokenFromEnv,
+  createConversationPullRequestsHandler,
   backgroundTaskRegistry,
   createSubagentThreadViewHandler,
   createGeneratedTitleHandler,
@@ -151,6 +158,17 @@ const subagentActivityStreamHandler = createSubagentActivityStreamHandler(
     subscribe: subagentThreadTaskStore.subscribeActivity.bind(subagentThreadTaskStore),
   },
 );
+const subagentTaskContentHandler = createSubagentTaskContentHandler(
+  {
+    getConvoOwnership: db.getConvoOwnership,
+    getSubagentThreadForParent: db.getSubagentThreadForParent,
+    getMessages: db.getMessages,
+    getSubagentContentHead: db.getSubagentContentHead,
+    streamSubagentContentBatches: db.streamSubagentContentBatches,
+  },
+  () => subagentThreadTaskStore.contentPageBytes,
+  () => subagentThreadTaskStore.contentRecoveryGraceMs,
+);
 const subagentControlHandler = createSubagentControlHandler({
   getConvoOwnership: db.getConvoOwnership,
   getSubagentThreadForParent: db.getSubagentThreadForParent,
@@ -170,11 +188,29 @@ const backgroundTaskIndexHandler = createBackgroundTaskIndexHandler({
 const backgroundTaskCancelHandler = createBackgroundTaskCancelHandler({
   registry: backgroundTaskRegistry,
 });
+/** One lookup, so the header's single route and the sidebar's batch route share its cache. */
+const pullRequestLookup = createPullRequestLookup({
+  source: createPullRequestSource({ fetchFn: createProxyAwareFetch() }),
+  store: createPullRequestLookupStore({ client: keyvRedisClient, config: cacheConfig }),
+});
+const pullRequestUserToken = createPullRequestUserTokenFromEnv({
+  store: db,
+  fetchFn: createProxyAwareFetch(),
+  env: process.env,
+});
 const conversationPullRequestHandler = createConversationPullRequestHandler({
   getConvoLaneGit: db.getConvoLaneGit,
   getAppConfig,
-  lookup: createPullRequestLookup({ source: createGitHubPullRequestSource({ fetchFn: fetch }) }),
+  lookup: pullRequestLookup,
   env: process.env,
+  userToken: pullRequestUserToken,
+});
+const conversationPullRequestsHandler = createConversationPullRequestsHandler({
+  getConvosLaneGit: db.getConvosLaneGit,
+  getAppConfig,
+  lookup: pullRequestLookup,
+  env: process.env,
+  userToken: pullRequestUserToken,
 });
 router.use(requireJwtAuth);
 
@@ -235,6 +271,10 @@ router.get('/', async (req, res) => {
 });
 
 router.get(
+  '/:parentConversationId/subagents/:threadId/tasks/:taskId/content',
+  subagentTaskContentHandler,
+);
+router.get(
   '/:parentConversationId/subagents/:threadId/tasks/:taskId/activity',
   subagentActivityStreamHandler,
 );
@@ -248,6 +288,7 @@ router.post(
   subagentControlHandler,
 );
 router.get('/:parentConversationId/subagents', parentSubagentIndexHandler);
+router.post('/pull-requests', conversationPullRequestsHandler);
 router.get('/:conversationId/pull-request', conversationPullRequestHandler);
 router.get('/:conversationId/background-tasks', backgroundTaskPolicy, backgroundTaskIndexHandler);
 router.post(
@@ -795,7 +836,8 @@ router.post(
 router.post('/fork', forkIpLimiter, forkUserLimiter, configMiddleware, async (req, res) => {
   try {
     /** @type {TForkConvoRequest} */
-    const { conversationId, messageId, option, splitAtTarget, latestMessageId } = req.body;
+    const { conversationId, messageId, option, splitAtTarget, latestMessageId, excludeFiles } =
+      req.body;
     const result = await forkConversation({
       requestUserId: req.user.id,
       originalConvoId: conversationId,
@@ -804,6 +846,7 @@ router.post('/fork', forkIpLimiter, forkUserLimiter, configMiddleware, async (re
       records: true,
       splitAtTarget,
       option,
+      excludeFiles: excludeFiles === true,
       interfaceConfig: req.config?.interfaceConfig,
       filters: req.config?.filters,
       ...(req.config?.messageFilter?.pii == null

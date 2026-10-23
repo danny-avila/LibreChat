@@ -561,10 +561,10 @@ describe('createActionTool OAuth abort identity', () => {
     const { requestBuilder, preparedExecutor } = oauthToolFixture();
     /** No access token but a live refresh token: the branch that waits on the
      *  shared refresh flow rather than opening a login. */
+    const refreshToken = await dataSchemas.encryptV2('refresh-token');
     mockFindToken.mockImplementation(async ({ type }) =>
-      type === 'oauth_refresh' ? { token: 'encrypted-refresh-token' } : null,
+      type === 'oauth_refresh' ? { token: refreshToken } : null,
     );
-    jest.spyOn(dataSchemas, 'decryptV2').mockResolvedValue('refresh-token');
 
     /** The refresh never settles; the run stops while it is pending. */
     mockActionFlowManager.createFlowWithHandler.mockImplementation(() => new Promise(() => {}));
@@ -962,5 +962,54 @@ describe('backward-compatible tool name matching', () => {
 
       expect(tool1).toBe(tool2);
     });
+  });
+});
+
+describe('createActionTool request budget', () => {
+  it('passes the configured timeout and the run abort signal to the action call', async () => {
+    const preparedExecutor = { execute: jest.fn().mockResolvedValue({ data: { ok: true } }) };
+    const requestBuilder = {
+      createExecutor: jest.fn(() => ({ setParams: jest.fn(() => preparedExecutor) })),
+    };
+    const actionTool = await createActionTool({
+      userId: 'action-user',
+      res: {},
+      action: { action_id: 'action-1', metadata: { domain: 'https://api.example.com' } },
+      requestBuilder,
+      timeoutMs: 5_000,
+    });
+    const { signal } = new AbortController();
+
+    await actionTool._call({}, { signal });
+
+    expect(preparedExecutor.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ timeout: 5_000, signal }),
+    );
+  });
+
+  it('reports a call that hit its deadline as a timeout, not as a stopped run', async () => {
+    const canceled = Object.assign(new Error('canceled'), {
+      code: 'ERR_CANCELED',
+      config: {
+        timeoutErrorMessage:
+          'Exceeded timeouts.actionsMs (5 ms); raise it in librechat.yaml if this upstream is legitimately slow',
+        signal: { reason: new DOMException('timed out', 'TimeoutError') },
+      },
+    });
+    const preparedExecutor = { execute: jest.fn().mockRejectedValue(canceled) };
+    const requestBuilder = {
+      createExecutor: jest.fn(() => ({ setParams: jest.fn(() => preparedExecutor) })),
+    };
+    const actionTool = await createActionTool({
+      userId: 'action-user',
+      res: {},
+      action: { action_id: 'action-1', metadata: { domain: 'https://api.example.com' } },
+      requestBuilder,
+      timeoutMs: 5,
+    });
+
+    const result = await actionTool._call({}, {});
+
+    expect(result).toContain('timeouts.actionsMs (5 ms)');
   });
 });

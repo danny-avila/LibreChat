@@ -1,6 +1,7 @@
-import { logger, isValidTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import { logger } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction } from 'express';
 import { buildRequestContext, runWithTenantContext } from './tenant';
+import { rejectTenantHeader } from './tenantHeader';
 import { isEnabled } from '~/utils';
 
 /**
@@ -48,7 +49,8 @@ export function preAuthTenantMiddleware(req: Request, res: Response, next: NextF
     return;
   }
 
-  if (tenantId === SYSTEM_TENANT_ID) {
+  const rejection = rejectTenantHeader(tenantId);
+  if (rejection === 'system') {
     runWithTenantContext(requestContext, () => {
       logger.warn('[preAuthTenant] Rejected __SYSTEM__ sentinel in X-Tenant-Id header', {
         ip: req.ip,
@@ -59,7 +61,7 @@ export function preAuthTenantMiddleware(req: Request, res: Response, next: NextF
     return;
   }
 
-  if (!isValidTenantId(tenantId)) {
+  if (rejection === 'malformed') {
     runWithTenantContext(requestContext, () => {
       logger.warn('[preAuthTenant] Rejected malformed X-Tenant-Id header', {
         ip: req.ip,

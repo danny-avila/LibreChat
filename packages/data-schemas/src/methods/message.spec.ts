@@ -44,9 +44,6 @@ let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
 let updateToolCallResult: ReturnType<typeof createMessageMethods>['updateToolCallResult'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
 let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'];
-let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageText'];
-let deleteMessagesSince: ReturnType<typeof createMessageMethods>['deleteMessagesSince'];
-let recordMessage: ReturnType<typeof createMessageMethods>['recordMessage'];
 let claimSubagentTaskResult: ReturnType<typeof createMessageMethods>['claimSubagentTaskResult'];
 let recordSubagentTaskControlReceipt: ReturnType<
   typeof createMessageMethods
@@ -95,9 +92,6 @@ beforeAll(async () => {
   updateToolCallResult = methods.updateToolCallResult;
   deleteMessages = methods.deleteMessages;
   bulkSaveMessages = methods.bulkSaveMessages;
-  updateMessageText = methods.updateMessageText;
-  deleteMessagesSince = methods.deleteMessagesSince;
-  recordMessage = methods.recordMessage;
   claimSubagentTaskResult = methods.claimSubagentTaskResult;
   recordSubagentTaskControlReceipt = methods.recordSubagentTaskControlReceipt;
   getSubagentTaskControlReceipt = methods.getSubagentTaskControlReceipt;
@@ -354,7 +348,7 @@ describe('Message Operations', () => {
       expect(configReads).toBeGreaterThan(0);
     });
 
-    it.each(['record', 'edit', 'bulk', 'text'] as const)(
+    it.each(['edit', 'bulk'] as const)(
       'applies the same configurable limit through the %s writer',
       async (writer) => {
         const methods = createMessageMethods(mongoose, {
@@ -366,19 +360,10 @@ describe('Message Operations', () => {
         };
         await methods.saveMessage(mockCtx, base);
         const text = 'result'.repeat(15_000);
-        if (writer === 'record')
-          await methods.recordMessage({
-            conversationId: mockMessageData.conversationId,
-            user: 'user123',
-            messageId: 'msg123',
-            text,
-          });
         if (writer === 'edit')
           await methods.updateMessage('user123', { messageId: 'msg123', text });
         if (writer === 'bulk')
           await methods.bulkSaveMessages([{ ...mockMessageData, user: 'user123', text }]);
-        if (writer === 'text')
-          await methods.updateMessageText('user123', { messageId: 'msg123', text });
         const row = await Message.findOne({ messageId: 'msg123' }).lean();
         expect(row?.text).toBe(text);
         expect(mongoose.mongo.BSON.calculateObjectSize(row!)).toBeLessThanOrEqual(150_000);
@@ -1011,31 +996,9 @@ describe('Message Operations', () => {
     });
   });
 
-  describe('recordMessage', () => {
-    it('stamps native model output without overriding explicit provenance', async () => {
-      const conversationId = uuidv4();
-      const modelOutput = await recordMessage({
-        user: 'user123',
-        messageId: 'record-model-output',
-        conversationId,
-        isCreatedByUser: false,
-      });
-      expect(modelOutput?.isUserSubmitted).toBe(false);
-
-      const explicitlySubmitted = await recordMessage({
-        user: 'user123',
-        messageId: 'record-user-submitted',
-        conversationId,
-        isCreatedByUser: false,
-        isUserSubmitted: true,
-      });
-      expect(explicitlySubmitted?.isUserSubmitted).toBe(true);
-    });
-  });
-
   it('preserves unknown provenance when message savers update legacy assistant rows', async () => {
     const conversationId = uuidv4();
-    const messageIds = ['legacy-save', 'legacy-bulk', 'legacy-record'];
+    const messageIds = ['legacy-save', 'legacy-bulk'];
     await Message.collection.insertMany(
       messageIds.map((messageId) => ({
         user: 'user123',
@@ -1061,33 +1024,11 @@ describe('Message Operations', () => {
         text: 'Updated assistant output',
       },
     ]);
-    await recordMessage({
-      user: 'user123',
-      messageId: 'legacy-record',
-      conversationId,
-      isCreatedByUser: false,
-      text: 'Updated assistant output',
-    });
-
     const rows = await Message.find({ messageId: { $in: messageIds } }).lean();
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(2);
     for (const row of rows) {
       expect(row).not.toHaveProperty('isUserSubmitted');
     }
-  });
-
-  describe('updateMessageText', () => {
-    it('should update message text for the authenticated user', async () => {
-      // First save a message
-      await saveMessage(mockCtx, mockMessageData);
-
-      // Then update it
-      await updateMessageText(mockCtx.userId, { messageId: 'msg123', text: 'Updated text' });
-
-      // Verify the update
-      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
-      expect(updatedMessage?.text).toBe('Updated text');
-    });
   });
 
   describe('updateMessage', () => {
@@ -1251,6 +1192,43 @@ describe('Message Operations', () => {
       expect(result?.langfuseSampled).toBe(true);
       expect(result?.langfuseDestinationIds).toEqual(['destination-1']);
       expect(result?.langfuseRunId).toBe('run-1');
+    });
+
+    it('returns the temporary flag with feedback updates', async () => {
+      await saveMessage({ ...mockCtx, isTemporary: true }, mockMessageData);
+
+      const result = await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        feedback: { rating: 'thumbsDown', tag: undefined },
+      });
+
+      expect(result?.isTemporary).toBe(true);
+    });
+
+    it('reads a legacy deadline-only row as temporary with feedback updates', async () => {
+      const expiredAt = new Date(Date.now() + 60 * 60 * 1000);
+      await Message.collection.insertMany([
+        { ...mockMessageData, user: mockCtx.userId, expiredAt },
+        {
+          ...mockMessageData,
+          messageId: 'msg-permanent',
+          user: mockCtx.userId,
+          isTemporary: false,
+          expiredAt,
+        },
+      ]);
+
+      const legacy = await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        feedback: { rating: 'thumbsDown', tag: undefined },
+      });
+      const permanent = await updateMessage(mockCtx.userId, {
+        messageId: 'msg-permanent',
+        feedback: { rating: 'thumbsDown', tag: undefined },
+      });
+
+      expect(legacy?.isTemporary).toBe(true);
+      expect(permanent?.isTemporary).toBe(false);
     });
 
     it('should throw an error if message is not found', async () => {
@@ -3060,57 +3038,6 @@ describe('Message Operations', () => {
     });
   });
 
-  describe('deleteMessagesSince', () => {
-    it('should delete messages only for the authenticated user', async () => {
-      const conversationId = uuidv4();
-
-      // Create multiple messages in the same conversation
-      await saveMessage(mockCtx, {
-        messageId: 'msg1',
-        conversationId,
-        text: 'First message',
-        user: 'user123',
-      });
-
-      await saveMessage(mockCtx, {
-        messageId: 'msg2',
-        conversationId,
-        text: 'Second message',
-        user: 'user123',
-      });
-
-      await waitForTimestampTick();
-
-      await saveMessage(mockCtx, {
-        messageId: 'msg3',
-        conversationId,
-        text: 'Third message',
-        user: 'user123',
-      });
-
-      // Delete messages since message2 (this should only delete messages created AFTER msg2)
-      await deleteMessagesSince(mockCtx.userId, {
-        messageId: 'msg2',
-        conversationId,
-      });
-
-      // Verify msg1 and msg2 remain, msg3 is deleted
-      const remainingMessages = await Message.find({ conversationId, user: 'user123' });
-      expect(remainingMessages).toHaveLength(2);
-      expect(remainingMessages.map((m) => m.messageId)).toContain('msg1');
-      expect(remainingMessages.map((m) => m.messageId)).toContain('msg2');
-      expect(remainingMessages.map((m) => m.messageId)).not.toContain('msg3');
-    });
-
-    it('should return undefined if no message is found', async () => {
-      const result = await deleteMessagesSince(mockCtx.userId, {
-        messageId: 'nonexistent',
-        conversationId: 'convo123',
-      });
-      expect(result).toBeUndefined();
-    });
-  });
-
   describe('CLIENT_MESSAGE_SELECT projection', () => {
     it('strips server-internal fields and dead SERP verticals, keeping rendered data', async () => {
       const conversationId = uuidv4();
@@ -3330,6 +3257,51 @@ describe('Message Operations', () => {
   });
 
   describe('getMessagesForSubagentThreadView', () => {
+    it('projects recovery enrollment without exposing private journal metadata', async () => {
+      const conversationId = uuidv4();
+      for (const captured of [false, true, 'deleted'] as const) {
+        await saveMessage(mockCtx, {
+          messageId: `captured-${captured}:user`,
+          conversationId,
+          user: 'user123',
+          text: 'Input',
+          ...(captured
+            ? {
+                subagentContent: {
+                  version: 1 as const,
+                  throughSequence: 12,
+                  ...(captured === 'deleted' ? { deleted: true } : {}),
+                },
+              }
+            : {}),
+        });
+      }
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 3,
+        textCodePointLimit: 100,
+      });
+      expect(messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            messageId: 'captured-true:user',
+            contentRecoveryAvailable: true,
+          }),
+          expect.objectContaining({
+            messageId: 'captured-false:user',
+            contentRecoveryAvailable: false,
+          }),
+          expect.objectContaining({
+            messageId: 'captured-deleted:user',
+            contentRecoveryAvailable: false,
+          }),
+        ]),
+      );
+      expect(JSON.stringify(messages)).not.toContain('subagentContent');
+      expect(JSON.stringify(messages)).not.toContain('throughSequence');
+    });
+
     it('bounds text in MongoDB before returning the public projection', async () => {
       const conversationId = uuidv4();
       await saveMessage(mockCtx, {
@@ -4088,6 +4060,28 @@ describe('Message Operations', () => {
   });
 
   describe('deleteMessages', () => {
+    it('does not discover journals for an exact ordinary message id', async () => {
+      const messageId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId,
+        conversationId: uuidv4(),
+        user: 'user123',
+        text: 'Ordinary chat',
+      });
+      const find = jest.spyOn(Message, 'find');
+      const journalDelete = jest.spyOn(mongoose.models.SubagentContent, 'deleteMany');
+      try {
+        await expect(deleteMessages({ user: 'user123', messageId })).resolves.toMatchObject({
+          deletedCount: 1,
+        });
+        expect(find).not.toHaveBeenCalled();
+        expect(journalDelete).not.toHaveBeenCalled();
+      } finally {
+        find.mockRestore();
+        journalDelete.mockRestore();
+      }
+    });
+
     it('should delete messages with the correct filter', async () => {
       // Save some messages for different users
       await saveMessage(mockCtx, mockMessageData);
@@ -4143,38 +4137,6 @@ describe('Message Operations', () => {
         user: 'victim123',
       });
       expect(originalMessage?.text).toBe('Victim message');
-    });
-
-    it("should not allow deleting messages from another user's conversation", async () => {
-      const victimConversationId = uuidv4();
-      const victimMessageId = 'victim-msg-123';
-
-      // Save a message as the victim
-      await saveMessage(
-        { userId: 'victim123' },
-        {
-          messageId: victimMessageId,
-          conversationId: victimConversationId,
-          text: 'Victim message',
-          user: 'victim123',
-        },
-      );
-
-      // Attacker tries to delete from victim's conversation
-      const result = await deleteMessagesSince('attacker123', {
-        messageId: victimMessageId,
-        conversationId: victimConversationId,
-      });
-
-      expect(result).toBeUndefined();
-
-      // Verify the victim's message still exists
-      const victimMessage = await Message.findOne({
-        messageId: victimMessageId,
-        user: 'victim123',
-      });
-      expect(victimMessage).toBeTruthy();
-      expect(victimMessage?.text).toBe('Victim message');
     });
 
     it("should not allow inserting a new message into another user's conversation", async () => {
@@ -5077,23 +5039,6 @@ describe('Message Operations', () => {
       expect(doc).not.toBeNull();
       expect(doc?.text).toBe('Updated');
       expect(doc?.tenantId).toBe('real-tenant');
-    });
-
-    it('recordMessage should not write caller-supplied tenantId to the document', async () => {
-      const messageId = uuidv4();
-      const conversationId = uuidv4();
-      await recordMessage({
-        user: 'user123',
-        messageId,
-        conversationId,
-        text: 'Record tenant test',
-        tenantId: 'malicious-tenant',
-      });
-
-      const doc = await Message.findOne({ messageId }).lean();
-      expect(doc).not.toBeNull();
-      expect(doc?.text).toBe('Record tenant test');
-      expect(doc?.tenantId).toBeUndefined();
     });
 
     it('updateMessage should not write caller-supplied tenantId to the document', async () => {

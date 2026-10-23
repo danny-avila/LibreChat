@@ -42,7 +42,10 @@ export async function loadDefaultInterface({
     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
     mcpServers: interfaceConfig?.mcpServers ?? defaults.mcpServers,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
+    landingHeading: interfaceConfig?.landingHeading ?? defaults.landingHeading,
+    landingFooter: interfaceConfig?.landingFooter ?? defaults.landingFooter,
     autoSubmitFromUrl: interfaceConfig?.autoSubmitFromUrl ?? defaults.autoSubmitFromUrl,
+    colorModeFromUrl: interfaceConfig?.colorModeFromUrl ?? defaults.colorModeFromUrl,
     buildInfo: interfaceConfig?.buildInfo ?? defaults.buildInfo,
     mascot: interfaceConfig?.mascot ?? defaults.mascot,
     contextUsage: interfaceConfig?.contextUsage ?? defaults.contextUsage,
@@ -61,6 +64,7 @@ export async function loadDefaultInterface({
     composerRecentFiles: interfaceConfig?.composerRecentFiles ?? defaults.composerRecentFiles,
     historyCacheTtlMs: interfaceConfig?.historyCacheTtlMs ?? defaults.historyCacheTtlMs,
     historyCacheRecent: interfaceConfig?.historyCacheRecent ?? defaults.historyCacheRecent,
+    historyCacheMaxBytes: interfaceConfig?.historyCacheMaxBytes ?? defaults.historyCacheMaxBytes,
 
     // Permissions and related settings - only include if explicitly configured
     bookmarks: interfaceConfig?.bookmarks,

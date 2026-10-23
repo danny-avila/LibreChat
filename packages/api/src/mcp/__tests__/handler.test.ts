@@ -1696,6 +1696,38 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       expect(headers.get('foo')).toBe('bar');
     });
 
+    it('snapshots the headers in the flow, an empty map included, on both initiation paths', async () => {
+      mockRegisterClient.mockResolvedValue({
+        client_id: 'test',
+        redirect_uris: [],
+        logo_uri: undefined,
+        tos_uri: undefined,
+      });
+      const preconfigured = {
+        authorization_url: 'http://example.com/auth',
+        token_url: 'http://example.com/token',
+        client_id: 'configured-client',
+      };
+
+      const initiate = (headers: Record<string, string>, config: MCPOptions['oauth']) =>
+        MCPOAuthHandler.initiateOAuthFlow(
+          'test-server',
+          'http://example.com',
+          'user-123',
+          headers,
+          config,
+        );
+      const [discoveredEmpty, configuredEmpty, discoveredSet] = await Promise.all([
+        initiate({}, {}),
+        initiate({}, preconfigured),
+        initiate({ foo: 'bar' }, {}),
+      ]);
+
+      expect(discoveredEmpty.flowMetadata.oauthHeaders).toEqual({});
+      expect(configuredEmpty.flowMetadata.oauthHeaders).toEqual({});
+      expect(discoveredSet.flowMetadata.oauthHeaders).toEqual({ foo: 'bar' });
+    });
+
     it('passes headers to auto-discovery operations', async () => {
       mockDiscoverOAuthProtectedResourceMetadata.mockImplementation(async (_, __, fetchFn) => {
         await fetchFn?.('http://example.com/.well-known/oauth-protected-resource', {});
@@ -3353,7 +3385,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       );
 
       expect(mockExchangeAuthorization).toHaveBeenCalledTimes(1);
-      expect(mockExchangeAuthorization.mock.calls[0][1].resource?.href).toBe(
+      expect(String(mockExchangeAuthorization.mock.calls[0][1].resource)).toBe(
         'https://example.com/mcp',
       );
     });

@@ -885,6 +885,29 @@ describe('deleteRoleByName', () => {
     expect(carol!.role).toBe(SystemRoles.USER);
   });
 
+  it('leaves a role recreated under the same name when the expected id no longer matches', async () => {
+    const original = await createRoleByName({ name: 'editor' });
+    await Role.deleteOne({ name: 'editor' });
+    await createRoleByName({ name: 'editor' });
+    await User.create({ name: 'Dana', email: 'dana@test.com', role: 'editor', username: 'dana' });
+
+    const result = await deleteRoleByName('editor', { id: String(original._id) });
+
+    expect(result).toBeNull();
+    expect(await Role.exists({ name: 'editor' })).toBeTruthy();
+    const dana = await User.findOne({ email: 'dana@test.com' }).lean();
+    expect(dana!.role).toBe('editor');
+  });
+
+  it('deletes the role when the expected id matches', async () => {
+    const created = await createRoleByName({ name: 'editor' });
+
+    const result = await deleteRoleByName('editor', { id: String(created._id) });
+
+    expect(result?.name).toBe('editor');
+    expect(await Role.exists({ name: 'editor' })).toBeNull();
+  });
+
   it('returns null when role does not exist', async () => {
     const result = await deleteRoleByName('nonexistent');
     expect(result).toBeNull();
@@ -1126,6 +1149,22 @@ describe('updateUsersRoleByIds', () => {
     expect(mockCache.delete).toHaveBeenCalledWith(
       `${AUTH_USER_DOC_BY_ID_PREFIX}:${bob._id.toString()}`,
     );
+  });
+
+  it('with fromRole, changes only the users still on that role', async () => {
+    const [alice, bob] = await User.create([
+      { name: 'Alice', email: 'alice@test.com', role: 'writer', username: 'alice' },
+      { name: 'Bob', email: 'bob@test.com', role: 'viewer', username: 'bob' },
+    ]);
+
+    await updateUsersRoleByIds([alice._id.toString(), bob._id.toString()], 'editor', {
+      fromRole: 'writer',
+    });
+
+    const roles = await User.find({ _id: { $in: [alice._id, bob._id] } })
+      .sort({ username: 1 })
+      .lean();
+    expect(roles.map((user) => user.role)).toEqual(['editor', 'viewer']);
   });
 });
 

@@ -58,12 +58,16 @@ export type EndpointFileConfig = {
 };
 
 export type FileConfig = {
+  /** Enable after all replicas and rollback targets support retained file destinations. */
+  retainedFileCleanup?: boolean;
   endpoints: {
     [key: string]: EndpointFileConfig;
   };
   skills?: {
     /** Maximum concurrent blob deletions during failed archive import cleanup. */
     importCleanupConcurrency?: number;
+    /** Maximum concurrent blob deletions during whole-Skill cleanup. */
+    deletionCleanupConcurrency?: number;
     fileSizeLimit?: number;
   };
   fileTokenLimit?: number;
@@ -99,12 +103,16 @@ export type FileConfig = {
 };
 
 export type FileConfigInput = {
+  /** Fail closed on embedded-file deletion until marker-aware readers are deployed. */
+  retainedFileCleanup?: boolean;
   endpoints?: {
     [key: string]: EndpointFileConfig;
   };
   skills?: {
     /** Maximum concurrent blob deletions during failed archive import cleanup. */
     importCleanupConcurrency?: number;
+    /** Maximum concurrent blob deletions during whole-Skill cleanup. */
+    deletionCleanupConcurrency?: number;
     fileSizeLimit?: number;
   };
   serverFileSizeLimit?: number;
@@ -211,6 +219,10 @@ export type TFile = {
     sourceDispatchedAt?: number;
     /** Vector namespaces this file has been embedded into. */
     embeddedEntities?: string[];
+    /** Search remains a destination even after its vectors are cleared. */
+    searchDestination?: boolean;
+    /** Code remains a destination after a confirmed copy deletion. */
+    codeDestination?: boolean;
     /** The user named this destination, so absent ones were declined. */
     destinationChosen?: boolean;
     /** The type the delivery route was resolved against, when conversion changed it. */
