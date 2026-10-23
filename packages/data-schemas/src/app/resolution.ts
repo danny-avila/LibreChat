@@ -17,6 +17,15 @@ import type { ConfigDerivation, ConfigTouches } from './derive';
 import type { AzureResolvedGroupField } from './azure';
 import type { ConfigFieldWrite } from './mutations';
 import {
+  AZURE_RESOLVED_GROUP_FIELDS,
+  toAzureGroupMapEntry,
+  completeAzureResolution,
+  getEmptyAzureResolution,
+  narrowAzureServedModels,
+  lacksAzureAssistantModels,
+  resolveServedAzureGroups,
+} from './azure';
+import {
   getGroupNames,
   isVertexConfigured,
   createConfigTouches,
@@ -26,13 +35,6 @@ import {
   getDerivedConfigIssues,
   WRITE_ONLY_DERIVED_ISSUES,
 } from './derive';
-import {
-  AZURE_RESOLVED_GROUP_FIELDS,
-  toAzureGroupMapEntry,
-  narrowAzureServedModels,
-  lacksAzureAssistantModels,
-  resolveServedAzureGroups,
-} from './azure';
 import { isBaseConfigPrincipal, sortByConfigPrecedence } from './precedence';
 import { parseFieldPath, isDotFreePath, isSegmentPrefix } from './paths';
 import { setConfigFields, toConfigOverrideState } from './mutations';
@@ -121,14 +123,7 @@ function withoutAzureGroups<T extends AnyObject>(merged: T): T {
   if (!isPlainObject(azure)) {
     return merged;
   }
-  const empty: Record<AzureResolvedGroupField, object> = {
-    groupMap: {},
-    modelGroupMap: {},
-    modelNames: [],
-    assistantModels: [],
-    assistantGroups: [],
-  };
-  return setPath(merged, segments, { ...azure, ...empty }) as T;
+  return setPath(merged, segments, { ...azure, ...getEmptyAzureResolution() }) as T;
 }
 
 /**
@@ -1689,7 +1684,10 @@ function resolveLayerAzureGroups(params: {
  * or tombstoned, could otherwise name a model no group serves, and groups without an assistant
  * model under an inherited `assistants: true` would leave the Azure Assistants client no model to
  * default to. Judged on the merged result, so a later layer whose groups serve assistants keeps
- * them on.
+ * them on. An Azure endpoint the layers leave without the fields its groups resolve to (one a
+ * layer recreates after a tombstone of it or of `endpoints`) serves no group
+ * (`completeAzureResolution`), with or without `rederiveEndpoints`: nothing of what the removed
+ * groups resolved to survives the tombstone.
  */
 function withServedAzureModels<T extends AppConfig>(
   merged: T,
@@ -1701,7 +1699,13 @@ function withServedAzureModels<T extends AppConfig>(
     return merged;
   }
   const principals = configs.map(describePrincipal).join(', ');
-  const { config: served, narrowed } = narrowAzureServedModels(azure);
+  const { config: complete, completed } = completeAzureResolution(azure);
+  if (completed.length > 0) {
+    logger.warn(
+      `[mergeConfigOverrides] Serving no Azure group for ${principals}: the ${AZURE_CONFIG_PATH} they leave has no groups that resolve`,
+    );
+  }
+  const { config: served, narrowed } = narrowAzureServedModels(complete);
   if (narrowed.length > 0) {
     logger.warn(
       `[mergeConfigOverrides] Leaving out of ${narrowed.map((field) => `${AZURE_CONFIG_PATH}.${field}`).join(', ')} for ${principals} the Azure models and groups no merged group serves`,
@@ -1713,7 +1717,7 @@ function withServedAzureModels<T extends AppConfig>(
       `[mergeConfigOverrides] Turning off ${AZURE_CONFIG_PATH}.assistants for ${principals}: none of the Azure models they serve supports assistants`,
     );
   }
-  if (narrowed.length === 0 && !assistantsOff) {
+  if (completed.length === 0 && narrowed.length === 0 && !assistantsOff) {
     return merged;
   }
   return {

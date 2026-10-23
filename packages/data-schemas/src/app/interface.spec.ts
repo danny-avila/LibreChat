@@ -554,4 +554,21 @@ describe('deriveSpecInterface', () => {
     const settled = { modelSelect: false, parameters: false, presets: false };
     expect(deriveSpecInterface(settled, undefined, specs([spec]), { defaults })).toBe(settled);
   });
+
+  it('derives them into a config whose interface a layer tombstoned, where none would read as off', () => {
+    expect(deriveSpecInterface(undefined, undefined, undefined, { defaults })).toEqual({
+      modelSelect: defaults.modelSelect,
+      parameters: defaults.parameters,
+      presets: defaults.presets,
+    });
+    expect(
+      deriveSpecInterface(undefined, { parameters: true }, specs([spec]), { defaults }),
+    ).toEqual({ modelSelect: false, parameters: true, presets: false });
+    expect(
+      deriveSpecInterface(undefined, undefined, specs([spec]), { defaults, fields: ['presets'] }),
+    ).toEqual({ presets: false });
+    expect(deriveSpecInterface(undefined, undefined, undefined, { defaults, fields: [] })).toBe(
+      undefined,
+    );
+  });
 });

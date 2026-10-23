@@ -305,42 +305,39 @@ describe('deriveVertexEndpoint', () => {
     expect(anthropic.vertexConfig).toMatchObject({ modelNames: ['claude-opus-4-6'] });
   });
 
-  it('keeps the endpoint below when a model name would leave its path segment', () => {
-    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
-    const result = deriveVertexEndpoint({
-      merged,
-      raw: {
-        endpoints: {
-          anthropic: {
-            vertex: {
-              ...yamlVertex,
-              deploymentName: 'claude-sonnet-4-6',
-              models: ['../../endpoints/5678:rawPredict#'],
-            },
-          },
-        },
-      },
-      baseYaml: { endpoints: { anthropic: { vertex: yamlVertex } } },
-      modelsOverridden: false,
-      principal: 'role/r1',
+  describe('a setup that does not load (left only by a tombstone of one of its settings)', () => {
+    /** Vertex AI off: no `vertexConfig`, the YAML-shaped models, the rest as merged. */
+    const off = { titleModel: 'claude-haiku-4-5', vertex: yamlVertex, models: ['claude-direct'] };
+    const deriveFrom = (vertex: Record<string, unknown>) =>
+      deriveVertexEndpoint({
+        merged,
+        raw: { endpoints: { anthropic: { vertex, models: ['claude-direct'] } } },
+        baseYaml: { endpoints: { anthropic: { vertex: yamlVertex } } },
+        modelsOverridden: false,
+        principal: 'role/r1',
+      }).endpoints.anthropic;
+
+    it('turns Vertex AI off, with a warning, rather than keep the vertexConfig derived below', () => {
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+      expect(deriveFrom({ projectId: '${VERTEX_UNSET_PROJECT}' })).toEqual(off);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Turning Vertex AI off for role/r1'),
+      );
+      warn.mockRestore();
     });
 
-    expect(result).toBe(merged);
-    warn.mockRestore();
-  });
+    it('turns it off where a model name would leave its path segment', () => {
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
 
-  it('keeps the endpoint below, with a warning, when the setup does not load', () => {
-    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
-    const result = deriveVertexEndpoint({
-      merged,
-      raw: { endpoints: { anthropic: { vertex: { projectId: '${VERTEX_UNSET_PROJECT}' } } } },
-      baseYaml: { endpoints: { anthropic: { vertex: yamlVertex } } },
-      modelsOverridden: false,
-      principal: 'role/r1',
+      expect(
+        deriveFrom({
+          ...yamlVertex,
+          deploymentName: 'claude-sonnet-4-6',
+          models: ['../../endpoints/5678:rawPredict#'],
+        }),
+      ).toEqual(off);
+      warn.mockRestore();
     });
-
-    expect(result).toBe(merged);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('role/r1'));
-    warn.mockRestore();
   });
 });

@@ -4184,6 +4184,61 @@ describe('derived parts follow what the layers leave, set then tombstoned or the
       models: ['gpt-5'],
     });
   });
+
+  describe('what a layer recreates after a tombstone of an object above removed it', () => {
+    const titled = { endpoints: { azureOpenAI: { titleModel: 'gpt-4o' } } };
+    const noGroup = {
+      titleModel: 'gpt-4o',
+      groupMap: {},
+      modelGroupMap: {},
+      modelNames: [],
+      assistantModels: [],
+      assistantGroups: [],
+    };
+
+    it.each(['endpoints.azureOpenAI', 'endpoints'])(
+      'serves no Azure group from an Azure endpoint recreated without groups after a tombstone of %s',
+      async (tombstone) => {
+        const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+        const base = await loadBase({ endpoints: { azureOpenAI: { groups: [east] } } });
+        const layerings = [
+          [low({}, [tombstone]), high(titled)],
+          [low(titled, [tombstone])],
+          [low(groups(east)), high(titled, [tombstone])],
+        ];
+
+        for (const rederiveEndpoints of [true, false]) {
+          for (const layers of layerings) {
+            expect(
+              mergeConfigOverrides(base, layers, { rederiveEndpoints }).endpoints?.azureOpenAI,
+            ).toEqual(noGroup);
+          }
+        }
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('Serving no Azure group for role/low, role/high'),
+        );
+        expect(base.endpoints?.azureOpenAI?.modelNames).toEqual(['gpt-4o']);
+        warn.mockRestore();
+      },
+    );
+
+    it.each(['endpoints.agents', 'endpoints'])(
+      'serves the agents endpoint startup derives where a tombstone of %s left none',
+      async (tombstone) => {
+        const offBase = await loadBase({ memory: { disabled: true } });
+        const onBase = await loadBase({ memory: { disabled: false, personalize: true } });
+        const agents = (base: AppConfig, configs: IConfig[]) =>
+          mergeConfigOverrides(base, configs).endpoints?.agents;
+
+        expect(agents(offBase, [low({}, [tombstone])])).toEqual(offBase.endpoints?.agents);
+        expect(agents(onBase, [low({}, [tombstone])])).toEqual(onBase.endpoints?.agents);
+        expect(
+          agents(offBase, [low({}, [tombstone]), high({ memory: { disabled: false } })]),
+        ).toEqual(onBase.endpoints?.agents);
+        expect(onBase.endpoints?.agents?.capabilities).toContain(AgentCapabilities.memory);
+      },
+    );
+  });
 });
 
 describe('model spec endpoints', () => {

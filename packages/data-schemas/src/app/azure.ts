@@ -38,6 +38,41 @@ export const AZURE_RESOLVED_GROUP_FIELDS: readonly AzureResolvedGroupField[] = [
   'assistantGroups',
 ];
 
+/** The fields of a resolved Azure config its `groups` decide ({@link AZURE_RESOLVED_GROUP_FIELDS}). */
+export type AzureGroupResolution = Pick<ResolvedAzureGroups, AzureResolvedGroupField>;
+
+/** What Azure `groups` resolve to where none are left: no group, and no model or assistant. */
+export function getEmptyAzureResolution(): AzureGroupResolution {
+  return {
+    groupMap: {},
+    modelGroupMap: {},
+    modelNames: [],
+    assistantModels: [],
+    assistantGroups: [],
+  };
+}
+
+/**
+ * An Azure config with each field its groups resolve to that it lacks resolved to none
+ * ({@link getEmptyAzureResolution}), and the fields it lacked. An Azure endpoint is served without
+ * them where a layer recreates it after a tombstone removed it with everything its groups resolved
+ * to (a tombstone of the endpoint or of `endpoints`), or where only a layer defines it, without
+ * groups that resolve: no groups are left for it. Their absence would read differently: the model
+ * lists fall back to the environment's default Azure models, which the Azure client cannot map to
+ * a group. `config` is returned itself when it lacks none.
+ */
+export function completeAzureResolution<T extends Partial<AzureGroupResolution>>(
+  config: T,
+): { config: T; completed: AzureResolvedGroupField[] } {
+  const completed = AZURE_RESOLVED_GROUP_FIELDS.filter((field) => config[field] == null);
+  if (completed.length === 0) {
+    return { config, completed };
+  }
+  const empty = getEmptyAzureResolution();
+  const filled = Object.fromEntries(completed.map((field) => [field, empty[field]]));
+  return { config: { ...config, ...filled }, completed };
+}
+
 /**
  * Whether an Azure config turns `assistants` on without a model that supports them, which
  * `azureConfigSetup` refuses: the Azure Assistants client would have no model to default to.

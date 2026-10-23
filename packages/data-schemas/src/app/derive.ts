@@ -8,6 +8,7 @@ import {
 import type {
   TEndpoint,
   TCustomConfig,
+  TAgentsEndpoint,
   TVertexAISchema,
   TVertexAIConfig,
 } from 'librechat-data-provider';
@@ -345,8 +346,10 @@ function setEndpoint<T extends { endpoints?: unknown }>(
  * the `endpoints.anthropic.models` the YAML-shaped config holds (none: the provider's defaults).
  * Models a layer set, where no later layer removed them (`modelsOverridden`), stay as merged.
  * Where librechat.yaml configures no Vertex AI ({@link isVertexConfigured}) nothing is derived,
- * so no layer turns it on with the deployment's default Google credentials; a Vertex setup that
- * does not load leaves the endpoint as it was below too, with a warning naming `principal`.
+ * so no layer turns it on with the deployment's default Google credentials. A setup that does not
+ * load is off too, with a warning naming `principal`: a write that would leave it so is left out
+ * of the merge before it lands (`stripInvalidOverrides`), so only a tombstone of one of its
+ * settings does, and what the layers leave decides, never a `vertexConfig` derived below it.
  */
 export function deriveVertexEndpoint<T extends JsonRecord>(params: {
   merged: T;
@@ -367,9 +370,8 @@ export function deriveVertexEndpoint<T extends JsonRecord>(params: {
     vertexConfig = isUsableVertex(vertex) ? validateVertexConfig(vertex as TVertexAISchema) : null;
     if (vertexConfig == null) {
       logger.warn(
-        `[mergeConfigOverrides] Keeping the Vertex AI setup below ${principal}: endpoints.anthropic.vertex does not load`,
+        `[mergeConfigOverrides] Turning Vertex AI off for ${principal}: endpoints.anthropic.vertex does not load once its tombstones apply`,
       );
-      return merged;
     }
   }
   const next: JsonRecord = { ...anthropic };
@@ -457,21 +459,22 @@ function expandWrittenEndpoints(
  * or removed `memory` or the agents endpoint: from the YAML-shaped `endpoints.agents` (schema
  * defaults without one), without `memory` while the merged memory config is off, so a profile
  * that turns memory on gets the capability and one that turns it off loses the inert toggle.
+ * Startup always serves an agents endpoint, so where a tombstone of it (or of `endpoints`) left
+ * none, it is the one startup derives from what the layers leave, as a tombstone of its
+ * `capabilities` serves the default capabilities.
  */
 function deriveAgentCapabilities(merged: AppConfig, raw: JsonRecord): AppConfig {
-  const agents = merged.endpoints?.[EModelEndpoint.agents];
-  if (agents == null) {
-    return merged;
-  }
-  let capabilities: string[] | undefined;
+  let derived: Partial<TAgentsEndpoint>;
   try {
-    capabilities = agentsConfigSetup(raw as Partial<TCustomConfig>).capabilities;
+    derived = agentsConfigSetup(raw as Partial<TCustomConfig>);
   } catch {
     return merged;
   }
+  const { capabilities } = derived;
   if (!Array.isArray(capabilities)) {
     return merged;
   }
+  const agents = merged.endpoints?.[EModelEndpoint.agents] ?? derived;
   const served = isMemoryEnabled(merged.memory)
     ? capabilities
     : capabilities.filter((capability) => capability !== AgentCapabilities.memory);

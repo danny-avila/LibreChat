@@ -15,7 +15,9 @@ export type SpecInterfaceField = (typeof SPEC_INTERFACE_FIELDS)[number];
  * parameters and presets are off; without, each takes its default. Run on the final config, so a
  * profile that adds specs turns them off and one that removes every served spec (a tombstone, an
  * empty list, or tenant scoping) turns them back on. Only `fields` are derived (all three by
- * default). Returns `interfaceConfig` itself when nothing changes.
+ * default). A config without an interface (a layer tombstoned it) gets one holding the fields
+ * derived, which would otherwise read as off. Returns `interfaceConfig` itself when nothing
+ * changes.
  */
 export function deriveSpecInterface(
   interfaceConfig: AppConfig['interfaceConfig'],
@@ -27,9 +29,7 @@ export function deriveSpecInterface(
   } = {},
 ): AppConfig['interfaceConfig'] {
   const { fields = SPEC_INTERFACE_FIELDS, defaults = getConfigDefaults().interface } = options;
-  if (interfaceConfig == null) {
-    return interfaceConfig;
-  }
+  const current: NonNullable<AppConfig['interfaceConfig']> = interfaceConfig ?? {};
   const hasModelSpecs = (modelSpecs?.list?.length ?? 0) > 0;
   const includesAddedEndpoints = (modelSpecs?.addedEndpoints?.length ?? 0) > 0;
   const derived: Record<SpecInterfaceField, boolean | undefined> = {
@@ -38,11 +38,11 @@ export function deriveSpecInterface(
     parameters: explicit?.parameters ?? (hasModelSpecs ? false : defaults.parameters),
     presets: explicit?.presets ?? (hasModelSpecs ? false : defaults.presets),
   };
-  const changed = fields.filter((field) => interfaceConfig[field] !== derived[field]);
+  const changed = fields.filter((field) => current[field] !== derived[field]);
   if (changed.length === 0) {
     return interfaceConfig;
   }
-  const next = { ...interfaceConfig };
+  const next = { ...current };
   for (const field of changed) {
     if (derived[field] === undefined) {
       delete next[field];
