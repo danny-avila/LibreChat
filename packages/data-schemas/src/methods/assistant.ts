@@ -19,6 +19,10 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
     query: AssistantQuery,
     updateData: Partial<IAssistant>,
   ) => Promise<IAssistant | null>;
+  updateAssistantAvatar: (
+    query: { assistantId: string; user?: string },
+    avatar: NonNullable<IAssistant['avatar']>,
+  ) => Promise<IAssistant | null>;
   deleteAssistant: (query: AssistantQuery) => Promise<IAssistant | null>;
   deleteAssistants: (query: AssistantQuery) => Promise<number>;
   getAssistants: (
@@ -55,6 +59,32 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
     const options = { new: true, upsert: true };
     return await Assistant()
       .findOneAndUpdate(assistantFilter(query), updateData, options)
+      .lean<IAssistant>();
+  }
+
+  /** Updates only the avatar of an existing assistant. */
+  async function updateAssistantAvatar(
+    query: { assistantId: string; user?: string },
+    avatar: NonNullable<IAssistant['avatar']>,
+  ): Promise<IAssistant | null> {
+    if (
+      typeof query?.assistantId !== 'string' ||
+      query.assistantId.trim().length === 0 ||
+      !Object.prototype.hasOwnProperty.call(query, 'assistantId')
+    ) {
+      throw new TypeError('assistantId must be a nonempty string');
+    }
+    if (
+      query.user !== undefined &&
+      (typeof query.user !== 'string' ||
+        query.user.trim().length === 0 ||
+        !Object.prototype.hasOwnProperty.call(query, 'user'))
+    ) {
+      throw new TypeError('user must be a nonempty string');
+    }
+
+    return await Assistant()
+      .findOneAndUpdate(assistantFilter(query), { $set: { avatar } }, { new: true })
       .lean<IAssistant>();
   }
 
@@ -98,6 +128,7 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
 
   return {
     updateAssistantDoc,
+    updateAssistantAvatar,
     deleteAssistant,
     deleteAssistants,
     getAssistants,

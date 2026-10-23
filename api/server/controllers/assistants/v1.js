@@ -13,6 +13,7 @@ const { FileContext } = require('librechat-data-provider');
 const {
   deleteFileByFilter,
   updateAssistantDoc,
+  updateAssistantAvatar,
   getAssistants,
   getRoleByName,
 } = require('~/models');
@@ -402,13 +403,16 @@ const uploadAssistantAvatar = async (req, res) => {
     }
 
     const { assistant_id } = req.params;
-    const endpoint = req.body?.endpoint ?? req.query?.endpoint;
     if (!assistant_id) {
       return res.status(400).json({ message: 'Assistant ID is required' });
     }
 
     const { openai } = await getOpenAIClient({ req, res });
-    await validateAuthor({ req, openai });
+    const assistantQuery = await validateAuthor({
+      req,
+      openai,
+      overrideAssistantId: assistant_id,
+    });
 
     const buffer = await fs.readFile(req.file.path);
     const image = await uploadImageBuffer({
@@ -451,17 +455,10 @@ const uploadAssistantAvatar = async (req, res) => {
 
     const promises = [];
     promises.push(
-      updateAssistantDoc(
-        { assistantId: assistant_id },
-        {
-          avatar: {
-            filepath: image.filepath,
-            source: appConfig.fileStrategy,
-          },
-          user: req.user.id,
-          endpoint,
-        },
-      ),
+      updateAssistantAvatar(assistantQuery, {
+        filepath: image.filepath,
+        source: appConfig.fileStrategy,
+      }),
     );
     promises.push(openai.beta.assistants.update(assistant_id, { metadata }));
 
