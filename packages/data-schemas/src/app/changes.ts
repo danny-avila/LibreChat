@@ -408,6 +408,88 @@ export function applyConfigChanges(
 }
 
 /**
+ * A step of a location named by identity rather than position: a key (or a position in an array
+ * that is not merged by key), or an entry of a merged-by-key array by its merge key.
+ */
+export type ConfigIdentityStep = string | { readonly entry: string };
+
+/**
+ * `segments` as `root` holds them, by identity: a position in a merged-by-key array becomes the
+ * key of the entry there, so the location still names that entry once other entries come and go.
+ * A position whose item has no key stays a position.
+ */
+export function toConfigIdentityPath(
+  root: unknown,
+  segments: ConfigPathSegments,
+): ConfigIdentityStep[] {
+  return segments.map((segment, index): ConfigIdentityStep => {
+    const parent = segments.slice(0, index);
+    const keyField = getConfigArrayMergeKey(parent);
+    const items = keyField ? getAtPath(root, parent) : undefined;
+    const key =
+      keyField && Array.isArray(items)
+        ? getConfigEntryKey(items[Number(segment)], keyField)
+        : undefined;
+    return key !== undefined ? { entry: key } : segment;
+  });
+}
+
+/**
+ * Where an identity path ({@link toConfigIdentityPath}) is in `root`: each entry of a
+ * merged-by-key array by its position there. `null` when an entry it passes through is gone.
+ */
+export function resolveConfigIdentityPath(
+  root: unknown,
+  path: readonly ConfigIdentityStep[],
+): string[] | null {
+  const segments: string[] = [];
+  for (const step of path) {
+    if (typeof step === 'string') {
+      segments.push(step);
+      continue;
+    }
+    const keyField = getConfigArrayMergeKey(segments);
+    const items = getAtPath(root, segments);
+    const index =
+      keyField && Array.isArray(items)
+        ? items.findIndex(getConfigEntryMatcher(segments, keyField, step.entry))
+        : -1;
+    if (index === -1) {
+      return null;
+    }
+    segments.push(String(index));
+  }
+  return segments;
+}
+
+/**
+ * An identity path once a `rename` of the collection at `collection` has moved the record key, or
+ * renamed the merged-by-key entry, the path passes through from `from` to `to`.
+ */
+export function renameConfigIdentityPath(
+  path: readonly ConfigIdentityStep[],
+  collection: ConfigPathSegments,
+  from: string,
+  to: string,
+): ConfigIdentityStep[] {
+  const step = path[collection.length];
+  if (step === undefined || !collection.every((segment, index) => path[index] === segment)) {
+    return [...path];
+  }
+  const keyed = getConfigArrayMergeKey(collection) !== undefined;
+  const renamed = keyed
+    ? typeof step !== 'string' &&
+      getConfigEntryIdentity(collection, step.entry) === getConfigEntryIdentity(collection, from)
+    : step === from;
+  if (!renamed) {
+    return [...path];
+  }
+  const next = [...path];
+  next[collection.length] = keyed ? { entry: to } : to;
+  return next;
+}
+
+/**
  * The paths a change writes, for attributing validation issues to it: the path itself, or for
  * an entry change, the entry by its index in `result`'s own array. A removed entry is gone, so
  * `removeEntry` writes nothing an issue could sit on: the entries it leaves are unchanged, and

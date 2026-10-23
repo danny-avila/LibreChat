@@ -21,7 +21,6 @@ const mockDb = {
   listAllConfigs: jest.fn(),
   findConfigByPrincipal: jest.fn(),
   writeConfigDocument: jest.fn(),
-  tombstoneConfigField: jest.fn(),
   unsetConfigField: jest.fn(),
   deleteConfig: jest.fn(),
   toggleConfigActiveTracked: jest.fn(),

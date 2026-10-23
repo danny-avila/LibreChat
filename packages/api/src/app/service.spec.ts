@@ -1,5 +1,11 @@
-import { getMaxSubagents, setMaxSubagents } from 'librechat-data-provider';
-import { AppService, getTenantId, tenantStorage, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import { PrincipalType, getMaxSubagents, setMaxSubagents } from 'librechat-data-provider';
+import {
+  logger,
+  AppService,
+  getTenantId,
+  tenantStorage,
+  SYSTEM_TENANT_ID,
+} from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 import {
   createAppConfigService,
@@ -505,7 +511,7 @@ describe('createAppConfigService', () => {
               isActive: true,
               overrides: {
                 endpoints: {
-                  custom: [{ name: 'Private Gateway', baseURL: 'https://override.example' }],
+                  custom: [{ name: 'Private Gateway', models: { default: ['override-model'] } }],
                 },
               },
             },
@@ -516,11 +522,45 @@ describe('createAppConfigService', () => {
         expect(owner.endpoints?.custom?.[0]).toMatchObject({
           tenantId: 'tenant-a',
           apiKey: 'private-gateway-key',
-          baseURL: 'https://override.example',
+          baseURL: 'https://private.example',
+          models: { default: ['override-model'] },
         });
         expect(owner.modelSpecs?.list).toHaveLength(1);
         const yaml = await getAppConfig({ tenantId: 'tenant-a', baseOnly: true });
-        expect(yaml.config.endpoints?.custom?.[0].baseURL).toBe('https://private.example');
+        expect(yaml.config.endpoints?.custom?.[0].models?.default).toEqual(['private-model']);
+      });
+
+      it('drops the YAML key when a partial admin override points the endpoint elsewhere', async () => {
+        const base = await tenantBase();
+        const deps = createDeps({
+          loadBaseConfig: jest.fn().mockResolvedValue(base),
+          getApplicableConfigs: jest.fn().mockResolvedValue([
+            {
+              principalType: PrincipalType.ROLE,
+              principalId: 'USER',
+              priority: 10,
+              isActive: true,
+              overrides: {
+                endpoints: {
+                  custom: [{ name: 'Private Gateway', baseURL: 'https://override.example' }],
+                },
+              },
+            },
+          ]),
+        });
+        const warn = jest.spyOn(logger, 'warn').mockReturnValue(logger);
+        const { getAppConfig } = createAppConfigService(deps);
+        const owner = await getAppConfig({ role: 'USER', tenantId: 'tenant-a' });
+        expect(owner.endpoints?.custom?.[0]).toMatchObject({
+          tenantId: 'tenant-a',
+          apiKey: '',
+          baseURL: 'https://override.example',
+        });
+        expect(JSON.stringify(owner.endpoints)).not.toContain('private-gateway-key');
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('Dropping secret "endpoints.custom["Private Gateway"].apiKey"'),
+        );
+        warn.mockRestore();
       });
 
       it('revokes a cached endpoint when a successful YAML reload changes its tenant', async () => {
@@ -779,6 +819,7 @@ describe('createAppConfigService', () => {
                   custom: [
                     {
                       name: 'ollama',
+                      apiKey: 'ollama',
                       baseURL: 'http://override:11434/v1',
                       modelDisplayLabel: 'Ollama (override)',
                     },
@@ -808,6 +849,39 @@ describe('createAppConfigService', () => {
         expect(config.endpoints?.agents?.allowedProviders).toEqual(['ollama']);
         expect(config.modelSpecs?.list?.[0]?.preset?.endpoint).toBe('ollama');
         expect(config.modelSpecs?.addedEndpoints).toEqual(['ollama']);
+      });
+
+      it('drops the YAML `Ollama` key an override `ollama` points elsewhere without it', async () => {
+        const deps = createDeps({
+          loadBaseConfig: jest.fn().mockResolvedValue(await ollamaBase()),
+          getApplicableConfigs: jest.fn().mockResolvedValue([
+            {
+              principalType: PrincipalType.ROLE,
+              principalId: 'USER',
+              priority: 10,
+              isActive: true,
+              overrides: {
+                endpoints: { custom: [{ name: 'ollama', baseURL: 'http://override:11434/v1' }] },
+              },
+            },
+          ]),
+        });
+        const warn = jest.spyOn(logger, 'warn').mockReturnValue(logger);
+        const { getAppConfig } = createAppConfigService(deps);
+
+        const config = await getAppConfig({ role: 'USER' });
+
+        expect(config.endpoints?.custom).toEqual([
+          expect.objectContaining({
+            name: 'Ollama',
+            apiKey: '',
+            baseURL: 'http://override:11434/v1',
+          }),
+        ]);
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('Dropping secret "endpoints.custom["Ollama"].apiKey"'),
+        );
+        warn.mockRestore();
       });
     });
 
@@ -1023,6 +1097,48 @@ describe('createAppConfigService', () => {
       const merged = config as TestConfig;
       expect(merged.interfaceConfig?.modelSelect).toBe(false);
       expect(merged.endpoints).toEqual(['openAI']);
+    });
+
+    it('merges in precedence order, so cached and uncached reads agree on tied priorities', async () => {
+      const layer = (
+        principalType: string,
+        principalId: string,
+        priority: number,
+        _id: string,
+        customWelcome: string,
+      ) => ({
+        _id,
+        principalType,
+        principalId,
+        priority,
+        overrides: { interface: { customWelcome } },
+        isActive: true,
+      });
+      const layers = [
+        layer('role', '__base__', 90, '0a', 'base'),
+        layer('group', 'g1', 20, '0c', 'g1'),
+        layer('group', 'g2', 20, '0b', 'g2'),
+        layer('role', 'USER', 20, '0d', 'role'),
+      ];
+      let call = 0;
+      /** The store returns the same documents in a different order on every read. */
+      const getApplicableConfigs = jest.fn(async () => {
+        call += 1;
+        return call % 2 === 0 ? [...layers].reverse() : [...layers];
+      });
+      const deps = createDeps({ getApplicableConfigs });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const cached = await getAppConfig({ role: 'USER', userId: 'uid1' });
+      const uncached = await getAppConfig({ role: 'USER', userId: 'uid1', refresh: true });
+
+      expect(getApplicableConfigs).toHaveBeenCalledTimes(2);
+      expect(cached.interfaceConfig?.customWelcome).toBe('g1');
+      expect(uncached).toEqual(cached);
+
+      layers.push(layer('user', 'uid1', 20, '00', 'user'));
+      const userWins = await getAppConfig({ role: 'USER', userId: 'uid1', refresh: true });
+      expect(userWins.interfaceConfig?.customWelcome).toBe('user');
     });
 
     it('caches merged result with TTL', async () => {

@@ -142,8 +142,10 @@ export type AdminConfigChangesRequest = AdminConfigWritePrecondition & {
   ops: AdminConfigChangeOp[];
   /**
    * Broad `manage:configs` only; anyone else's is ignored and the stored priority kept. A new
-   * priority is written even when no change alters the document, and on a principal without
-   * one it creates a document that holds only the priority, as PUT does.
+   * priority is written even when no change alters the document, and on an existing principal
+   * without one it creates a document that holds only the priority, as PUT does. A batch for a
+   * principal with no document that does not exist answers 404 `PRINCIPAL_NOT_FOUND`, a dry
+   * run included.
    */
   priority?: number;
   /** Validate and report without writing. */
@@ -176,6 +178,21 @@ export type AdminConfigSkipReason =
  */
 export type AdminConfigIgnoreReason = 'process_mcp_server' | 'base_only_path';
 
+/**
+ * A credential the runtime merge leaves out of a document's layer, or a destination it sets back,
+ * because the document would send a credential somewhere it was not entered for
+ * (`secret_rebinding`): an inherited secret whose destination the document changes without
+ * entering the secret again, or its own secret whose destination a layer below changed. PUT,
+ * PATCH, field deletes, tombstones and `POST …/changes` list these in `ignored`, judged on the
+ * document as written over `librechat.yaml` and the Base profile. Each describes the stored
+ * document rather than one change, so it names a location, not an op.
+ */
+export type AdminConfigIgnoredSecret = {
+  path: string;
+  segments: string[];
+  reason: 'secret_rebinding';
+};
+
 /** A change of the batch, by position, with the location it addressed. */
 export type AdminConfigChangeRef = {
   /** Index of the change in the request's `ops`. */
@@ -205,8 +222,15 @@ export type AdminConfigChangesResponse = {
   applied: AdminConfigChangeRef[];
   /** Changes, or parts of a `set` value (at their own `segments`), that were not stored. */
   skipped: Array<AdminConfigChangeRef & { reason: AdminConfigSkipReason }>;
-  /** Applied changes, or parts of one (at their own `segments`), the runtime merge does not use. */
-  ignored: Array<AdminConfigChangeRef & { reason: AdminConfigIgnoreReason }>;
+  /**
+   * Applied changes, or parts of one (at their own `segments`), the runtime merge does not use,
+   * then the credentials it leaves out of the document as written (`secret_rebinding`, also on a
+   * dry run, for the planned document), in the sections the caller can read (on a dry run, the
+   * sections the batch writes).
+   */
+  ignored: Array<
+    (AdminConfigChangeRef & { reason: AdminConfigIgnoreReason }) | AdminConfigIgnoredSecret
+  >;
   /**
    * Valid changes that left the document as it was: it was already in that state, or the
    * batch's changes cancel out (a `set`, then an `unset` of its parent), in which case every
@@ -243,13 +267,21 @@ export type AdminConfigChangeErrorResponse = {
  * - `sectionAllowlist`: writes to a top-level key `configSchema` does not define are rejected,
  *   and stored ones are ignored at merge.
  * - `readFilteredWriteResponses`: write responses are filtered by the caller's read access.
+ * - `preAuthBaseOverrides`: Base (`__base__`) overrides apply before sign-in: the signed-out
+ *   `GET /api/config` serves Base `registration.socialLogins` and the pre-login interface fields,
+ *   and Base `registration.allowedDomains` gates email registration, password reset and LDAP,
+ *   OpenID, SAML and social sign-in (a role profile's list then applies to that role's accounts,
+ *   new ones included). Turnstile stays on librechat.yaml (`turnstile` is base-only).
  * - `webSearchStoredKeys`: web search uses a key stored in config (encrypted by the admin API,
  *   or a `librechat.yaml` literal) at runtime, not only a `${VAR}` reference, and stores
  *   `webSearch.keenableApiKey` encrypted like the other web search keys. A stored key reaches a
  *   URL stored in config only when the same layer set both; it is kept over an inherited
- *   `${VAR}` or default URL. A later layer that changes, blanks or removes the paired URL drops
+ *   `${VAR}` or default URL (a layer that points a URL at a `${VAR}` other than librechat.yaml's
+ *   without a key of its own is set back, `secretRebinding`). A later layer that changes, blanks
+ *   or removes the paired URL drops
  *   the key, and a write that changes or removes the URL beside a stored key must enter the key
- *   again (400 `CONFIG_SECRET_REENTRY_REQUIRED`).
+ *   again (400 `CONFIG_SECRET_REENTRY_REQUIRED`); the key counts as entered only when the written
+ *   document holds the value the request entered.
  * - `expectedRevision`: every config document a response returns carries `revision`
  *   (`<id>:<configVersion>`), and a write with nothing to apply answers `{ message, revision }`.
  *   PUT, PATCH `/fields`, POST `/fields/tombstone` and PATCH `/active` take `expectedRevision` in
@@ -276,17 +308,140 @@ export type AdminConfigChangeErrorResponse = {
  *   principal's config cannot be read, every hideable server is withheld. Process-backed
  *   (`stdio`) and Agent Plugins servers cannot be hidden, and deleting the tombstone shows the
  *   server again.
+ * - `deterministicPrecedence`: config documents merge in one fixed order, the last winning:
+ *   Base (`role` / `__base__`) first whatever its priority, then ascending `priority`, then
+ *   role < group < user on equal priority, then document `_id`; `GET /` lists them in that
+ *   order. A write (PUT, PATCH `/fields`, POST `/fields/tombstone` or `/changes`) that creates
+ *   a document without `priority` gives it its principal type's default (role 10, group 20,
+ *   user 100; Base 0), and a write that omits `priority` keeps the stored one, so a PUT no
+ *   longer resets it. A profile write validates on `librechat.yaml` with the active Base
+ *   document resolved over it, as the merge applies it; when Base changes before the write
+ *   commits, the write is judged on that Base, and taken back (400) when it fails there.
+ * - `priorityRoute`: PATCH `/:principalType/:principalId/priority` `{ priority,
+ *   expectedRevision? }` sets only the priority (overrides, tombstones and `isActive` stay),
+ *   for broad `manage:configs` only. No document answers 404 `CONFIG_NOT_FOUND`, an invalid
+ *   priority 400 `INVALID_PRIORITY`; an unchanged priority is neither written nor audited.
+ * - `principalCheck`: a write that would create a principal's first document (PUT, PATCH
+ *   `/fields`, POST `/fields/tombstone` or `/changes`, including a dry run or a batch that only
+ *   sets a priority) answers 404 `PRINCIPAL_NOT_FOUND` unless the role (by exact name), group
+ *   or user (by lowercase ObjectId) exists in the caller's tenant (outside a tenant, at
+ *   platform level). A PUT with `expectedRevision: 'absent'` creates the profile even with no
+ *   overrides: 201, or 409 `CONFIG_VERSION_CONFLICT` when one exists.
+ * - `roleRenameMovesProfile`: renaming a role (PATCH `/api/admin/roles/:name`) moves its
+ *   config profile, system grants and ACL entries to the new name in the caller's tenant, or
+ *   undoes every step and answers 500 `ROLE_RENAME_FAILED`; the undo takes back only what the
+ *   rename changed, so a grant revoked or a member reassigned meanwhile stays that way. A profile already held by the new
+ *   name answers 409 `ROLE_CONFIG_CONFLICT`, and the Base principal id is a reserved role name
+ *   (400 `ROLE_NAME_RESERVED`).
+ * - `recordSecrets`: each MCP server's `apiKey.key` and `oauth.client_secret`
+ *   (`rules.recordSecretFields`, which also lists Azure `groupMap`) is stored encrypted with a masked preview beside it
+ *   (`keyPreview`, `client_secretPreview`), left out of every read (GET `/base` included, and
+ *   the end-user MCP server list never carries a preview), kept when a write omits it, and
+ *   decrypted for the MCP runtime. A `${VAR}` or `{{VAR}}` reference stays readable. A `renames`
+ *   hint (`[{ path: 'mcpServers', previousName, name }]`) on PUT and PATCH, or a `rename` op in
+ *   a change batch, carries the stored credentials to the new name. A write that keeps a stored
+ *   credential while changing where the server sends it (URL, transport, proxy, auth header,
+ *   OAuth endpoints and client; the proxy binds the OAuth client secret too, since the access
+ *   token it obtains travels through it) answers 400 `MCP_API_KEY_REENTRY_REQUIRED` or
+ *   `MCP_OAUTH_SECRET_REENTRY_REQUIRED` with `server` and `fields`: on PUT, PATCH, field
+ *   deletes, tombstones and change batches. A credential counts as entered again only when the
+ *   written document holds the value the request entered, whatever order its writes came in;
+ *   one a rename, a copy or a chain of renames carried is compared with the server it came from,
+ *   so a name swap that moves each key with its own server is accepted. The rule covers MCP
+ *   credentials, web search keys (`webSearchStoredKeys`) and Azure group keys
+ *   (`azureGroupSecrets`) only: a custom endpoint, OCR or speech key a document stores stays with
+ *   that document when the same document changes its destination; only the merge's cross-layer
+ *   rule (`secretRebinding`) applies to those.
+ * - `azureGroupSecrets`: `endpoints.azureOpenAI.groups[].apiKey` is stored encrypted with
+ *   `apiKeyPreview`, matched across writes by `group` (omit it to keep it), left out of reads
+ *   and decrypted for the Azure clients, which use it: the merge resolves a profile's `groups`
+ *   as AppService resolves librechat.yaml's, into the `groupMap`, `modelGroupMap`, model list
+ *   and assistant models the clients read. A profile's `groups` replace the groups below whole,
+ *   as its array does, and a tombstone of `groups` removes everything they resolve to; groups
+ *   that do not resolve (a duplicate group or model, a model without a deployment or version)
+ *   stay unread, with a warning. The merged model lists name only models a merged group serves:
+ *   a `modelNames`, `assistantModels` or `assistantGroups` an override writes directly is
+ *   narrowed to them, with a warning. When none of the models the merge leaves supports
+ *   assistants, `assistants` is off for that profile, with a warning, rather than on without a
+ *   model (librechat.yaml refuses that combination at startup). An override that writes
+ *   `endpoints.azureOpenAI.groupMap.<group>.apiKey` directly (a record secret,
+ *   `rules.recordSecretFields`) gets the same treatment: encrypted with `apiKeyPreview`, kept
+ *   when a write of its group omits it, left out of every read (GET `/base` included, where a
+ *   librechat.yaml literal shows the fixed mask) and decrypted for the Azure clients; a `groupMap`
+ *   entry merges over the resolved group of its name. A write that keeps a stored group key
+ *   (in `groups` or `groupMap`) while changing where the group sends it (`baseURL`,
+ *   `instanceName`, a deployment name its base URL takes its host from, a destination option in
+ *   `addParams` or `dropParams`), judged as the document resolves over librechat.yaml, answers
+ *   400 `CONFIG_SECRET_REENTRY_REQUIRED` with `issues` naming the changed field and `secretPath`:
+ *   on PUT, PATCH, field deletes, tombstones and change batches.
+ * - `yamlSecretPreview`: a read of a secret with no stored preview (a librechat.yaml literal,
+ *   or ciphertext stored without one) shows the fixed mask `********` in its preview field
+ *   instead of nothing, so it reads as set; nothing about the value is revealed. A `${VAR}`
+ *   reference, where the field allows one, stays readable.
+ * - `envAllowlist`: a `${NAME}` reference in a value written through the admin config API is
+ *   refused unless `NAME` is referenced in librechat.yaml, is a built-in endpoint credential
+ *   (`OPENAI_API_KEY`, ...) or is listed in `CONFIG_OVERRIDE_ENV_ALLOWLIST`, or the value is
+ *   where loading librechat.yaml puts that same reference (the `${OCR_API_KEY}` of an `ocr`
+ *   section without a key, and the web search defaults such as `${SEARXNG_INSTANCE_URL}`,
+ *   which GET `/base` returns, so a section read there is accepted written back): 400
+ *   `CONFIG_OVERRIDE_INVALID` with issue `env_reference_not_allowed`, on PUT, PATCH and change
+ *   batches. A batch is judged on the document it leaves: a reference counts when that document
+ *   still holds it where the batch changed something, named there (an entry of a merged-by-key
+ *   list, set alone or within its collection, by its index in the collection the batch leaves;
+ *   a value under a renamed key or entry by its new name), so one a later change of the batch
+ *   removes or replaces is not refused. Text no reader expands
+ *   (`interface`, `modelSpecs`, prompt fields) is exempt, and so are the `${INSTANCE_NAME}` and
+ *   `${DEPLOYMENT_NAME}` templates the Azure client fills in a group's `baseURL` (`groups` or
+ *   `groupMap`), which are not env references, and opaque credentials: the OCR, speech, web
+ *   search and Langfuse keys, which are stored encrypted and sent as entered, so a `${...}`
+ *   inside one is part of the key (a whole `${VAR}` reference there is still checked). Custom
+ *   endpoint, Azure group and MCP credentials are expanded by their clients once decrypted and
+ *   stay checked. At runtime an unlisted reference in a stored override resolves to nothing. The
+ *   allowlist decides which names a value may reference, not where the value is sent: an allowed
+ *   name may appear in any value, a URL, a header or a key beside a host of the writer's
+ *   choosing.
+ * - `secretRebinding`: the merge drops a credential a layer would send somewhere it was not
+ *   entered for: an inherited one whose destination the layer changes without entering it again,
+ *   or the layer's own one whose destination a layer below changed (MCP servers, custom
+ *   endpoints, OCR, speech, web search, Azure `groupMap`, including the groups a profile's
+ *   `groups` resolve to); for summarization and Vertex AI, which fall back to a deployment
+ *   credential, it sets the destination back instead, and so for a web search URL a layer points
+ *   at a `${VAR}` reference other than librechat.yaml's without entering the key sent there
+ *   (web search sends the deployment's key to any `${VAR}` URL). The OCR client fills an empty
+ *   key from `OCR_API_KEY` only for its default destination (no base URL, or `${OCR_BASEURL}`),
+ *   so a dropped OCR key is not replaced by the deployment's. A custom
+ *   endpoint's destination is its `baseURL`, its `provider` (the client that reads the rest) and
+ *   the options in `addParams` and `dropParams` named like a destination, such as the
+ *   `anthropicApiUrl` the native Anthropic client sends to; an entry is matched under any
+ *   spelling the merge folds (`ollama` is `Ollama`) and reported by the name the merge keeps. Write
+ *   responses list each in `ignored` with reason `secret_rebinding` (`AdminConfigIgnoredSecret`),
+ *   in the sections the response shows (`readFilteredWriteResponses`; a dry run shows the ones it
+ *   writes).
+ *   A secret the layer writes counts as entered, a `${VAR}` reference included: restating the
+ *   reference librechat.yaml uses beside a new destination keeps it, so for allowlisted names
+ *   (`envAllowlist`) the rule stops a destination change that leaves the reference out, not one
+ *   that restates it. Header maps are not covered.
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'
   | 'sectionAllowlist'
   | 'readFilteredWriteResponses'
+  | 'preAuthBaseOverrides'
   | 'webSearchStoredKeys'
   | 'expectedRevision'
   | 'prunesEmptyParents'
   | 'awaitedInvalidation'
   | 'changesBatch'
-  | 'yamlMcpHide';
+  | 'yamlMcpHide'
+  | 'deterministicPrecedence'
+  | 'priorityRoute'
+  | 'principalCheck'
+  | 'roleRenameMovesProfile'
+  | 'recordSecrets'
+  | 'azureGroupSecrets'
+  | 'yamlSecretPreview'
+  | 'envAllowlist'
+  | 'secretRebinding';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
 
@@ -305,6 +460,16 @@ export type AdminConfigArraySecretFieldRule = {
   secretKey: string;
   previewKey: string;
   identityKey: string;
+};
+
+/** A secret every entry of a record keyed by entry name holds, such as each MCP server's. */
+export type AdminConfigRecordSecretFieldRule = {
+  /** The record's dot-path (`mcpServers`, `endpoints.azureOpenAI.groupMap`). */
+  recordPath: string;
+  /** The secret's location inside each entry, as a dot-path. */
+  secretPath: string;
+  /** Its masked-preview companion inside each entry; never writable. */
+  previewPath: string;
 };
 
 /** How overrides merge, in override (`librechat.yaml`) key names. */
@@ -328,6 +493,8 @@ export type AdminConfigRules = AdminConfigMergeRules & {
   baseOnlyPaths: string[];
   secretFields: AdminConfigSecretFieldRule[];
   arraySecretFields: AdminConfigArraySecretFieldRule[];
+  /** Secrets of record entries, kept and encrypted per entry like array secrets. */
+  recordSecretFields: AdminConfigRecordSecretFieldRule[];
   /** Maps of credentials admin writes are refused for; reads mask their values. */
   refusedMaps: string[];
   /** MCP server fields that make a server process-backed; only `librechat.yaml` sets them. */
