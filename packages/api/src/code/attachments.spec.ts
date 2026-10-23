@@ -51,12 +51,15 @@ function createFakeWorker({
   denyWrites = false,
   truncateReads = false,
   missingParents = false,
+  legacyCodeApi = false,
 }: {
   objects?: Map<string, string>;
   delayMs?: number;
   denyWrites?: boolean;
   truncateReads?: boolean;
   missingParents?: boolean;
+  /** A Code API that predates `NOT_FOUND` relays it as `INVALID_PATH` with the same message. */
+  legacyCodeApi?: boolean;
 } = {}) {
   const files = new Map<string, string>();
   const requests: WorkspaceRequest[] = [];
@@ -94,7 +97,10 @@ function createFakeWorker({
     }
     const folder = key.slice(0, key.lastIndexOf('/') + 1);
     if (missingParents && ![...files.keys()].some((path) => path.startsWith(folder))) {
-      return reply(422, { code: 'NOT_FOUND', error: 'Workspace path does not exist' });
+      return reply(422, {
+        code: legacyCodeApi ? 'INVALID_PATH' : 'NOT_FOUND',
+        error: 'Workspace path does not exist',
+      });
     }
     if (request.operation === 'write_file') {
       if (files.has(key) && request.overwrite === false) {
@@ -712,32 +718,38 @@ describe('primeWorkspaceAttachments', () => {
     expect(worker.files.get('root:.librechat/attachments/report.pdf')).toBe('pdf');
   });
 
-  it('tells the user to update a worker that cannot create the attachments folder', async () => {
-    const warn = jest.spyOn(logger, 'warn');
-    const worker = createFakeWorker({ missingParents: true });
-    const { deps, records } = createDeps(worker);
-    const file = remember(chatFile('report.pdf', 'pdf', worker.objects));
-    const agent = agentWith(attachedContext(), [file]);
+  it.each([
+    ['NOT_FOUND', false],
+    ['INVALID_PATH', true],
+  ])(
+    'tells the user to update a worker that cannot create the attachments folder (%s)',
+    async (upstreamCode, legacyCodeApi) => {
+      const warn = jest.spyOn(logger, 'warn');
+      const worker = createFakeWorker({ missingParents: true, legacyCodeApi });
+      const { deps, records } = createDeps(worker);
+      const file = remember(chatFile('report.pdf', 'pdf', worker.objects));
+      const agent = agentWith(attachedContext(), [file]);
 
-    await primeWorkspaceAttachments({ agents: [agent], deps });
+      await primeWorkspaceAttachments({ agents: [agent], deps });
 
-    expect(worker.requests.map((request) => request.operation)).toEqual(['write_file']);
-    expect(worker.files.size).toBe(0);
-    expect(agent.dynamicToolContextMap?.[Tools.execute_code]).toContain(
-      "report.pdf (attached by user): this machine's LibreChat worker cannot receive attachments yet; updating the worker enables it",
-    );
-    expect(records.every((record) => record.copy == null)).toBe(true);
-    expect(warn).toHaveBeenCalledWith(
-      '[workspaceAttachments] Could not create .librechat/attachments/.gitignore in workspace primary: unsupported',
-      {
-        type: 'WorkspaceToolHttpError',
-        reason: 'rejected',
-        upstreamStatus: 422,
-        upstreamCode: 'NOT_FOUND',
-      },
-    );
-    warn.mockRestore();
-  });
+      expect(worker.requests.map((request) => request.operation)).toEqual(['write_file']);
+      expect(worker.files.size).toBe(0);
+      expect(agent.dynamicToolContextMap?.[Tools.execute_code]).toContain(
+        "report.pdf (attached by user): this machine's LibreChat worker cannot receive attachments yet; updating the worker enables it",
+      );
+      expect(records.every((record) => record.copy == null)).toBe(true);
+      expect(warn).toHaveBeenCalledWith(
+        '[workspaceAttachments] Could not create .librechat/attachments/.gitignore in workspace primary: unsupported',
+        {
+          type: 'WorkspaceToolHttpError',
+          reason: 'rejected',
+          upstreamStatus: 422,
+          upstreamCode,
+        },
+      );
+      warn.mockRestore();
+    },
+  );
 
   it('logs the worker code of a refused import without its message', async () => {
     const warn = jest.spyOn(logger, 'warn');

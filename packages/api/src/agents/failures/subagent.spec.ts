@@ -1,12 +1,14 @@
 import { logger } from '@librechat/data-schemas';
+import { SubagentResolutionError } from '@librechat/agents';
 import type { SubagentResolutionDiagnostic } from '@librechat/agents';
 import {
   describeErrorCauses,
+  describeStackFrames,
   findMCPAuthenticationFailure,
   reportSubagentResolutionFailure,
 } from './subagent';
+import { MCPAuthenticationRefreshError, MCPAuthenticationRejectedError } from '~/mcp/errors';
 import { ReauthenticationRequiredError } from '~/mcp/oauth/tokens';
-import { MCPAuthenticationRejectedError } from '~/mcp/errors';
 
 const SECRET = 'provider-secret-value';
 
@@ -28,36 +30,31 @@ function diagnostic(
 }
 
 describe('describeErrorCauses', () => {
-  it('describes each cause by name, code, status and redacted message, never a stack', () => {
-    const root = Object.assign(new Error(`Token refresh failed: Bearer ${SECRET}`), {
+  it('keeps name, code and status of every cause, but a message only from trusted errors', () => {
+    const root = Object.assign(new Error(`Token refresh failed: api_key=${SECRET}`), {
       code: 'invalid_grant',
       status: 400,
     });
-    const error = new Error(
-      `Could not load tools from https://mcp.example.com/sse?token=${SECRET}`,
-      { cause: root },
-    );
+    const error = new SubagentResolutionError('config', 'unknown');
+    Object.assign(error, { cause: root });
 
     const causes = describeErrorCauses(error);
 
     expect(causes).toEqual([
-      { name: 'Error', message: 'Could not load tools from https://mcp.example.com/[redacted]' },
       {
-        name: 'Error',
-        code: 'invalid_grant',
-        status: 400,
-        message: 'Token refresh failed: Bearer [redacted]',
+        name: 'SubagentResolutionError',
+        message: 'Subagent error: Unable to initialize the selected subagent.',
       },
+      { name: 'Error', code: 'invalid_grant', status: 400 },
     ]);
     expect(JSON.stringify(causes)).not.toContain(SECRET);
-    expect(JSON.stringify(causes)).not.toContain('at ');
   });
 
   it('stops at a cycle and at its depth bound', () => {
     const first = new Error('first');
     const second = new Error('second', { cause: first });
     Object.assign(first, { cause: second });
-    expect(describeErrorCauses(first).map((cause) => cause.message)).toEqual(['first', 'second']);
+    expect(describeErrorCauses(first)).toHaveLength(2);
 
     let deep: unknown = new Error('0');
     for (let index = 1; index < 10; index++) {
@@ -66,14 +63,22 @@ describe('describeErrorCauses', () => {
     expect(describeErrorCauses(deep)).toHaveLength(4);
   });
 
-  it('describes values that are not errors without echoing objects', () => {
-    expect(describeErrorCauses('plain failure')).toEqual([
-      { name: 'string', message: 'plain failure' },
-    ]);
+  it('describes values that are not errors without echoing them', () => {
+    expect(describeErrorCauses(`plain failure ${SECRET}`)).toEqual([{ name: 'string' }]);
     expect(describeErrorCauses(undefined)).toEqual([]);
     expect(describeErrorCauses({ name: 'bad name with spaces', code: { nested: SECRET } })).toEqual(
       [{ name: 'UnknownError' }],
     );
+  });
+});
+
+describe('describeStackFrames', () => {
+  it('keeps where the error was thrown and drops its message', () => {
+    const frames = describeStackFrames(new Error(`Authorization: Bearer ${SECRET}\nsecond line`));
+    expect(frames.length).toBeGreaterThan(0);
+    expect(frames.every((frame) => frame.startsWith('at '))).toBe(true);
+    expect(JSON.stringify(frames)).not.toContain(SECRET);
+    expect(describeStackFrames('not an error')).toEqual([]);
   });
 });
 
@@ -85,10 +90,19 @@ describe('findMCPAuthenticationFailure', () => {
           cause: new ReauthenticationRequiredError('clickhouse-docs', 'expired'),
         }),
       ),
-    ).toEqual({ serverName: 'clickhouse-docs' });
+    ).toEqual({ serverName: 'clickhouse-docs', retryable: false });
     expect(
       findMCPAuthenticationFailure(new MCPAuthenticationRejectedError('github', false)),
-    ).toEqual({ serverName: 'github' });
+    ).toEqual({ serverName: 'github', retryable: false });
+  });
+
+  it('marks failures that a retry may clear as retryable', () => {
+    expect(findMCPAuthenticationFailure(new MCPAuthenticationRefreshError())).toEqual({
+      retryable: true,
+    });
+    expect(
+      findMCPAuthenticationFailure(new MCPAuthenticationRejectedError('github', true)),
+    ).toEqual({ serverName: 'github', retryable: true });
   });
 
   it('does not treat a model provider or other HTTP 401 as an MCP sign-in', () => {
@@ -102,7 +116,7 @@ describe('findMCPAuthenticationFailure', () => {
 describe('reportSubagentResolutionFailure', () => {
   it('logs the underlying cause and the MCP server, and keeps the SDK classification', () => {
     const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
-    const error = new Error(`Initialization failed for ${SECRET.length} tools`, {
+    const error = new Error(`Initialization failed: ${SECRET}`, {
       cause: new ReauthenticationRequiredError('clickhouse-docs', 'expired'),
     });
 
@@ -120,16 +134,30 @@ describe('reportSubagentResolutionFailure', () => {
         taskId: 'task-1',
         childRunId: 'child-run-1',
         parentRunId: 'run-1',
-        mcpAuthentication: { serverName: 'clickhouse-docs' },
+        mcpAuthentication: { serverName: 'clickhouse-docs', retryable: false },
         causes: [
-          { name: 'Error', message: 'Initialization failed for 21 tools' },
+          { name: 'Error' },
           {
             name: 'ReauthenticationRequiredError',
             message:
               'Re-authentication required for "clickhouse-docs": access token expired and no refresh token available',
           },
         ],
+        frames: expect.arrayContaining([expect.stringMatching(/^at /)]),
       },
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(SECRET);
+    warn.mockRestore();
+  });
+
+  it('says a retry may succeed when the MCP sign-in failure is transient', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    reportSubagentResolutionFailure(diagnostic(), new MCPAuthenticationRefreshError());
+
+    expect(warn).toHaveBeenCalledWith(
+      '[subagents] Subagent could not start: an MCP server it uses could not authenticate; a retry may succeed',
+      expect.objectContaining({ mcpAuthentication: { retryable: true } }),
     );
     warn.mockRestore();
   });
@@ -150,7 +178,8 @@ describe('reportSubagentResolutionFailure', () => {
       aborted: false,
       childRunId: 'child-run-1',
       parentRunId: 'run-1',
-      causes: [{ name: 'Error', message: 'Agent not found' }],
+      causes: [{ name: 'Error' }],
+      frames: expect.any(Array),
     });
     warn.mockRestore();
   });

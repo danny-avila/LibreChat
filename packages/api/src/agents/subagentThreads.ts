@@ -55,14 +55,14 @@ import {
 } from './activity';
 import { boundSubagentActivityUpdate, SubagentActivityStream } from './subagentActivity';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
+import { describeErrorCauses, describeStackFrames } from './failures/subagent';
 import { ActivityRecorder, activityTreeFromProjection } from './digest';
-import { getSafeErrorMetadata, getSafeErrorText } from '~/utils/errors';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createConcurrencyLimiter } from '~/utils/promise';
 import { SubagentContentJournal } from './subagentContent';
-import { describeErrorCauses } from './failures/subagent';
 import { retainMCPRequestContext } from '~/mcp/request';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { InMemoryEventTransport } from '~/stream';
 import { aggregateEmittedUsage } from './usage';
 
@@ -1710,7 +1710,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                   ? { phase: error.phase, resolutionCause: error.resolutionCause }
                   : {}),
                 causes: describeErrorCauses(error),
-                error: getSafeErrorText(error),
+                frames: describeStackFrames(error),
               });
               if (mayPersist) {
                 await this.persistFailure(

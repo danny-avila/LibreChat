@@ -2557,7 +2557,8 @@ describe('SubagentThreadTaskStore', () => {
     expect(errorSpy).toHaveBeenCalledWith(
       '[subagentThreads] Child-thread execution failed',
       expect.objectContaining({
-        causes: [{ name: 'Error', message: 'Authorization: Bearer [redacted]' }],
+        causes: [{ name: 'Error' }],
+        frames: expect.arrayContaining([expect.stringMatching(/^at /)]),
       }),
     );
     expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('provider-secret');

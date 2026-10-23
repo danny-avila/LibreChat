@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { SubagentResolutionError } from '@librechat/agents';
 import type { SubagentResolutionFailureHandler } from '@librechat/agents';
 import {
   MCPAuthenticationRefreshError,
@@ -6,6 +7,7 @@ import {
   MCPTransportAuthenticationError,
 } from '~/mcp/errors';
 import { ReauthenticationRequiredError } from '~/mcp/oauth/tokens';
+import { CodeWorkspaceSelectionError } from '~/code/errors';
 import { OboTokenResolutionError } from '~/mcp/oauth/obo';
 import { OpenIDReauthRequiredError } from '~/utils/oidc';
 import { getSafeErrorText } from '~/utils/errors';
@@ -13,11 +15,17 @@ import { getSafeErrorText } from '~/utils/errors';
 /** Links of an error's `cause` chain described; deeper causes are rarely informative. */
 const MAX_CAUSE_DEPTH = 4;
 const MAX_CAUSE_MESSAGE_LENGTH = 300;
+const MAX_STACK_FRAMES = 8;
+const STACK_FRAME = /^\s+at\s/;
 const SAFE_LABEL = /^[A-Za-z0-9_.:-]{1,64}$/;
 const SAFE_SERVER_NAME = /^[\w .:@-]{1,128}$/;
 const REAUTHENTICATION_SERVER = /^Re-authentication required for "([^"]{1,128})"/;
 
-/** One link of an error chain, safe to log: no stack, URLs reduced to origins, bearers removed. */
+/**
+ * One link of an error chain, safe to log. A message is kept only for errors whose text
+ * LibreChat or the agents SDK writes itself; any other message may echo a credential or
+ * submitted content, so those links log their name, code and status alone.
+ */
 export interface SafeErrorCause {
   name: string;
   code?: string | number;
@@ -25,9 +33,10 @@ export interface SafeErrorCause {
   message?: string;
 }
 
-/** An MCP server whose credentials the user must renew before tools that use it can load. */
+/** An MCP server whose sign-in failed; `retryable` when retrying may succeed without a new one. */
 export interface MCPAuthenticationFailure {
   serverName?: string;
+  retryable: boolean;
 }
 
 function readProperty(value: object, property: string): unknown {
@@ -48,10 +57,27 @@ function safeStatus(value: unknown): number | undefined {
     : undefined;
 }
 
+function isMCPAuthenticationError(error: unknown): error is Error {
+  return (
+    error instanceof ReauthenticationRequiredError ||
+    error instanceof MCPAuthenticationRejectedError ||
+    error instanceof MCPAuthenticationRefreshError ||
+    error instanceof MCPTransportAuthenticationError ||
+    error instanceof OboTokenResolutionError ||
+    error instanceof OpenIDReauthRequiredError
+  );
+}
+
+/** Errors whose message LibreChat or the agents SDK composes from fixed text and safe names. */
+function hasTrustedMessage(error: object): boolean {
+  return (
+    isMCPAuthenticationError(error) ||
+    error instanceof SubagentResolutionError ||
+    error instanceof CodeWorkspaceSelectionError
+  );
+}
+
 function describeCause(error: unknown): SafeErrorCause {
-  if (typeof error === 'string') {
-    return { name: 'string', message: getSafeErrorText(error).slice(0, MAX_CAUSE_MESSAGE_LENGTH) };
-  }
   if (error == null || typeof error !== 'object') {
     return { name: typeof error };
   }
@@ -64,7 +90,7 @@ function describeCause(error: unknown): SafeErrorCause {
       ? { code: code as string | number }
       : {}),
     ...(status != null ? { status } : {}),
-    ...(typeof message === 'string' && message.length > 0
+    ...(typeof message === 'string' && message.length > 0 && hasTrustedMessage(error)
       ? { message: getSafeErrorText(message).slice(0, MAX_CAUSE_MESSAGE_LENGTH) }
       : {}),
   };
@@ -81,9 +107,22 @@ function errorChain(error: unknown): unknown[] {
   return chain;
 }
 
-/** The error and its causes by name, code, status and redacted message, never a stack. */
+/** The error and its causes by name, code, status and, for trusted errors, message. */
 export function describeErrorCauses(error: unknown): SafeErrorCause[] {
   return errorChain(error).map(describeCause);
+}
+
+/** Where an error was thrown: its stack frames alone, without the message line above them. */
+export function describeStackFrames(error: unknown): string[] {
+  const stack = error instanceof Error ? error.stack : undefined;
+  if (typeof stack !== 'string') {
+    return [];
+  }
+  return stack
+    .split('\n')
+    .filter((line) => STACK_FRAME.test(line))
+    .slice(0, MAX_STACK_FRAMES)
+    .map((line) => getSafeErrorText(line.trim()));
 }
 
 function getServerName(error: object): string | undefined {
@@ -96,14 +135,14 @@ function getServerName(error: object): string | undefined {
   return match != null && SAFE_SERVER_NAME.test(match[1]) ? match[1] : undefined;
 }
 
-function isMCPAuthenticationError(error: unknown): error is Error {
+/** A refresh outage, or a rejection after the connection already refreshed, may pass on retry. */
+function isRetryableAuthenticationError(error: Error): boolean {
+  if (error instanceof MCPAuthenticationRefreshError) {
+    return true;
+  }
   return (
-    error instanceof ReauthenticationRequiredError ||
-    error instanceof MCPAuthenticationRejectedError ||
-    error instanceof MCPAuthenticationRefreshError ||
-    error instanceof MCPTransportAuthenticationError ||
-    error instanceof OboTokenResolutionError ||
-    error instanceof OpenIDReauthRequiredError
+    (error instanceof MCPAuthenticationRejectedError || error instanceof OboTokenResolutionError) &&
+    error.retryable
   );
 }
 
@@ -116,7 +155,10 @@ export function findMCPAuthenticationFailure(error: unknown): MCPAuthenticationF
   for (const link of errorChain(error)) {
     if (isMCPAuthenticationError(link)) {
       const serverName = getServerName(link);
-      return serverName == null ? {} : { serverName };
+      return {
+        ...(serverName == null ? {} : { serverName }),
+        retryable: isRetryableAuthenticationError(link),
+      };
     }
   }
   return undefined;
@@ -133,9 +175,7 @@ export const reportSubagentResolutionFailure: SubagentResolutionFailureHandler =
 ) => {
   const mcpAuthentication = findMCPAuthenticationFailure(error);
   logger.warn(
-    mcpAuthentication == null
-      ? '[subagents] Subagent could not start'
-      : '[subagents] Subagent could not start: an MCP server it uses needs re-authentication',
+    `[subagents] Subagent could not start${describeMCPAuthenticationFailure(mcpAuthentication)}`,
     {
       phase: detail.phase,
       subagentType: detail.subagentType,
@@ -147,6 +187,16 @@ export const reportSubagentResolutionFailure: SubagentResolutionFailureHandler =
       ...(detail.parentRunId != null ? { parentRunId: detail.parentRunId } : {}),
       ...(mcpAuthentication != null ? { mcpAuthentication } : {}),
       causes: describeErrorCauses(error),
+      frames: describeStackFrames(error),
     },
   );
 };
+
+function describeMCPAuthenticationFailure(failure: MCPAuthenticationFailure | undefined): string {
+  if (failure == null) {
+    return '';
+  }
+  return failure.retryable
+    ? ': an MCP server it uses could not authenticate; a retry may succeed'
+    : ': an MCP server it uses needs re-authentication';
+}

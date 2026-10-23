@@ -33,6 +33,7 @@ import {
 import { codeExecutionAuthHeaders, getCodeExecutionRouteKey } from '~/agents/execution';
 import { isAttachedFileWriteDenied } from '~/agents/hitl/byom';
 import { getSafeErrorMetadata } from '~/utils/errors';
+import { isWorkspacePathMissing } from './paths';
 
 /** Workspace-relative folder chat attachments are copied into. */
 export const WORKSPACE_ATTACHMENTS_DIRECTORY = '.librechat/attachments';
@@ -277,15 +278,12 @@ function classifyImportFailure(error: unknown): WorkspaceAttachmentUnavailableRe
 }
 
 /**
- * A worker that cannot create the attachments folder reports it missing: workers before
+ * A worker that cannot create the attachments folder reports it missing, as `NOT_FOUND` or,
+ * through an older Code API, as `INVALID_PATH` with the same message: workers before
  * LibreChat-AI/code-interpreter#360 never created a parent on a root registered by path alone.
  */
 function classifyIgnoreFailure(error: unknown): WorkspaceAttachmentUnavailableReason {
-  if (
-    error instanceof WorkspaceToolHttpError &&
-    error.reason === 'rejected' &&
-    error.upstreamCode === 'NOT_FOUND'
-  ) {
+  if (error instanceof WorkspaceToolHttpError && isWorkspacePathMissing(error)) {
     return 'unsupported';
   }
   return classifyImportFailure(error);
