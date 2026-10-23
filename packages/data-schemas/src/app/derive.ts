@@ -67,8 +67,9 @@ export interface DerivedConfigIssue {
 }
 
 /**
- * Derived issues only writes report: the merge leaves those values as stored. A model spec whose
- * endpoint is unknown is refused on write rather than dropped at merge.
+ * Derived issues only writes report: the merge does not strip the value they sit on. A model spec
+ * whose endpoint is unknown is refused on write; at merge only that spec is left out
+ * ({@link deriveServedSpecs}), not the layer's whole list.
  */
 export const WRITE_ONLY_DERIVED_ISSUES: ReadonlySet<string> = new Set(['unknown_spec_endpoint']);
 
@@ -510,9 +511,45 @@ function deriveAzureAssistants(merged: AppConfig, raw: JsonRecord, principals: s
 }
 
 /**
+ * The model specs served without those whose endpoint the YAML-shaped config the layers leave
+ * (`raw`) does not configure, by the rule startup leaves out librechat.yaml's
+ * ({@link isKnownSpecEndpoint}, after inferring an agent spec's endpoint): a tombstone of
+ * `endpoints.custom` or `endpoints` hides the specs of the custom endpoints it removes until a
+ * layer defines them again, and a spec stored for an endpoint that is not configured is left out
+ * on its own. Where no spec is left, none are served, as tenant scoping leaves none, so the
+ * controls specs turn off are derived without them. `addedEndpoints` stays as merged, as startup
+ * keeps it: an endpoint it names that is gone is simply not offered, while emptying the list would
+ * offer every endpoint.
+ */
+function deriveServedSpecs(merged: AppConfig, raw: JsonRecord, principals: string): AppConfig {
+  const modelSpecs = materializeModelSpecEndpoints(merged.modelSpecs);
+  const list = modelSpecs?.list;
+  if (modelSpecs == null || !Array.isArray(list) || list.length === 0) {
+    return merged;
+  }
+  const customEndpoints = getEndpointIdentities(getAtPath(raw, CUSTOM_ENDPOINTS));
+  const served = list.filter((spec) => {
+    const endpoint: unknown = spec?.preset?.endpoint;
+    return typeof endpoint === 'string' && isKnownSpecEndpoint(endpoint, customEndpoints);
+  });
+  if (served.length === list.length) {
+    return merged;
+  }
+  logger.debug(
+    `[mergeConfigOverrides] Leaving out ${list.length - served.length} model spec(s) for ${principals}: their endpoint is not configured once the layers apply`,
+  );
+  if (served.length > 0) {
+    return { ...merged, modelSpecs: { ...modelSpecs, list: served } };
+  }
+  const { modelSpecs: _hidden, ...rest } = merged;
+  return rest;
+}
+
+/**
  * The derivations that follow a merge, for what its layers touched: custom endpoint parameters
- * (with `expandCustomEndpoint`), the agents endpoint's memory capability, and (with
- * `rederiveEndpoints`) the Azure Assistants endpoint. Untouched parts stay as merged.
+ * (with `expandCustomEndpoint`), the model specs whose endpoint is still configured, the agents
+ * endpoint's memory capability, and (with `rederiveEndpoints`) the Azure Assistants endpoint.
+ * Untouched parts stay as merged.
  */
 export function rederiveMergedConfig(params: {
   merged: AppConfig;
@@ -526,6 +563,9 @@ export function rederiveMergedConfig(params: {
   let merged = params.merged;
   if (derivation.expandCustomEndpoint != null) {
     merged = expandWrittenEndpoints(merged, raw, base, touches, derivation.expandCustomEndpoint);
+  }
+  if (touchesConfig(touches, ['modelSpecs']) || touchesConfig(touches, CUSTOM_ENDPOINTS)) {
+    merged = deriveServedSpecs(merged, raw, principals);
   }
   if (
     touchesConfig(touches, ['memory']) ||

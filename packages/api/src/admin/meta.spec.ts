@@ -1703,6 +1703,19 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
     ]);
     const base = await service.getAppConfig({ baseOnly: true });
     const merged = await service.getAppConfig({ role: 'r1' });
+    const gateway = {
+      name: 'Gateway',
+      apiKey: 'gateway-key',
+      baseURL: 'https://gateway.example.com/v1',
+      models: { default: ['m1'] },
+    };
+    const hidden = await serviceOver(
+      {
+        endpoints: { custom: [gateway] },
+        modelSpecs: { list: [{ ...spec, preset: { endpoint: 'Gateway', model: 'm1' } }] },
+      },
+      [storedConfig({}, ['endpoints.custom'])],
+    ).getAppConfig({ role: 'r1' });
     const unknown = await patch(
       [
         {
@@ -1718,6 +1731,8 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
       [modelSelect, parameters, presets].every((value) => value === false) &&
       !base.endpoints?.agents?.capabilities?.includes(AgentCapabilities.memory) &&
       merged.endpoints?.agents?.capabilities?.includes(AgentCapabilities.memory) === true &&
+      hidden.modelSpecs === undefined &&
+      hidden.interfaceConfig?.parameters === true &&
       unknown.statusCode === 400 &&
       JSON.stringify(unknown.body?.issues) ===
         JSON.stringify([

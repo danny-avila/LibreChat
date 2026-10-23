@@ -458,7 +458,10 @@ export type AdminConfigChangeErrorResponse = {
  *   `parameters`, `presets`) follow the model specs a principal is served, where neither
  *   librechat.yaml nor a profile sets them: a profile that adds specs turns them off (the model
  *   selector stays on with `addedEndpoints`), and one that removes every spec (a tombstone, an
- *   empty list, or tenant scoping) turns them back on. A profile that turns `memory` on or off,
+ *   empty list, or tenant scoping) turns them back on. A model spec whose endpoint the layers
+ *   leave unconfigured (a tombstone of `endpoints.custom` or `endpoints` removing the custom
+ *   endpoint it names) is not served, as startup skips librechat.yaml's, until a layer defines the
+ *   endpoint again; built-in endpoints keep their specs. A profile that turns `memory` on or off,
  *   or changes the agents endpoint, has the agents `memory` capability derived again, so it is
  *   offered only while memory is on. A model spec whose `preset.endpoint` is neither a built-in
  *   endpoint nor a configured custom endpoint answers 400 `CONFIG_OVERRIDE_INVALID` with

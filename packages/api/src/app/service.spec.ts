@@ -2507,6 +2507,51 @@ describe('what getAppConfig derives again for the parts profiles write', () => {
       );
     const agents: Probe = ({ endpoints }) =>
       endpoints?.agents && { capabilities: endpoints.agents.capabilities };
+    const specsServed: Probe = (config) => ({
+      list: config.modelSpecs?.list?.map(({ name, preset }) => [name, preset?.endpoint]),
+      addedEndpoints: config.modelSpecs?.addedEndpoints,
+      controls: specControls(config),
+    });
+    const SPECS = 'modelSpecs';
+    const OPENAI = 'endpoints.openAI';
+    /** Specs on the custom endpoint and on each built-in endpoint a layer may tombstone. */
+    const SPEC_YAML = at(at(YAML, OPENAI, { titleModel: 'gpt-4o-mini' }), SPECS, {
+      list: [
+        spec('g', 'Gateway'),
+        spec('o', 'openAI'),
+        spec('az', 'azureOpenAI'),
+        spec('an', 'anthropic'),
+      ],
+      addedEndpoints: ['Gateway', 'openAI'],
+    });
+    /** Specs only on the custom endpoint, so removing it leaves none. */
+    const GATEWAY_SPECS = at(YAML, SPECS, { list: [spec('g', 'Gateway')] });
+    const onSpecs = (cell: Cell): Cell => ({ yaml: SPEC_YAML, ...cell });
+    /**
+     * A built-in endpoint's specs stay when a layer tombstones its settings, as startup keeps
+     * them for a librechat.yaml without them: the endpoint is still offered.
+     */
+    const builtInSpecCells = (
+      [
+        [OPENAI, write(`${OPENAI}.titleModel`, 'gpt-4o'), { titleModel: 'gpt-4o' }],
+        [AZURE, write(GROUPS, [west]), { groups: [west] }],
+        [ANTHROPIC, write(`${ANTHROPIC}.titleModel`, 'claude-x'), { titleModel: 'claude-x' }],
+      ] as const
+    ).flatMap(([path, recreate, recreated]): Cell[] =>
+      [
+        { change: `tombstone of ${path}`, layers: [role({}, [path])], as: at(SPEC_YAML, path) },
+        {
+          change: `Base's tombstone of ${path}, unset by the profile above`,
+          layers: [base({}, [path]), role()],
+          as: at(SPEC_YAML, path),
+        },
+        {
+          change: `${path} recreated by a profile after Base tombstones it`,
+          layers: [base({}, [path]), role(recreate)],
+          as: at(SPEC_YAML, path, recreated),
+        },
+      ].map(onSpecs),
+    );
 
     const matrix: Array<[string, Probe, Cell[]]> = [
       [
@@ -2981,6 +3026,111 @@ describe('what getAppConfig derives again for the parts profiles write', () => {
             layers: [role({}, ['interface'])],
             tenantId: 'tenant-b',
             as: TENANT_YAML,
+          },
+        ],
+      ],
+      [
+        'model specs once the endpoints they name are removed (the specs served, addedEndpoints, the controls they decide)',
+        specsServed,
+        [
+          ...[
+            {
+              change: 'tombstone of endpoints.custom',
+              layers: [role({}, [CUSTOM])],
+              as: at(SPEC_YAML, CUSTOM),
+            },
+            {
+              change: "Base's tombstone of endpoints.custom, unset by the profile above",
+              layers: [base({}, [CUSTOM]), role()],
+              as: at(SPEC_YAML, CUSTOM),
+            },
+            {
+              change: 'endpoints.custom Base adds to, tombstoned by a profile',
+              layers: [base(write(CUSTOM, [router])), role({}, [CUSTOM])],
+              as: at(SPEC_YAML, CUSTOM),
+            },
+            {
+              change:
+                "a profile's own endpoint and its spec under a higher profile's tombstone of endpoints.custom",
+              layers: [
+                role({
+                  ...write(CUSTOM, [router]),
+                  ...write(`${SPECS}.list`, [spec('r', 'Router'), spec('o', 'openAI')]),
+                }),
+                above({}, [CUSTOM]),
+              ],
+              as: at(at(SPEC_YAML, CUSTOM), `${SPECS}.list`, [
+                spec('r', 'Router'),
+                spec('o', 'openAI'),
+              ]),
+            },
+            {
+              change: 'endpoints.custom recreated by a profile after Base tombstones it',
+              layers: [base({}, [CUSTOM]), role(write(CUSTOM, [gateway]))],
+              as: SPEC_YAML,
+            },
+            {
+              change: 'endpoints.custom recreated by the layer that tombstones it',
+              layers: [role(write(CUSTOM, [gateway]), [CUSTOM])],
+              as: SPEC_YAML,
+            },
+            {
+              change: 'endpoints.custom a lower profile tombstones, recreated by a higher profile',
+              layers: [role({}, [CUSTOM]), above(write(CUSTOM, [gateway]))],
+              as: SPEC_YAML,
+            },
+            {
+              change: 'tombstone of endpoints',
+              layers: [role({}, ['endpoints'])],
+              as: at(SPEC_YAML, 'endpoints'),
+            },
+            {
+              change: "Base's tombstone of endpoints, unset by the profile above",
+              layers: [base({}, ['endpoints']), role()],
+              as: at(SPEC_YAML, 'endpoints'),
+            },
+            {
+              change: 'endpoints.custom recreated by a profile after Base tombstones endpoints',
+              layers: [base({}, ['endpoints']), role(write(CUSTOM, [gateway]))],
+              as: at(at(SPEC_YAML, 'endpoints'), CUSTOM, [gateway]),
+            },
+            {
+              change:
+                'endpoints.custom recreated by a higher profile after a lower one tombstones endpoints',
+              layers: [role({}, ['endpoints']), above(write(CUSTOM, [gateway]))],
+              as: at(at(SPEC_YAML, 'endpoints'), CUSTOM, [gateway]),
+            },
+            {
+              change: 'switch off: tombstone of endpoints.custom',
+              layers: [role({}, [CUSTOM])],
+              rederiveEndpoints: false,
+              as: at(SPEC_YAML, CUSTOM),
+            },
+            ...builtInSpecCells,
+          ].map(onSpecs),
+          /**
+           * Where no spec is left, none is served and the controls follow, as for tenant
+           * scoping: startup derives them from librechat.yaml's list before it skips specs, so
+           * these compare with librechat.yaml left without the specs startup would skip.
+           */
+          {
+            change: 'tombstone of endpoints.custom, leaving no spec',
+            yaml: GATEWAY_SPECS,
+            layers: [role({}, [CUSTOM])],
+            as: at(at(GATEWAY_SPECS, CUSTOM), SPECS),
+          },
+          {
+            change: "Base's tombstone of endpoints, leaving no spec",
+            yaml: GATEWAY_SPECS,
+            layers: [base({}, ['endpoints']), role()],
+            as: at(at(GATEWAY_SPECS, 'endpoints'), SPECS),
+          },
+          {
+            change:
+              'endpoints.custom Base tombstones, recreated by a profile: the spec served again',
+            yaml: GATEWAY_SPECS,
+            layers: [base({}, [CUSTOM]), role(write(CUSTOM, [gateway]))],
+            as: GATEWAY_SPECS,
           },
         ],
       ],

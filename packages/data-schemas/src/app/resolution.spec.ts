@@ -4248,14 +4248,21 @@ describe('model spec endpoints', () => {
     preset: { endpoint, model: 'm' },
   });
 
-  it('refuses a spec for an endpoint that is not configured on write, and serves it as stored', () => {
-    const yaml = {
-      endpoints: {
-        custom: [
-          { name: 'Gateway', apiKey: 'k', baseURL: 'https://g', models: { default: ['m'] } },
-        ],
-      },
-    };
+  const gateway = {
+    name: 'Gateway',
+    apiKey: 'k',
+    baseURL: 'https://g',
+    models: { default: ['m'] },
+  };
+  const yaml = {
+    endpoints: { custom: [gateway] },
+    modelSpecs: { list: [spec('Gateway'), spec('openAI')] },
+  };
+  const yamlBase = { config: yaml, modelSpecs: yaml.modelSpecs } as unknown as AppConfig;
+  const served = (configs: IConfig[]) =>
+    mergeConfigOverrides(yamlBase, configs).modelSpecs?.list?.map(({ name }) => name);
+
+  it('refuses a spec for an endpoint that is not configured on write, and leaves only it out at merge', () => {
     expect(
       getConfigOverrideIssues({ modelSpecs: { list: [spec('Gateway'), spec('openAI')] } }, yaml),
     ).toEqual([]);
@@ -4267,9 +4274,25 @@ describe('model spec endpoints', () => {
       },
     ]);
 
-    const merged = mergeConfigOverrides({ config: yaml } as unknown as AppConfig, [
-      fakeConfig({ modelSpecs: { list: [spec('Nowhere')] } }, 10),
-    ]);
-    expect(merged.modelSpecs?.list?.map(({ name }) => name)).toEqual(['Nowhere']);
+    expect(
+      served([fakeConfig({ modelSpecs: { list: [spec('Nowhere'), spec('Gateway')] } }, 10)]),
+    ).toEqual(['Gateway']);
   });
+
+  it.each([['endpoints.custom'], ['endpoints']])(
+    'leaves out the specs of the custom endpoints a tombstone of %s removes, until a layer defines them again',
+    (path) => {
+      expect(served([fakeConfig({}, 10, [path])])).toEqual(['openAI']);
+      expect(
+        served([fakeConfig({}, 10, [path]), fakeConfig({ endpoints: { custom: [gateway] } }, 20)]),
+      ).toEqual(['Gateway', 'openAI']);
+      expect(
+        served([
+          fakeConfig({ endpoints: { custom: [{ ...gateway, name: 'Router' }] } }, 10),
+          fakeConfig({ modelSpecs: { list: [spec('Router')] } }, 20),
+          fakeConfig({}, 30, [path]),
+        ]),
+      ).toBeUndefined();
+    },
+  );
 });
