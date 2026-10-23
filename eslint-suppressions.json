@@ -1418,7 +1418,7 @@
   },
   "client/src/routes/Root.tsx": {
     "shadcn/no-inline-styles": {
-      "count": 2
+      "count": 1
     }
   },
   "client/src/routes/RouteErrorBoundary.tsx": {
