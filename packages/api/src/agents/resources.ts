@@ -130,6 +130,9 @@ export type ProvisionState = {
    *  another agent's setup file to this conversation, and provisioning it here would put
    *  it in a namespace this agent's other users can read. */
   agentScopedFileIds: Set<string>;
+  /** Files an attached workspace's attachment note already describes; the queued-file note
+   *  leaves them out rather than pointing at a second location. */
+  describedFileIds?: Set<string>;
 };
 
 /**

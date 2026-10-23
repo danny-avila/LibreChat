@@ -1,7 +1,12 @@
 import { Types } from 'mongoose';
 import { createHash } from 'crypto';
 import { EToolResources, FileContext, FileSources, getCodeEnvRefs } from 'librechat-data-provider';
-import type { CodeEnvRef, TFile } from 'librechat-data-provider';
+import type {
+  TFile,
+  CodeEnvRef,
+  TFileWorkspaceImport,
+  TFileWorkspaceImports,
+} from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
 import type {
   IMongoFile,
@@ -26,6 +31,17 @@ export type LegacySearchFileRef = {
   file_id: string;
   user: string;
   tenantId?: string;
+};
+
+/** A user's file's freshly computed digest, the copy placed in one workspace, or both. */
+export type WorkspaceImportRecord = {
+  file_id: string;
+  user: string;
+  /** The record's own tenant; an untenanted record is matched as untenanted. */
+  tenantId?: string | null;
+  /** `key` is an opaque hex digest of the conversation and workspace the copy went to. */
+  copy?: { key: string; target: TFileWorkspaceImport };
+  digest?: NonNullable<TFileWorkspaceImports['digest']>;
 };
 
 export type ClearFileEmbeddingsParams = {
@@ -453,6 +469,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     file_id: string;
     entityId: string;
   }) => Promise<IMongoFile | null>;
+  recordFileWorkspaceImport: (data: WorkspaceImportRecord) => Promise<boolean>;
   adoptLegacySearchEmbeddings: (data: {
     files: LegacySearchFileRef[];
     agentId: string;
@@ -1463,6 +1480,48 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
+   * Records a workspace copy of a user's file and/or the digest of the stored bytes, without
+   * rewriting sibling targets another turn wrote in between. A digest is kept even when the
+   * copy fails, so a refused file is not hashed again every turn. The target key becomes a
+   * dotted path, so only an opaque hex digest is accepted; the owner filter keeps a caller
+   * from marking another user's record.
+   *
+   * @returns Whether a record matched.
+   */
+  async function recordFileWorkspaceImport({
+    file_id,
+    user,
+    tenantId,
+    copy,
+    digest,
+  }: WorkspaceImportRecord): Promise<boolean> {
+    if (copy != null && !/^[a-f0-9]{32,64}$/.test(copy.key)) {
+      throw new Error('Workspace import keys must be hex digests');
+    }
+    const update: Record<
+      string,
+      TFileWorkspaceImport | NonNullable<TFileWorkspaceImports['digest']>
+    > = {};
+    if (copy != null) {
+      update[`metadata.workspaceImports.targets.${copy.key}`] = copy.target;
+    }
+    if (digest != null) {
+      update['metadata.workspaceImports.digest'] = digest;
+    }
+    if (Object.keys(update).length === 0) {
+      return false;
+    }
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const result = await File.updateOne(
+      { file_id, user, tenantId: tenantId ?? null },
+      { $set: update },
+      /** Bookkeeping, not a content change: project resource versions include `updatedAt`. */
+      { timestamps: false },
+    );
+    return result.matchedCount > 0;
+  }
+
+  /**
    * Records that a file has been embedded into one vector namespace, without disturbing
    * the namespaces already recorded. Agents that share a file record, as a duplicate does
    * with its source, each need their own embedding.
@@ -1942,6 +2001,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     updateFileCodeEnvRef,
     clearFileCodeEnvRefs,
     addFileEmbeddedEntity,
+    recordFileWorkspaceImport,
     clearFileEmbeddings,
     isFileStorageClean,
     adoptLegacySearchEmbeddings,

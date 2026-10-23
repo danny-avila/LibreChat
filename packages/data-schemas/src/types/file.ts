@@ -5,6 +5,7 @@ import type {
   FileContext,
   RunFileProvenance,
   TFile,
+  TFileWorkspaceImports,
 } from 'librechat-data-provider';
 
 export type FileStorageScope = {
@@ -229,6 +230,8 @@ export interface IMongoFile extends Omit<Document, 'model'> {
     destinationChosen?: boolean;
     /** The type the delivery route was resolved against, when conversion changed it. */
     routingMimeType?: string;
+    /** Copies placed in attached workspaces. */
+    workspaceImports?: TFileWorkspaceImports;
   };
   /** Upload-time inference, not a durable contract. See the schema field for why. */
   llmDeliveryPath?: string;
