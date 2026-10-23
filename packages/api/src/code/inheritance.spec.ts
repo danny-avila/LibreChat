@@ -1,8 +1,13 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { Tools, AgentCapabilities } from 'librechat-data-provider';
 import { agentSchema, createMethods } from '@librechat/data-schemas';
-import type { CodeWorkspaceSelection } from 'librechat-data-provider';
+import {
+  Tools,
+  AgentCapabilities,
+  MAX_SUBAGENT_GRAPH_NODES,
+  resolveCodeWorkspaceInheritance,
+} from 'librechat-data-provider';
+import type { CodeWorkspaceSelection, CodeWorkspaceRoutingAgent } from 'librechat-data-provider';
 import type { IAgent } from '@librechat/data-schemas';
 import type { CodeWorkspaceInheritanceRoot, SubagentCodeRoutingAgent } from './inheritance';
 import type { CodeEnvironmentConfig } from '~/agents/execution';
@@ -93,12 +98,13 @@ describe('resolveSubagentCodeWorkspaceInheritance', () => {
     agent: SubagentCodeRoutingAgent,
     selections: CodeWorkspaceSelection[],
     inheritedEnvironments?: ReadonlyMap<string, string>,
+    configuredEnvironments: CodeEnvironmentConfig[] = environments,
   ): string | undefined {
     return resolveCodeExecutionContext({
       statefulSessions: true,
       environmentId: agent.code_environment_id,
       environmentIds: agent.code_environment_ids,
-      environments,
+      environments: configuredEnvironments,
       allowEnvironmentSelection: true,
       workspaceSelections: selections,
       inheritedEnvironments,
@@ -522,6 +528,139 @@ describe('resolveSubagentCodeWorkspaceInheritance', () => {
     ).toEqual([REVIEWER]);
   });
 
+  async function seedBudgetGraph(count: number, ordinaryFirst = false, lateAdmission = false) {
+    const fixedId = 'agent_fixed_cap';
+    const thirdMachine = 'code-third-cap';
+    const missing = Array.from({ length: 7 }, (_, index) => `missing-cap-${index}`);
+    const ids = [
+      'bridge-cap',
+      'middle-cap',
+      fixedId,
+      REVIEWER,
+      ...Array.from({ length: count - 4 }, (_, index) => `filler-cap-${index}`),
+    ];
+    const saved = await Promise.all(
+      ids.map((id) =>
+        seed(id, {
+          ...(id === fixedId ? { code_environment_ids: [] } : {}),
+          ...(id === REVIEWER
+            ? { code_environment_id: thirdMachine, code_environment_ids: [SKYNET, LIA_RAG] }
+            : {}),
+          ...(id === 'bridge-cap'
+            ? {
+                subagents: {
+                  enabled: true,
+                  agent_ids: lateAdmission ? ['late-cap', ...missing, fixedId] : ['middle-cap'],
+                },
+              }
+            : {}),
+          ...(id === 'middle-cap' ? { subagents: { enabled: true, agent_ids: [fixedId] } } : {}),
+          ...(id === fixedId ? { subagents: { enabled: true, agent_ids: [REVIEWER] } } : {}),
+          ...(id === REVIEWER ? { subagents: { enabled: true, agent_ids: [fixedId] } } : {}),
+        }),
+      ),
+    );
+    if (lateAdmission) saved.push(await seed('late-cap'));
+    const graphIds = ids.slice(1);
+    const graphs = [0, 25].map((start) => {
+      const members = graphIds.slice(start, start + 25);
+      return {
+        type: `cap-team-${start}`,
+        name: 'Team',
+        description: 'Work',
+        agent_ids: members,
+        entry_agent_id: members[0],
+        result_agent_id: members[members.length - 1],
+        edges: members
+          .slice(1)
+          .map((id, index) => ({ from: members[index], to: id, edgeType: 'direct' as const })),
+      };
+    });
+    const lia = await seed(LIA, {
+      subagents: {
+        enabled: true,
+        graphsEnabled: true,
+        agent_ids: ordinaryFirst ? [fixedId, 'bridge-cap'] : ['bridge-cap'],
+        graphs,
+      },
+    });
+    const configured = [...environments, { ...environments[0], id: thirdMachine }];
+    const selections = configured.map(({ id }) => ({ environmentId: id, workspaceId: 'project' }));
+    const nodes = new Map<string, CodeWorkspaceRoutingAgent>(
+      saved.map((agent) => [
+        agent.id,
+        {
+          id: agent.id,
+          routesCode: true,
+          environmentId: agent.code_environment_id,
+          environmentIds: agent.code_environment_ids,
+          allowSelection: Boolean(agent.code_environment_ids?.length),
+          subagentIds: getSpawnableSubagentIds(agent),
+        },
+      ]),
+    );
+    nodes.set(LIA, {
+      id: LIA,
+      routesCode: true,
+      resolvedEnvironmentId: LIA_RAG,
+      allowSelection: false,
+      subagentIds: getSpawnableSubagentIds(lia),
+    });
+    const expected = resolveCodeWorkspaceInheritance({
+      selections,
+      rootIds: [LIA],
+      agents: nodes,
+      isAttachedEnvironment: (id) => configured.some((environment) => environment.id === id),
+    });
+    const reviewer = saved.find(({ id }) => id === REVIEWER);
+    if (!reviewer) throw new Error('Missing reviewer fixture');
+    return { lia, reviewer, configured, selections, expected, thirdMachine, missing };
+  }
+
+  it.each(
+    [49, 50].flatMap((count) => [false, true].map((ordinaryFirst) => ({ count, ordinaryFirst }))),
+  )(
+    'keeps final routing parity after cached deep upgrades at the cap: %j',
+    async ({ count, ordinaryFirst }) => {
+      const fixture = await seedBudgetGraph(count, ordinaryFirst);
+      const inherited = await resolveSubagentCodeWorkspaceInheritance({
+        selections: fixture.selections,
+        roots: [root(fixture.lia)],
+        loadSubagent,
+        environments: fixture.configured,
+        allowEnvironmentSelection: true,
+        codeExecutionAvailable: true,
+      });
+      expect(inherited).toEqual(fixture.expected);
+      expect(inherited.has(REVIEWER)).toBe(false);
+      expect(routeOf(fixture.reviewer, fixture.selections, inherited, fixture.configured)).toBe(
+        fixture.thirdMachine,
+      );
+      expect(loadSubagent).toHaveBeenCalledTimes(count);
+      expect(new Set(loadSubagent.mock.calls.map(([id]) => id)).size).toBe(count);
+    },
+  );
+
+  it('drains cached upgrades after the last admission batch without repeating or widening reads', async () => {
+    const fixture = await seedBudgetGraph(MAX_SUBAGENT_GRAPH_NODES - 1, false, true);
+    const inherited = await resolveSubagentCodeWorkspaceInheritance({
+      selections: fixture.selections,
+      roots: [root(fixture.lia)],
+      loadSubagent,
+      environments: fixture.configured,
+      allowEnvironmentSelection: true,
+      codeExecutionAvailable: true,
+    });
+    expect(inherited).toEqual(fixture.expected);
+    expect(routeOf(fixture.reviewer, fixture.selections, inherited, fixture.configured)).toBe(
+      fixture.thirdMachine,
+    );
+    expect(loadSubagent).toHaveBeenCalledTimes(MAX_SUBAGENT_GRAPH_NODES + fixture.missing.length);
+    expect(new Set(loadSubagent.mock.calls.map(([id]) => id)).size).toBe(
+      loadSubagent.mock.calls.length,
+    );
+  });
+
   it('counts only admitted subagents toward the node limit', async () => {
     const verifier = 'agent_finding_verifier';
     const stale = Array.from({ length: 49 }, (_, index) => `agent_deleted_${index}`);
@@ -557,7 +696,10 @@ describe('resolveSubagentCodeWorkspaceInheritance', () => {
   });
 
   it('reads nothing past the node limit', async () => {
-    const children = Array.from({ length: 50 }, (_, index) => `agent_child_${index}`);
+    const children = Array.from(
+      { length: MAX_SUBAGENT_GRAPH_NODES + 1 },
+      (_, index) => `agent_child_${index}`,
+    );
     const load = jest.fn(
       async (agentId: string): Promise<SubagentCodeRoutingAgent> => ({
         id: agentId,
@@ -580,7 +722,8 @@ describe('resolveSubagentCodeWorkspaceInheritance', () => {
       allowEnvironmentSelection: true,
       codeExecutionAvailable: true,
     });
-    expect(load).toHaveBeenCalledTimes(50);
+    expect(load).toHaveBeenCalledTimes(MAX_SUBAGENT_GRAPH_NODES);
+    expect(load).not.toHaveBeenCalledWith(children[MAX_SUBAGENT_GRAPH_NODES]);
   });
 
   it('keeps loading missing subagents in parallel batches near the node limit', async () => {

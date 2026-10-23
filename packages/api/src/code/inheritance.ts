@@ -166,7 +166,7 @@ export async function resolveSubagentCodeWorkspaceInheritance({
         (!attempted.has(id) || loadedAgents.has(id)),
     );
     frontier = [];
-    for (let start = 0; start < batchable.length && admitted < MAX_SUBAGENT_GRAPH_NODES; ) {
+    for (let start = 0; start < batchable.length; ) {
       const batch = batchable.slice(
         start,
         start + Math.max(MAX_SUBAGENT_GRAPH_NODES - admitted, MIN_LOAD_BATCH),
@@ -175,6 +175,7 @@ export async function resolveSubagentCodeWorkspaceInheritance({
       const loaded = await Promise.all(
         batch.map(async ([id]) => {
           if (loadedAgents.has(id)) return loadedAgents.get(id);
+          if (admitted >= MAX_SUBAGENT_GRAPH_NODES) return null;
           attempted.add(id);
           return loadSubagent(id).catch(() => null);
         }),
@@ -201,7 +202,6 @@ export async function resolveSubagentCodeWorkspaceInheritance({
         }
       }
     }
-    if (admitted >= MAX_SUBAGENT_GRAPH_NODES) break;
   }
   return resolveCodeWorkspaceInheritance({
     selections,
