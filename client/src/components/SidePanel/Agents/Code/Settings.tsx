@@ -197,7 +197,7 @@ export default function CodeSettings() {
               id="stateful-code-sessions"
               checked={enabled && codeEnabled === true}
               onCheckedChange={handleChange}
-              className="ml-4"
+              className="ms-4"
               data-testid="stateful-code-sessions"
               disabled={codeEnabled !== true}
               aria-label={localize('com_ui_stateful_sessions')}
@@ -231,7 +231,7 @@ export default function CodeSettings() {
         ))}
       {enabled && codeEnabled === true && (
         <div
-          className={statefulByDeployment ? 'space-y-2' : 'space-y-2 pl-1'}
+          className={statefulByDeployment ? 'space-y-2' : 'space-y-2 ps-1'}
           role={statefulByDeployment ? 'group' : undefined}
           aria-labelledby={statefulByDeployment ? statefulHeadingId : undefined}
         >

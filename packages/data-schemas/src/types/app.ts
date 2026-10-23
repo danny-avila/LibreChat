@@ -69,6 +69,8 @@ export interface AppConfig {
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
   githubCompare?: TCustomConfig['githubCompare'];
+  /** Outbound call budgets; unset keys fall back to the server defaults */
+  timeouts?: TCustomConfig['timeouts'];
   skillDeletion?: {
     finalizationEnabled?: boolean;
     sweepIntervalMs?: number;
@@ -144,7 +146,7 @@ export interface AppConfig {
     /** Google endpoint configuration */
     google?: Partial<TEndpoint>;
     /** Bedrock endpoint configuration */
-    bedrock?: Partial<TEndpoint>;
+    bedrock?: Partial<TEndpoint> & { availableRegions?: string[] };
     /** Anthropic endpoint configuration with optional Vertex AI support */
     anthropic?: Partial<TAnthropicEndpoint> & {
       /** Validated Vertex AI configuration */

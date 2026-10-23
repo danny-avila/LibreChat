@@ -7,6 +7,7 @@ import type { ServerRequest } from '~/types/http';
 // Loaded via dynamic import in beforeAll so the crypto module initializes
 // after CREDS_KEY is set above (encryptV3 reads the key at module load).
 let encryptV3: typeof import('@librechat/data-schemas').encryptV3;
+let ConfigRevisionConflictError: typeof import('@librechat/data-schemas').ConfigRevisionConflictError;
 let createAdminLangfuseHandlers: typeof import('./langfuse').createAdminLangfuseHandlers;
 let getLangfuseDestinationId: typeof import('../langfuse/destinations').getLangfuseDestinationId;
 const realFetch = global.fetch;
@@ -20,7 +21,7 @@ function projectResponse(projectId = 'project-1') {
 }
 
 beforeAll(async () => {
-  ({ encryptV3 } = await import('@librechat/data-schemas'));
+  ({ encryptV3, ConfigRevisionConflictError } = await import('@librechat/data-schemas'));
   ({ createAdminLangfuseHandlers } = await import('./langfuse'));
   ({ getLangfuseDestinationId } = await import('../langfuse/destinations'));
 });
@@ -828,9 +829,42 @@ describe('createAdminLangfuseHandlers', () => {
       expect(deps.findConfigByPrincipal).toHaveBeenCalledWith('role', '__base__', {
         includeInactive: true,
       });
-      expect(deps.patchConfigFields.mock.calls[0][4]).toBe(42);
+      /** No priority is sent, so the store keeps the stored 42. */
+      expect(deps.patchConfigFields.mock.calls[0][4]).toBeUndefined();
       expect(deps.toggleConfigActive).toHaveBeenCalledWith('role', '__base__', true);
       expect(res.body).toMatchObject({ configured: true, enabled: true });
+    });
+  });
+
+  describe('updateConnection write conflict', () => {
+    it('answers 409 when the base config keeps changing under the write', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers, deps } = createHandlers({
+        patchConfigFields: jest.fn().mockRejectedValue(new ConfigRevisionConflictError('cfg1:4')),
+        recordAuditEntry,
+      });
+      const res = mockRes();
+
+      await handlers.updateConnection(
+        mockReq({
+          body: {
+            enabled: true,
+            destination: 'eu',
+            publicKey: 'pk-lf-1',
+            secretKey: 'sk-lf-secret',
+          },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(409);
+      expect(res.body).toEqual({
+        error: 'Config was modified by another request',
+        code: 'CONFIG_VERSION_CONFLICT',
+      });
+      expect(deps.toggleConfigActive).not.toHaveBeenCalled();
+      expect(deps.recordConnectionUpdate).not.toHaveBeenCalled();
+      expect(recordAuditEntry).not.toHaveBeenCalled();
     });
   });
 

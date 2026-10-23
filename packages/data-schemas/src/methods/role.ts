@@ -60,7 +60,11 @@ export function createRoleMethods(
   deleteRoleByName: (roleName: string, options?: { id?: string }) => Promise<IRole | null>;
   updateUsersByRole: (oldRole: string, newRole: string) => Promise<void>;
   findUserIdsByRole: (roleName: string) => Promise<string[]>;
-  updateUsersRoleByIds: (userIds: string[], newRole: string) => Promise<void>;
+  updateUsersRoleByIds: (
+    userIds: string[],
+    newRole: string,
+    options?: { fromRole?: string },
+  ) => Promise<void>;
   listUsersByRole: (
     roleName: string,
     options?: { limit?: number; offset?: number },
@@ -547,12 +551,26 @@ export function createRoleMethods(
     return users.map((u) => u._id.toString());
   }
 
-  async function updateUsersRoleByIds(userIds: string[], newRole: string): Promise<void> {
+  /**
+   * Sets the role of the given users. With `fromRole`, only users whose role is still that one
+   * change, so undoing a migration never overwrites a reassignment made since.
+   */
+  async function updateUsersRoleByIds(
+    userIds: string[],
+    newRole: string,
+    options?: { fromRole?: string },
+  ): Promise<void> {
     if (userIds.length === 0) {
       return;
     }
     const User = mongoose.models.User as Model<IUser>;
-    await User.updateMany({ _id: { $in: userIds } }, { $set: { role: newRole } });
+    await User.updateMany(
+      {
+        _id: { $in: userIds },
+        ...(options?.fromRole !== undefined ? { role: options.fromRole } : {}),
+      },
+      { $set: { role: newRole } },
+    );
     await invalidateAuthUserDocCache(userIds);
   }
 
