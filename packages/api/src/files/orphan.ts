@@ -66,7 +66,14 @@ export async function withStoredUploadCleanup<T>(
     try {
       /* A rejected write can still have committed; deleting then would strand the record. */
       if (!writeBegun || !(await recordExists(stored))) {
-        await onUncommitted?.();
+        try {
+          await onUncommitted?.();
+        } catch (cleanupError) {
+          logger.error(
+            '[withStoredUploadCleanup] Failed to undo upload staging',
+            getSafeErrorMetadata(cleanupError),
+          );
+        }
         /* Storage strategies validate ownership and tenant against the object key. */
         const ref: StoredUploadRef = {
           user: req.user?.id,

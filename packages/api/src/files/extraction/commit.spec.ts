@@ -117,6 +117,18 @@ describe('selected extraction upload persistence', () => {
     expect(f.deleteFile).toHaveBeenCalledTimes(1);
   });
 
+  it('still removes unreferenced bytes when staging compensation fails', async () => {
+    const f = fixture();
+    f.addAgentResourceFile.mockImplementationOnce(async () => {
+      f.response.destroyed = true;
+    });
+    f.removeAgentResourceFiles.mockRejectedValueOnce(new Error('agent unavailable'));
+    await expect(commitExtractionUpload(f.options)).rejects.toMatchObject({ code: 'CANCELLED' });
+    expect(f.createFile).not.toHaveBeenCalled();
+    expect(f.logger.error).toHaveBeenCalledTimes(1);
+    expect(f.deleteFile).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps an acknowledged file commit and its resource on a late disconnect, without returning success', async () => {
     const f = fixture();
     let finish: (value: { file_id: string }) => void = () => {};
