@@ -117,7 +117,7 @@ describe('updateAssistantAvatar', () => {
     expect(await runAsSystem(async () => Assistant.countDocuments())).toBe(2);
   });
 
-  it.each([
+  it.each<{ query: unknown }>([
     { query: undefined },
     { query: null },
     { query: {} },

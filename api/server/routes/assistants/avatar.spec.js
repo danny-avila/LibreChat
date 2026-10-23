@@ -114,14 +114,19 @@ describe('assistant avatar multipart authorization', () => {
     uploadImageBuffer.mockResolvedValue({ filepath: '/images/avatar.png' });
   });
 
-  function upload(id, fields = {}, query = '') {
+  async function upload(id, fields = {}, query = '') {
     let req = request(app)
       .post(`/api/files/images/assistants/${id}/avatar${query}`)
       .field('endpoint', 'assistants');
     for (const [key, value] of Object.entries(fields)) {
       req = req.field(key, value);
     }
-    return req.attach('file', png, { filename: 'avatar.png', contentType: 'image/png' });
+    const response = await req.attach('file', png, {
+      filename: 'avatar.png',
+      contentType: 'image/png',
+    });
+    expect(await fs.readdir(directory)).toEqual([]);
+    return response;
   }
 
   async function expectVictimUnchanged() {
@@ -201,9 +206,5 @@ describe('assistant avatar multipart authorization', () => {
     const response = await upload('asst-victim');
     expect(response.status).not.toBe(201);
     await expectVictimUnchanged();
-  });
-
-  afterEach(async () => {
-    expect(await fs.readdir(directory)).toEqual([]);
   });
 });
