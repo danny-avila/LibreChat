@@ -61,8 +61,8 @@ const INNERMOST = /(?<![\w-])([a-z][\w-]*)?\(([^()]*)\)/gi;
 const MATH = new Set(
   MATH_FUNCTIONS.split('|').flatMap((name) => (name === 'atan2?' ? ['atan', 'atan2'] : [name])),
 );
-const TRIG = new Set(['sin', 'cos', 'tan']);
-const INVERSE_TRIG = new Set(['asin', 'acos', 'atan', 'atan2']);
+/** Functions whose result is a number or an angle whatever their arguments. */
+const FIXED_RESULT = new Set(['sin', 'cos', 'tan', 'sign', 'asin', 'acos', 'atan', 'atan2']);
 /** A math body token: a number with its unit, an identifier (a constant such as `pi` or a
  *  rounding strategy such as `to-zero`), or an operator or separator. */
 const MATH_TOKEN =
@@ -83,25 +83,26 @@ const NON_COLOR_PROPERTY =
 
 const blank = (match: string): string => match.replace(/[^\n]/g, ' ');
 
-/** What a math body yields: a number, an angle, or `undefined` when it holds a length, another
- *  dimension, or text that is not math. Any identifier is a keyword, so a new rounding strategy or
- *  constant still reads as a channel and is reported rather than skipped. */
-function mathKind(body: string): 'number' | 'angle' | undefined {
-  let kind: 'number' | 'angle' = 'number';
+/** Whether a math body is fixed: numbers, angles, keywords and operators, with no length or
+ *  other dimension; `undefined` when it is not math. Any identifier is a keyword, so a new
+ *  rounding strategy or constant still reads as a channel and is reported rather than skipped. */
+function mathKind(body: string): 'fixed' | 'dimension' | undefined {
+  let kind: 'fixed' | 'dimension' = 'fixed';
   MATH_TOKEN.lastIndex = 0;
   while (MATH_TOKEN.lastIndex < body.trimEnd().length) {
     const token = MATH_TOKEN.exec(body);
     if (!token) return undefined;
     const unit = token[2]?.toLowerCase();
-    if (unit && unit !== '%' && !ANGLE_UNITS.has(unit)) return undefined;
-    if (unit && ANGLE_UNITS.has(unit)) kind = 'angle';
+    if (unit && unit !== '%' && !ANGLE_UNITS.has(unit)) kind = 'dimension';
   }
   return kind;
 }
 
-/** A math function over numbers (`calc(255)`, `min(100, max(0, 255))`) is a fixed channel, so it
- *  reads as one; a trigonometric result is a number, and a function over an angle, or an inverse
- *  trigonometric one, is an angle. */
+/** A math function over numbers and angles (`calc(255)`, `round(to-zero, 90deg, 1deg)`) is a
+ *  fixed channel, so it reads as one, in any position: whether units cancel (`calc(90deg / 1deg)`)
+ *  is not worked out, since either result is a literal. Trigonometric functions and `sign` are
+ *  fixed whatever they are given; any other function over a length is a length (`0px`), which an
+ *  enclosing trigonometric function still reads and a triplet does not. */
 function collapseMath(text: string): string {
   const collapsed = text.replace(
     INNERMOST,
@@ -110,8 +111,7 @@ function collapseMath(text: string): string {
       if (fn !== undefined && !MATH.has(fn)) return match;
       const kind = mathKind(body);
       if (kind === undefined) return match;
-      if (fn !== undefined && TRIG.has(fn)) return '0';
-      if (kind === 'angle' || (fn !== undefined && INVERSE_TRIG.has(fn))) return '0deg';
+      if (kind === 'dimension' && !(fn !== undefined && FIXED_RESULT.has(fn))) return '0px';
       return '0';
     },
   );
