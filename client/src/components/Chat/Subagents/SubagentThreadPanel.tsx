@@ -284,7 +284,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       taskView?.status === 'interrupted' ||
       taskView?.status === 'cancelled');
   const priorTerminalRef = useRef(false);
-  useSubagentActivityStream(selection, !durableTerminal || eventTaskRunning);
+  const contentStream = useSubagentActivityStream(selection, !durableTerminal || eventTaskRunning);
 
   useEffect(() => {
     if (selection.event == null) return;
@@ -874,6 +874,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         prompt,
         progress,
         persistedContent,
+        attachments: selection.attachments,
         isDetached: selection.durable != null,
         legacyOutput,
         // A detached parent tool step closes as soon as dispatch succeeds;
@@ -904,13 +905,15 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     const durable = adaptDurableThreadActivity(taskView, selection.durable.taskId);
     const useLiveItems =
       (durable.status === 'running' || durable.status === 'dispatched') &&
-      liveActivity.items.length > 0;
+      (liveActivity.content?.length ?? liveActivity.items.length) > 0;
     const mergedItems =
       !useLiveItems && durable.items.length > 0 ? durable.items : liveActivity.items;
     const merged = {
       ...durable,
       prompt: durable.prompt ?? liveActivity.prompt,
       items: mergedItems,
+      attachments: durable.attachments ?? liveActivity.attachments,
+      content: !useLiveItems && durable.items.length > 0 ? durable.content : liveActivity.content,
     };
     if (
       transientControl == null ||
@@ -1027,6 +1030,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     };
   }, [historyRebaseActive, latestConversationTurns, latestHistoryGeneration, threadId, threadView]);
   const retainedTurnsValid = retainedTurnsGenerationRef.current === selectionGenerationRef.current;
+  const selectedOutcome = useMemo(
+    () =>
+      taskView?.messages.find(
+        (message) => message.messageId === `${taskId}:assistant` && message.role === 'assistant',
+      ),
+    [taskView, taskId],
+  );
   const conversationTurns = useMemo(() => {
     const durableTurns = retainedTurnsValid
       ? mergeChildConversationTurns(
@@ -1041,7 +1051,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       const selectedTurnIndex = durableTurns.findIndex((turn) => turn.taskId === taskId);
       if (selectedTurnIndex >= 0) {
         return durableTurns.map((turn, index) => {
-          const selected = index === selectedTurnIndex ? { ...turn, activity } : turn;
+          const selected =
+            index === selectedTurnIndex
+              ? { ...turn, activity, outcome: selectedOutcome ?? turn.outcome }
+              : turn;
           const override = turnDetailOverrides.get(turn.taskId);
           return override == null ? selected : { ...selected, activity: override };
         });
@@ -1057,6 +1070,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       )?.createdAt;
       const synthesizedTurn = {
         taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
+        ...(selectedOutcome == null ? {} : { outcome: selectedOutcome }),
         trigger: {
           kind:
             selection.event == null
@@ -1086,6 +1100,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     return [
       {
         taskId: taskId || `${selection.parentMessageId}:${selection.toolCallId}`,
+        ...(selectedOutcome == null ? {} : { outcome: selectedOutcome }),
         trigger: {
           kind:
             selection.event == null ? ('parent_dispatch' as const) : ('external_event' as const),
@@ -1106,6 +1121,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     retainedTurnsValid,
     threadId,
     selection,
+    selectedOutcome,
     taskId,
     turnDetailOverrides,
   ]);
@@ -1375,11 +1391,15 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     panelState = storedPart.isError ? 'error' : 'loading';
   } else if (
     selection.durable != null &&
-    liveActivity.items.length === 0 &&
+    (liveActivity.content?.length ?? liveActivity.items.length) === 0 &&
     (isLoading || isReadinessPending)
   ) {
     panelState = 'loading';
-  } else if (selection.durable != null && liveActivity.items.length === 0 && isError) {
+  } else if (
+    selection.durable != null &&
+    (liveActivity.content?.length ?? liveActivity.items.length) === 0 &&
+    isError
+  ) {
     panelState = 'error';
   }
   const renderEventTask = (task: ParentSubagentTaskSummary) => {
@@ -1492,7 +1512,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
             >
               {historyState === 'loading'
                 ? localize('com_ui_loading')
-                : localize('com_ui_subagent_load_earlier_activity')}
+                : localize('com_ui_load_more')}
             </Button>
           </div>
         )}
@@ -1513,6 +1533,17 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           author={childAuthor}
           parentAuthor={isSelfSpawn && selection.event == null ? childAuthor : parentAuthor}
           conversationId={threadId || selection.parentConversationId}
+          interactive={selection.host === 'conversation' && selection.durable == null}
+          recovery={
+            selection.durable == null
+              ? undefined
+              : {
+                  parentConversationId: selection.parentConversationId,
+                  threadId,
+                  selectedTaskId: taskId,
+                  ready: contentStream?.isReady === true,
+                }
+          }
           stateByTask={conversationStateByTask}
           controllableTaskId={
             controlAvailable && !controlPending ? selection.durable?.taskId : undefined
