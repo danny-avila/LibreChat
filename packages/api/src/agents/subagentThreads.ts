@@ -38,6 +38,7 @@ import type {
   SubagentActivityTerminalStatus,
 } from './subagentActivity';
 import type { SubagentTaskControlTransport } from './subagentTaskRouting';
+import type { RequestScopedMCPConnectionStore } from '~/mcp/types';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { HostSubagentTaskConfig } from './subagentDelivery';
 import type { ActivitySnapshot, ActivityTree } from './digest';
@@ -58,6 +59,9 @@ import { ActivityRecorder, activityTreeFromProjection } from './digest';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createConcurrencyLimiter } from '~/utils/promise';
+import { SubagentContentJournal } from './subagentContent';
+import { retainMCPRequestContext } from '~/mcp/request';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { InMemoryEventTransport } from '~/stream';
 import { aggregateEmittedUsage } from './usage';
 
@@ -129,7 +133,9 @@ type SubagentThreadMethods = Pick<
   | 'saveConvo'
   | 'saveMessage'
 > &
-  Partial<Pick<AllMethods, 'getAgentName'>>;
+  Partial<
+    Pick<AllMethods, 'getAgentName' | 'appendSubagentContentBatch' | 'reconcileSubagentContent'>
+  >;
 
 interface SubagentThreadScope {
   version: typeof SCOPE_VERSION;
@@ -157,6 +163,7 @@ interface PreparedThread {
 }
 
 interface HostSubagentTaskStartRequest extends SubagentTaskStartRequest {
+  requestScopedConnections?: RequestScopedMCPConnectionStore;
   scheduleMCPIdentity?: ScheduledMCPIdentity | null;
   completionDelivery?: typeof SUBAGENT_COMPLETION_DELIVERY;
 }
@@ -211,6 +218,7 @@ interface TaskThreadLease {
   settling: boolean;
   /** Resolves only after child persistence and lease cleanup finish. */
   execution?: Promise<void>;
+  content?: SubagentContentJournal;
   /** Ordered observational tail; canonical child settlement never awaits it. */
   activityTail?: Promise<void>;
   activityWorkerActive?: boolean;
@@ -1220,6 +1228,14 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     }
   }
 
+  get contentPageBytes(): number {
+    return this.activityOptions.contentPageBytes;
+  }
+
+  get contentRecoveryGraceMs(): number {
+    return this.activityOptions.contentRecoveryGraceMs;
+  }
+
   /** Host injects the base configuration before task admission. */
   configureActivity(options: Partial<TSubagentActivityConfig> = {}): TSubagentActivityConfig {
     this.activityOptions = subagentActivityConfigSchema.parse(options);
@@ -1505,11 +1521,19 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     }
 
     let started: SubagentTaskStartResult;
+    let executionStarted = false;
+    let releaseContext: (() => void) | undefined;
     try {
+      const context = (request as HostSubagentTaskStartRequest).requestScopedConnections;
+      if (context) releaseContext = retainMCPRequestContext(context);
       started = super.start({
         ...request,
         threadId,
         run: (runtime: SubagentTaskRuntime) => {
+          executionStarted = true;
+          if (releaseContext) {
+            runtime.signal.addEventListener('abort', releaseContext, { once: true });
+          }
           const execution = this.runWithOwnerContext(scope, async () => {
             lease.taskId = runtime.taskId;
             lease.running = true;
@@ -1568,6 +1592,41 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               const preparedThread = prepared;
               const recorder = this.trackActivity(request.scopeId, runtime.taskId);
               let activitySequence = 0;
+              const append = this.methods.appendSubagentContentBatch;
+              if (append != null && this.activityOptions.contentRecoveryEnabled) {
+                lease.content = new SubagentContentJournal({
+                  scope: {
+                    user: scope.userId,
+                    tenantId: scope.tenantId,
+                    parentConversationId: scope.parentConversationId,
+                    conversationId: preparedThread.conversation.conversationId,
+                    taskId: runtime.taskId,
+                  },
+                  leaseToken: lease.shared?.token,
+                  flushMs: this.activityOptions.contentFlushMs,
+                  batchBytes: this.activityOptions.contentBatchBytes,
+                  maxPendingBytes: this.activityOptions.contentPendingBytes,
+                  settlementTimeoutMs: this.activityOptions.contentSettlementTimeoutMs,
+                  append,
+                  reconcile: this.methods.reconcileSubagentContent,
+                  cleanupRetry: {
+                    retryAttempts: this.activityOptions.retryAttempts,
+                    retryBaseDelayMs: this.activityOptions.retryBaseDelayMs,
+                    recoveryDelayMs: this.activityOptions.recoveryDelayMs,
+                  },
+                  notify: (watermark) =>
+                    this.activityStream.publishContent(
+                      preparedThread.conversation.conversationId,
+                      runtime.taskId,
+                      watermark,
+                    ),
+                  onError: (error) =>
+                    logger.warn(
+                      '[subagentThreads] Public child content persistence unavailable',
+                      getSafeErrorMetadata(error),
+                    ),
+                });
+              }
               const activityRuntime: SubagentTaskRuntime = {
                 ...runtime,
                 reportProgress: (event) => {
@@ -1577,6 +1636,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                     activityEventId: `${runtime.taskId}:${sequence}`,
                     activitySequence: sequence,
                   };
+                  lease.content?.record(activityEvent, sequence);
                   runtime.reportProgress(activityEvent);
                   recordActivity(recorder, activityEvent);
                   this.publishActivity(
@@ -1599,6 +1659,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 );
               }
               lease.settling = true;
+              await this.closeContent(lease);
               await this.persistResult(
                 scope,
                 request,
@@ -1606,6 +1667,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 prepared,
                 result,
                 detachedUsage,
+                lease.content?.throughSequence,
               );
               activityTerminal = 'completed';
               return result;
@@ -1617,6 +1679,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               }
               const mayPersist =
                 lease.shared == null || (await this.renewSharedLease(scope, threadId, lease));
+              await this.closeContent(lease);
               const terminalTask = this.get(request.scopeId, runtime.taskId);
               if (runtime.signal.aborted && terminalTask?.status === 'cancelled') {
                 activityTerminal = 'cancelled';
@@ -1627,6 +1690,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                     request,
                     runtime.taskId,
                     detachedUsage,
+                    lease.content?.throughSequence,
                   ).catch((persistError) => {
                     logger.error(
                       '[subagentThreads] Failed to persist child-thread cancellation',
@@ -1649,6 +1713,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                   runtime.taskId,
                   error,
                   detachedUsage,
+                  lease.content?.throughSequence,
                 ).catch((persistError) => {
                   logger.error(
                     '[subagentThreads] Failed to persist child-thread failure',
@@ -1681,10 +1746,15 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             () => undefined,
           );
           lease.execution = settlement;
-          return execution;
+          if (!releaseContext) return execution;
+          return execution.finally(() => {
+            if (releaseContext) runtime.signal.removeEventListener('abort', releaseContext);
+            releaseContext?.();
+          });
         },
       });
     } catch (error) {
+      releaseContext?.();
       if (ownsLease && this.activeThreads.get(lockKey) === lease) {
         this.activeThreads.delete(lockKey);
       }
@@ -1693,8 +1763,17 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
 
     if (started.accepted && started.isNew) {
       lease.taskId = started.task.taskId;
-    } else if (ownsLease && this.activeThreads.get(lockKey) === lease) {
-      this.activeThreads.delete(lockKey);
+      if (releaseContext) {
+        // The SDK skips run() if cancellation wins before its launch microtask.
+        queueMicrotask(() => {
+          if (!executionStarted) releaseContext?.();
+        });
+      }
+    } else {
+      releaseContext?.();
+      if (ownsLease && this.activeThreads.get(lockKey) === lease) {
+        this.activeThreads.delete(lockKey);
+      }
     }
     return started;
   }
@@ -3240,6 +3319,12 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             text: request.input,
             endpoint: EModelEndpoint.agents,
             isCreatedByUser: true,
+            ...(this.methods.appendSubagentContentBatch == null ||
+            !this.activityOptions.contentRecoveryEnabled
+              ? {}
+              : {
+                  subagentContent: { version: 1 as const },
+                }),
             subagentTask: {
               attemptKey,
               parentRunId: request.parentRunId,
@@ -3315,6 +3400,22 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     );
   }
 
+  private async closeContent(lease: TaskThreadLease): Promise<void> {
+    const result = await lease.content?.close().catch((error) => {
+      /** The terminal row records the expected watermark, so a failed final
+       * flush exposes a partial prefix instead of pretending history is complete. */
+      logger.warn(
+        '[subagentThreads] Public child content handoff incomplete',
+        getSafeErrorMetadata(error),
+      );
+    });
+    if (result != null && !result.ok) {
+      logger.warn('[subagentThreads] Public child content handoff unavailable', {
+        code: result.error.code,
+      });
+    }
+  }
+
   private async persistResult(
     scope: SubagentThreadScope,
     request: SubagentTaskStartRequest,
@@ -3322,6 +3423,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     prepared: PreparedThread,
     result: { content: string; messages?: BaseMessage[] },
     detachedUsage: UsageMetadata[],
+    contentThroughSequence?: number,
   ): Promise<void> {
     if (prepared.userMessageId == null) {
       throw new Error('The child-thread input was not prepared.');
@@ -3366,6 +3468,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         endpoint: EModelEndpoint.agents,
         isCreatedByUser: false,
         unfinished: false,
+        ...(contentThroughSequence == null
+          ? {}
+          : {
+              subagentContent: { version: 1 as const, throughSequence: contentThroughSequence },
+            }),
         ...(subagentTranscript == null ? {} : { subagentTranscript }),
         ...(subagentActivityProjection == null ? {} : { subagentActivityProjection }),
         subagentTask: {
@@ -3394,6 +3501,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     taskId: string,
     error: unknown,
     detachedUsage: UsageMetadata[],
+    contentThroughSequence?: number,
   ): Promise<void> {
     await this.flushControlReceiptsForSettlement(request.scopeId, taskId);
     const conversation = await this.currentConversation(scope, request, threadId);
@@ -3412,6 +3520,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         endpoint: EModelEndpoint.agents,
         isCreatedByUser: false,
         unfinished: false,
+        ...(contentThroughSequence == null
+          ? {}
+          : {
+              subagentContent: { version: 1 as const, throughSequence: contentThroughSequence },
+            }),
         error: true,
         subagentTask: {
           attemptKey: createSubagentAttemptKey(request.scopeId, request.idempotencyKey),
@@ -3467,6 +3580,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     request: SubagentTaskStartRequest,
     taskId: string,
     detachedUsage: UsageMetadata[],
+    contentThroughSequence?: number,
   ): Promise<void> {
     await this.flushControlReceiptsForSettlement(request.scopeId, taskId);
     const conversation = await this.currentConversation(scope, request, threadId);
@@ -3485,6 +3599,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         endpoint: EModelEndpoint.agents,
         isCreatedByUser: false,
         unfinished: false,
+        ...(contentThroughSequence == null
+          ? {}
+          : {
+              subagentContent: { version: 1 as const, throughSequence: contentThroughSequence },
+            }),
         subagentTask: {
           attemptKey: createSubagentAttemptKey(request.scopeId, request.idempotencyKey),
           parentRunId: request.parentRunId,
@@ -3723,9 +3842,12 @@ const completionWakeupStores = new WeakMap<SubagentThreadTaskStore, CompletionWa
 function completionWakeupStore(
   store: SubagentThreadTaskStore,
   identity?: ScheduledMCPIdentity,
+  requestScopedConnections?: RequestScopedMCPConnectionStore,
+  completionWakeups = true,
 ): CompletionWakeupStore {
   const captured = identity && Object.freeze(structuredClone(identity));
-  const existing = captured ? undefined : completionWakeupStores.get(store);
+  const cacheable = !captured && !requestScopedConnections && completionWakeups;
+  const existing = cacheable ? completionWakeupStores.get(store) : undefined;
   if (existing != null) {
     return existing;
   }
@@ -3734,7 +3856,8 @@ function completionWakeupStore(
     start: (request) => {
       const hostRequest: HostSubagentTaskStartRequest = {
         ...request,
-        completionDelivery: SUBAGENT_COMPLETION_DELIVERY,
+        completionDelivery: completionWakeups ? SUBAGENT_COMPLETION_DELIVERY : undefined,
+        requestScopedConnections,
         scheduleMCPIdentity: captured ?? null,
       };
       return store.start(hostRequest);
@@ -3749,18 +3872,27 @@ function completionWakeupStore(
     hasTasks: (scopeId) => store.hasTasks(scopeId),
     listTasks: (scopeId) => store.listTasks(scopeId),
   };
-  if (!captured) completionWakeupStores.set(store, adapter);
+  if (cacheable) completionWakeupStores.set(store, adapter);
   return adapter;
 }
 
 export function buildSubagentThreadTaskConfig(
   store: SubagentThreadTaskStore,
   scope: Omit<SubagentThreadScope, 'version'>,
-  options: { completionWakeups?: boolean; scheduleMCPIdentity?: ScheduledMCPIdentity } = {},
+  options: {
+    completionWakeups?: boolean;
+    scheduleMCPIdentity?: ScheduledMCPIdentity;
+    requestScopedConnections?: RequestScopedMCPConnectionStore;
+  } = {},
 ): HostSubagentTaskConfig {
   const taskStore =
-    options.completionWakeups === true
-      ? completionWakeupStore(store, options.scheduleMCPIdentity)
+    options.completionWakeups === true || options.requestScopedConnections
+      ? completionWakeupStore(
+          store,
+          options.scheduleMCPIdentity,
+          options.requestScopedConnections,
+          options.completionWakeups === true,
+        )
       : store;
   return {
     store: taskStore,

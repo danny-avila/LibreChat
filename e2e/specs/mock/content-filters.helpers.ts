@@ -15,7 +15,8 @@ import { getPrimaryE2EUser } from '../../setup/users.mock';
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const GENERATED_CONFIG_ROOT = path.join(PROJECT_ROOT, 'e2e/.generated');
 const RELOAD_SENTINEL = `e2e-content-filter-reload-${process.pid}-${randomUUID()}`;
-const RELOAD_SENTINEL_PATH = `/api/admin/config/user/${encodeURIComponent(RELOAD_SENTINEL)}`;
+const RELOAD_SENTINEL_ROLE_PATH = `/api/admin/roles/${encodeURIComponent(RELOAD_SENTINEL)}`;
+const RELOAD_SENTINEL_PATH = `/api/admin/config/role/${encodeURIComponent(RELOAD_SENTINEL)}`;
 const RELOAD_PRIORITY = 10;
 
 type RequestFetchOptions = NonNullable<Parameters<APIRequestContext['fetch']>[1]>;
@@ -179,7 +180,29 @@ function getConfigFromResult(result: RequestResult): RuntimeConfig {
   return result.body.config as RuntimeConfig;
 }
 
+/**
+ * The sentinel's profile belongs to a role of its own: config writes need an existing principal,
+ * and no user is a member, so its empty profile changes no one's config.
+ */
+async function ensureReloadSentinelRole(request: APIRequestContext, token: string): Promise<void> {
+  const result = await requestResult(request, {
+    path: '/api/admin/roles',
+    token,
+    method: 'POST',
+    data: { name: RELOAD_SENTINEL },
+  });
+  expect([201, 409], `Expected reload sentinel role to exist: ${result.text}`).toContain(
+    result.status,
+  );
+}
+
+/**
+ * A committed admin config write is what makes the server reload librechat.yaml; a request with
+ * nothing to write reloads nothing. A PUT that carries `priority` always writes the sentinel,
+ * and the returned `config` confirms it did (a no-op answers with only a message).
+ */
 async function triggerConfigReload(request: APIRequestContext, token: string): Promise<void> {
+  await ensureReloadSentinelRole(request, token);
   const result = await requestResult(request, {
     path: RELOAD_SENTINEL_PATH,
     token,
@@ -235,6 +258,14 @@ async function deleteReloadSentinel(request: APIRequestContext, token: string): 
   });
   expect([200, 404], `Expected reload sentinel cleanup to succeed: ${result.text}`).toContain(
     result.status,
+  );
+  const role = await requestResult(request, {
+    path: RELOAD_SENTINEL_ROLE_PATH,
+    token,
+    method: 'DELETE',
+  });
+  expect([200, 404], `Expected reload sentinel role cleanup to succeed: ${role.text}`).toContain(
+    role.status,
   );
 }
 

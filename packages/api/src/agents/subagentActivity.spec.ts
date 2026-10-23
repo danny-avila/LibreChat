@@ -384,6 +384,29 @@ describe('detached subagent activity stream', () => {
     });
   });
 
+  it('publishes committed content invalidations in a separate sequence space', async () => {
+    const transport = new TestTransport();
+    const stream = new SubagentActivityStream(transport);
+    const onContent = jest.fn();
+    const subscription = stream.subscribe('child-thread', 'task-1', {
+      onEvent: jest.fn(),
+      onContent,
+    });
+    await subscription.ready;
+    const watermark = { taskId: 'task-1', throughSequence: 150, revision: 3 };
+    await stream.publishContent('child-thread', 'task-1', watermark);
+    expect(onContent).toHaveBeenCalledWith({
+      event: 'subagent_content_available',
+      data: watermark,
+    });
+    expect(transport.emitted[0].streamId).toBe(
+      `${subagentActivityStreamId('child-thread', 'task-1')}:content`,
+    );
+    subscription.unsubscribe();
+    await Promise.resolve();
+    expect(transport.handlers.size).toBe(0);
+  });
+
   it('delivers terminal state before the subscriber releases its task stream', async () => {
     const transport = new TestTransport();
     const stream = new SubagentActivityStream(transport);
@@ -558,7 +581,7 @@ describe('subagent activity stream authorization', () => {
 
     expect(res.chunks.join('')).toContain('"ready":true');
     expect(res.chunks.join('')).not.toContain('"final":true');
-    expect(transport.handlers.size).toBe(1);
+    expect(transport.handlers.size).toBe(2);
     res.emit('close');
   });
 

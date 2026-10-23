@@ -23,15 +23,6 @@ const normalizeSavedSpeechEngine = (
   return legacyExternalEngines.has(engine) ? STTEndpoints.external : STTEndpoints.browser;
 };
 
-/** `auto` lets each field resolve its direction from what is typed; the others force it. */
-export type ChatDirection = 'auto' | 'ltr' | 'rtl';
-
-/** Older clients stored `LTR`/`RTL`; anything unrecognized falls back to `auto`. */
-const normalizeChatDirection = (direction: ChatDirection): ChatDirection => {
-  const value = typeof direction === 'string' ? direction.toLowerCase() : '';
-  return value === 'ltr' || value === 'rtl' ? value : 'auto';
-};
-
 // Static atoms without localStorage
 const staticAtoms = {
   abortScroll: atom<boolean>({ key: 'abortScroll', default: false }),
@@ -66,13 +57,8 @@ const localStorageAtoms = {
   chatTitleInTab: atomWithLocalStorage(CHAT_TITLE_IN_TAB_KEY, true),
 
   // Chat settings
-  enterToSend: atomWithLocalStorage('enterToSend', false),
+  enterToSend: atomWithLocalStorage('enterToSend', true),
   maximizeChatSpace: atomWithLocalStorage('maximizeChatSpace', false),
-  chatDirection: atomWithLocalStorage<ChatDirection>(
-    'chatDirection',
-    'auto',
-    normalizeChatDirection,
-  ),
   autoExpandTools: atomWithLocalStorage(LocalStorageKeys.AUTO_EXPAND_TOOLS, false),
   saveDrafts: atomWithLocalStorage('saveDrafts', true),
   /**
