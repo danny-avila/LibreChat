@@ -81,7 +81,7 @@ function createPromptSyncHandlers(storedEnabled: boolean, overrides: Record<stri
   return createHandlers({
     findConfigByPrincipal: jest
       .fn()
-      .mockResolvedValue(baseConfigDoc({ promptSync: { enabled: storedEnabled } })),
+      .mockResolvedValue(baseConfigDoc(withPromptSync(storedEnabled))),
     ...overrides,
   });
 }
@@ -202,6 +202,32 @@ function unavailable(reason: TLangfuseUnavailableReason): TLangfuseUnavailableRe
 
 describe('createAdminLangfuseHandlers', () => {
   describe('connection availability gate', () => {
+    it('allows prompt status and updates while keeping trace connection operations unavailable', async () => {
+      process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE = 'true';
+      delete process.env.LANGFUSE_FANOUT_ENABLED;
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+      await handlers.getConnection(mockReq(), res);
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toMatchObject({
+        connectionAvailable: false,
+        promptSync: { available: true, enabled: false },
+      });
+      expect(deps.findConfigByPrincipal).toHaveBeenCalledTimes(1);
+
+      const updated = mockRes();
+      await handlers.updatePromptSync(mockReq({ body: { enabled: true } }), updated);
+      expect(updated.statusCode).toBe(200);
+      deps.patchConfigFields.mockClear();
+      for (const handler of ['updateConnection', 'testConnection', 'getSessionLink'] as const) {
+        const denied = mockRes();
+        await handlers[handler](mockReq(), denied);
+        expect(denied.statusCode).toBe(404);
+      }
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
     it('rejects connection reads when deployment fanout is disabled', async () => {
       delete process.env.LANGFUSE_FANOUT_ENABLED;
       const { handlers, deps } = createHandlers();
@@ -1403,6 +1429,54 @@ describe('createAdminLangfuseHandlers', () => {
   });
 
   describe('updatePromptSync', () => {
+    it.each([true, false])(
+      'audits the saved prompt switch value %s after cache invalidation',
+      async (enabled) => {
+        process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE = 'true';
+        const order: string[] = [];
+        const recordAuditEntry = jest.fn(async () => {
+          order.push('audit');
+        });
+        const invalidateConfigCaches = jest.fn(async () => {
+          order.push('invalidate');
+        });
+        const { handlers } = createHandlers({ recordAuditEntry, invalidateConfigCaches });
+        const res = mockRes();
+
+        await handlers.updatePromptSync(mockReq({ body: { enabled } }), res);
+
+        expect(res.statusCode).toBe(200);
+        expect(order).toEqual(['invalidate', 'audit']);
+        expect(recordAuditEntry).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: 'langfuse.updated',
+            severity: 'warning',
+            target: { type: 'langfuse', id: 'prompt-sync' },
+            metadata: { enabled },
+            tenantId: 't1',
+            actor: expect.objectContaining({ id: 'u1' }),
+          }),
+        );
+      },
+    );
+
+    it('does not audit a rejected update or a failed save', async () => {
+      process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE = 'true';
+      const recordAuditEntry = jest.fn();
+      const { handlers, deps } = createHandlers({
+        recordAuditEntry,
+        patchConfigFields: jest.fn().mockRejectedValue(new Error('save failed')),
+      });
+      const invalid = mockRes();
+      await handlers.updatePromptSync(mockReq({ body: {} }), invalid);
+      expect(invalid.statusCode).toBe(400);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+      const failed = mockRes();
+      await handlers.updatePromptSync(mockReq({ body: { enabled: true } }), failed);
+      expect(failed.statusCode).toBe(500);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+
     it('returns 404 when prompt sync is not available', async () => {
       const { handlers, deps } = createHandlers();
       const res = mockRes();
@@ -1528,6 +1602,67 @@ describe('createAdminLangfuseHandlers', () => {
     });
   });
 
+  describe('stored prompt credentials', () => {
+    describe.each(['listPrompts', 'getPrompt'] as const)('%s', (handler) => {
+      it.each(['all', 'destination', 'publicKey', 'secretKey'])(
+        'rejects deployment credentials when stored %s is missing',
+        async (missing) => {
+          process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE = 'true';
+          const stored: Record<string, unknown> =
+            missing === 'all' ? { promptSync: { enabled: true } } : withPromptSync(true);
+          delete stored[missing];
+          const { handlers, deps } = createPromptSyncHandlers(true, {
+            findConfigByPrincipal: jest.fn().mockResolvedValue(baseConfigDoc(stored)),
+          });
+          const res = mockRes();
+
+          await handlers[handler](
+            mockReq({
+              params: { name: 'greeting' },
+              config: { langfuse: withPromptSync(true) },
+            }),
+            res,
+          );
+
+          expect(res.statusCode).toBe(409);
+          expect(res.body).toEqual({ code: 'not_configured' });
+          expect(global.fetch).not.toHaveBeenCalled();
+          expect(deps.findConfigByPrincipal).toHaveBeenCalledTimes(1);
+        },
+      );
+    });
+
+    it('keeps deployment proxy headers with the stored connection', async () => {
+      delete process.env.TENANT_ISOLATION_STRICT;
+      delete process.env.LANGFUSE_FANOUT_ENABLED;
+      delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+      process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE = 'true';
+      process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL = 'https://langfuse.example.com';
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue(fetchJsonResponse(promptListBody())) as unknown as typeof fetch;
+      const { handlers } = createPromptSyncHandlers(true);
+      const res = mockRes();
+      await handlers.listPrompts(
+        mockReq({
+          config: {
+            langfuse: {
+              headers: { 'X-Proxy-Key': 'proxy-key' },
+            },
+          },
+        }),
+        res,
+      );
+      expect(res.statusCode).toBe(200);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('https://langfuse.example.com/'),
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'X-Proxy-Key': 'proxy-key' }),
+        }),
+      );
+    });
+  });
+
   describe('listPrompts', () => {
     it('returns 404 when prompt sync is not available at all', async () => {
       const { handlers } = createHandlers();
@@ -1552,7 +1687,11 @@ describe('createAdminLangfuseHandlers', () => {
 
     it('returns 409 not_configured when both switches are on but no connection resolves', async () => {
       process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE = 'true';
-      const { handlers } = createPromptSyncHandlers(true);
+      const { handlers } = createPromptSyncHandlers(true, {
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue(baseConfigDoc({ promptSync: { enabled: true } })),
+      });
       const res = mockRes();
 
       await handlers.listPrompts(
@@ -1803,7 +1942,11 @@ describe('createAdminLangfuseHandlers', () => {
 
     it('returns 409 not_configured when both switches are on but no connection resolves', async () => {
       process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE = 'true';
-      const { handlers } = createPromptSyncHandlers(true);
+      const { handlers } = createPromptSyncHandlers(true, {
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue(baseConfigDoc({ promptSync: { enabled: true } })),
+      });
       const res = mockRes();
 
       await handlers.getPrompt(
@@ -2112,7 +2255,11 @@ describe('createAdminLangfuseHandlers', () => {
       global.fetch = jest
         .fn()
         .mockResolvedValue(fetchJsonResponse(promptListBody())) as unknown as typeof fetch;
-      const { handlers } = createPromptSyncHandlers(true);
+      const { handlers } = createPromptSyncHandlers(true, {
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue(baseConfigDoc(withPromptSync(true, { destination: 'us' }))),
+      });
       const res = mockRes();
 
       await handlers.listPrompts(
@@ -2139,7 +2286,11 @@ describe('createAdminLangfuseHandlers', () => {
           prompt: 'Hello {{name}}',
         }),
       ) as unknown as typeof fetch;
-      const { handlers } = createPromptSyncHandlers(true);
+      const { handlers } = createPromptSyncHandlers(true, {
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue(baseConfigDoc(withPromptSync(true, { destination: 'us' }))),
+      });
       const res = mockRes();
 
       await handlers.getPrompt(
@@ -2160,7 +2311,11 @@ describe('createAdminLangfuseHandlers', () => {
 
     it('returns 409 not_configured for a tenant user with no stored connection, even though env keys are set', async () => {
       setUpSingleTenantWithEnvKeys();
-      const { handlers } = createPromptSyncHandlers(true);
+      const { handlers } = createPromptSyncHandlers(true, {
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue(baseConfigDoc({ promptSync: { enabled: true } })),
+      });
       const res = mockRes();
 
       await handlers.listPrompts(

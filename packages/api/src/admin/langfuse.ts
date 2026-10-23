@@ -101,7 +101,7 @@ export interface AdminLangfuseDeps {
   getMessages: MessageMethods['getMessages'];
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
   recordConnectionUpdate?: (event: LangfuseConnectionEvent) => void;
-  /** Optional audit emission for connection updates; fail-open unless `auditFailClosed`. */
+  /** Optional audit emission for connection and prompt sync updates; fail-open unless `auditFailClosed`. */
   recordAuditEntry?: RecordAuditEntry;
   auditFailClosed?: boolean;
 }
@@ -123,6 +123,7 @@ function buildStatus(config: ConfigRecord | null): TLangfuseConnectionStatus {
   const configured = Boolean(stored?.publicKey && stored?.secretKey);
   const promptSyncAvailable = isLangfusePromptSyncAvailable();
   return {
+    connectionAvailable: isLangfuseConnectionAvailable(),
     configured,
     enabled: configured && stored?.enabled === true,
     destinations: getLangfuseTenantDestinations(),
@@ -448,26 +449,25 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
     return { stored };
   }
 
-  /** The connection a list/get prompt request resolves against: deployment/
-   *  yaml-only fields such as `headers` still come from `req.config`, while
-   *  everything the connection tab writes comes from the gate's single stored
-   *  read, so the same document authorizes the request and supplies its
-   *  credentials. */
+  /** Prompt reads use the same stored document for their switch and credentials.
+   * Only proxy headers come from the deployment config. */
   function resolvePromptSyncConnection(
     req: ServerRequest,
     stored: TCustomConfig['langfuse'],
   ): LangfusePromptConnection | null {
     const appConfig = {
       ...req.config,
-      langfuse: { ...req.config?.langfuse, ...stored },
+      langfuse: { ...stored, headers: req.config?.langfuse?.headers },
     } as AppConfig;
     return resolveLangfusePromptConnection(appConfig, { tenantId: getTenantId(req) });
   }
 
   async function getConnection(req: ServerRequest, res: Response): Promise<Response> {
-    const disabledResponse = rejectWhenConnectionUnavailable(res);
-    if (disabledResponse) {
-      return disabledResponse;
+    if (!isLangfusePromptSyncAvailable()) {
+      const disabledResponse = rejectWhenConnectionUnavailable(res);
+      if (disabledResponse) {
+        return disabledResponse;
+      }
     }
 
     try {
@@ -783,6 +783,13 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
       invalidateConfigCaches?.(getTenantId(req))?.catch((err) =>
         logger.error('[adminLangfuse] Cache invalidation failed after prompt sync update:', err),
       );
+
+      await emitAudit(req, {
+        action: 'langfuse.updated',
+        severity: 'warning',
+        target: { type: 'langfuse', id: 'prompt-sync' },
+        metadata: { enabled: parsedBody.data.enabled },
+      });
 
       // An inactive config is invisible to `getConnection` (which reads
       // without `includeInactive`), so report the same empty status here

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { TLangfusePromptListResponse } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import {
   redirectPolicyFor,
@@ -28,20 +29,6 @@ export type LangfusePromptListQuery = {
   limit?: number;
   fromUpdatedAt?: string;
   toUpdatedAt?: string;
-};
-
-export type LangfusePromptListItem = {
-  name: string;
-  type: 'text' | 'chat';
-  versions: number[];
-  labels: string[];
-  tags: string[];
-  lastUpdatedAt: string;
-};
-
-export type LangfusePromptListResult = {
-  items: LangfusePromptListItem[];
-  meta: { page: number; limit: number; totalItems: number; totalPages: number };
 };
 
 export type LangfuseTextPromptSelector = { label: 'production' } | { version: number };
@@ -250,7 +237,7 @@ export async function listLangfusePrompts(
   conn: LangfusePromptConnection,
   query: LangfusePromptListQuery,
   { timeoutMs }: { timeoutMs: number },
-): Promise<LangfusePromptListResult> {
+): Promise<TLangfusePromptListResponse> {
   const params = new URLSearchParams();
   appendDefined(params, 'name', query.name);
   appendDefined(params, 'label', query.label);

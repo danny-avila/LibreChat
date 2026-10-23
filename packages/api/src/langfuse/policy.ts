@@ -1,5 +1,5 @@
 import { isForcedTemporaryRetention } from 'librechat-data-provider';
-import type { TLangfuseUnavailableReason } from 'librechat-data-provider';
+import type { TStartupConfig, TLangfuseUnavailableReason } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { isFalseEnv, isTrueEnv } from './utils';
 import { normalizeString } from '~/utils/text';
@@ -150,4 +150,19 @@ export function getLangfuseConnectionAvailability(): LangfuseConnectionAvailabil
 
 export function isLangfuseConnectionAvailable(): boolean {
   return getLangfuseConnectionAvailability().available;
+}
+
+/** Settings remain available for prompt reads when trace connection editing is disabled. */
+export function isLangfuseSettingsAvailable(): boolean {
+  return isLangfuseConnectionAvailable() || isLangfusePromptSyncAvailable();
+}
+
+/** One permission check supplies both settings gates. Trace links keep their connection gate. */
+export function getLangfuseSettingsAccess(
+  canManage: boolean,
+): Pick<TStartupConfig, 'langfuseConnectionAccess' | 'langfusePromptSyncAccess'> {
+  return {
+    langfuseConnectionAccess: canManage && isLangfuseConnectionAvailable(),
+    langfusePromptSyncAccess: canManage && isLangfusePromptSyncAvailable(),
+  };
 }

@@ -3606,6 +3606,7 @@ export type TStartupConfig = {
   socialLogins?: string[];
   langfuseFanoutEnabled?: boolean;
   langfuseConnectionAccess?: boolean;
+  langfusePromptSyncAccess?: boolean;
   insightsEnabled?: boolean;
   /** Whether pull requests are active (on unless turned off, with a token and a repository scope);
    *  the header does not ask for a pull request without it. */

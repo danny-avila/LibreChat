@@ -3,7 +3,8 @@ const {
   isEnabled,
   resolveEmailChangeSettings,
   checkEmailConfig,
-  isLangfuseConnectionAvailable,
+  isLangfuseSettingsAvailable,
+  getLangfuseSettingsAccess,
   isLangfuseFanoutEnabled,
   getBalanceConfig,
   getCloudFrontConfig,
@@ -275,10 +276,10 @@ router.get('/', async function (req, res) {
     const balanceConfig = getBalanceConfig(appConfig);
     const cloudFront = buildCloudFrontStartupConfig();
     const langfuseFanoutEnabled = isLangfuseFanoutEnabled();
-    const langfuseConnectionAvailable = isLangfuseConnectionAvailable();
-    let langfuseConnectionAccess = false;
+    const langfuseSettingsAvailable = isLangfuseSettingsAvailable();
+    let canManageLangfuse = false;
 
-    if (langfuseConnectionAvailable) {
+    if (langfuseSettingsAvailable) {
       try {
         const userId = req.user.id ?? req.user._id?.toString();
         if (userId) {
@@ -293,7 +294,7 @@ router.get('/', async function (req, res) {
             SystemCapabilities.ACCESS_ADMIN,
           );
           if (hasAdminAccess) {
-            langfuseConnectionAccess = await hasConfigCapability(capabilityUser, 'langfuse');
+            canManageLangfuse = await hasConfigCapability(capabilityUser, 'langfuse');
           }
         }
       } catch (err) {
@@ -329,7 +330,7 @@ router.get('/', async function (req, res) {
         ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
         : 0,
       langfuseFanoutEnabled,
-      langfuseConnectionAccess,
+      ...getLangfuseSettingsAccess(canManageLangfuse),
       insightsEnabled: isEnabled(process.env.ENABLE_INSIGHTS),
       /** Lets the client skip the pull request lookup entirely when the feature is off. */
       ...resolvePullRequestCapabilities(appConfig, process.env),

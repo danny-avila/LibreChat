@@ -1321,6 +1321,8 @@ export type TUpdateSkillNodeRequest = {
 };
 
 export type TLangfuseConnectionStatus = {
+  /** Whether connection editing and testing are available. Omitted by older servers. */
+  connectionAvailable?: boolean;
   configured: boolean;
   enabled: boolean;
   destinations: TLangfuseDestinationOption[];

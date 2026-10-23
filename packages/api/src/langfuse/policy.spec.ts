@@ -171,3 +171,36 @@ describe('Langfuse policy', () => {
     expect(getLangfusePromptSyncTimeoutMs()).toBe(10000);
   });
 });
+
+describe('Langfuse settings availability', () => {
+  beforeEach(clearEnv);
+  afterEach(clearEnv);
+
+  it.each([
+    ['environment credentials', { LANGFUSE_PUBLIC_KEY: 'pk-env', LANGFUSE_SECRET_KEY: 'sk-env' }],
+    ['tracing disabled', { LANGFUSE_TRACING_ENABLED: 'false' }],
+    ['zero sampling', { LANGFUSE_SAMPLE_RATE: '0' }],
+    ['strict tenants without fanout', { TENANT_ISOLATION_STRICT: 'true' }],
+    [
+      'tenant export disabled',
+      {
+        LANGFUSE_FANOUT_ENABLED: 'true',
+        LANGFUSE_FANOUT_COLLECTOR_URL: 'http://collector:4318',
+        LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED: 'true',
+      },
+    ],
+  ])('offers prompt settings with %s without enabling connection editing', async (_mode, env) => {
+    Object.assign(process.env, env);
+    const { isLangfuseSettingsAvailable, isLangfuseConnectionAvailable } = await import('./policy');
+    expect(isLangfuseSettingsAvailable()).toBe(false);
+    process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE = 'true';
+    expect(isLangfuseSettingsAvailable()).toBe(true);
+    expect(isLangfuseConnectionAvailable()).toBe(false);
+  });
+
+  it('offers connection settings while prompt sync is unavailable', async () => {
+    const { isLangfuseSettingsAvailable, isLangfusePromptSyncAvailable } = await import('./policy');
+    expect(isLangfuseSettingsAvailable()).toBe(true);
+    expect(isLangfusePromptSyncAvailable()).toBe(false);
+  });
+});

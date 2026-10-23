@@ -875,3 +875,40 @@ describe('LangfuseConnection', () => {
     expect(screen.getByRole('button', { name: 'com_ui_langfuse_enable' })).toBeDisabled();
   });
 });
+
+describe('prompt-only Langfuse settings', () => {
+  it('can toggle prompts and open the dialog without showing or testing the stored trace connection', async () => {
+    const data = {
+      ...mockGet().data,
+      connectionAvailable: false,
+      configured: true,
+      enabled: true,
+      destination: 'eu',
+      publicKey: 'pk-stored',
+      secretKeyPreview: 'sk-...stored',
+      promptSync: { available: true, enabled: false },
+    };
+    mockGet.mockReturnValue({ ...mockGet(), data });
+    mockUpdatePromptSync.mockImplementation(({ enabled }, options) => {
+      options.onSuccess({ ...data, promptSync: { available: true, enabled } });
+    });
+    render(<LangfuseConnection />);
+
+    expect(screen.queryByTestId('langfuse-destination')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('com_ui_langfuse_public_key')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('com_ui_langfuse_secret_key')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('langfuse-connection-status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_save' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'com_ui_langfuse_disable' }),
+    ).not.toBeInTheDocument();
+    expect(mockTest).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('switch', { name: 'com_ui_langfuse_prompt_sync' }));
+    expect(mockUpdatePromptSync).toHaveBeenCalledWith({ enabled: true }, expect.any(Object));
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_langfuse_prompt_sync_open' }));
+    expect(mockPromptsDialog).toHaveBeenLastCalledWith(expect.objectContaining({ open: true }));
+    expect(mockTest).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});
