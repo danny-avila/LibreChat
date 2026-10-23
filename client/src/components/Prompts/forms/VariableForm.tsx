@@ -204,7 +204,7 @@ export default function VariableForm({
                       />
                       <label
                         htmlFor={`fields.${index}.value`}
-                        className="text-text-secondary peer-focus:text-text-primary absolute top-0 left-3 text-sm transition-all duration-200 peer-focus:-top-6 peer-focus:left-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:-top-6 peer-[:not(:placeholder-shown)]:left-1 peer-[:not(:placeholder-shown)]:text-xs"
+                        className="text-text-secondary peer-focus:text-text-primary absolute inset-s-3 top-0 text-sm transition-all duration-200 peer-focus:inset-s-1 peer-focus:-top-6 peer-focus:text-xs peer-[:not(:placeholder-shown)]:inset-s-1 peer-[:not(:placeholder-shown)]:-top-6 peer-[:not(:placeholder-shown)]:text-xs"
                       >
                         {field.config.variable}
                       </label>
