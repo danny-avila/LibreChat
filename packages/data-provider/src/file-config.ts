@@ -661,7 +661,6 @@ const skillFileConfigSchema = z.object({
 
 export const extractionServiceSchema = z
   .object({
-    enabled: z.boolean().default(false),
     socketPath: z
       .string()
       .min(1)

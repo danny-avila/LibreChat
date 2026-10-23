@@ -91,7 +91,6 @@ describe('createRunArtifactSnapshotAdapter', () => {
       filters: { files: { pii: { fields: ['extracted_text'], uninspectable: 'block' } } },
     });
     req.config!.fileConfig!.extractionService = extractionServiceSchema.parse({
-      enabled: true,
       socketPath: processor.socketPath,
     });
     const controller = new AbortController();

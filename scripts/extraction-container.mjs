@@ -21,15 +21,19 @@ const compose = (...args) => docker('compose', '-p', project, '-f', composeFile,
 let imageBuilt = false;
 let callerProcess;
 try {
-  const overlay = yaml.load(readFileSync(join(root, 'docker-compose.extraction.yml'), 'utf8'));
-  assert.deepEqual(overlay.services.api.group_add, ['10001']);
-  assert.deepEqual(overlay.services.api.volumes, ['extraction-socket:/socket:ro']);
+  const deployment = yaml.load(readFileSync(join(root, 'docker-compose.yml'), 'utf8'));
+  assert.deepEqual(deployment.services.api.group_add, ['10001']);
+  for (const name of ['api', 'rag_api']) {
+    assert.ok(deployment.services[name].volumes.includes('extraction-socket:/socket:ro'));
+    assert.ok(deployment.services[name].group_add.includes('10001'));
+    assert.equal(deployment.services[name].depends_on.extraction.condition, 'service_healthy');
+  }
   // Select the shipped processor unchanged. No database/app services or environment files enter this test.
   writeFileSync(
     composeFile,
     JSON.stringify({
-      services: { extraction: overlay.services.extraction },
-      volumes: overlay.volumes,
+      services: { extraction: deployment.services.extraction },
+      volumes: { 'extraction-socket': deployment.volumes['extraction-socket'] },
     }),
   );
   process.env.EXTRACTION_IMAGE = image;
@@ -46,7 +50,6 @@ try {
     dts: false,
     deps: { alwaysBundle: ['librechat-data-provider', 'zod'], onlyBundle: false },
   });
-  compose('build', 'extraction');
   imageBuilt = true;
   compose('up', '-d', '--wait', '--wait-timeout', '30', 'extraction');
   const id = output('compose', '-p', project, '-f', composeFile, 'ps', '-q', 'extraction');
@@ -180,7 +183,7 @@ try {
   try {
     if (callerProcess?.exitCode === null) docker('rm', '-f', caller);
     compose('down', '-v', '--remove-orphans');
-    if (imageBuilt) docker('image', 'rm', image);
+    if (imageBuilt && output('images', '-q', image)) docker('image', 'rm', image);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

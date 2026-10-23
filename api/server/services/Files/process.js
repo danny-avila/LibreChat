@@ -1105,6 +1105,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         request: req,
         response: res,
         configuredOCR: shouldUseConfiguredOCR,
+        ocrStrategy: appConfig?.ocr?.strategy,
         configuredText: shouldUseConfiguredText,
         extractOCR: () =>
           getStrategyFunctions(

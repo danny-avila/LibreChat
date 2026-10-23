@@ -402,7 +402,6 @@ describe('Code Process', () => {
           ...mockReq.config,
           fileConfig: {
             extractionService: {
-              enabled: true,
               socketPath: processor.socketPath,
             },
           },
@@ -452,7 +451,7 @@ describe('Code Process', () => {
         res: { destroyed: true, writableFinished: false },
         config: {
           ...mockReq.config,
-          fileConfig: { extractionService: { enabled: true, socketPath: processor.socketPath } },
+          fileConfig: { extractionService: { socketPath: processor.socketPath } },
         },
       };
       determineFileType.mockResolvedValueOnce({ mime: 'application/pdf' });

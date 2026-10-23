@@ -7,8 +7,13 @@ services:
     ports:
       - "${PORT}:${PORT}"
     depends_on:
-      - mongodb
-      - rag_api
+      mongodb:
+        condition: service_started
+      rag_api:
+        condition: service_started
+      extraction:
+        condition: service_healthy
+    group_add: ['10001']
     image: registry.librechat.ai/librechat-ai/librechat-dev:latest
     restart: always
     user: "${UID}:${GID}"
@@ -29,6 +34,7 @@ services:
       - https_proxy=${https_proxy:-}
       - no_proxy=${no_proxy:-localhost,127.0.0.1,::1},${NO_PROXY:-},mongodb,chat-mongodb,meilisearch,chat-meilisearch,rag_api,vectordb,host.docker.internal
     volumes:
+      - extraction-socket:/socket:ro
       - type: bind
         source: ./.env
         target: /app/.env
@@ -89,11 +95,40 @@ services:
       - DB_HOST=vectordb
       - RAG_PORT=${RAG_PORT:-8000}
     restart: always
+    group_add: ['10001']
+    volumes:
+      - extraction-socket:/socket:ro
     depends_on:
-      - vectordb
+      vectordb:
+        condition: service_started
+      extraction:
+        condition: service_healthy
     env_file:
       - .env
 
+  extraction:
+    image: ${EXTRACTION_IMAGE:-librechat-extraction:local}
+    build:
+      context: ${EXTRACTION_BUILD_CONTEXT:-https://github.com/LibreChat-AI/code-interpreter.git#77bcd2ec2e63be523bfab2dfa11159a2ceec0088}
+      dockerfile: packages/extraction/Dockerfile
+      target: runtime
+    pull_policy: build
+    restart: unless-stopped
+    init: true
+    user: '10001:10001'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    network_mode: none
+    mem_limit: 768m
+    cpus: 2
+    pids_limit: 32
+    tmpfs:
+      - /jobs:rw,noexec,nosuid,nodev,size=96m,nr_inodes=1024,uid=10001,gid=10001,mode=0700
+    volumes:
+      - extraction-socket:/socket
+
 volumes:
+  extraction-socket:
   pgdata2:
   librechat-data:

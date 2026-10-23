@@ -9,6 +9,7 @@ import { preflightCodeOutputBatch } from '../code/preflight';
 import { createExtractionUploadPersistence } from './commit';
 import { resolveUploadDocumentText } from './upload';
 import { parseDocument } from '../documents/crud';
+import * as clientModule from './client';
 
 const file = {
   originalname: 'body.docx',
@@ -48,11 +49,8 @@ describe('selected remote semantic extraction callers', () => {
     expect(deps.onFailure).not.toHaveBeenCalled();
   });
 
-  it('keeps legacy behavior when disabled and leaves other formats unmigrated', async () => {
+  it('keeps other formats outside the migrated service', async () => {
     const deps = dependencies();
-    await expect(
-      resolveUploadDocumentText({ ...deps, config: { enabled: false } }),
-    ).resolves.toEqual({ text: 'local Mammoth/PDF.js' });
     const extract = jest.fn();
     await resolveUploadDocumentText({
       ...deps,
@@ -64,7 +62,61 @@ describe('selected remote semantic extraction callers', () => {
       extractor: { maxInputBytes: 10485760, extract },
     });
     expect(extract).not.toHaveBeenCalled();
-    expect(deps.extractDocument).toHaveBeenCalledTimes(2);
+    expect(deps.extractDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves explicit cloud OCR, with isolated extraction as its only PDF/DOCX fallback', async () => {
+    const deps = dependencies();
+    const extract = jest.fn().mockRejectedValue(new ExtractionServiceError('UNSUPPORTED_CONTENT'));
+    await expect(
+      resolveUploadDocumentText({
+        ...deps,
+        configuredOCR: true,
+        ocrStrategy: 'mistral_ocr',
+        extractor: { maxInputBytes: 10485760, extract },
+      }),
+    ).resolves.toEqual({ text: 'local OCR' });
+    expect(extract).not.toHaveBeenCalled();
+    deps.extractOCR.mockRejectedValueOnce(new Error('cloud unavailable'));
+    await expect(
+      resolveUploadDocumentText({
+        ...deps,
+        configuredOCR: true,
+        ocrStrategy: 'mistral_ocr',
+        extractor: { maxInputBytes: 10485760, extract },
+      }),
+    ).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' });
+    expect(extract).toHaveBeenCalledTimes(1);
+    expect(deps.extractDocument).not.toHaveBeenCalled();
+    expect(deps.extractConfiguredText).not.toHaveBeenCalled();
+  });
+
+  it('keeps cloud-selected PDF/DOCX cancellation out of persistence and fallback', async () => {
+    const deps = dependencies();
+    const response = { destroyed: false, writableFinished: false };
+    const persistence = createExtractionUploadPersistence({ response });
+    let finish: (value: { text: string }) => void = () => {};
+    deps.extractOCR.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const extract = jest.fn();
+    const pending = resolveUploadDocumentText({
+      ...deps,
+      configuredOCR: true,
+      ocrStrategy: 'mistral_ocr',
+      response,
+      persistence,
+      extractor: { maxInputBytes: 10485760, extract },
+    });
+    response.destroyed = true;
+    finish({ text: 'cloud text' });
+    await expect(pending).rejects.toMatchObject({ code: 'CANCELLED' });
+    expect(persistence.selected).toBe(true);
+    expect(extract).not.toHaveBeenCalled();
+    expect(deps.extractDocument).not.toHaveBeenCalled();
   });
 
   it('routes a real disk upload through parseDocument config wiring and bounds the disk read', async () => {
@@ -77,7 +129,7 @@ describe('selected remote semantic extraction callers', () => {
       await writeFile(path, file.buffer);
       const { buffer: _buffer, ...diskFile } = file;
       const upload = { ...diskFile, path } as Express.Multer.File;
-      const config = { enabled: true, socketPath: server.socketPath };
+      const config = { socketPath: server.socketPath };
       await expect(
         parseDocument({
           file: upload,
@@ -115,7 +167,7 @@ describe('selected remote semantic extraction callers', () => {
           isMessageAttachment: true,
           endpointConfig: { textFallbackWithoutTools: true },
           persistence,
-          extractionService: { enabled: true, socketPath: server.socketPath },
+          extractionService: { socketPath: server.socketPath },
           response,
         }),
       ).resolves.toBe('你好!');
@@ -223,13 +275,46 @@ describe('selected remote semantic extraction callers', () => {
           destinationChosen: false,
           isMessageAttachment: true,
           endpointConfig: { textFallbackWithoutTools: true },
-          extractionService: { enabled: true, socketPath: server.socketPath },
+          extractionService: { socketPath: server.socketPath },
           extractors,
         }),
       ).resolves.toBeUndefined();
       expect(extractors.parseDocument).not.toHaveBeenCalled();
       expect(extractors.parseTextNative).not.toHaveBeenCalled();
     } finally {
+      await server.close();
+    }
+  });
+
+  it('routes artifact inspection through the client with absent config and no raw/HTML fallback', async () => {
+    const server = await fixture((req, res) => {
+      req.resume();
+      reply(res, req.method === 'GET' ? capabilities : result(file.buffer, 'docx'));
+    });
+    const configured = createDocumentExtractor({ socketPath: server.socketPath });
+    const factory = jest
+      .spyOn(clientModule, 'createDocumentExtractor')
+      .mockImplementationOnce((config) => {
+        expect(config).toBeUndefined();
+        return configured;
+      });
+    const extractRawText = jest.fn();
+    const extractInspectionText = jest.fn();
+    try {
+      await expect(
+        prepareCodeOutputBufferForInspection({
+          buffer: file.buffer,
+          name: 'body.docx',
+          fileSizeLimit: 10485760,
+          determineFileType: async () => null,
+          extractRawText,
+          extractInspectionText,
+        }),
+      ).resolves.toMatchObject({ extractedTextComplete: true, file: { extractedText: '你好!' } });
+      expect(extractRawText).not.toHaveBeenCalled();
+      expect(extractInspectionText).not.toHaveBeenCalled();
+    } finally {
+      factory.mockRestore();
       await server.close();
     }
   });
@@ -245,7 +330,7 @@ describe('selected remote semantic extraction callers', () => {
         name: 'body.docx',
         fileSizeLimit: 10485760,
         determineFileType: async () => ({ mime: file.mimetype }),
-        extractor: createDocumentExtractor({ enabled: true, socketPath: server.socketPath }),
+        extractor: createDocumentExtractor({ socketPath: server.socketPath }),
       });
       expect(prepared.extractedTextComplete).toBe(true);
       expect(prepared.file.extractedText).toBe('你好!');

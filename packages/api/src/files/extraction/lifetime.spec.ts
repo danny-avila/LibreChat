@@ -157,7 +157,7 @@ describe('extraction owner lifetime', () => {
           endpointConfig: { textFallbackWithoutTools: true },
           signal: controller.signal,
           response,
-          extractionService: { enabled: true, socketPath: server.socketPath },
+          extractionService: { socketPath: server.socketPath },
         }),
       ).rejects.toMatchObject({ code: 'CANCELLED' });
       const deadlined = await resolveUploadFallbackText({
@@ -167,7 +167,7 @@ describe('extraction owner lifetime', () => {
         destinationChosen: false,
         isMessageAttachment: true,
         endpointConfig: { textFallbackWithoutTools: true },
-        extractionService: { enabled: true, socketPath: server.socketPath, deadlineMs: 30 },
+        extractionService: { socketPath: server.socketPath, deadlineMs: 30 },
       });
       expect(deadlined).toBeUndefined();
     } finally {

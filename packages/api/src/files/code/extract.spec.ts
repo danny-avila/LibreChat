@@ -555,6 +555,24 @@ describe('extractCodeArtifactInspectionText', () => {
     parseDocumentCalls.length = 0;
   });
 
+  it.each(['report.pdf', 'report.docx'])(
+    'never invokes semantic or HTML fallback for %s',
+    async (name) => {
+      const extract = jest.fn().mockRejectedValue(new Error('isolated service unavailable'));
+      await expect(
+        extractCodeArtifactInspectionText(
+          Buffer.from('document'),
+          name,
+          'text/plain',
+          'utf8-text',
+          { maxInputBytes: 10485760, extract },
+        ),
+      ).rejects.toThrow('isolated service unavailable');
+      expect(parseDocumentCalls).toHaveLength(0);
+      expect(mockOfficeHtml).not.toHaveBeenCalled();
+    },
+  );
+
   it('returns complete plain text beyond the persisted preview cache limit', async () => {
     const suffix = 'BLOCK-LATE';
     const buffer = Buffer.from(`${'a'.repeat(MAX_TEXT_CACHE_BYTES + 1024)}${suffix}`);
@@ -574,8 +592,8 @@ describe('extractCodeArtifactInspectionText', () => {
   it('returns complete parsed document text when the derived output fits the inspection limit', async () => {
     const result = await extractCodeArtifactInspectionText(
       Buffer.from('%PDF'),
-      'report.pdf',
-      'application/pdf',
+      'report.odt',
+      'application/vnd.oasis.opendocument.text',
       'document',
     );
 
@@ -598,8 +616,8 @@ describe('extractCodeArtifactInspectionText', () => {
 
     const result = await extractCodeArtifactInspectionText(
       Buffer.from('%PDF'),
-      'large.pdf',
-      'application/pdf',
+      'large.odt',
+      'application/vnd.oasis.opendocument.text',
       'document',
     );
 
@@ -628,8 +646,8 @@ describe('extractCodeArtifactInspectionText', () => {
     await expect(
       extractCodeArtifactInspectionText(
         Buffer.from('%PDF'),
-        'PRIVATE-FILENAME.pdf',
-        'application/pdf',
+        'PRIVATE-FILENAME.odt',
+        'application/vnd.oasis.opendocument.text',
         'document',
       ),
     ).resolves.toEqual({ text: null, complete: false });

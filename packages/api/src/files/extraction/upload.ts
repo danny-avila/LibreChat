@@ -10,13 +10,14 @@ import {
   getExtractionFormat,
   readExtractionInput,
 } from './client';
-import { withExtractionLifetime } from './lifetime';
+import { withExtractionLifetime, assertExtractionActive } from './lifetime';
+import { ExtractionServiceError } from './client';
 
 interface DocumentText {
   text?: string | null;
 }
 
-/** Remote selection precedes every OCR/RAG/built-in fallback boundary. */
+/** PDF/DOCX use isolation unless an explicitly configured cloud OCR succeeds. */
 export async function resolveUploadDocumentText<T extends DocumentText>(
   input: {
     file: Express.Multer.File;
@@ -30,6 +31,7 @@ export async function resolveUploadDocumentText<T extends DocumentText>(
     | { extract: () => Promise<T> }
     | {
         configuredOCR?: boolean;
+        ocrStrategy?: string;
         configuredText?: boolean;
         extractOCR: () => Promise<T>;
         extractConfiguredText: () => Promise<T>;
@@ -38,10 +40,28 @@ export async function resolveUploadDocumentText<T extends DocumentText>(
       }
   ),
 ): Promise<T | MistralOCRUploadResult> {
-  const extractor = input.extractor ?? createDocumentExtractor(input.config);
   const format = getExtractionFormat(input.file.originalname, input.file.mimetype);
-  if (extractor && format) {
-    input.persistence?.select();
+  if (format) input.persistence?.select();
+  if (
+    format &&
+    'configuredOCR' in input &&
+    input.configuredOCR &&
+    input.ocrStrategy != null &&
+    input.ocrStrategy !== FileSources.document_parser
+  ) {
+    try {
+      const result = await withExtractionLifetime({ ...input, deadlineMs: false }, () =>
+        input.extractOCR(),
+      );
+      assertExtractionActive(input);
+      return result;
+    } catch (error) {
+      if (error instanceof ExtractionServiceError && error.code === 'CANCELLED') throw error;
+      input.onFailure('ocr', error);
+    }
+  }
+  if (format) {
+    const extractor = input.extractor ?? createDocumentExtractor(input.config);
     return withExtractionLifetime(
       { ...input, deadlineMs: extractor.deadlineMs },
       async (signal) => {

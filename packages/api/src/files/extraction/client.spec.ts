@@ -10,6 +10,25 @@ describe('document extraction Unix-socket client', () => {
   });
   afterEach(async () => server?.close());
 
+  it.each([undefined, {}])(
+    'constructs the required client with absent/empty config: %j',
+    (config) => {
+      expect(createDocumentExtractor(config)).toMatchObject({
+        maxInputBytes: 10485760,
+        deadlineMs: 12000,
+        extract: expect.any(Function),
+      });
+    },
+  );
+
+  it.each([false, true])('rejects the removed enablement field (%s)', (enabled) => {
+    const config = { socketPath: '/socket/extraction.sock' };
+    Object.assign(config, { enabled });
+    expect(() => createDocumentExtractor(config)).toThrow(
+      'Document extraction failed (INVALID_CONFIG).',
+    );
+  });
+
   it.each(['pdf', 'docx'] as const)(
     'sends fixed raw-byte %s framing and preserves segments',
     async (format) => {
@@ -26,7 +45,7 @@ describe('document extraction Unix-socket client', () => {
         req.on('data', (chunk: Buffer) => posts.push(chunk));
         req.on('end', () => reply(res, result(Buffer.concat(posts), format)));
       });
-      const client = createDocumentExtractor({ enabled: true, socketPath: server.socketPath })!;
+      const client = createDocumentExtractor({ socketPath: server.socketPath })!;
       await expect(client.extract(bytes, format)).resolves.toEqual(result(bytes, format));
       expect(Buffer.concat(posts)).toEqual(bytes);
     },
@@ -44,10 +63,7 @@ describe('document extraction Unix-socket client', () => {
       req.on('end', () => reply(res, result(Buffer.concat(chunks))));
     });
     await expect(
-      createDocumentExtractor({ enabled: true, socketPath: server.socketPath })!.extract(
-        input,
-        'pdf',
-      ),
+      createDocumentExtractor({ socketPath: server.socketPath })!.extract(input, 'pdf'),
     ).resolves.toEqual(result(bytes));
   });
 
@@ -66,10 +82,7 @@ describe('document extraction Unix-socket client', () => {
       reply(res, caps);
     });
     await expect(
-      createDocumentExtractor({ enabled: true, socketPath: server.socketPath })!.extract(
-        bytes,
-        'pdf',
-      ),
+      createDocumentExtractor({ socketPath: server.socketPath })!.extract(bytes, 'pdf'),
     ).rejects.toMatchObject({ code: 'INCOMPATIBLE_SERVICE' });
     expect(posts).toBe(0);
   });
@@ -90,10 +103,7 @@ describe('document extraction Unix-socket client', () => {
       reply(res, { error: { code } }, status);
     });
     await expect(
-      createDocumentExtractor({ enabled: true, socketPath: server.socketPath })!.extract(
-        bytes,
-        'pdf',
-      ),
+      createDocumentExtractor({ socketPath: server.socketPath })!.extract(bytes, 'pdf'),
     ).rejects.toMatchObject({ code });
     expect(posts).toBe(1);
   });
@@ -120,10 +130,7 @@ describe('document extraction Unix-socket client', () => {
       reply(res, req.method === 'GET' ? capabilities : value);
     });
     await expect(
-      createDocumentExtractor({ enabled: true, socketPath: server.socketPath })!.extract(
-        bytes,
-        'pdf',
-      ),
+      createDocumentExtractor({ socketPath: server.socketPath })!.extract(bytes, 'pdf'),
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
@@ -141,7 +148,6 @@ describe('document extraction Unix-socket client', () => {
       });
       await expect(
         createDocumentExtractor({
-          enabled: true,
           socketPath: server.socketPath,
           ...limits,
         })!.extract(bytes, 'pdf'),
@@ -157,15 +163,12 @@ describe('document extraction Unix-socket client', () => {
       reply(res, req.method === 'GET' ? capabilities : value);
     });
     await expect(
-      createDocumentExtractor({ enabled: true, socketPath: server.socketPath })!.extract(
-        bytes,
-        'docx',
-      ),
+      createDocumentExtractor({ socketPath: server.socketPath })!.extract(bytes, 'docx'),
     ).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
   it('rejects empty/oversized inputs and unsupported format before connecting', async () => {
-    const client = createDocumentExtractor({ enabled: true, maxInputBytes: 2 })!;
+    const client = createDocumentExtractor({ maxInputBytes: 2 })!;
     await expect(client.extract(Buffer.alloc(0), 'pdf')).rejects.toMatchObject({
       code: 'INPUT_LIMIT',
     });
@@ -193,7 +196,6 @@ describe('document extraction Unix-socket client', () => {
       });
       await expect(
         createDocumentExtractor({
-          enabled: true,
           socketPath: server.socketPath,
           deadlineMs: 100,
         })!.extract(Buffer.alloc(stage === 'upload' ? 10485760 : 1, 1), 'pdf'),
@@ -222,7 +224,7 @@ describe('document extraction Unix-socket client', () => {
         controller.abort();
       });
       await expect(
-        createDocumentExtractor({ enabled: true, socketPath: server.socketPath })!.extract(
+        createDocumentExtractor({ socketPath: server.socketPath })!.extract(
           Buffer.alloc(stage === 'upload' ? 10485760 : 1, 1),
           'pdf',
           controller.signal,
@@ -241,10 +243,7 @@ describe('document extraction Unix-socket client', () => {
       );
     });
     await expect(
-      createDocumentExtractor({ enabled: true, socketPath: server.socketPath })!.extract(
-        bytes,
-        'pdf',
-      ),
+      createDocumentExtractor({ socketPath: server.socketPath })!.extract(bytes, 'pdf'),
     ).rejects.toThrow('Document extraction failed (INVALID_RESPONSE).');
   });
 });

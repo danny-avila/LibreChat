@@ -544,7 +544,7 @@ export async function processCodeOutput(
        * office-HTML-bucket routing on a trusted signal — clients MUST
        * NOT inject `text` into the iframe as HTML unless `textFormat ===
        * 'html'`. RAG-uploaded `.docx` etc. arrive with plain text from
-       * mammoth.extractRawText and would otherwise be hijacked by the
+       * semantic document extraction and would otherwise be hijacked by the
        * extension-based office routing into the HTML-injection path
        * (Codex P1 review on PR #12934). null on extract failure — the
        * client treats absence as 'text' for safety. */

@@ -2,7 +2,6 @@ import * as fs from 'fs';
 import yauzl from 'yauzl';
 import { megabyte, excelMimeTypes, FileSources } from 'librechat-data-provider';
 import type { ExtractionServiceConfig } from 'librechat-data-provider';
-import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import type { ExtractionLifetime } from '~/files/extraction/lifetime';
 import type { DocumentExtractor } from '~/files/extraction/client';
 import type { MistralOCRUploadResult } from '~/types';
@@ -42,7 +41,7 @@ export async function parseDocument({
   signal?: AbortSignal;
 }): Promise<MistralOCRUploadResult> {
   const format = getExtractionFormat(file.originalname, file.mimetype);
-  if (extractor && format) {
+  if (format) {
     return withExtractionLifetime(
       { request: req, response: res, signal, deadlineMs: extractor.deadlineMs },
       async (signal) => {
@@ -93,12 +92,6 @@ export async function parseDocument({
 
 /** Maps a MIME type to its document parser function, or `undefined` if unsupported. */
 function getParserForMimeType(mimetype: string): FileParseFn | undefined {
-  if (mimetype === 'application/pdf') {
-    return pdfToText;
-  }
-  if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-    return wordDocToText;
-  }
   if (
     excelMimeTypes.test(mimetype) ||
     mimetype === 'application/vnd.oasis.opendocument.spreadsheet'
@@ -109,41 +102,6 @@ function getParserForMimeType(mimetype: string): FileParseFn | undefined {
     return odtToText;
   }
   return undefined;
-}
-
-/** Parses PDF, returns text inside. */
-async function pdfToText(file: Express.Multer.File): Promise<string> {
-  // Imported inline so that Jest can test other routes without failing due to loading ESM
-  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-
-  const data = new Uint8Array(await fs.promises.readFile(file.path));
-  const pdf = await getDocument({ data }).promise;
-
-  let fullText = '';
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .filter((item): item is TextItem => !('type' in item))
-      .map((item) => item.str)
-      .join(' ');
-    fullText += pageText + '\n';
-  }
-
-  return fullText;
-}
-
-/** Parses Word document, returns text inside. */
-async function wordDocToText(file: Express.Multer.File): Promise<string> {
-  const buffer = await fs.promises.readFile(file.path);
-  /* Reject zip-bomb DOCX before mammoth's internal extractor runs.
-   * mammoth has no decompressed-size cap of its own; without this, a
-   * sub-1MB compressed bomb (~200x ratio) would block the event loop
-   * and spike RSS to ~1GB. See SEC review on PR #12934. */
-  await assertSafeZipSize(buffer, { name: file.originalname ?? 'docx' });
-  const { extractRawText } = await import('mammoth');
-  const rawText = await extractRawText({ buffer });
-  return rawText.value;
 }
 
 /** Parses Excel sheet, returns text inside. */

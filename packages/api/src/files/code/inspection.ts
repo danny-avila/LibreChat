@@ -60,7 +60,7 @@ export async function prepareCodeOutputBufferForInspection({
 
   const leafName = path.basename(safeName);
   const format = getExtractionFormat(leafName, detectedMimeType ?? fallbackType);
-  if (extractor && format) {
+  if (format) {
     const result = await withExtractionLifetime(
       { signal, deadlineMs: extractor.deadlineMs },
       (signal) => extractor.extract(buffer, format, signal),

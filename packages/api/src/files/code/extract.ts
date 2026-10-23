@@ -3,7 +3,13 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import type { DocumentExtractor } from '~/files/extraction/client';
 import type { CodeArtifactCategory } from './classify';
+import {
+  createDocumentExtractor,
+  getExtractionFormat,
+  extractionText,
+} from '~/files/extraction/client';
 import { bufferToOfficeHtml, officeHtmlBucket } from '~/files/documents/html';
 import { createConcurrencyLimiter, withTimeout } from '~/utils/promise';
 import { parseDocument } from '~/files/documents/crud';
@@ -371,7 +377,13 @@ export async function extractCodeArtifactInspectionText(
   name: string,
   mimeType: string,
   category: CodeArtifactCategory,
+  extractor?: DocumentExtractor,
 ): Promise<CodeArtifactInspectionText> {
+  const format = getExtractionFormat(name, mimeType);
+  if (format) {
+    const result = await (extractor ?? createDocumentExtractor()).extract(buffer, format);
+    return { text: extractionText(result), complete: true };
+  }
   const incomplete = (text: string | null = null): CodeArtifactInspectionText => ({
     text,
     complete: false,

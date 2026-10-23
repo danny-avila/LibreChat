@@ -49,7 +49,6 @@ async function cancellationProbe() {
     try {
       await resolveUploadDocumentText({
         file: { originalname: 'cancel.pdf', mimetype: 'application/pdf', buffer: cancellablePdf() },
-        config: { enabled: true },
         request: req,
         response: res,
         extract: async () => {
@@ -80,7 +79,7 @@ async function cancellationProbe() {
 }
 
 async function main() {
-  const client = createDocumentExtractor({ enabled: true });
+  const client = createDocumentExtractor();
   for (const [name, format] of [
     ['pages.pdf', 'pdf'],
     ['body.docx', 'docx'],

@@ -45,7 +45,11 @@ const statuses: Readonly<Record<string, number>> = {
 
 export class ExtractionServiceError extends Error {
   constructor(readonly code: string) {
-    super(`Document extraction failed (${code}).`);
+    super(
+      code === 'UNAVAILABLE'
+        ? 'Document extraction is unavailable. Start the extraction companion and verify socket access (group 10001) and Landlock ABI 3 support.'
+        : `Document extraction failed (${code}).`,
+    );
     this.name = 'ExtractionServiceError';
   }
 }
@@ -90,12 +94,10 @@ export function getExtractionFormat(name: string, mimeType: string): ExtractionF
 export function createDocumentExtractor(
   config?: ExtractionServiceConfig,
   transport: typeof request = request,
-): DocumentExtractor | undefined {
-  if (config == null) return undefined;
-  const parsed = extractionServiceSchema.safeParse(config);
+): DocumentExtractor {
+  const parsed = extractionServiceSchema.safeParse(config ?? {});
   if (!parsed.success) return fail('INVALID_CONFIG');
   const options = parsed.data;
-  if (!options.enabled) return undefined;
 
   const exchange = async (
     path: '/v1/capabilities' | '/v1/extract-text',
@@ -166,6 +168,8 @@ export function createDocumentExtractor(
                 if (size !== Number(length)) return fail();
                 const value = decode(Buffer.concat(chunks, size));
                 if (res.statusCode !== 200) {
+                  if (path === '/v1/capabilities' && res.statusCode === 503)
+                    return fail('UNAVAILABLE');
                   if (
                     !record(value) ||
                     !keys(value, ['error']) ||
