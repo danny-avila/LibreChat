@@ -1,6 +1,6 @@
 import { FileSources } from 'librechat-data-provider';
 
-import { getSafeErrorMetadata } from '~/utils/errors';
+import { getSafeErrorMetadata } from '../utils/errors';
 
 export type StoredUploadRef = {
   file_id: string;
@@ -30,6 +30,8 @@ export type StoredUploadCleanup = {
    * earlier than that cannot have committed a record, so the lookup is skipped. */
   trackWrite?: boolean;
   logger: { error: (message: string, meta?: unknown) => void };
+  /** Undo request-owned staging only after confirming no file record committed. */
+  onUncommitted?: () => Promise<void>;
 };
 
 /** A rejected write may have committed, so cleanup only removes an object no record points at. */
@@ -44,7 +46,15 @@ export const createRecordExists =
  * The original failure is rethrown; a failed cleanup is logged and never replaces it.
  */
 export async function withStoredUploadCleanup<T>(
-  { stored, resolveDeleteFile, recordExists, req, logger, trackWrite }: StoredUploadCleanup,
+  {
+    stored,
+    resolveDeleteFile,
+    recordExists,
+    req,
+    logger,
+    trackWrite,
+    onUncommitted,
+  }: StoredUploadCleanup,
   next: (beginWrite: () => void) => Promise<T>,
 ): Promise<T> {
   let writeBegun = trackWrite !== true;
@@ -56,6 +66,14 @@ export async function withStoredUploadCleanup<T>(
     try {
       /* A rejected write can still have committed; deleting then would strand the record. */
       if (!writeBegun || !(await recordExists(stored))) {
+        try {
+          await onUncommitted?.();
+        } catch (cleanupError) {
+          logger.error(
+            '[withStoredUploadCleanup] Failed to undo upload staging',
+            getSafeErrorMetadata(cleanupError),
+          );
+        }
         /* Storage strategies validate ownership and tenant against the object key. */
         const ref: StoredUploadRef = {
           user: req.user?.id,
