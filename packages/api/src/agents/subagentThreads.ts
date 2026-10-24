@@ -1754,9 +1754,14 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                   activitySequence: sequence,
                 };
               };
+              // The SDK observes the envelope; host steering extends its phase union.
+              const forwardProgress = runtime.reportProgress as (
+                event: SubagentActivityUpdateEvent,
+              ) => void;
               const publish = (
                 activityEvent: SubagentActivityUpdateEvent & { activitySequence: number },
               ): void => {
+                forwardProgress(activityEvent);
                 const sequence = activityEvent.activitySequence;
                 lease.content?.record(activityEvent, sequence);
                 if (activityEvent.phase === 'steer_applied') {
@@ -1868,7 +1873,6 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                   }
                   maxContentIndex = Math.max(maxContentIndex, slots.contentParts.length - 1);
                   const activityEvent = stamp(normalized);
-                  runtime.reportProgress(activityEvent);
                   recordActivity(recorder, activityEvent);
                   publish(activityEvent);
                 },

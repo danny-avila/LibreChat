@@ -302,10 +302,7 @@ describe('SubagentThreadTaskStore', () => {
     const userId = 'shared-progress-identity';
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
-    const forwarded: Array<
-      SubagentUpdateEvent &
-        Pick<SubagentActivityUpdateEvent, 'activityEventId' | 'activitySequence'>
-    > = [];
+    const forwarded: SubagentActivityUpdateEvent[] = [];
     const originalStart = InMemorySubagentTaskStore.prototype.start;
     jest.spyOn(InMemorySubagentTaskStore.prototype, 'start').mockImplementation(function (
       this: InMemorySubagentTaskStore,
@@ -389,14 +386,25 @@ describe('SubagentThreadTaskStore', () => {
           stepDetails: { type: 'message_creation', message_creation: { message_id: 'after' } },
         },
       });
-      await waitUntil(() => events.length === 4, 'both delivery paths');
+      runtime.reportProgress({
+        ...delta,
+        data: { id: 'after', delta: { content: [{ type: 'text', text: 'Later work.' }] } },
+      });
+      await waitUntil(() => events.length === 5, 'both delivery paths');
+      expect(forwarded.map((event) => event.phase)).toEqual([
+        'run_step',
+        'message_delta',
+        'steer_applied',
+        'run_step',
+        'message_delta',
+      ]);
       expect(
         forwarded.map(({ activityEventId, activitySequence }) => ({
           activityEventId,
           activitySequence,
         })),
       ).toEqual(
-        [0, 1, 3].map((sequence) => ({
+        [0, 1, 2, 3, 4].map((sequence) => ({
           activityEventId: `${taskId}:${sequence}`,
           activitySequence: sequence,
         })),
