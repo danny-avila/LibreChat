@@ -629,6 +629,28 @@ describe('SubagentThreadTaskStore', () => {
               },
             },
           });
+        runtime.reportProgress({
+          ...base,
+          phase: 'run_step_delta',
+          data: {
+            id: 'tool',
+            delta: {
+              type: 'tool_calls',
+              tool_calls: [{ id: 'late-call', index: 1, name: 'late_lookup', args: '{"other":' }],
+            },
+          },
+        });
+        runtime.reportProgress({
+          ...base,
+          phase: 'run_step_delta',
+          data: {
+            id: 'tool',
+            delta: {
+              type: 'tool_calls',
+              tool_calls: [{ index: 1, name: 'late_lookup', args: 'true}' }],
+            },
+          },
+        });
         if (outcome === 'cancel')
           await store.controlTask(
             config.scopeId,
@@ -661,6 +683,13 @@ describe('SubagentThreadTaskStore', () => {
           toolCallId: 'call',
           name: 'lookup',
           input: '{"query":"x"}',
+          status: 'running',
+        },
+        {
+          type: 'tool',
+          toolCallId: 'late-call',
+          name: 'late_lookup',
+          input: '{"other":true}',
           status: 'running',
         },
       ]);

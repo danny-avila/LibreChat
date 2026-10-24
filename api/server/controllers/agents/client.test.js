@@ -9615,6 +9615,61 @@ describe('AgentClient - finalizeSubagentContent', () => {
     expect(buffer.size).toBe(0);
   });
 
+  it('persists before/steer/after without a private child journal or duplicate offset', async () => {
+    const part = {
+      type: 'steer',
+      steer: 'Use the revised sources',
+      steerId: 'steer-1',
+      clientSteerId: 'client-steer-1',
+      createdAt: 1234,
+      quotes: ['quoted guidance'],
+      files: [{ file_id: 'public-file' }],
+    };
+    const applied = event('steer_applied', {
+      index: 1,
+      steerId: part.steerId,
+      clientSteerId: part.clientSteerId,
+      part,
+    });
+    const buffer = await runSubagentEvents([
+      event('run_step', {
+        id: 'before-step',
+        index: 0,
+        stepDetails: { type: 'message_creation' },
+      }),
+      event('message_delta', {
+        id: 'before-step',
+        delta: { content: [{ type: 'text', text: 'before' }] },
+      }),
+      applied,
+      event('run_step', {
+        id: 'after-step',
+        index: 2,
+        stepDetails: { type: 'message_creation' },
+      }),
+      event('message_delta', {
+        id: 'after-step',
+        delta: { content: [{ type: 'text', text: 'after' }] },
+      }),
+      applied,
+    ]);
+    const client = makeClient(buffer);
+    client.options.req.config.subagentActivity = { enabled: false };
+    client.contentParts = [
+      { type: 'tool_call', tool_call: { id: 'call_sub', name: Constants.SUBAGENT } },
+    ];
+    client.finalizeSubagentContent();
+    const attached = client.contentParts[0].tool_call.subagent_content;
+    expect(attached).toEqual([
+      { type: 'text', text: 'before' },
+      part,
+      { type: 'text', text: 'after' },
+    ]);
+    expect(buffer.size).toBe(0);
+    client.finalizeSubagentContent();
+    expect(client.contentParts[0].tool_call.subagent_content).toEqual(attached);
+  });
+
   it('stamps durable MCP server identity onto nested persisted tool calls', () => {
     const client = makeClient(new Map());
     client.options.agent.accessibleMcpServerNames = ['bar', 'foo_mcp_bar'];

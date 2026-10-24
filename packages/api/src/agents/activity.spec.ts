@@ -608,6 +608,203 @@ describe('bounded public observations', () => {
     expect(recorder.snapshot()).toEqual(settled);
   });
 
+  it.each([
+    { initial: [] },
+    { initial: [{ id: 'first', name: 'first_tool', args: {}, type: 'tool_call' }] },
+  ])('retains a parallel call first introduced by a delta after $initial', ({ initial }) => {
+    const recorder = new SubagentPublicRecorder();
+    const sdk = createContentAggregator();
+    const announce = {
+      id: 'step',
+      index: 0,
+      stepDetails: { type: 'tool_calls', tool_calls: initial },
+    };
+    recorder.record(progress('run_step', announce));
+    sdk.aggregateContent({
+      event: GraphEvents.ON_RUN_STEP,
+      data: announce as Parameters<typeof sdk.aggregateContent>[0]['data'],
+    });
+    const index = initial.length;
+    const delta = (call: object) => {
+      const data = { id: 'step', delta: { type: 'tool_calls', tool_calls: [call] } };
+      recorder.record(progress('run_step_delta', data));
+      sdk.aggregateContent({
+        event: GraphEvents.ON_RUN_STEP_DELTA,
+        data: data as Parameters<typeof sdk.aggregateContent>[0]['data'],
+      });
+    };
+    delta({ id: 'late', index, name: 'late_tool', args: '{"query":' });
+    delta({ index, name: 'late_tool', args: '"x"}' });
+    const snapshot = recorder.snapshot();
+    const expected = sdk.contentParts
+      .filter((part) => part != null && part.type === 'tool_call' && 'tool_call' in part)
+      .map((part) => {
+        if (part == null || !('tool_call' in part)) throw new Error('Expected tool content');
+        const call = part.tool_call!;
+        return {
+          type: 'tool',
+          toolCallId: call.id,
+          name: call.name,
+          input: typeof call.args === 'string' ? call.args : JSON.stringify(call.args),
+          status: 'running',
+        };
+      });
+    expect(snapshot).toEqual({ activity: expected, truncated: false });
+    expect(projectPersistedMessageActivity(snapshot.activity).activity).toEqual(snapshot.activity);
+  });
+
+  it('binds a delta-first provider ID to its unbound slot without duplicating its prefix', () => {
+    const recorder = new SubagentPublicRecorder();
+    recorder.record(
+      progress('run_step', {
+        id: 'step',
+        index: 0,
+        stepDetails: { type: 'tool_calls', tool_calls: [] },
+      }),
+    );
+    recorder.record(
+      progress('run_step_delta', {
+        id: 'step',
+        delta: { tool_calls: [{ index: 0, name: 'lookup', args: '{"query":' }] },
+      }),
+    );
+    recorder.record(
+      progress('run_step_delta', {
+        id: 'step',
+        delta: { tool_calls: [{ id: 'provider', index: 0, name: 'lookup', args: '"x"}' }] },
+      }),
+    );
+    recorder.record(
+      progress('run_step_completed', {
+        result: { id: 'step', tool_call: { id: 'provider', name: 'lookup', output: 'Done' } },
+      }),
+    );
+    expect(recorder.snapshot()).toEqual({
+      activity: [
+        {
+          type: 'tool',
+          toolCallId: 'provider',
+          name: 'lookup',
+          input: '{"query":"x"}',
+          output: 'Done',
+          status: 'completed',
+        },
+      ],
+      truncated: false,
+    });
+  });
+
+  it('does not reassign an earlier chunk slot when an additional delta call has only an ID', () => {
+    const recorder = new SubagentPublicRecorder();
+    recorder.record(
+      progress('run_step', {
+        id: 'step',
+        index: 0,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'first', name: 'first_tool', args: {} }],
+        },
+      }),
+    );
+    recorder.record(
+      progress('run_step_delta', {
+        id: 'step',
+        delta: { tool_calls: [{ id: 'late', name: 'late_tool', args: 'late-input' }] },
+      }),
+    );
+    recorder.record(
+      progress('run_step_delta', {
+        id: 'step',
+        delta: { tool_calls: [{ index: 0, name: 'first_tool', args: 'first-input' }] },
+      }),
+    );
+    expect(recorder.snapshot()).toEqual({
+      activity: [
+        {
+          type: 'tool',
+          toolCallId: 'first',
+          name: 'first_tool',
+          input: 'first-input',
+          status: 'running',
+        },
+        {
+          type: 'tool',
+          toolCallId: 'late',
+          name: 'late_tool',
+          input: 'late-input',
+          status: 'running',
+        },
+      ],
+      truncated: false,
+    });
+  });
+
+  it('routes an idless fragment to the sole delta-first call in its own step', () => {
+    const recorder = new SubagentPublicRecorder();
+    recorder.record(
+      progress('run_step', {
+        id: 'step',
+        index: 0,
+        stepDetails: { type: 'tool_calls', tool_calls: [] },
+      }),
+    );
+    recorder.record(
+      progress('run_step_delta', {
+        id: 'step',
+        delta: { tool_calls: [{ id: 'only', name: 'lookup', args: '{"query":' }] },
+      }),
+    );
+    recorder.record(
+      progress('run_step_delta', {
+        id: 'step',
+        delta: { tool_calls: [{ name: 'lookup', args: '"x"}' }] },
+      }),
+    );
+    expect(recorder.snapshot()).toEqual({
+      activity: [
+        {
+          type: 'tool',
+          toolCallId: 'only',
+          name: 'lookup',
+          input: '{"query":"x"}',
+          status: 'running',
+        },
+      ],
+      truncated: false,
+    });
+  });
+
+  it('retains late parallel calls within the existing public item and byte bounds', () => {
+    const recorder = new SubagentPublicRecorder();
+    recorder.record(
+      progress('run_step', {
+        id: 'step',
+        index: 0,
+        stepDetails: { type: 'tool_calls', tool_calls: [] },
+      }),
+    );
+    for (let index = 0; index < 150; index++)
+      recorder.record(
+        progress('run_step_delta', {
+          id: 'step',
+          delta: {
+            type: 'tool_calls',
+            tool_calls: [{ id: `late-${index}`, index, name: 'lookup', args: 'x'.repeat(400) }],
+          },
+        }),
+      );
+    const snapshot = recorder.snapshot();
+    expect(snapshot.activity.length).toBeLessThanOrEqual(SUBAGENT_ACTIVITY_LIMITS.items);
+    expect(Buffer.byteLength(JSON.stringify(snapshot.activity))).toBeLessThanOrEqual(
+      SUBAGENT_ACTIVITY_LIMITS.bytes,
+    );
+    expect(snapshot.truncated).toBe(true);
+    expect(snapshot.activity[snapshot.activity.length - 1]).toMatchObject({
+      toolCallId: 'late-149',
+      input: 'x'.repeat(400),
+    });
+  });
+
   it('isolates repeated provider call IDs by step and ignores duplicate announcements', () => {
     const recorder = new SubagentPublicRecorder();
     const step = (id: string) =>

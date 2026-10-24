@@ -572,6 +572,7 @@ type Observation = {
   phase?: 'commentary' | 'final_answer';
   inputIsObject?: boolean;
   completed?: boolean;
+  providerId?: string;
 };
 
 /** Public observations only. Payloads and correlation state share the projection's bounds. */
@@ -609,6 +610,35 @@ export class SubagentPublicRecorder {
         this.toolSlots.delete(removed.slot);
       this.truncated = true;
     }
+  }
+
+  private declareTool(
+    stepId: string,
+    call: Record<string, unknown>,
+    index?: number,
+  ): Observation | undefined {
+    const normalized = normalizeToolCall(call, index ?? 0);
+    if (normalized == null || normalized.rawId.length > MAX_TOOL_CALL_ID_BYTES) {
+      this.truncated = true;
+      return undefined;
+    }
+    const key = `${stepId.length}:${stepId}:${normalized.rawId}`;
+    const existing = this.tools.get(key);
+    if (existing != null) return existing;
+    const { input, ...item } = normalized.item;
+    item.toolCallId = uniqueToolActivityId(item.toolCallId, this.toolIds, this.nextToolOccurrence);
+    const entry = this.append(key, item);
+    this.tools.set(key, entry);
+    entry.stepId = stepId;
+    entry.inputIsObject = normalized.inputIsObject;
+    entry.providerId = typeof call.id === 'string' && call.id !== '' ? call.id : undefined;
+    if (index != null) {
+      entry.slot = `${stepId}:${index}`;
+      this.toolSlots.set(entry.slot, entry);
+    }
+    if (input != null) this.field(entry, 'input', input, MAX_TOOL_INPUT_BYTES);
+    if (normalized.item.inputTruncated) this.truncated = true;
+    return entry;
   }
 
   private field(
@@ -699,27 +729,8 @@ export class SubagentPublicRecorder {
       }
       if (details?.type !== 'tool_calls' || !Array.isArray(details.tool_calls)) return;
       for (const [index, call] of details.tool_calls.entries()) {
-        const normalized = normalizeToolCall(call, index);
-        if (normalized == null || normalized.rawId.length > MAX_TOOL_CALL_ID_BYTES) {
-          this.truncated = true;
-          continue;
-        }
-        const key = `${id.length}:${id}:${normalized.rawId}`;
-        if (this.tools.has(key)) continue;
-        const { input, ...item } = normalized.item;
-        item.toolCallId = uniqueToolActivityId(
-          item.toolCallId,
-          this.toolIds,
-          this.nextToolOccurrence,
-        );
-        const entry = this.append(key, item);
-        this.tools.set(key, entry);
-        entry.stepId = id;
-        entry.inputIsObject = normalized.inputIsObject;
-        entry.slot = `${id}:${index}`;
-        this.toolSlots.set(entry.slot, entry);
-        if (input != null) this.field(entry, 'input', input, MAX_TOOL_INPUT_BYTES);
-        if (normalized.item.inputTruncated) this.truncated = true;
+        if (isRecord(call)) this.declareTool(id, call, index);
+        else this.truncated = true;
       }
       return;
     }
@@ -753,13 +764,71 @@ export class SubagentPublicRecorder {
       if (!Array.isArray(delta?.tool_calls)) return;
       for (const call of delta.tool_calls) {
         if (!isRecord(call)) continue;
-        const entry =
-          (typeof call.id === 'string'
-            ? this.tools.get(`${id.length}:${id}:${call.id}`)
-            : undefined) ?? this.toolSlots.get(`${id}:${call.index}`);
-        if (entry == null) {
+        const providerId = typeof call.id === 'string' && call.id !== '' ? call.id : undefined;
+        const index =
+          typeof call.index === 'number' && Number.isSafeInteger(call.index) && call.index >= 0
+            ? call.index
+            : undefined;
+        if (
+          (providerId != null && providerId.length > MAX_TOOL_CALL_ID_BYTES) ||
+          !this.steps.has(id)
+        ) {
           this.truncated = true;
           continue;
+        }
+        const key = providerId == null ? undefined : `${id.length}:${id}:${providerId}`;
+        let entry = key == null ? undefined : this.tools.get(key);
+        const slot = index == null ? undefined : this.toolSlots.get(`${id}:${index}`);
+        if (
+          entry == null &&
+          slot != null &&
+          (providerId == null || slot.providerId == null || slot.providerId === providerId)
+        )
+          entry = slot;
+        if (entry == null && providerId == null && index == null) {
+          for (const candidate of this.tools.values()) {
+            if (candidate.stepId !== id) continue;
+            if (entry != null) {
+              entry = undefined;
+              break;
+            }
+            entry = candidate;
+          }
+        }
+        if (entry == null) {
+          if (providerId == null && index == null) {
+            this.truncated = true;
+            continue;
+          }
+          entry = this.declareTool(id, { ...call, args: '' }, index);
+          if (entry == null) continue;
+        } else if (
+          providerId != null &&
+          key != null &&
+          entry.providerId == null &&
+          entry.item.type === 'tool'
+        ) {
+          const before = serializedBytes(entry.item);
+          this.tools.delete(entry.key);
+          this.toolIds.delete(entry.item.toolCallId);
+          entry.key = key;
+          entry.providerId = providerId;
+          entry.item.toolCallId = uniqueToolActivityId(
+            providerId,
+            this.toolIds,
+            this.nextToolOccurrence,
+          );
+          this.tools.set(key, entry);
+          const added = serializedBytes(entry.item) - before;
+          entry.bytes += added;
+          this.bytes += added;
+          this.bound();
+        }
+        if (index != null && entry.slot !== `${id}:${index}`) {
+          if (entry.slot != null && this.toolSlots.get(entry.slot) === entry)
+            this.toolSlots.delete(entry.slot);
+          entry.slot = `${id}:${index}`;
+          this.toolSlots.set(entry.slot, entry);
         }
         if (entry.completed) continue;
         const args = call.args ?? '';
