@@ -1991,6 +1991,23 @@ describe('any custom endpoint is document-supported regardless of name', () => {
   );
 });
 
+describe('endpoints.catalogModelsTtlMs', () => {
+  const parse = (catalogModelsTtlMs: unknown) =>
+    configSchema.safeParse({ version: '1.0', endpoints: { catalogModelsTtlMs } });
+
+  it('accepts zero up to one hour of whole milliseconds', () => {
+    for (const value of [0, 120_000, 3_600_000]) {
+      expect(parse(value).success).toBe(true);
+    }
+  });
+
+  it('rejects negative, fractional and longer lifetimes', () => {
+    for (const value of [-1, 1.5, 3_600_001, '120000']) {
+      expect(parse(value).success).toBe(false);
+    }
+  });
+});
+
 describe('allowedAddressesSchema', () => {
   describe('accepts valid entries', () => {
     it.each([

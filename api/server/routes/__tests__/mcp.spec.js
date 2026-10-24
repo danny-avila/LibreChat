@@ -2534,6 +2534,44 @@ describe('MCP Routes', () => {
     });
   });
 
+  describe.each(['tokens', 'status'])('GET /oauth/%s/:flowId authorization', (endpoint) => {
+    it.each([
+      ['USER', undefined, 'system:test-server'],
+      ['ADMIN', undefined, 'system:test-server'],
+      ['USER', 'tenant-a', 'tenant:tenant-a:system:test-server'],
+      ['ADMIN', 'tenant-a', 'tenant:tenant-a:system:test-server'],
+    ])(
+      'denies %s access in tenant %s to %s before reading flow state',
+      async (role, tenantId, flowId) => {
+        const { getTenantId } = require('@librechat/data-schemas');
+        const { getFlowStateManager } = require('~/config');
+        const { getLogStores } = require('~/cache');
+        const mockFlowManager = {
+          getFlowState: jest.fn().mockResolvedValue({
+            status: 'COMPLETED',
+            result: {
+              access_token: 'system-access-token',
+              refresh_token: 'system-refresh-token',
+            },
+          }),
+        };
+        currentUser = { id: 'test-user-id', role };
+        getTenantId.mockReturnValue(tenantId);
+        getFlowStateManager.mockReturnValue(mockFlowManager);
+
+        const response = await request(app).get(
+          `/api/mcp/oauth/${endpoint}/${encodeURIComponent(flowId)}`,
+        );
+
+        expect(response.status).toBe(403);
+        expect(response.body).toEqual({ error: 'Access denied' });
+        expect(getLogStores).not.toHaveBeenCalled();
+        expect(getFlowStateManager).not.toHaveBeenCalled();
+        expect(mockFlowManager.getFlowState).not.toHaveBeenCalled();
+      },
+    );
+  });
+
   describe('GET /oauth/tokens/:flowId', () => {
     const { getLogStores } = require('~/cache');
 

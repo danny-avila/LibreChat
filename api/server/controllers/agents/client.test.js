@@ -2301,6 +2301,55 @@ describe('AgentClient - startup telemetry', () => {
     jest.restoreAllMocks();
   });
 
+  it.each([false, true])(
+    'bounds ordinary-chat admission before provider startup (legacy=%s)',
+    async (legacy) => {
+      const createRunBefore = mockCreateRun.mock.calls.length;
+      const name = 'q' + '_mcp_z'.repeat(legacy ? 4000 : 80);
+      const tool_options = Object.fromEntries(
+        Array.from({ length: legacy ? 1 : 100 }, (_, i) => [
+          `${i}_${name}`,
+          { approval_mode: 'ask' },
+        ]),
+      );
+      const client = new AgentClient({
+        req: {
+          user: { id: 'user-123' },
+          body: {},
+          config: {
+            endpoints: {
+              [EModelEndpoint.agents]: { toolApproval: { enabled: true, mode: 'bypass' } },
+            },
+          },
+        },
+        res: {},
+        agent: {
+          id: 'agent-123',
+          endpoint: EModelEndpoint.openAI,
+          provider: EModelEndpoint.openAI,
+          model_parameters: { model: 'gpt-4' },
+          tools: [],
+          lazySubagentConfigs: [{ id: 'child', tools: ['other_mcp_unknown'], tool_options }],
+        },
+        endpointTokenConfig: {},
+        eventHandlers: {},
+        contentParts: [],
+        collectedUsage: [],
+        artifactPromises: [],
+      });
+      client.conversationId = 'bounded-approval-admission';
+      client.responseMessageId = 'bounded-response';
+      client.parentMessageId = 'bounded-parent';
+
+      await client.chatCompletion({ payload: [] });
+
+      expect(mockCreateRun).toHaveBeenCalledTimes(createRunBefore);
+      expect(client.contentParts).toEqual(
+        expect.arrayContaining([expect.objectContaining({ type: ContentTypes.ERROR })]),
+      );
+    },
+  );
+
   it('refuses scheduled pause-capable runs before provider startup without Redis', async () => {
     mockIsHITLEnabled.mockReturnValue(false);
     const createRunBefore = mockCreateRun.mock.calls.length;

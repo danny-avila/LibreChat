@@ -196,6 +196,18 @@ describe('mergeConfigOverrides', () => {
     ).toEqual({ siteKey: 'yaml-site-key' });
   });
 
+  it('keeps the admin catalog model-list lifetime on librechat.yaml', () => {
+    const base = { endpoints: { catalogModelsTtlMs: 600_000 } } as unknown as AppConfig;
+    const read = (configs: IConfig[]) => mergeConfigOverrides(base, configs).endpoints;
+
+    expect(read([fakeConfig({ endpoints: { catalogModelsTtlMs: 0 } }, 10)])).toEqual({
+      catalogModelsTtlMs: 600_000,
+    });
+    expect(
+      read([fakeConfig({}, 0, ['endpoints.catalogModelsTtlMs'], BASE_CONFIG_PRINCIPAL_ID)]),
+    ).toEqual({ catalogModelsTtlMs: 600_000 });
+  });
+
   it('keeps the pull request host from the base config whatever an override does', () => {
     const pullRequests = { host: 'ghe.example.com', allowedRepositories: ['acme/*'] };
     const base = { endpoints: { agents: { pullRequests } } } as unknown as AppConfig;

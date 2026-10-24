@@ -1,8 +1,10 @@
 import { join } from 'path';
 import mongoose from 'mongoose';
 import { readFileSync } from 'fs';
+import { EventEmitter } from 'events';
 import mongoSanitize from 'express-mongo-sanitize';
 import {
+  logger,
   AppService,
   getConfigRevision,
   loadWebSearchConfig,
@@ -35,6 +37,10 @@ import {
 } from 'librechat-data-provider';
 import type {
   AdminConfigFeatureFlag,
+  AdminResolvedConfigResponse,
+  AdminConfigCatalogResponse,
+  AdminEffectiveConfigResponse,
+  AdminConfigEnvStatusResponse,
   ConfigOverrideLayer,
   ConfigPrincipal,
   AdminConfigMeta,
@@ -58,13 +64,17 @@ import { allowBeforeTermsAcceptance, createTermsAcceptanceGate } from '~/middlew
 import { createRequestSanitizer, rejectUnsafeConfigKeys } from '~/middleware/sanitize';
 import { resolvePreAuthAppConfig, resolvePreLoginAppConfig } from '~/app/resolve';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+import { createConfigCacheInvalidation } from '~/app/invalidation';
 import { createMCPPolicyResolver } from '~/mcp/registry/policy';
+import { createAdminConfigCatalogHandlers } from './catalog';
 import { createEnvReferencePolicy } from '~/app/allowlist';
+import { createAdminConfigReadHandlers } from './resolved';
 import { resolveTitleConfig } from '~/endpoints/config';
 import { createAppConfigService } from '~/app/service';
 import { mergeOverrideLayers } from '~/app/overrides';
 import { createAdminConfigHandlers } from './config';
 import { createAdminRolesHandlers } from './roles';
+import { ConfigReloadError } from '~/app/loader';
 import { ADMIN_CONFIG_FEATURES } from './meta';
 import { loadWebSearchAuth } from '~/web';
 
@@ -275,42 +285,55 @@ describe('GET /api/admin/config/meta', () => {
     expect(res.body).toEqual({ error: 'Failed to get config meta' });
   });
 
+  it('reports the catalog model-list lifetime librechat.yaml sets', async () => {
+    const getAppConfig = jest
+      .fn()
+      .mockResolvedValue({ config: {}, endpoints: { catalogModelsTtlMs: 600_000 } });
+    const res = mockRes();
+    await createHandlers({ getAppConfig }).getConfigMeta(mockReq(), res);
+    expect((res.body as AdminConfigMeta).limits.catalogModelsTtlMs).toBe(600_000);
+    expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ baseOnly: true }));
+  });
+
   it('keeps its response keys stable', async () => {
     const { status, meta } = await getMeta();
     expect(status).toBe(200);
     expect(Object.keys(meta)).toEqual(['metaVersion', 'versions', 'features', 'limits', 'rules']);
     expect(meta.metaVersion).toBe(1);
     expect(Object.keys(meta.versions)).toEqual(['librechat', 'dataProvider', 'configSchema']);
-    expect(Object.keys(meta.features).sort()).toEqual(
-      [
-        'awaitedInvalidation',
-        'azureGroupSecrets',
-        'changesBatch',
-        'deterministicPrecedence',
-        'dottedKeys',
-        'envAllowlist',
-        'expectedRevision',
-        'preAuthBaseOverrides',
-        'principalCheck',
-        'priorityRoute',
-        'prunesEmptyParents',
-        'readFilteredWriteResponses',
-        'recordSecrets',
-        'roleRenameMovesProfile',
-        'adminTermsExempt',
-        'secretRebinding',
-        'sectionAllowlist',
-        'webSearchStoredKeys',
-        'writeReport',
-        'issueParams',
-        'yamlMcpHide',
-        'yamlSecretPreview',
-      ].sort(),
-    );
+    expect(Object.keys(meta.features).sort()).toEqual([
+      'adminTermsExempt',
+      'awaitedInvalidation',
+      'azureGroupSecrets',
+      'catalogApi',
+      'changesBatch',
+      'deterministicPrecedence',
+      'dottedKeys',
+      'envAllowlist',
+      'envStatus',
+      'expectedRevision',
+      'issueParams',
+      'preAuthBaseOverrides',
+      'principalCheck',
+      'priorityRoute',
+      'prunesEmptyParents',
+      'readFilteredWriteResponses',
+      'recordSecrets',
+      'reloadRoute',
+      'resolvedApi',
+      'roleRenameMovesProfile',
+      'secretRebinding',
+      'sectionAllowlist',
+      'webSearchStoredKeys',
+      'writeReport',
+      'yamlMcpHide',
+      'yamlSecretPreview',
+    ]);
     expect(meta.limits).toEqual({
       maxPatchEntries: 100,
       maxChangeOps: 1000,
       overrideCacheTtlMs: 60_000,
+      catalogModelsTtlMs: 120_000,
     });
     expect(Object.keys(meta.rules).sort()).toEqual([
       'acceptedSections',
@@ -353,6 +376,10 @@ describe('GET /api/admin/config/meta', () => {
       yamlSecretPreview: true,
       envAllowlist: true,
       secretRebinding: true,
+      resolvedApi: true,
+      catalogApi: true,
+      envStatus: true,
+      reloadRoute: true,
       writeReport: true,
       issueParams: true,
       adminTermsExempt: true,
@@ -1541,6 +1568,273 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
       getIn(restatedMerge, 'mcpConfig.tools.apiKey.key') === '${TOOLS_KEY}' &&
       restated.statusCode === 200 &&
       restated.body?.ignored === undefined
+    );
+  },
+  async resolvedApi() {
+    const yaml = { interface: { customWelcome: 'From YAML' } };
+    const role = storedConfig({ interface: { customWelcome: 'From role', prompts: false } });
+    const cache = new Map<string, unknown>();
+    const service = createAppConfigService({
+      loadBaseConfig: async () =>
+        ({
+          config: yaml,
+          interfaceConfig: { ...yaml.interface },
+        }) as Partial<AppConfig> as AppConfig,
+      setCachedTools: async () => undefined,
+      getCache: () => ({
+        get: async (key: string) => cache.get(key),
+        set: async (key: string, value: unknown) => void cache.set(key, value),
+        delete: async (key: string) => cache.delete(key),
+      }),
+      cacheKeys: { APP_CONFIG: 'app_config' },
+      getApplicableConfigs: async () => [role],
+      getUserPrincipals: async () => [],
+    });
+    const handlers = createAdminConfigReadHandlers({
+      findConfigByPrincipal: async (type, id) =>
+        type === role.principalType && id === role.principalId ? role : null,
+      hasAnyConfigReadAccess: async () => true,
+      getReadableConfigSections: async (_user, sections) => ({
+        broad: true,
+        sections: new Set(sections),
+      }),
+      hasCapability: async () => true,
+      resolveConfigLayers: service.resolveConfigLayers,
+      findPartitionUser: async (id) => (id === 'member' ? { id, role: 'r1' } : null),
+      getUserPrincipals: async () => [{ principalType: PrincipalType.ROLE, principalId: 'r1' }],
+      getApplicableConfigs: async () => [role],
+    });
+    const resolved = mockRes();
+    await handlers.getResolvedConfig(
+      mockReq({ params: { principalType: 'role', principalId: 'r1' } }),
+      resolved,
+    );
+    const effective = mockRes();
+    await handlers.getEffectiveConfig(mockReq({ query: { userId: 'member' } }), effective);
+    const outside = mockRes();
+    await handlers.getEffectiveConfig(mockReq({ query: { userId: 'stranger' } }), outside);
+    const body = resolved.body as unknown as AdminResolvedConfigResponse;
+    return (
+      resolved.statusCode === 200 &&
+      body.yaml.interface?.customWelcome === 'From YAML' &&
+      body.resolved.interface?.customWelcome === 'From role' &&
+      JSON.stringify(body.layers[0]?.ignored) ===
+        JSON.stringify([
+          {
+            path: 'interface.prompts',
+            segments: ['interface', 'prompts'],
+            reason: 'interface_permission',
+          },
+        ]) &&
+      effective.statusCode === 200 &&
+      (effective.body as unknown as AdminEffectiveConfigResponse).resolved.interface
+        ?.customWelcome === 'From role' &&
+      outside.statusCode === 404 &&
+      outside.body?.code === 'USER_NOT_FOUND'
+    );
+  },
+  async catalogApi() {
+    const config = {
+      config: { mcpServers: { docs: { url: 'https://docs.example.com/mcp' } } },
+      mcpConfig: { docs: { url: 'https://docs.example.com/mcp' } },
+      endpoints: { custom: [{ name: 'Gateway', apiKey: 'k', baseURL: 'https://g.example.com' }] },
+    } as Partial<AppConfig> as AppConfig;
+    const getAppConfig = jest.fn().mockResolvedValue(config);
+    const loaderUsers: unknown[] = [];
+    const handlers = createAdminConfigCatalogHandlers({
+      hasAnyConfigReadAccess: async () => true,
+      getReadableConfigSections: async (_user, sections) => ({
+        broad: true,
+        sections: new Set(sections),
+      }),
+      hasConfigCapability: async () => true,
+      getAppConfig,
+      getEndpointsConfig: async ({ config: scoped }) =>
+        scoped === config
+          ? { Gateway: { type: EModelEndpoint.custom, userProvide: false, order: 0 } }
+          : {},
+      loadDefaultModels: async ({ user }) => {
+        loaderUsers.push(user);
+        return { openAI: ['gpt-default'] };
+      },
+      loadConfigModels: async ({ user }) => {
+        loaderUsers.push(user);
+        return { Gateway: ['g-1'] };
+      },
+    });
+    const res = mockRes();
+    await handlers.getConfigCatalog(
+      mockReq({ query: { principalType: 'role', principalId: 'editors' }, headers: {} }),
+      res,
+    );
+    const body = res.body as unknown as AdminConfigCatalogResponse;
+    return (
+      res.statusCode === 200 &&
+      getAppConfig.mock.calls[0]?.[0]?.role === 'editors' &&
+      getAppConfig.mock.calls[0]?.[0]?.bypassOverrideCache === true &&
+      body.endpoints?.Gateway?.enabled === true &&
+      body.endpoints?.anthropic?.reason === 'missing_credentials' &&
+      JSON.stringify(body.models?.openAI) ===
+        JSON.stringify({ served: ['gpt-default'], defaults: ['gpt-default'] }) &&
+      body.mcpServers?.[0]?.source === 'yaml' &&
+      loaderUsers.length === 2 &&
+      loaderUsers.every((user) => !Object.prototype.hasOwnProperty.call(user, 'id'))
+    );
+  },
+  async envStatus() {
+    process.env.META_PROBE_SET_NAME = 'probe-secret-value';
+    delete process.env.META_PROBE_UNSET_NAME;
+    try {
+      const handlers = createAdminConfigCatalogHandlers({
+        hasAnyConfigReadAccess: async () => true,
+        getReadableConfigSections: async (_user, sections) => ({
+          broad: true,
+          sections: new Set(sections),
+        }),
+        hasConfigCapability: async () => true,
+        getAppConfig: async () =>
+          ({
+            config: {
+              ocr: { apiKey: '${META_PROBE_SET_NAME}', baseURL: '${META_PROBE_UNSET_NAME}' },
+            },
+          }) as Partial<AppConfig> as AppConfig,
+        getEndpointsConfig: async () => ({}),
+        loadDefaultModels: async () => ({}),
+        loadConfigModels: async () => ({}),
+      });
+      const res = mockRes();
+      await handlers.getEnvStatus(mockReq(), res);
+      const { vars } = res.body as unknown as AdminConfigEnvStatusResponse;
+      return (
+        res.statusCode === 200 &&
+        vars.META_PROBE_SET_NAME?.set === true &&
+        vars.META_PROBE_UNSET_NAME?.set === false &&
+        vars.OPENAI_API_KEY != null &&
+        !JSON.stringify(res.body).includes('probe-secret-value')
+      );
+    } finally {
+      delete process.env.META_PROBE_SET_NAME;
+    }
+  },
+  async reloadRoute() {
+    /** Two instances, each loading librechat.yaml into its own cache, on one pub/sub channel. */
+    const subscribers = new Set<EventEmitter>();
+    const state = { reachable: true, fileValid: true };
+    const createInstance = () => {
+      let loads = 0;
+      const entries = new Map<string, unknown>();
+      const service = createAppConfigService({
+        loadBaseConfig: async (mode) => {
+          loads += 1;
+          if (!state.fileValid && mode === 'reload') {
+            throw new ConfigReloadError('Invalid custom config file', undefined, [
+              { code: 'unrecognized_keys', keys: ['bogusTopLevelKey'], path: [], message: '' },
+            ]);
+          }
+          return { config: {} } as AppConfig;
+        },
+        setCachedTools: async () => undefined,
+        getCache: () => ({
+          get: async (key: string) => entries.get(key),
+          set: async (key: string, value: unknown) => entries.set(key, value),
+          delete: async (key: string) => entries.delete(key),
+        }),
+        cacheKeys: { APP_CONFIG: 'app_config' },
+        getApplicableConfigs: async () => [],
+        getUserPrincipals: async () => [],
+      });
+      const subscriber = Object.assign(new EventEmitter(), {
+        subscribe: async () => subscribers.add(subscriber),
+        unsubscribe: async () => subscribers.delete(subscriber),
+      });
+      const invalidation = createConfigCacheInvalidation({
+        clears: [
+          { label: 'clearAppConfigCache', clear: () => service.clearAppConfigCache() },
+          { label: 'clearOverrideCache', clear: service.clearOverrideCache },
+        ],
+        load: service.reloadBaseConfig,
+        pubsub: {
+          publisher: {
+            publish: async (channel: string, message: string) => {
+              if (!state.reachable) {
+                throw new Error('Connection is closed.');
+              }
+              subscribers.forEach((other) => other.emit('message', channel, message));
+              return subscribers.size;
+            },
+          },
+          subscriber,
+        },
+      });
+      const read = async () => {
+        await service.getAppConfig({ baseOnly: true });
+        return loads;
+      };
+      return { invalidation, read };
+    };
+    const [first, second] = [createInstance(), createInstance()];
+    await settle();
+    await Promise.all([first.read(), second.read()]);
+
+    const writeConfigDocument = jest.fn();
+    const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+    const reload = async (deps: Partial<AdminConfigDeps>, init: MockReqInit = {}) => {
+      const res = mockRes();
+      await createHandlers({
+        writeConfigDocument,
+        recordAuditEntry,
+        reloadConfigCaches: first.invalidation.reload,
+        ...deps,
+      }).reloadConfig(mockReq(init), res);
+      await settle();
+      return { res, loads: [await first.read(), await second.read()] };
+    };
+    const error = jest.spyOn(logger, 'error').mockReturnValue(logger);
+    const sectionScoped = await reload({
+      hasConfigCapability: jest.fn(async (_user, section) => section != null),
+    });
+    const tenantAdmin = await reload(
+      {},
+      { user: { id: 'u2', role: 'ADMIN', tenantId: 'tenant-a' } as ServerRequest['user'] },
+    );
+    const reloaded = await reload({});
+    const unconfigured = await reload({ reloadConfigCaches: undefined });
+    state.fileValid = false;
+    const refused = await reload({});
+    state.fileValid = true;
+    state.reachable = false;
+    const unbroadcast = await reload({});
+    error.mockRestore();
+    const audited = recordAuditEntry.mock.calls.map(([entry]) => entry);
+    return (
+      sectionScoped.res.statusCode === 403 &&
+      sectionScoped.res.body?.code === 'FORBIDDEN' &&
+      sectionScoped.loads.join() === '1,1' &&
+      tenantAdmin.res.statusCode === 403 &&
+      tenantAdmin.res.body?.code === 'FORBIDDEN' &&
+      tenantAdmin.loads.join() === '1,1' &&
+      reloaded.res.statusCode === 200 &&
+      JSON.stringify(reloaded.res.body) === JSON.stringify({ success: true, broadcast: true }) &&
+      reloaded.loads.join() === '2,2' &&
+      unconfigured.res.statusCode === 501 &&
+      unconfigured.loads.join() === '2,2' &&
+      refused.res.statusCode === 422 &&
+      refused.res.body?.code === 'CONFIG_RELOAD_INVALID' &&
+      JSON.stringify(refused.res.body?.issues) ===
+        JSON.stringify([
+          { path: 'bogusTopLevelKey', segments: ['bogusTopLevelKey'], code: 'unrecognized_keys' },
+        ]) &&
+      refused.loads.join() === '3,2' &&
+      unbroadcast.res.statusCode === 503 &&
+      unbroadcast.res.body?.code === 'CONFIG_RELOAD_BROADCAST_FAILED' &&
+      unbroadcast.loads.join() === '4,2' &&
+      writeConfigDocument.mock.calls.length === 0 &&
+      audited.length === 3 &&
+      audited.every((entry) => entry.action === 'config.reloaded') &&
+      audited[0].outcome === undefined &&
+      audited[1].outcome === 'failure' &&
+      audited[1].metadata?.code === 'CONFIG_RELOAD_INVALID' &&
+      audited[2].outcome === 'failure'
     );
   },
   async writeReport() {
