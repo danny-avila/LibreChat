@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto';
 import type { FilterQuery, Model, ProjectionType } from 'mongoose';
 import type { AssistantQuery, IAssistant } from '~/types';
+import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { buildFilter, type FieldMap } from '~/utils/criteria';
 import { createIndexesWithRetry } from '~/utils/retry';
 
@@ -23,7 +25,7 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
     query: { assistantId: string; user?: string },
     avatar: NonNullable<IAssistant['avatar']>,
     onInsert?: { user: string; endpoint: string },
-  ) => Promise<IAssistant | null>;
+  ) => Promise<(IAssistant & { previousAvatar?: IAssistant['avatar'] }) | null>;
   deleteAssistant: (query: AssistantQuery) => Promise<IAssistant | null>;
   deleteAssistants: (query: AssistantQuery) => Promise<number>;
   getAssistants: (
@@ -63,12 +65,12 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
       .lean<IAssistant>();
   }
 
-  /** Updates the authorized avatar, initializing only absent identity fields. */
+  /** Updates avatar and absent identity atomically; unmatched references return null without insert data. */
   async function updateAssistantAvatar(
     query: { assistantId: string; user?: string },
     avatar: NonNullable<IAssistant['avatar']>,
     onInsert?: { user: string; endpoint: string },
-  ): Promise<IAssistant | null> {
+  ): Promise<(IAssistant & { previousAvatar?: IAssistant['avatar'] }) | null> {
     if (
       typeof query?.assistantId !== 'string' ||
       query.assistantId.trim().length === 0 ||
@@ -96,61 +98,81 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
       throw new TypeError('Avatar insert data must identify the authorized user and endpoint');
     }
 
+    const { assistantId, user } = query;
     const insertData = onInsert && { user: onInsert.user, endpoint: onInsert.endpoint };
-    const upsert = insertData !== undefined && query.user === undefined;
-    let reference = await Assistant()
-      .findOneAndUpdate(
-        assistantFilter(query),
-        { $set: { avatar }, ...(upsert ? { $setOnInsert: insertData } : {}) },
-        { new: true, upsert },
-      )
-      .lean<IAssistant>();
-    if (!insertData) {
-      return reference;
-    }
+    let reference = await Assistant().findOne(assistantFilter({ assistantId })).lean<IAssistant>();
     if (!reference) {
-      // An owner-scoped upsert could duplicate another owner's existing assistant.
-      reference = await Assistant()
-        .findOneAndUpdate(
-          assistantFilter({ assistantId: query.assistantId }),
-          { $setOnInsert: { ...insertData, avatar } },
-          { new: true, upsert: true },
-        )
-        .lean<IAssistant>();
+      if (!insertData) {
+        return null;
+      }
+      // The built-in unique _id index arbitrates concurrent initialization across replicas.
+      const tenantId = getTenantId();
+      const tenant = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : null;
+      const _id = new mongoose.Types.ObjectId(
+        createHash('sha256')
+          .update(JSON.stringify([tenant, assistantId]))
+          .digest('hex')
+          .slice(0, 24),
+      );
+      try {
+        const created = await Assistant().create({
+          _id,
+          assistant_id: assistantId,
+          ...insertData,
+          avatar,
+        });
+        return created.toObject<IAssistant>();
+      } catch (error) {
+        if (
+          typeof error !== 'object' ||
+          error == null ||
+          !('code' in error) ||
+          error.code !== 11000
+        ) {
+          throw error;
+        }
+        reference = await Assistant()
+          .findOne({ _id, assistant_id: assistantId })
+          .lean<IAssistant>();
+        if (!reference) {
+          throw error;
+        }
+      }
     }
-    if (
-      !reference ||
-      (query.user !== undefined &&
-        reference.user != null &&
-        reference.user.toString() !== query.user)
-    ) {
-      throw new Error('Assistant ownership changed before the avatar update');
+    if (user !== undefined && reference.user?.toString() !== user) {
+      if (!insertData) {
+        return null;
+      }
+      if (reference.user != null) {
+        throw new Error('Assistant ownership changed before the avatar update');
+      }
     }
 
     const missingUser = reference.user == null;
     const missingEndpoint = reference.endpoint == null || reference.endpoint === '';
     if (
-      !missingUser &&
-      !missingEndpoint &&
+      (!insertData || (!missingUser && !missingEndpoint)) &&
       reference.avatar?.filepath === avatar.filepath &&
       reference.avatar.source === avatar.source
     ) {
       return reference;
     }
 
-    // Compare-and-set prevents backfill from overwriting a concurrent identity assignment.
+    // Avatar and backfill share one identity guard, so a lost race cannot partially mutate the row.
     const updated = await Assistant()
       .findOneAndUpdate(
         {
           _id: reference._id,
+          assistant_id: assistantId,
           user: reference.user ?? null,
           endpoint: reference.endpoint ?? null,
+          avatar: reference.avatar ?? null,
         },
         {
           $set: {
             avatar,
-            ...(missingUser ? { user: insertData.user } : {}),
-            ...(missingEndpoint ? { endpoint: insertData.endpoint } : {}),
+            ...(insertData && missingUser ? { user: insertData.user } : {}),
+            ...(insertData && missingEndpoint ? { endpoint: insertData.endpoint } : {}),
           },
         },
         { new: true },
@@ -159,7 +181,7 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')): {
     if (!updated) {
       throw new Error('Assistant identity changed before the avatar update');
     }
-    return updated;
+    return Object.assign(updated, { previousAvatar: reference.avatar });
   }
 
   /**

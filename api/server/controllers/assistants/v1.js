@@ -10,6 +10,7 @@ const {
   resolveAssistantToolPermissions,
   getAssistantErrorStatus,
   resolveAssistantAvatarIdentity,
+  commitAssistantAvatar,
 } = require('@librechat/api');
 const { FileContext } = require('librechat-data-provider');
 const {
@@ -20,6 +21,7 @@ const {
   getAssistant,
   getRoleByName,
   getUserById,
+  getFiles,
 } = require('~/models');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
@@ -438,41 +440,23 @@ const uploadAssistantAvatar = async (req, res) => {
       metadata: { buffer },
     });
 
-    if (_metadata.avatar && _metadata.avatar_source) {
-      const { deleteFile } = getStrategyFunctions(_metadata.avatar_source);
-      try {
-        await deleteFile(req, {
-          filepath: _metadata.avatar,
-          user: req.user.id,
-          tenantId: req.user.tenantId,
-        });
-        await deleteFileByFilter({ user: req.user.id, filepath: _metadata.avatar });
-      } catch (error) {
-        logger.error('[/:assistant_id/avatar] Error deleting old avatar', error);
-      }
-    }
-
-    const metadata = {
-      ..._metadata,
-      avatar: image.filepath,
-      avatar_source: appConfig.fileStrategy,
-    };
-
-    const promises = [];
-    promises.push(
-      updateAssistantAvatar(
-        assistantQuery,
-        {
-          filepath: image.filepath,
-          source: appConfig.fileStrategy,
-        },
-        avatarIdentity,
-      ),
+    const updatedAssistant = await commitAssistantAvatar(
+      {
+        req,
+        query: assistantQuery,
+        identity: avatarIdentity,
+        avatar: { filepath: image.filepath, source: image.source ?? appConfig.fileStrategy },
+        metadata: _metadata,
+      },
+      {
+        updateAssistantAvatar,
+        updateProvider: (id, body) => openai.beta.assistants.update(id, body),
+        getFiles,
+        deleteFileByFilter,
+        getStrategyFunctions,
+      },
     );
-    promises.push(openai.beta.assistants.update(assistant_id, { metadata }));
-
-    const resolved = await Promise.all(promises);
-    res.status(201).json(resolved[1]);
+    res.status(201).json(updatedAssistant);
   } catch (error) {
     const message = 'An error occurred while updating the Assistant Avatar';
     logger.error(message, error);

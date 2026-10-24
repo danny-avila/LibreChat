@@ -29,6 +29,7 @@ jest.mock('./tools', () => require('express').Router());
 
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { uploadImageBuffer } = require('~/server/services/Files/process');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { updateAssistantDoc } = require('~/models');
 const { avatar } = require('./v1');
@@ -49,8 +50,10 @@ describe('assistant avatar multipart authorization', () => {
   let privateAssistants;
   let requestUser;
   let User;
+  let File;
   const retrieve = jest.fn();
   const update = jest.fn();
+  const deleteStoredFile = jest.fn();
   const openai = { beta: { assistants: { retrieve, update } } };
 
   beforeAll(async () => {
@@ -58,7 +61,7 @@ describe('assistant avatar multipart authorization', () => {
     mongo = await MongoMemoryServer.create({ instance: { args: ['--nounixsocket'] } });
     await mongoose.connect(mongo.getUri());
     mongoose.set('strictQuery', true);
-    ({ Assistant, User } = createModels(mongoose));
+    ({ Assistant, User, File } = createModels(mongoose));
     const upload = multer({ dest: directory });
     app = express();
     // Authenticated user/config fixture; exercise real multipart parsing, route, guard and DB.
@@ -119,6 +122,7 @@ describe('assistant avatar multipart authorization', () => {
       { _id: victim, tenantId: 'tenant-a' },
     ]);
     await Assistant.deleteMany({});
+    await File.deleteMany({});
     await Assistant.create([
       {
         assistant_id: 'asst-attacker',
@@ -151,6 +155,12 @@ describe('assistant avatar multipart authorization', () => {
     hasCapability.mockResolvedValue(false);
     getOpenAIClient.mockResolvedValue({ openai });
     uploadImageBuffer.mockResolvedValue({ filepath: '/images/avatar.png' });
+    deleteStoredFile.mockReset().mockImplementation(async (req, file) => {
+      if (req.user.id !== file.user.toString() || req.user.tenantId !== file.tenantId) {
+        throw new Error('Stored avatar owner mismatch');
+      }
+    });
+    getStrategyFunctions.mockReturnValue({ deleteFile: deleteStoredFile });
   });
 
   async function upload(id, fields = {}, query = '') {
@@ -381,6 +391,107 @@ describe('assistant avatar multipart authorization', () => {
     const response = await upload('asst-victim');
     expect(response.status).toBe(500);
     await expectVictimUnchanged();
+  });
+
+  it('deletes replaced avatars under their persisted owners after cross-owner replacements', async () => {
+    const originalPath = `/images/${victim}/original-avatar.png`;
+    const managedPath = `/images/${attacker}/managed-avatar.png`;
+    const ownerPath = `/images/${victim}/latest-avatar.png`;
+    await Assistant.updateOne(
+      { assistant_id: 'asst-victim' },
+      {
+        $set: { avatar: { filepath: originalPath, source: 'local' } },
+      },
+    );
+    await File.collection.insertMany([
+      {
+        file_id: 'original-avatar',
+        filepath: originalPath,
+        user: victim,
+        tenantId: 'tenant-a',
+        source: 'local',
+        context: 'avatar',
+      },
+      {
+        file_id: 'managed-avatar',
+        filepath: managedPath,
+        user: attacker,
+        tenantId: 'tenant-a',
+        source: 'local',
+        context: 'avatar',
+      },
+      {
+        file_id: 'latest-avatar',
+        filepath: ownerPath,
+        user: victim,
+        tenantId: 'tenant-a',
+        source: 'local',
+        context: 'avatar',
+      },
+    ]);
+    providers['asst-victim'].metadata = {
+      author: victim.toString(),
+      avatar: originalPath,
+      avatar_source: 'local',
+    };
+    hasCapability.mockResolvedValue(true);
+    uploadImageBuffer.mockResolvedValue({ filepath: managedPath, source: 'local' });
+    const managed = await upload('asst-victim');
+    expect(managed.status).toBe(201);
+    expect(deleteStoredFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ user: expect.objectContaining({ id: victim.toString() }) }),
+      expect.objectContaining({ file_id: 'original-avatar', filepath: originalPath }),
+    );
+    expect(await File.findOne({ file_id: 'original-avatar' }).lean()).toBeNull();
+    expect(await File.findOne({ file_id: 'managed-avatar' }).lean()).not.toBeNull();
+
+    requestUser = victim;
+    hasCapability.mockResolvedValue(false);
+    providers['asst-victim'] = managed.body;
+    uploadImageBuffer.mockResolvedValue({ filepath: ownerPath, source: 'local' });
+    const owned = await upload('asst-victim');
+    expect(owned.status).toBe(201);
+    expect(deleteStoredFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ user: expect.objectContaining({ id: attacker.toString() }) }),
+      expect.objectContaining({ file_id: 'managed-avatar', filepath: managedPath }),
+    );
+    expect(await File.findOne({ file_id: 'managed-avatar' }).lean()).toBeNull();
+    expect(await File.findOne({ file_id: 'latest-avatar' }).lean()).not.toBeNull();
+    const assistant = await Assistant.findOne({ assistant_id: 'asst-victim' }).lean();
+    expect(assistant.user.toString()).toBe(victim.toString());
+    expect(assistant.avatar.filepath).toBe(ownerPath);
+  });
+
+  it('preserves the old file and skips provider mutation when avatar persistence fails', async () => {
+    const oldAvatar = { filepath: `/images/${attacker}/previous-avatar.png`, source: 'local' };
+    await Assistant.updateOne({ assistant_id: 'asst-attacker' }, { $set: { avatar: oldAvatar } });
+    providers['asst-attacker'].metadata = {
+      author: attacker.toString(),
+      avatar: oldAvatar.filepath,
+      avatar_source: 'local',
+    };
+    await File.collection.insertOne({
+      file_id: 'previous-avatar',
+      filepath: oldAvatar.filepath,
+      user: attacker,
+      tenantId: 'tenant-a',
+      source: 'local',
+      context: 'avatar',
+    });
+    const mutate = jest.spyOn(Assistant, 'findOneAndUpdate').mockImplementationOnce(() => {
+      throw new Error('Assistant identity changed');
+    });
+    try {
+      const response = await upload('asst-attacker');
+      expect(response.status).toBe(500);
+      expect(update).not.toHaveBeenCalled();
+      expect(deleteStoredFile).not.toHaveBeenCalled();
+      expect(await File.findOne({ file_id: 'previous-avatar' }).lean()).not.toBeNull();
+      const reference = await Assistant.findOne({ assistant_id: 'asst-attacker' }).lean();
+      expect(reference.avatar).toEqual(oldAvatar);
+    } finally {
+      mutate.mockRestore();
+    }
   });
 
   it('keeps the owner of an existing shared assistant when another user changes its avatar', async () => {
