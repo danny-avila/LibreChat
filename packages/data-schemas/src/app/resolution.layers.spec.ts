@@ -408,15 +408,20 @@ describe('resolveConfigLayers', () => {
     expect(ignoredOf(resolution, 1)).toEqual([toIgnoredTombstone('cache', 'deployment_only_path')]);
   });
 
-  it('keeps Azure groups as written and reports groups the Azure clients never read', () => {
+  it('keeps Azure groups as written and reports groups that do not resolve over the groups below', () => {
     const configs = PARITY_CASES.find(([name]) => name.startsWith('Azure groups'))![1]();
-    const resolution = resolveConfigLayers(appConfig, configs);
+    const resolution = resolveConfigLayers(appConfig, configs, { rederiveEndpoints: true });
     const azure = resolution.resolved.endpoints?.azureOpenAI;
-    expect(azure?.groups?.map((entry) => entry.group)).toEqual(['west']);
+    expect(azure?.groups?.map((entry) => entry.group)).toEqual(['east']);
     expect(azure).not.toHaveProperty('groupMap');
     expect(Object.keys(resolution.merged.endpoints?.azureOpenAI?.groupMap ?? {})).toEqual(['east']);
-    expect(reasons(ignoredOf(resolution, 1))).toEqual([
-      ['endpoints.azureOpenAI.groups', 'azure_groups_unresolved'],
+    expect(ignoredOf(resolution, 1)).toEqual([
+      {
+        path: 'endpoints.azureOpenAI.groups',
+        segments: ['endpoints', 'azureOpenAI', 'groups'],
+        reason: 'invalid_override',
+        code: 'invalid_azure_groups',
+      },
     ]);
   });
 

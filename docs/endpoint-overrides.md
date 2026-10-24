@@ -13,7 +13,8 @@ the entry by its key.
 ## Keyed paths
 
 A keyed path names one entry of an array merged by key (`rules.arrayMergeKeys` in
-`GET /api/admin/config/meta`, today `endpoints.custom`), then optionally a path inside it:
+`GET /api/admin/config/meta`, today `endpoints.custom` and `endpoints.azureOpenAI.groups`), then
+optionally a path inside it:
 
 ```text
 endpoints.custom["<name>"]
@@ -159,6 +160,17 @@ cannot apply answers 400 `CONFIG_RENAME_INVALID` with `reason`:
 
 Without a hint, a renamed entry is a new entry: it keeps no key, and the tombstones stay on the old
 name.
+
+## Azure groups
+
+`endpoints.azureOpenAI.groups` merges by `group` the same way (`features.azureGroupMergeKey`) and
+takes the same keyed paths: `endpoints.azureOpenAI.groups["<group>"]` hides an inherited group,
+and `endpoints.azureOpenAI.groups["<group>"].<path>` a field inside one. A group's `apiKey` and its
+preview are written with the group, never by its key. The Azure clients read what the groups
+resolve to, so a hidden group or field takes effect only where the deployment resolves the groups
+a profile leaves (`CONFIG_REDERIVE_ENDPOINTS=true`, `features.endpointRederive`): the groups left
+are resolved again, and a group that no longer resolves once a field inside it is hidden is not
+served. Without it, the tombstone is stored and inert, as the profile's group overrides are.
 
 ## After upgrading
 

@@ -3684,6 +3684,44 @@ describe('Azure groups merge by group', () => {
     expect(azure?.modelNames).toEqual(['gpt-4o', 'gpt-4o-mini', 'o3', 'gpt-5']);
     expect(azure?.modelGroupMap?.['gpt-4o-mini']).toEqual({ group: 'east' });
   });
+
+  it('serves what keyed tombstones leave of the groups, and leaves them inert without the switch', async () => {
+    const north = {
+      ...east,
+      group: 'north',
+      instanceName: 'north',
+      apiKey: 'north-key',
+      models: { o3: true, 'o3-mini': true },
+    };
+    const base = await loadBase({ endpoints: { azureOpenAI: { groups: [east, north] } } });
+    const hidden = [fakeConfig({}, 10, ['endpoints.azureOpenAI.groups["north"]'])];
+
+    const azure = mergeWithGroups(base, hidden).endpoints?.azureOpenAI;
+    expect(Object.keys(azure?.groupMap ?? {})).toEqual(['east']);
+    expect(azure?.groupMap?.east).toBe(base.endpoints?.azureOpenAI?.groupMap?.east);
+    expect(azure?.modelNames).toEqual(['gpt-4o']);
+    expect(azure?.modelGroupMap?.o3).toBeUndefined();
+
+    const inside = mergeWithGroups(base, [
+      fakeConfig({}, 10, ['endpoints.azureOpenAI.groups["north"].models.o3-mini']),
+    ]).endpoints?.azureOpenAI;
+    expect(inside?.modelNames).toEqual(['gpt-4o', 'o3']);
+    expect(inside?.groupMap?.north).toMatchObject({ apiKey: 'north-key', models: { o3: true } });
+    expect(inside?.groupMap?.east).toBe(base.endpoints?.azureOpenAI?.groupMap?.east);
+
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const unresolved = mergeWithGroups(base, [
+      fakeConfig({}, 10, ['endpoints.azureOpenAI.groups["north"].instanceName']),
+    ]).endpoints?.azureOpenAI;
+    expect(Object.keys(unresolved?.groupMap ?? {})).toEqual(['east']);
+    expect(unresolved?.modelNames).toEqual(['gpt-4o']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Serving none of the'));
+    warn.mockRestore();
+
+    const off = mergeConfigOverrides(base, hidden).endpoints?.azureOpenAI;
+    expect(off?.groupMap).toEqual(base.endpoints?.azureOpenAI?.groupMap);
+    expect(off?.modelNames).toEqual(base.endpoints?.azureOpenAI?.modelNames);
+  });
 });
 
 describe('Vertex AI derived from overrides (rederiveEndpoints)', () => {
@@ -4512,7 +4550,9 @@ describe('deployment-only paths in the merge', () => {
     const merged = mergeConfigOverrides(base, [fakeConfig({}, 10, ['endpoints.agents'])]) as {
       endpoints?: { agents?: Record<string, unknown> };
     };
-    expect(merged.endpoints?.agents).toEqual({ eventDriven: { idlePolling: true } });
+    /** The rest is the agents endpoint startup derives from what the layers leave. */
+    expect(merged.endpoints?.agents?.eventDriven).toEqual({ idlePolling: true });
+    expect(merged.endpoints?.agents).not.toHaveProperty('recursionLimit');
   });
 
   it('keeps the tool filters librechat.yaml sets, so a profile cannot gate tools', () => {

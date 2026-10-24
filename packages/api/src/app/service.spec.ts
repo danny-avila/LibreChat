@@ -2641,6 +2641,11 @@ describe('what getAppConfig derives again for the parts profiles write', () => {
       ],
       addedEndpoints: ['Gateway', 'openAI'],
     });
+    /**
+     * Startup keeps an `addedEndpoints` name whose endpoint is gone; a custom endpoint the layers
+     * remove also leaves it (`keyedTombstones`), and the other names stay.
+     */
+    const withoutGateway = (yaml: Yaml): Yaml => at(yaml, `${SPECS}.addedEndpoints`, ['openAI']);
     /** Specs only on the custom endpoint, so removing it leaves none. */
     const GATEWAY_SPECS = at(YAML, SPECS, { list: [spec('g', 'Gateway')] });
     const onSpecs = (cell: Cell): Cell => ({ yaml: SPEC_YAML, ...cell });
@@ -3154,17 +3159,17 @@ describe('what getAppConfig derives again for the parts profiles write', () => {
             {
               change: 'tombstone of endpoints.custom',
               layers: [role({}, [CUSTOM])],
-              as: at(SPEC_YAML, CUSTOM),
+              as: withoutGateway(at(SPEC_YAML, CUSTOM)),
             },
             {
               change: "Base's tombstone of endpoints.custom, unset by the profile above",
               layers: [base({}, [CUSTOM]), role()],
-              as: at(SPEC_YAML, CUSTOM),
+              as: withoutGateway(at(SPEC_YAML, CUSTOM)),
             },
             {
               change: 'endpoints.custom Base adds to, tombstoned by a profile',
               layers: [base(write(CUSTOM, [router])), role({}, [CUSTOM])],
-              as: at(SPEC_YAML, CUSTOM),
+              as: withoutGateway(at(SPEC_YAML, CUSTOM)),
             },
             {
               change:
@@ -3176,7 +3181,7 @@ describe('what getAppConfig derives again for the parts profiles write', () => {
                 }),
                 above({}, [CUSTOM]),
               ],
-              as: at(at(SPEC_YAML, CUSTOM), `${SPECS}.list`, [
+              as: at(withoutGateway(at(SPEC_YAML, CUSTOM)), `${SPECS}.list`, [
                 spec('r', 'Router'),
                 spec('o', 'openAI'),
               ]),
@@ -3199,12 +3204,12 @@ describe('what getAppConfig derives again for the parts profiles write', () => {
             {
               change: 'tombstone of endpoints',
               layers: [role({}, ['endpoints'])],
-              as: at(SPEC_YAML, 'endpoints'),
+              as: withoutGateway(at(SPEC_YAML, 'endpoints')),
             },
             {
               change: "Base's tombstone of endpoints, unset by the profile above",
               layers: [base({}, ['endpoints']), role()],
-              as: at(SPEC_YAML, 'endpoints'),
+              as: withoutGateway(at(SPEC_YAML, 'endpoints')),
             },
             {
               change: 'endpoints.custom recreated by a profile after Base tombstones endpoints',
@@ -3221,7 +3226,7 @@ describe('what getAppConfig derives again for the parts profiles write', () => {
               change: 'switch off: tombstone of endpoints.custom',
               layers: [role({}, [CUSTOM])],
               rederiveEndpoints: false,
-              as: at(SPEC_YAML, CUSTOM),
+              as: withoutGateway(at(SPEC_YAML, CUSTOM)),
             },
             ...builtInSpecCells,
           ].map(onSpecs),

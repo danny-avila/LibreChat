@@ -13,6 +13,7 @@ import type {
   TVertexAIConfig,
 } from 'librechat-data-provider';
 import type { AppConfig } from '~/types';
+import { readConfigEntryTombstone, getConfigTombstoneSegments } from './collections';
 import { azureAssistantsDefaults, assistantsConfigSetup } from './assistants';
 import { getAtPath, isPlainRecord, isSegmentPrefix } from './paths';
 import { resolveServedAzureGroups } from './azure';
@@ -246,14 +247,21 @@ export function createConfigTouches(): ConfigTouches {
   return { paths: [], customEndpoints: new Set() };
 }
 
-/** Records what one layer wrote (`applied`, librechat.yaml keys) and the tombstones it applied. */
+/**
+ * Records what one layer wrote (`applied`, librechat.yaml keys) and the tombstones it applied: a
+ * keyed tombstone (`endpoints.custom["Name"]…`) by its array, with the custom endpoint it names.
+ */
 export function recordConfigTouches(
   touches: ConfigTouches,
   applied: JsonRecord,
   tombstones: readonly string[],
 ): void {
   for (const tombstone of tombstones) {
-    touches.paths.push(tombstone.split('.'));
+    touches.paths.push([...getConfigTombstoneSegments(tombstone)]);
+    const entry = readConfigEntryTombstone(tombstone);
+    if (entry != null && isSegmentPrefix(CUSTOM_ENDPOINTS, entry.segments)) {
+      touches.customEndpoints.add(entry.identity);
+    }
   }
   for (const [section, value] of Object.entries(applied)) {
     const fields = asRecord(value);

@@ -692,8 +692,16 @@ const DERIVED_HELD_PATHS: readonly HeldPath[] = DERIVED_CONFIG_PATHS.map((path) 
   reason: 'derived_path',
 }));
 
-/** Fields only librechat.yaml sets (`YAML_HELD_PATHS`) and derived fields: no write stores them. */
-const WRITE_HELD_PATHS: readonly HeldPath[] = [...YAML_HELD_PATHS, ...DERIVED_HELD_PATHS];
+let writeHeldPaths: readonly HeldPath[] | undefined;
+
+/**
+ * Fields only librechat.yaml sets (`YAML_HELD_PATHS`) and derived fields: no write stores them.
+ * Built on first use rather than at import, as the other readers of `YAML_HELD_PATHS` do.
+ */
+function getWriteHeldPaths(): readonly HeldPath[] {
+  writeHeldPaths ??= [...YAML_HELD_PATHS, ...DERIVED_HELD_PATHS];
+  return writeHeldPaths;
+}
 
 /**
  * Why a write or tombstone at `segments` is skipped because the path is, or lies inside, a field
@@ -701,7 +709,9 @@ const WRITE_HELD_PATHS: readonly HeldPath[] = [...YAML_HELD_PATHS, ...DERIVED_HE
  * and is never skipped.
  */
 function getHeldPathSkipReason(segments: readonly string[]): HeldPath['reason'] | null {
-  return WRITE_HELD_PATHS.find((held) => isSegmentPrefix(held.segments, segments))?.reason ?? null;
+  return (
+    getWriteHeldPaths().find((held) => isSegmentPrefix(held.segments, segments))?.reason ?? null
+  );
 }
 
 /** A part of a written value the API does not store, at its full location. */
@@ -722,7 +732,7 @@ function stripHeldPaths(
 ): { value: unknown; stripped: SkippedPart[] } {
   let result = value;
   const stripped: SkippedPart[] = [];
-  for (const { segments: path, reason } of WRITE_HELD_PATHS) {
+  for (const { segments: path, reason } of getWriteHeldPaths()) {
     if (path.length <= segments.length || !isSegmentPrefix(segments, path)) {
       continue;
     }
