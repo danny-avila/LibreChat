@@ -741,6 +741,7 @@ describe('every 4xx a config handler answers carries a stable code', () => {
       ['deleteConfigOverrides', { params }],
       ['toggleConfig', { params, body: { isActive: true } }],
       ['updateConfigPriority', { params, body: { priority: 1 } }],
+      ['reloadConfig', {}],
     ];
     for (const [handler, request] of routes) {
       const forbidden = await call(denied[handler], request);

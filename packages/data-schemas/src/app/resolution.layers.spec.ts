@@ -391,6 +391,23 @@ describe('resolveConfigLayers', () => {
     ]);
   });
 
+  it('keeps deployment-only fields at their librechat.yaml value, for writes and tombstones', () => {
+    const configs = [
+      role({ cache: false, rateLimits: { fileUploads: { ipMax: 1 } } }),
+      group({ interface: { customWelcome: 'Hi group' } }, ['cache']),
+    ];
+    const resolution = resolveConfigLayers(appConfig, configs);
+    expect(resolution.merged).toEqual(mergeConfigOverrides(appConfig, configs));
+    expect(resolution.resolved.cache).toBe(true);
+    expect(resolution.resolved).not.toHaveProperty('rateLimits');
+    expect(resolution.resolved.interface?.customWelcome).toBe('Hi group');
+    expect(reasons(ignoredOf(resolution, 0))).toEqual([
+      ['rateLimits', 'deployment_only_path'],
+      ['cache', 'deployment_only_path'],
+    ]);
+    expect(ignoredOf(resolution, 1)).toEqual([toIgnoredTombstone('cache', 'deployment_only_path')]);
+  });
+
   it('keeps Azure groups as written and reports groups the Azure clients never read', () => {
     const configs = PARITY_CASES.find(([name]) => name.startsWith('Azure groups'))![1]();
     const resolution = resolveConfigLayers(appConfig, configs);

@@ -571,6 +571,48 @@ describe('validation on the Base floor (W2-3)', () => {
         expect(res.statusCode).toBe(200);
         expect(res.body?.ignored).toEqual(dropped);
       }
+
+      /** A read judges the stored profile over the same Base the writes judged it on. */
+      const read = await call(handlers.getConfig, { params: group });
+      expect(read.statusCode).toBe(200);
+      expect(read.body?.ignoredBasis).toBe('base');
+      expect(read.body?.ignored).toEqual(dropped);
+    });
+
+    it("keeps the stdio servers that tenant's librechat.yaml runs out of PUT and tombstones", async () => {
+      const getAppConfig = yamlByTenant({
+        mcpServers: { local: { type: 'stdio', command: 'node', args: ['server.js'] } },
+      } as never);
+      const handlers = createHandlers({}, { getAppConfig });
+      const group = await tenantProfile(handlers, 'group');
+
+      const replaced = await call(handlers.upsertConfigOverrides, {
+        params: group,
+        body: {
+          overrides: {
+            interface: { customWelcome: 'hi' },
+            mcpServers: { local: { title: 'Local' } },
+          },
+        },
+      });
+      const tombstoned = await call(handlers.tombstoneConfigField, {
+        params: group,
+        body: { fieldPath: 'mcpServers.local' },
+      });
+
+      expect(replaced.statusCode).toBe(200);
+      expect(replaced.body?.skipped).toEqual([
+        {
+          path: 'mcpServers.local',
+          segments: ['mcpServers', 'local'],
+          reason: 'process_mcp_server',
+        },
+      ]);
+      expect(tombstoned.statusCode).toBe(400);
+      expect(tombstoned.body?.code).toBe('PROCESS_MCP_SERVER_OVERRIDE');
+      const kept = await stored(group.principalType, group.principalId);
+      expect(kept?.overrides).toEqual({ interface: { customWelcome: 'hi' } });
+      expect(kept?.tombstones ?? []).toEqual([]);
     });
   });
 

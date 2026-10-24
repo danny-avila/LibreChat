@@ -473,6 +473,7 @@ describe('GET /catalog', () => {
   it('answers 403 without config read access, 400 for a half-named principal, 404 for a missing one', async () => {
     const forbidden = await catalog({}, { hasAnyConfigReadAccess: async () => false });
     expect(forbidden.res.statusCode).toBe(403);
+    expect(forbidden.res.body?.code).toBe('FORBIDDEN');
     expect((await catalog({ principalType: ROLE })).res.statusCode).toBe(400);
     expect((await catalog({ principalType: 'tenant', principalId: 'x' })).res.statusCode).toBe(400);
     const missing = await catalog({ principalType: ROLE, principalId: 'ghost' });
@@ -561,5 +562,6 @@ describe('GET /env-status', () => {
   it('answers 403 without config read access', async () => {
     const { res } = await envStatus({ hasAnyConfigReadAccess: async () => false });
     expect(res.statusCode).toBe(403);
+    expect(res.body?.code).toBe('FORBIDDEN');
   });
 });
