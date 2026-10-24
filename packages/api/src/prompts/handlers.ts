@@ -9,7 +9,7 @@ import {
 import type { Response } from 'express';
 import type {
   PromptGroupRecord,
-  PromptSelection,
+  PromptReference,
   PromptServiceError,
   ResolvedPrompt,
   StoredId,
@@ -67,6 +67,7 @@ export interface PromptHandlersDeps {
 export interface PromptHandlers {
   getPromptGroup: PromptHandler;
   resolvePrompt: PromptHandler;
+  listRevisions: PromptHandler;
   listAllPromptGroups: PromptHandler;
   listPromptGroups: PromptHandler;
   createPromptGroup: PromptHandler;
@@ -137,19 +138,13 @@ export function toResolveResponse(
   return rest;
 }
 
-/**
- * Maps a `resolvePrompt` rejection to its `/resolve` response. `unsupported_source` only
- * comes from the `allowedSources` check, which this route never passes, and
- * `invalid_input`/`unsupported` belong to other operations; none of the three can reach
- * here through this route, so they fall through to the generic 500 like any other
- * unexpected failure.
- */
+/** Maps a `resolvePrompt` or `listRevisions` rejection to its HTTP response;
+ *  `unsupported_source`, `invalid_input` and `unsupported` are not mapped and fall
+ *  through to the generic 500. */
 function sendResolveRejection(res: Response, error: PromptServiceError): Response {
   switch (error.type) {
     case 'blocked_content':
       return res.status(400).send(contentFilterBlockResponse(error.finding));
-    case 'unsupported_selection':
-      return res.status(400).send({ code: 'invalid_request' });
     case 'unavailable_selection':
       return res.status(404).send({ code: 'not_found' });
     case 'source_not_found':
@@ -249,6 +244,16 @@ export function createPromptHandlers(deps: PromptHandlersDeps): PromptHandlers {
      * Resolves a group's content for either source: native resolves `production`
      * (the only selection it accepts), and Langfuse fetches live, by the `production`
      * label or an exact `version`. Usage is not recorded here — `/use` already does.
+     *
+     * The wire format is `?version=N` with no `type` param. The handler needs the
+     * group's `source` before it can build the `PromptReference` the service takes, so
+     * it reads the group once — from `loadedGroup(req)` when the access middleware
+     * already loaded it, or with one deterministic read (`readPromptGroup`) when a
+     * capability bypass (e.g. `MANAGE_PROMPTS`) skipped that load — then builds the
+     * reference from that group's own `source`. No version resolves to `production`; a
+     * version on a native group is rejected as `invalid_request` before any service
+     * call, since native has no selection a version number can satisfy. A group that
+     * does not exist gets the same 404 a missing selection would.
      */
     async resolvePrompt(req, res) {
       const groupId = param(req, 'groupId');
@@ -258,15 +263,30 @@ export function createPromptHandlers(deps: PromptHandlersDeps): PromptHandlers {
       if (!parsedVersion.success) {
         return res.status(400).send({ code: 'invalid_request' });
       }
-      const selection: PromptSelection =
-        parsedVersion.data == null
-          ? { type: 'production' }
-          : { type: 'version', version: parsedVersion.data };
+      const version = parsedVersion.data;
+      const buildReference = (source: 'native' | 'langfuse'): PromptReference | null => {
+        if (version == null) {
+          return source === 'langfuse'
+            ? { source: 'langfuse', selection: { type: 'production' } }
+            : { source: 'native', selection: { type: 'production' } };
+        }
+        return source === 'langfuse'
+          ? { source: 'langfuse', selection: { type: 'exact', version } }
+          : null;
+      };
       try {
+        const group = loadedGroup(req) ?? (await service.readPromptGroup(groupId));
+        if (group == null) {
+          return res.status(404).send({ code: 'not_found' });
+        }
+        const reference = buildReference(group.source);
+        if (reference == null) {
+          return res.status(400).send({ code: 'invalid_request' });
+        }
         const result = await service.resolvePrompt({
           groupId,
-          selection,
-          loadedGroup: loadedGroup(req),
+          ...reference,
+          loadedGroup: group,
           filters: req.config?.filters,
         });
         if (!result.ok) {
@@ -286,6 +306,32 @@ export function createPromptHandlers(deps: PromptHandlersDeps): PromptHandlers {
           return res.status(404).send({ code: 'not_found' });
         }
         return res.status(500).send({ message: 'Error resolving prompt' });
+      }
+    },
+
+    /**
+     * Lists a group's revision choices, newest first, metadata only. Unlike
+     * `resolvePrompt`, a database read failure (`PromptStoreError`) is a failed call,
+     * not an absent group, so it maps to the same 500 as any other unexpected error
+     * rather than to `resolvePrompt`'s 404. Never increments usage: that happens once,
+     * on a successful initialization, not while browsing versions.
+     */
+    async listRevisions(req, res) {
+      const groupId = param(req, 'groupId');
+      try {
+        const result = await service.listRevisions({ groupId, loadedGroup: loadedGroup(req) });
+        if (!result.ok) {
+          return sendResolveRejection(res, result.error);
+        }
+        return res.status(200).send(result.value);
+      } catch (error) {
+        if (error instanceof LangfusePromptRequestError) {
+          logger.error('[prompts] Langfuse request failed while listing prompt revisions', error);
+          const { status, body } = toLangfusePromptErrorResponse(error);
+          return res.status(status).send(body);
+        }
+        logger.error('Error listing prompt revisions', error);
+        return res.status(500).send({ message: 'Error listing prompt revisions' });
       }
     },
 

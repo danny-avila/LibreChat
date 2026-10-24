@@ -6,6 +6,7 @@ import type {
   AgentToolOptions,
   ToolApprovalGrantBinding,
 } from './tools';
+import type { TPromptGroupSource, NativePromptSelection, LangfusePromptSelection } from '../types';
 import type { TAttachment, TPlugin, AgentProvider, MemoryScope, SkillsScope } from 'src/schemas';
 import type { TTokenUsageEvent, TContextUsageEvent, TPendingSteer } from './runs';
 import type { StatefulCodeEnvironment } from '../stateful-code';
@@ -1063,24 +1064,43 @@ export const agentGitIdentitySchema: z.ZodType<AgentGitIdentity | undefined> = z
   })
   .optional();
 
-/** Selects which revision of a linked prompt group an agent's instructions follow. */
-export type AgentInstructionsPromptSelection =
-  | { type: 'production' }
-  | { type: 'exact'; promptId: string };
+/** Selects which revision of a linked native prompt group an agent's instructions
+ *  follow. The source-neutral prompt-service type (`NativePromptSelection`). */
+export type AgentInstructionsPromptSelection = NativePromptSelection;
 
 /** A link from an agent to a native LibreChat prompt group used as its instructions. */
-export type AgentInstructionsPrompt = {
+export type NativeAgentInstructionsPrompt = {
   source: 'native';
   groupId: string;
   selection: AgentInstructionsPromptSelection;
 };
 
-/** Returned to an editor who lacks VIEW on the linked group. Hides the group identity.
- *  `matchesCurrent` is set only on a version snapshot's stub (never on the current
- *  agent's own stub): whether that version's raw link equals the agent's current raw
- *  link (same `groupId` and selection), without revealing which group either is. */
+/** Selects which revision of a linked Langfuse prompt group an agent's instructions
+ *  follow: the group's Production label, or a pinned exact version number. The
+ *  source-neutral prompt-service type (`LangfusePromptSelection`). */
+export type LangfuseAgentInstructionsPromptSelection = LangfusePromptSelection;
+
+/** A link from an agent to a Langfuse prompt group used as its instructions. Reference
+ *  only: the linked project, destination, and prompt name all come from the group. */
+export type LangfuseAgentInstructionsPrompt = {
+  source: 'langfuse';
+  groupId: string;
+  selection: LangfuseAgentInstructionsPromptSelection;
+};
+
+/** A link from an agent to a prompt group used as its instructions, discriminated on
+ *  `source`. */
+export type AgentInstructionsPrompt =
+  | NativeAgentInstructionsPrompt
+  | LangfuseAgentInstructionsPrompt;
+
+/** Returned to an editor who lacks VIEW on the linked group. Hides the group identity,
+ *  carrying only the hidden link's own source. `matchesCurrent` is set only on a
+ *  version snapshot's stub (never on the current agent's own stub): whether that
+ *  version's raw link equals the agent's current raw link (same `groupId` and
+ *  selection), without revealing which group either is. */
 export type RestrictedAgentInstructionsPrompt = {
-  source: 'native';
+  source: TPromptGroupSource;
   restricted: true;
   matchesCurrent?: boolean;
 };
