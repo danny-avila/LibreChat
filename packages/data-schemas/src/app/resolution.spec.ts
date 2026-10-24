@@ -1,9 +1,11 @@
+import { z } from 'zod';
 import {
   OptionTypes,
   PermissionTypes,
   SearchProviders,
   AgentCapabilities,
   INTERFACE_PERMISSION_FIELDS,
+  DEPLOYMENT_ONLY_CONFIG_PATHS,
 } from 'librechat-data-provider';
 import type {
   TEndpoint,
@@ -14,7 +16,6 @@ import type {
 import type { AppConfig, IConfig } from '~/types';
 import {
   resolveRawConfig,
-  foldConfigMergeKey,
   isConfigRecordPath,
   getConfigMergeRules,
   mergeConfigOverrides,
@@ -23,16 +24,20 @@ import {
   getConfigFieldIssues,
   applyConfigTombstones,
   getConfigChangeIssues,
-  getConfigArrayMergeKey,
   getDottedSectionIssues,
   getConfigOverrideIssues,
   combineFoldedConfigItems,
   getIndexedMergeKeyIssues,
+  getConfigIssueParams,
+  getIgnoredConfigOverrides,
+  isConfigEntryArrayItemPath,
 } from './resolution';
+import { foldConfigMergeKey, getConfigArrayMergeKey } from './collections';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { toConfigOverrideState } from './mutations';
 import { applyConfigChanges } from './changes';
 import { loadWebSearchConfig } from './web';
+import { formatKeyedPath } from './paths';
 import { AppService } from './service';
 import logger from '~/config/winston';
 
@@ -198,6 +203,18 @@ describe('mergeConfigOverrides', () => {
       mergeConfigOverrides(base, [aliased({}, ['turnstileConfig', 'turnstileConfig.siteKey'])])
         .turnstileConfig,
     ).toEqual({ siteKey: 'yaml-site-key' });
+  });
+
+  it('keeps the admin catalog model-list lifetime on librechat.yaml', () => {
+    const base = { endpoints: { catalogModelsTtlMs: 600_000 } } as unknown as AppConfig;
+    const read = (configs: IConfig[]) => mergeConfigOverrides(base, configs).endpoints;
+
+    expect(read([fakeConfig({ endpoints: { catalogModelsTtlMs: 0 } }, 10)])).toEqual({
+      catalogModelsTtlMs: 600_000,
+    });
+    expect(
+      read([fakeConfig({}, 0, ['endpoints.catalogModelsTtlMs'], BASE_CONFIG_PRINCIPAL_ID)]),
+    ).toEqual({ catalogModelsTtlMs: 600_000 });
   });
 
   it('keeps the pull request host from the base config whatever an override does', () => {
@@ -1265,6 +1282,7 @@ describe('mergeConfigOverrides: invalid stored overrides', () => {
         path: 'endpoints.custom.1.baseURL',
         segments: ['endpoints', 'custom', '1', 'baseURL'],
         code: 'invalid_type',
+        params: { expected: 'string', received: 'number' },
       },
     ]);
 
@@ -1372,7 +1390,7 @@ describe('mergeConfigOverrides: invalid stored overrides', () => {
   });
 
   it('keeps a lower layer that relies on a higher layer for a required field', () => {
-    const merged = mergeConfigOverrides({} as AppConfig, [
+    const layers = [
       fakeConfig(
         {
           cloudfront: {
@@ -1384,14 +1402,17 @@ describe('mergeConfigOverrides: invalid stored overrides', () => {
         10,
       ),
       fakeConfig({ cloudfront: { domain: 'https://cdn.example.com' } }, 20, undefined, 'other'),
-    ]) as unknown as { cloudfront: Record<string, unknown> };
+    ];
 
-    expect(merged.cloudfront).toEqual({
+    expect(resolveRawConfig({}, layers).cloudfront).toEqual({
       imageSigning: 'cookies',
       cookieDomain: '.example.com',
       requireSignedAccess: true,
       domain: 'https://cdn.example.com',
     });
+    /** `cloudfront` is deployment-only: the served config keeps librechat.yaml's (none here). */
+    const merged = mergeConfigOverrides({} as AppConfig, layers) as { cloudfront?: unknown };
+    expect(merged.cloudfront).toBeUndefined();
   });
 
   it('lets a lower-priority valid override survive a higher-priority invalid one', () => {
@@ -2044,6 +2065,7 @@ describe('endpoints.custom: names the runtime folds together', () => {
         path: 'endpoints.custom.0.models',
         segments: ['endpoints', 'custom', '0', 'models'],
         code: 'invalid_type',
+        params: { expected: 'object', received: 'number' },
       },
     ]);
     expect(
@@ -3457,6 +3479,7 @@ describe('getConfigChangeIssues', () => {
         path: 'endpoints.bedrock.inferenceProfiles.eu.a.b',
         segments: ['endpoints', 'bedrock', 'inferenceProfiles', 'eu.a.b'],
         code: 'invalid_type',
+        params: { expected: 'string', received: 'number' },
       },
     ]);
   });
@@ -4295,4 +4318,470 @@ describe('model spec endpoints', () => {
       ).toBeUndefined();
     },
   );
+});
+
+describe('issue params', () => {
+  const firstIssue = (schema: z.ZodTypeAny, value: unknown) => {
+    const result = schema.safeParse(value);
+    if (result.success) {
+      throw new Error('expected a failure');
+    }
+    return result.error.issues[0];
+  };
+
+  it('carries the schema side of each failure, never the submitted value', () => {
+    const issues = getConfigOverrideIssues({
+      interface: { contextCost: 'no' },
+      fileStrategy: 'sentinel-fs',
+      githubCompare: { timeoutMs: 40_000 },
+      endpoints: { agents: { recursionLimit: 0 }, allowedAddresses: ['localhost'] },
+    });
+    const byPath = Object.fromEntries(issues.map(({ path, params }) => [path, params]));
+    expect(byPath['interface.contextCost']).toEqual({ expected: 'boolean', received: 'string' });
+    expect(byPath.fileStrategy).toEqual({
+      options: expect.arrayContaining(['local', 's3']),
+    });
+    expect(byPath['githubCompare.timeoutMs']).toEqual({
+      maximum: 30_000,
+      inclusive: true,
+      exact: false,
+      type: 'number',
+    });
+    expect(byPath['endpoints.agents.recursionLimit']).toEqual({
+      minimum: 1,
+      inclusive: true,
+      exact: false,
+      type: 'number',
+    });
+    expect(byPath['endpoints.allowedAddresses.0']).toEqual({ reason: 'missing_port' });
+  });
+
+  it('names the integer expectation of a fractional step limit', () => {
+    expect(getConfigOverrideIssues({ endpoints: { agents: { maxRecursionLimit: 2.5 } } })).toEqual([
+      {
+        path: 'endpoints.agents.maxRecursionLimit',
+        segments: ['endpoints', 'agents', 'maxRecursionLimit'],
+        code: 'invalid_type',
+        params: { expected: 'integer', received: 'float' },
+      },
+    ]);
+  });
+
+  it('keeps record keys with dots as one segment beside the params', () => {
+    const [issue] = getConfigOverrideIssues({
+      endpoints: { bedrock: { inferenceProfiles: { 'us.a.b': 5 } } },
+    });
+    expect(issue.segments).toEqual(['endpoints', 'bedrock', 'inferenceProfiles', 'us.a.b']);
+    expect(issue.params).toEqual({ expected: 'string', received: 'number' });
+  });
+
+  it('leaves params off an issue attributed above the node that failed', () => {
+    const issues = getConfigOverrideIssues({ modelSpecs: { list: [{ name: 'only-name' }] } });
+    expect(issues.length).toBeGreaterThan(0);
+    for (const issue of issues) {
+      expect(issue.segments).toEqual(['modelSpecs', 'list', '0']);
+      expect(issue.params).toBeUndefined();
+    }
+  });
+
+  it('maps each zod issue code through its allowlist', () => {
+    expect(getConfigIssueParams(firstIssue(z.literal('a'), 'sentinel'))).toEqual({
+      expected: 'a',
+    });
+    expect(getConfigIssueParams(firstIssue(z.string().url(), 'sentinel'))).toEqual({
+      validation: 'url',
+    });
+    expect(getConfigIssueParams(firstIssue(z.string().startsWith('x'), 'sentinel'))).toEqual({
+      validation: 'startsWith',
+    });
+    expect(getConfigIssueParams(firstIssue(z.number().multipleOf(5), 7))).toEqual({
+      multipleOf: 5,
+    });
+    expect(getConfigIssueParams(firstIssue(z.array(z.string()).min(2), ['a']))).toEqual({
+      minimum: 2,
+      inclusive: true,
+      exact: false,
+      type: 'array',
+    });
+    expect(
+      getConfigIssueParams(firstIssue(z.date().min(new Date(1000)), new Date(5))),
+    ).toMatchObject({ minimum: 1000, type: 'date' });
+    const union = z.discriminatedUnion('type', [
+      z.object({ type: z.literal('a') }),
+      z.object({ type: z.literal('b') }),
+    ]);
+    expect(getConfigIssueParams(firstIssue(union, { type: 'sentinel' }))).toEqual({
+      options: ['a', 'b'],
+    });
+    expect(
+      getConfigIssueParams(
+        firstIssue(
+          z.string().refine(() => false, { params: { reason: 'not_allowed' } }),
+          'x',
+        ),
+      ),
+    ).toEqual({ reason: 'not_allowed' });
+    expect(
+      getConfigIssueParams(
+        firstIssue(
+          z.string().refine(() => false, { params: { reason: 'echoes sentinel value' } }),
+          'x',
+        ),
+      ),
+    ).toBeUndefined();
+    expect(
+      getConfigIssueParams(
+        firstIssue(
+          z.string().refine(() => false),
+          'x',
+        ),
+      ),
+    ).toBeUndefined();
+  });
+
+  it('drops a bigint bound, so the issue still serializes', () => {
+    const params = getConfigIssueParams(firstIssue(z.bigint().min(BigInt(5)), BigInt(1)));
+    expect(params).toEqual({ inclusive: true, exact: false, type: 'bigint' });
+    expect(() => JSON.stringify(params)).not.toThrow();
+  });
+
+  it('never returns a sentinel written into any failing field', () => {
+    const sentinel = 'sentinel_0f3a9c';
+    const issues = getConfigOverrideIssues({
+      interface: { contextCost: sentinel, customWelcome: 5 },
+      fileStrategy: sentinel,
+      endpoints: {
+        allowedAddresses: [sentinel, `http://${sentinel}`, `${sentinel}:0`],
+        agents: { recursionLimit: sentinel, titleMethod: sentinel },
+        custom: [{ name: sentinel, baseURL: 5, titleMethod: sentinel }],
+      },
+      memory: { agent: { id: 5, provider: sentinel } },
+      webSearch: { searchProvider: sentinel },
+      githubCompare: { enabled: sentinel, timeoutMs: sentinel },
+      [`${sentinel}.section`]: 1,
+    });
+    expect(issues.length).toBeGreaterThan(5);
+    expect(issues.some((issue) => issue.params)).toBe(true);
+    const leaked = issues.filter(({ code, params }) =>
+      JSON.stringify({ code, params }).includes(sentinel),
+    );
+    expect(leaked).toEqual([]);
+  });
+});
+
+describe('deployment-only paths in the merge', () => {
+  const yamlValue = (path: string) => `yaml:${path}`;
+
+  function at(target: Record<string, unknown>, path: string): unknown {
+    return path
+      .split('.')
+      .reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], target);
+  }
+
+  function put(target: Record<string, unknown>, path: string, value: unknown) {
+    const keys = path.split('.');
+    let node = target;
+    for (const key of keys.slice(0, -1)) {
+      node[key] = (node[key] as Record<string, unknown> | undefined) ?? {};
+      node = node[key] as Record<string, unknown>;
+    }
+    node[keys[keys.length - 1]] = value;
+  }
+
+  it('keeps librechat.yaml’s value at every deployment-only path, whatever a layer stores', () => {
+    const base: Record<string, unknown> = { config: {} };
+    const overrides: Record<string, unknown> = {};
+    for (const path of Object.keys(DEPLOYMENT_ONLY_CONFIG_PATHS)) {
+      put(base, path, yamlValue(path));
+      put(overrides, path, `override:${path}`);
+    }
+    const merged = mergeConfigOverrides(base as unknown as AppConfig, [
+      fakeConfig(overrides, 0, undefined, BASE_CONFIG_PRINCIPAL_ID),
+      fakeConfig(overrides, 10, undefined, 'editor'),
+    ]) as unknown as Record<string, unknown>;
+    for (const path of Object.keys(DEPLOYMENT_ONLY_CONFIG_PATHS)) {
+      expect([path, at(merged, path)]).toEqual([path, yamlValue(path)]);
+    }
+  });
+
+  it('puts librechat.yaml’s value back below a tombstone of the parent, and hides the rest', () => {
+    const base = {
+      config: {},
+      endpoints: { agents: { eventDriven: { idlePolling: true }, recursionLimit: 20 } },
+    } as unknown as AppConfig;
+    const merged = mergeConfigOverrides(base, [fakeConfig({}, 10, ['endpoints.agents'])]) as {
+      endpoints?: { agents?: Record<string, unknown> };
+    };
+    expect(merged.endpoints?.agents).toEqual({ eventDriven: { idlePolling: true } });
+  });
+
+  it('keeps the tool filters librechat.yaml sets, so a profile cannot gate tools', () => {
+    const base = { config: {}, filteredTools: ['dalle'] } as unknown as AppConfig;
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig({ filteredTools: ['ask_user_question'], includedTools: ['calculator'] }, 10),
+    ]);
+    expect(merged.filteredTools).toEqual(['dalle']);
+    expect(merged.includedTools).toBeUndefined();
+  });
+});
+
+describe('getIgnoredConfigOverrides', () => {
+  const yaml = {
+    endpoints: {
+      agents: { pullRequests: { provider: 'github' }, eventDriven: { deadLetterRetentionDays: 7 } },
+    },
+    mcpServers: {
+      local: { type: 'stdio', command: 'node', args: ['server.js'] },
+      remote: { type: 'streamable-http', url: 'https://mcp.example.com' },
+    },
+    memory: { agent: { id: 'agent_1' } },
+  } as unknown as Partial<TCustomConfig>;
+
+  const reasons = (entries: ReturnType<typeof getIgnoredConfigOverrides>) =>
+    entries.map(({ path, reason, kind }) => `${kind}:${path}:${reason}`).sort();
+
+  it('lists every stored part the merge leaves out, by location and reason', () => {
+    const layer = fakeConfig(
+      {
+        paths: { uploads: '/tmp' },
+        filters: { x: 1 },
+        langfuse: { publicKey: 'pk' },
+        interface: {
+          prompts: false,
+          mcpServers: { use: false, placeholder: 'p' },
+          modelSelect: true,
+        },
+        mcpServers: { local: { title: 'Local' }, remote: { title: 'Remote' } },
+        endpoints: {
+          agents: {
+            pullRequests: { provider: 'gitlab' },
+            eventDriven: { deadLetterRetentionDays: 30 },
+          },
+        },
+        rateLimits: { fileUploads: { ipMax: 1 } },
+        githubCompare: { timeoutMs: 40_000 },
+      },
+      10,
+      ['config', 'filters', 'langfuse.publicKey', 'mcpServers.local', 'cloudfront'],
+      'editor',
+    );
+    expect(reasons(getIgnoredConfigOverrides(yaml, layer))).toEqual(
+      [
+        'override:paths:unknown_section',
+        'tombstone:config:unknown_section',
+        'override:filters:base_only_section',
+        'tombstone:filters:base_only_section',
+        'override:langfuse:dedicated_section',
+        'tombstone:langfuse.publicKey:dedicated_section',
+        'override:interface.prompts:interface_permission',
+        'override:interface.mcpServers.use:interface_permission',
+        'override:mcpServers.local:process_mcp_server',
+        'tombstone:mcpServers.local:process_mcp_server',
+        'override:endpoints.agents.pullRequests.provider:base_only_path',
+        'override:endpoints.agents.eventDriven:deployment_only_path',
+        'override:rateLimits:deployment_only_path',
+        'tombstone:cloudfront:deployment_only_path',
+        'override:githubCompare.timeoutMs:invalid',
+      ].sort(),
+    );
+  });
+
+  it('reports what librechat.yaml keeps below a tombstone, and each stdio server a section tombstone leaves', () => {
+    const layer = fakeConfig({}, 10, ['endpoints.agents', 'mcpServers'], 'editor');
+    expect(reasons(getIgnoredConfigOverrides(yaml, layer))).toEqual(
+      [
+        'tombstone:endpoints.agents.pullRequests.provider:base_only_path',
+        'tombstone:endpoints.agents.eventDriven:deployment_only_path',
+        'tombstone:mcpServers.local:process_mcp_server',
+      ].sort(),
+    );
+  });
+
+  it('reports the defaults the merge puts back below a tombstone when given the resolved base', () => {
+    const resolved = {
+      config: yaml,
+      mcpSettings: { catalogRecovery: { maxStateEntries: 10_000, discoveryTimeoutMs: 3_000 } },
+    } as unknown as AppConfig;
+    const layer = fakeConfig({}, 10, ['mcpSettings'], 'editor');
+    expect(reasons(getIgnoredConfigOverrides(yaml, layer))).toEqual([]);
+    expect(reasons(getIgnoredConfigOverrides(yaml, layer, [], resolved))).toEqual([
+      'tombstone:mcpSettings.catalogRecovery.maxStateEntries:deployment_only_path',
+    ]);
+  });
+
+  it('keeps dedicated sections for Base and reports nothing for a document the merge applies whole', () => {
+    const base = fakeConfig(
+      { langfuse: { publicKey: 'pk' }, interface: { modelSelect: false } },
+      0,
+      undefined,
+      BASE_CONFIG_PRINCIPAL_ID,
+    );
+    expect(getIgnoredConfigOverrides(yaml, base)).toEqual([]);
+  });
+
+  it('judges values on the layers below, as the merge does', () => {
+    const memorySwitch = fakeConfig(
+      { memory: { agent: { provider: 'openAI', model: 'gpt-4o' } } },
+      0,
+      ['memory.agent.id'],
+      BASE_CONFIG_PRINCIPAL_ID,
+    );
+    const layer = fakeConfig({ memory: { agent: { model: 'gpt-4.1' } } }, 10, undefined, 'editor');
+    expect(reasons(getIgnoredConfigOverrides(yaml, layer))).toEqual([
+      'override:memory.agent.model:invalid',
+    ]);
+    expect(getIgnoredConfigOverrides(yaml, layer, [memorySwitch])).toEqual([]);
+  });
+
+  it('does not log the merge warnings it reports', () => {
+    const warn = jest.spyOn(logger, 'warn');
+    getIgnoredConfigOverrides(
+      yaml,
+      fakeConfig({ paths: {}, githubCompare: { timeoutMs: 40_000 } }, 10, ['config'], 'editor'),
+    );
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+/**
+ * Keyed tombstones hide one entry of a merged-by-key array, or a path inside it, by the entry's
+ * key: `endpoints.custom["Name"]` and `endpoints.custom["Name"].headers.X-Key`.
+ */
+describe('mergeConfigOverrides: keyed tombstones of custom endpoints', () => {
+  type CustomItem = Record<string, unknown>;
+  const customOf = (config: AppConfig): CustomItem[] | undefined =>
+    (config as unknown as { endpoints?: { custom?: CustomItem[] } }).endpoints?.custom;
+  const entry = (name: string, extra: CustomItem = {}): CustomItem => ({
+    name,
+    apiKey: '${KEY}',
+    baseURL: `https://${encodeURIComponent(name)}.example.com/v1`,
+    models: { default: ['m'] },
+    ...extra,
+  });
+  const awkward = ['My Endpoint', 'api.example.com', 'quote " inside', 'bracket ] [ "x"'];
+  const yaml = [
+    ...awkward.map((name) => entry(name)),
+    entry('Ollama', { headers: { 'X-Team': 'a', 'X-Trace': 'b' } }),
+  ];
+  const base = { endpoints: { custom: yaml }, config: { endpoints: { custom: yaml } } };
+  const hide = (path: string, priority = 10, principalId = 'role') =>
+    fakeConfig({}, priority, [path], principalId);
+
+  it('hides an entry by its key, whatever characters the name holds', () => {
+    for (const name of awkward) {
+      const merged = mergeConfigOverrides(base as unknown as AppConfig, [
+        hide(formatKeyedPath(['endpoints', 'custom'], name)),
+      ]);
+      expect(customOf(merged)?.map((item) => item.name)).toEqual(
+        yaml.map((item) => item.name).filter((other) => other !== name),
+      );
+    }
+  });
+
+  it('hides the entry under the spelling the merge folds it to', () => {
+    const merged = mergeConfigOverrides(base as unknown as AppConfig, [
+      hide('endpoints.custom["OLLAMA"]'),
+    ]);
+    expect(customOf(merged)?.map((item) => item.name)).toEqual(awkward);
+  });
+
+  it('removes one inherited header and keeps its siblings (record-key tombstone)', () => {
+    const merged = mergeConfigOverrides(base as unknown as AppConfig, [
+      hide('endpoints.custom["Ollama"].headers.X-Team'),
+    ]);
+    expect(customOf(merged)?.find((item) => item.name === 'Ollama')?.headers).toEqual({
+      'X-Trace': 'b',
+    });
+    expect(customOf(base as unknown as AppConfig)?.[4].headers).toEqual({
+      'X-Team': 'a',
+      'X-Trace': 'b',
+    });
+  });
+
+  it('keeps a key tombstone through a sibling write, and lets a higher layer re-add the key', () => {
+    const role = fakeConfig(
+      { endpoints: { custom: [{ name: 'Ollama', headers: { 'X-Other': 'c' } }] } },
+      10,
+      ['endpoints.custom["Ollama"].headers.X-Team'],
+    );
+    const headersOf = (configs: IConfig[]) =>
+      customOf(mergeConfigOverrides(base as unknown as AppConfig, configs))?.find(
+        (item) => item.name === 'Ollama',
+      )?.headers;
+    expect(headersOf([role])).toEqual({ 'X-Trace': 'b', 'X-Other': 'c' });
+
+    const user = fakeConfig(
+      { endpoints: { custom: [{ name: 'Ollama', headers: { 'X-Team': 'user' } }] } },
+      100,
+      [],
+      'user',
+    );
+    expect(headersOf([role, user])).toEqual({ 'X-Trace': 'b', 'X-Other': 'c', 'X-Team': 'user' });
+  });
+
+  it('lets a higher layer add a hidden entry back, as its own definition', () => {
+    const readd = fakeConfig({ endpoints: { custom: [entry('My Endpoint')] } }, 20, [], 'group');
+    const merged = mergeConfigOverrides(base as unknown as AppConfig, [
+      hide('endpoints.custom["My Endpoint"]'),
+      readd,
+    ]);
+    expect(customOf(merged)?.map((item) => item.name)).toEqual([
+      ...awkward.slice(1),
+      'Ollama',
+      'My Endpoint',
+    ]);
+  });
+
+  it('applies to the YAML-shaped config each layer is validated on', () => {
+    expect(
+      applyConfigTombstones(base.config, ['endpoints.custom["api.example.com"]']).endpoints?.custom,
+    ).toHaveLength(yaml.length - 1);
+    expect(
+      resolveRawConfig(base.config as Partial<TCustomConfig>, [
+        hide('endpoints.custom["Ollama"]'),
+      ]).endpoints?.custom?.map((item) => item.name),
+    ).toEqual(awkward);
+  });
+
+  it('ignores a keyed tombstone of an array the merge replaces, or a malformed one', () => {
+    const specs = {
+      ...base,
+      modelSpecs: { list: [{ name: 'a', label: 'A', preset: { endpoint: 'openAI' } }] },
+    };
+    const merged = mergeConfigOverrides(specs as unknown as AppConfig, [
+      fakeConfig({}, 10, [
+        'modelSpecs.list["a"]',
+        'endpoints.custom["Ollama"',
+        'endpoints.custom[0]',
+      ]),
+    ]);
+    expect(merged.modelSpecs?.list).toHaveLength(1);
+    expect(customOf(merged)).toHaveLength(yaml.length);
+  });
+
+  it('reads a tombstone holding `["` after anything but an array merged by key as a dotted path', () => {
+    const servers = {
+      'a["b"]': { type: 'streamable-http', url: 'https://quoted.example.com' },
+      a: { type: 'streamable-http', url: 'https://plain.example.com' },
+    };
+    const mcpBase = { mcpConfig: servers, config: { mcpServers: servers } };
+    const merged = mergeConfigOverrides(mcpBase as unknown as AppConfig, [
+      hide('mcpServers.a["b"]'),
+    ]);
+    expect(Object.keys(merged.mcpConfig ?? {})).toEqual(['a']);
+    const raw = applyConfigTombstones(mcpBase.config as Partial<TCustomConfig>, [
+      'mcpServers.a["b"]',
+    ]);
+    expect(Object.keys(raw.mcpServers ?? {})).toEqual(['a']);
+  });
+
+  it('tells a path inside an entry that runs into one of its own arrays', () => {
+    expect(isConfigEntryArrayItemPath(['endpoints', 'custom'], ['models', 'default'])).toBe(false);
+    expect(isConfigEntryArrayItemPath(['endpoints', 'custom'], ['models', 'default', '0'])).toBe(
+      true,
+    );
+    expect(isConfigEntryArrayItemPath(['endpoints', 'custom'], ['headers', 'X-Key'])).toBe(false);
+    expect(isConfigArrayItemPath(['endpoints', 'custom', '0', 'headers'])).toBe(true);
+  });
 });

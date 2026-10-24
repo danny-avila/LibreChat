@@ -516,10 +516,11 @@ function deriveAzureAssistants(merged: AppConfig, raw: JsonRecord, principals: s
  * ({@link isKnownSpecEndpoint}, after inferring an agent spec's endpoint): a tombstone of
  * `endpoints.custom` or `endpoints` hides the specs of the custom endpoints it removes until a
  * layer defines them again, and a spec stored for an endpoint that is not configured is left out
- * on its own. Where no spec is left, none are served, as tenant scoping leaves none, so the
- * controls specs turn off are derived without them. `addedEndpoints` stays as merged, as startup
- * keeps it: an endpoint it names that is gone is simply not offered, while emptying the list would
- * offer every endpoint.
+ * on its own. Where no spec and no added endpoint is left, no spec list is served, as tenant
+ * scoping and hidden endpoints leave none, so the controls specs turn off are derived without
+ * them. `addedEndpoints` stays as merged, as startup keeps it: an endpoint it names that is gone
+ * is simply not offered, while emptying the list would offer every endpoint (the names of custom
+ * endpoints the layers remove are scoped out of it after the merge, `keyedTombstones`).
  */
 function deriveServedSpecs(merged: AppConfig, raw: JsonRecord, principals: string): AppConfig {
   const modelSpecs = materializeModelSpecEndpoints(merged.modelSpecs);
@@ -538,7 +539,7 @@ function deriveServedSpecs(merged: AppConfig, raw: JsonRecord, principals: strin
   logger.debug(
     `[mergeConfigOverrides] Leaving out ${list.length - served.length} model spec(s) for ${principals}: their endpoint is not configured once the layers apply`,
   );
-  if (served.length > 0) {
+  if (served.length > 0 || (modelSpecs.addedEndpoints?.length ?? 0) > 0) {
     return { ...merged, modelSpecs: { ...modelSpecs, list: served } };
   }
   const { modelSpecs: _hidden, ...rest } = merged;

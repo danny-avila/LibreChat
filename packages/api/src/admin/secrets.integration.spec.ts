@@ -2183,6 +2183,30 @@ describe('MCP server credentials — real handlers against a real Config collect
       expect(res.body).toMatchObject({ code: 'MCP_API_KEY_REENTRY_REQUIRED', server: 'code' });
     });
 
+    it('duplicates a server to two names from one stored source', async () => {
+      const principalId = await seed();
+      const source = await storedServer(principalId, 'github');
+
+      const res = await patch(
+        principalId,
+        [
+          { fieldPath: 'mcpServers.code', value: renamed() },
+          { fieldPath: 'mcpServers.copy', value: renamed() },
+        ],
+        {
+          renames: [
+            { path: 'mcpServers', previousName: 'github', name: 'code' },
+            { path: 'mcpServers', previousName: 'github', name: 'copy' },
+          ],
+        },
+      );
+
+      expect(res.statusCode).toBe(200);
+      for (const name of ['code', 'copy']) {
+        expect((await storedServer(principalId, name)).apiKey.key).toBe(source.apiKey.key);
+      }
+    });
+
     it('without a hint, a renamed server keeps no credential', async () => {
       const principalId = await seed();
 
@@ -2198,7 +2222,11 @@ describe('MCP server credentials — real handlers against a real Config collect
       const write = [{ fieldPath: 'mcpServers.code', value: renamed() }];
 
       const cases: Array<[unknown, string]> = [
-        [[{ path: 'endpoints.custom', previousName: 'github', name: 'code' }], 'unsupported_path'],
+        [
+          [{ path: 'endpoints.azureOpenAI.groups', previousName: 'github', name: 'code' }],
+          'unsupported_path',
+        ],
+        [[{ path: 'endpoints.custom', previousName: 'github', name: 'code' }], 'source_not_found'],
         [[{ path: 'mcpServers', previousName: 'github', name: 'github' }], 'invalid_name'],
         [[{ path: 'mcpServers', previousName: '__proto__', name: 'code' }], 'invalid_name'],
         [[{ path: 'mcpServers', previousName: 'missing', name: 'code' }], 'source_not_found'],
@@ -3995,6 +4023,7 @@ describe('write guards on every handler that changes a document', () => {
     toggleConfig: 'switches the document on or off; the merge judges the layers it brings in',
     updateConfigPriority:
       'sets only the priority, keeping overrides and tombstones; the merge judges the order it brings in',
+    reloadConfig: 'clears the config caches; no document is read or written',
   };
 
   it('lists every handler', () => {
@@ -4132,7 +4161,7 @@ describe('a document an MCP removal creates', () => {
       expect(tombstoned.statusCode).toBe(404);
       expect(tombstoned.body).toMatchObject({ code: 'PRINCIPAL_NOT_FOUND' });
       expect(unset.statusCode).toBe(404);
-      expect(unset.body).toEqual({ error: 'Config not found' });
+      expect(unset.body).toEqual({ error: 'Config not found', code: 'CONFIG_NOT_FOUND' });
       expect(await mongoose.models.Config.findOne({ principalId })).toBeNull();
     },
   );

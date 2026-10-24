@@ -126,7 +126,8 @@ export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
  * and which environment secret is sent with them, and the shared cache's slot count where every
  * replica looks for a shared answer. Vertex AI always authenticates with the deployment's service
  * account: its key file (a path, inline JSON or a URL the server fetches) and its region, which
- * is part of the API host, stay librechat.yaml's. */
+ * is part of the API host, stay librechat.yaml's. The admin catalog's model-list lifetime is one
+ * value for the whole deployment, which `GET /api/admin/config/meta` reports. */
 export const BASE_ONLY_CONFIG_PATHS = [
   'endpoints.agents.pullRequests.provider',
   'endpoints.agents.pullRequests.host',
@@ -134,6 +135,7 @@ export const BASE_ONLY_CONFIG_PATHS = [
   'endpoints.agents.pullRequests.sharedCacheSlots',
   'endpoints.anthropic.vertex.serviceKeyFile',
   'endpoints.anthropic.vertex.region',
+  'endpoints.catalogModelsTtlMs',
 ] as const;
 /** Fields the server derives from another librechat.yaml field, which no config document writes:
  * the merge leaves a document's value or tombstone there out and derives them itself, and writes
@@ -141,6 +143,49 @@ export const BASE_ONLY_CONFIG_PATHS = [
  * its service key file included, which the Anthropic client loads (a path, inline JSON or a URL
  * it fetches). Each is both an override path and an AppConfig path: its section keeps its name. */
 export const DERIVED_CONFIG_PATHS = ['endpoints.anthropic.vertexConfig'] as const;
+
+/** How long the admin config catalog reuses a scope's model lists unless
+ * `endpoints.catalogModelsTtlMs` sets it: the two minutes a provider's model list is cached for. */
+export const DEFAULT_CATALOG_MODELS_TTL_MS = 120_000;
+
+/**
+ * Why a deployment-only path is set in librechat.yaml only:
+ * - `startup`: read once when the server starts, so a stored value would never apply.
+ * - `operator`: an operator boundary (signed access, rate limits, permission leases, code
+ *   modules, which tools load), read from librechat.yaml itself.
+ * - `unused`: nothing reads it any more.
+ */
+export type DeploymentOnlyConfigReason = 'startup' | 'operator' | 'unused';
+
+/**
+ * Paths of overridable sections that only librechat.yaml sets, as YAML key paths. No config
+ * document, Base included, stores them: admin writes skip them, and the merge keeps
+ * librechat.yaml's value. Unlike `BASE_ONLY_CONFIG_PATHS`, their readers never took a value from
+ * the merged config (apart from the tool filters, which only gated `ask_user_question` there), so
+ * a stored override had no effect rather than a dangerous one.
+ */
+export const DEPLOYMENT_ONLY_CONFIG_PATHS: Readonly<Record<string, DeploymentOnlyConfigReason>> = {
+  rateLimits: 'operator',
+  cloudfront: 'operator',
+  permissions: 'operator',
+  openapi: 'operator',
+  skillDeletion: 'startup',
+  includedTools: 'operator',
+  filteredTools: 'operator',
+  'registration.openidDiscovery': 'startup',
+  'registration.oauthStateTtlMs': 'startup',
+  'endpoints.agents.subagentActivity': 'startup',
+  'endpoints.agents.eventDriven': 'startup',
+  'endpoints.agents.backgroundTasks.shutdownInterruptGraceMs': 'startup',
+  'endpoints.agents.backgroundTasks.completionResultBatchSize': 'startup',
+  'endpoints.agents.backgroundTasks.completionReceiptBatching': 'startup',
+  'endpoints.agents.toolApproval.hooks': 'operator',
+  'mcpSettings.catalogRecovery.maxStateEntries': 'startup',
+  'mcpSettings.catalogRecovery.maxDetachedDiscoveries': 'startup',
+  'mcpSettings.catalogRecovery.authorizationFenceRetryIntervalMs': 'startup',
+  'mcpSettings.catalogRecovery.authorizationFenceRetryBatchSize': 'startup',
+  cache: 'unused',
+};
 
 export const defaultRetrievalModels = [
   'gpt-4o',
@@ -318,36 +363,60 @@ function parseAllowedAddressEntry(entry: string): { address: string; port: strin
   return { address, port };
 }
 
-const allowedAddressEntrySchema = z
-  .string()
-  .refine((entry) => entry.length > 0 && entry.trim().length > 0, {
-    message: 'allowedAddresses entries must be non-empty',
-  })
-  .refine((entry) => !entry.includes('://') && !entry.includes('/') && !/\s/.test(entry), {
-    message:
-      'allowedAddresses entries must be host:port pairs — no URLs, paths, CIDR ranges, or whitespace',
-  })
-  .refine((entry) => parseAllowedAddressEntry(entry) != null, {
-    message:
-      'allowedAddresses entries must include a port, for example localhost:11434 or [::1]:11434',
-  })
-  .refine(
-    (entry) => {
-      const parsed = parseAllowedAddressEntry(entry);
-      if (!parsed) return false;
-      const stripped = parsed.address;
-      const isIPv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(stripped);
-      const isIPv6 = !isIPv4 && stripped.includes(':');
-      if (!isIPv4 && !isIPv6) {
-        return true; // hostname — checked at runtime via DNS
-      }
-      return isIPv4 ? isPrivateIPv4Literal(stripped) : isPrivateIPv6Literal(stripped);
-    },
-    {
-      message:
-        'allowedAddresses is scoped to private IP space — public IP literals are not permitted (use hostname:port if it resolves to a private IP)',
-    },
-  );
+/**
+ * Why an `allowedAddresses` entry is refused, as the `reason` param of its validation issue:
+ * - `empty`: the entry is empty or only whitespace.
+ * - `format`: a URL, path, CIDR range or whitespace instead of a `host:port` pair.
+ * - `missing_port`: no valid port (`localhost`, `10.0.0.5`).
+ * - `public_ip`: an IP literal outside private, loopback and link-local space.
+ */
+export type AllowedAddressIssue = 'empty' | 'format' | 'missing_port' | 'public_ip';
+
+const ALLOWED_ADDRESS_ISSUE_MESSAGES: Readonly<Record<AllowedAddressIssue, string>> = {
+  empty: 'allowedAddresses entries must be non-empty',
+  format:
+    'allowedAddresses entries must be host:port pairs — no URLs, paths, CIDR ranges, or whitespace',
+  missing_port:
+    'allowedAddresses entries must include a port, for example localhost:11434 or [::1]:11434',
+  public_ip:
+    'allowedAddresses is scoped to private IP space — public IP literals are not permitted (use hostname:port if it resolves to a private IP)',
+};
+
+/**
+ * The first rule an `allowedAddresses` entry fails, checked in the order above, or `null` for an
+ * entry the schema accepts. A hostname passes: its resolved IP is checked at runtime.
+ */
+export function getAllowedAddressEntryIssue(entry: string): AllowedAddressIssue | null {
+  if (entry.trim().length === 0) {
+    return 'empty';
+  }
+  if (entry.includes('://') || entry.includes('/') || /\s/.test(entry)) {
+    return 'format';
+  }
+  const parsed = parseAllowedAddressEntry(entry);
+  if (!parsed) {
+    return 'missing_port';
+  }
+  const { address } = parsed;
+  const isIPv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(address);
+  if (!isIPv4 && !address.includes(':')) {
+    return null;
+  }
+  const isPrivate = isIPv4 ? isPrivateIPv4Literal(address) : isPrivateIPv6Literal(address);
+  return isPrivate ? null : 'public_ip';
+}
+
+/** One issue per refused entry, with its message and `params.reason`. */
+const allowedAddressEntrySchema = z.string().superRefine((entry, ctx) => {
+  const reason = getAllowedAddressEntryIssue(entry);
+  if (reason) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: ALLOWED_ADDRESS_ISSUE_MESSAGES[reason],
+      params: { reason },
+    });
+  }
+});
 
 export const allowedAddressesSchema = z.array(allowedAddressEntrySchema).optional();
 
@@ -1619,7 +1688,8 @@ export const agentsEndpointSchema = baseEndpointSchema
           message: 'Use 0 to disable, or at least 1000 ms',
         })
         .default(DEFAULT_STREAM_KEEPALIVE_INTERVAL_MS),
-      recursionLimit: z.number().optional(),
+      /** Graph steps an agent run may take; a run with fewer than 1 cannot take a step. */
+      recursionLimit: z.number().int().min(1).optional(),
       disableBuilder: z.boolean().optional().default(false),
       /** Optional workspace guidance acquisition budget, separate from command execution. */
       repositoryInstructions: z
@@ -1659,7 +1729,8 @@ export const agentsEndpointSchema = baseEndpointSchema
             .default({}),
         })
         .optional(),
-      maxRecursionLimit: z.number().optional(),
+      /** Cap on any agent's `recursion_limit` and on `recursionLimit`. */
+      maxRecursionLimit: z.number().int().min(1).optional(),
       /** Max cumulative bytes a single streamed tool call's arguments may reach before the run
        * aborts. Defaults to 64 KiB in the agents SDK; `0` disables the guard. */
       maxToolCallArgBytes: z.number().optional(),
@@ -4542,6 +4613,13 @@ export const configSchema = z.object({
     .object({
       allowedAddresses: allowedAddressesSchema,
       /**
+       * Milliseconds the admin config catalog (`GET /api/admin/config/catalog`) reuses a scope's
+       * model lists while its endpoint config is unchanged, up to one hour; `0` resolves them on
+       * every read, where a fetched list may still come from the two-minute model-list cache.
+       * Only librechat.yaml sets it. Omission keeps `DEFAULT_CATALOG_MODELS_TTL_MS` (two minutes).
+       */
+      catalogModelsTtlMs: z.number().int().min(0).max(3_600_000).optional(),
+      /**
        * Defaults applied to every endpoint. Omit-based, so options added to
        * `baseEndpointSchema` are inherited here automatically — no list to
        * maintain (contrast `azureEndpointSchema`, which enumerates via
@@ -5425,6 +5503,10 @@ export enum Constants {
   ENCODED_DOMAIN_LENGTH = 10,
   /** Identifier for using current_model in multi-model requests. */
   CURRENT_MODEL = 'current_model',
+  /** Protocol bound for UUIDs, nanoids, and derived user identities. */
+  MAX_MESSAGE_ID_LENGTH = 256,
+  /** A preliminary response reserves one trailing underscore. */
+  MAX_RESPONSE_MESSAGE_ID_LENGTH = MAX_MESSAGE_ID_LENGTH + 1,
   /** Common divider for text values */
   COMMON_DIVIDER = '__',
   /** Max length for commands */

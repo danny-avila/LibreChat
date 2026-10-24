@@ -348,6 +348,22 @@ describe('AppService credential write format', () => {
   });
 });
 
+describe('AppService admin catalog model-list lifetime', () => {
+  it('carries a configured lifetime onto the app config, zero included', async () => {
+    for (const catalogModelsTtlMs of [0, 600_000]) {
+      const result = await AppService({
+        config: { endpoints: { catalogModelsTtlMs } } as DeepPartial<TCustomConfig>,
+      });
+      expect(result.endpoints?.catalogModelsTtlMs).toBe(catalogModelsTtlMs);
+    }
+  });
+
+  it('leaves it unset when librechat.yaml does not set it', async () => {
+    const result = await AppService({ config: { endpoints: {} } as DeepPartial<TCustomConfig> });
+    expect(result.endpoints).not.toHaveProperty('catalogModelsTtlMs');
+  });
+});
+
 describe('AppService conversation list limits', () => {
   it('carries the configured filter limits onto the app config', async () => {
     const result = await AppService({

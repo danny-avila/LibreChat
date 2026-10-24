@@ -5,14 +5,24 @@ import {
   PERMISSION_SUB_KEYS,
   BASE_ONLY_CONFIG_PATHS,
   DATA_PROVIDER_VERSION,
+  DEPLOYMENT_ONLY_CONFIG_PATHS,
   BASE_ONLY_CONFIG_SECTIONS,
   PROCESS_MCP_SERVER_FIELDS,
   INTERFACE_PERMISSION_FIELDS,
   BASE_PRINCIPAL_CONFIG_SECTIONS,
+  DEFAULT_CATALOG_MODELS_TTL_MS,
   RUNTIME_CONFIG_INTERFACE_FIELDS,
 } from 'librechat-data-provider';
-import type { AdminConfigFeatures, AdminConfigMeta } from '@librechat/data-schemas';
-import { getConfigSecretRules } from './secrets';
+import type { AppConfig, AdminConfigFeatures, AdminConfigMeta } from '@librechat/data-schemas';
+import { RENAME_HINT_PATHS, getConfigSecretRules } from './secrets';
+
+/**
+ * How long `GET /catalog` reuses a scope's model lists while its endpoint config is unchanged:
+ * `endpoints.catalogModelsTtlMs`, which only librechat.yaml sets, or two minutes.
+ */
+export function getCatalogModelsTtlMs(config: AppConfig | undefined): number {
+  return config?.endpoints?.catalogModelsTtlMs ?? DEFAULT_CATALOG_MODELS_TTL_MS;
+}
 
 /**
  * The admin config behaviours this server has. A change flips its own flag when it wires the
@@ -40,6 +50,15 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   yamlSecretPreview: true,
   envAllowlist: true,
   secretRebinding: true,
+  resolvedApi: true,
+  catalogApi: true,
+  envStatus: true,
+  reloadRoute: true,
+  writeReport: true,
+  issueParams: true,
+  adminTermsExempt: true,
+  keyedTombstones: true,
+  renameHints: true,
   azureGroupMergeKey: true,
   customParamsExpansion: true,
   specInterfaceRederive: true,
@@ -79,9 +98,11 @@ export function buildAdminConfigMeta(
     limits: { ...limits },
     rules: {
       acceptedSections: Object.keys(configSchema.shape),
+      renameHintPaths: [...RENAME_HINT_PATHS],
       baseOnlySections: [...BASE_ONLY_CONFIG_SECTIONS],
       basePrincipalSections: [...BASE_PRINCIPAL_CONFIG_SECTIONS],
       baseOnlyPaths: [...BASE_ONLY_CONFIG_PATHS],
+      deploymentOnlyPaths: { ...DEPLOYMENT_ONLY_CONFIG_PATHS },
       ...getConfigMergeRules(),
       ...getConfigSecretRules(),
       processMcpFields: [...PROCESS_MCP_SERVER_FIELDS],

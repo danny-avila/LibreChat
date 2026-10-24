@@ -3,19 +3,42 @@ import {
   BASE_ONLY_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_PATHS,
   DERIVED_CONFIG_PATHS,
+  DEPLOYMENT_ONLY_CONFIG_PATHS,
   INTERFACE_PERMISSION_FIELDS,
   RUNTIME_CONFIG_INTERFACE_FIELDS,
   PERMISSION_SUB_KEYS,
   isProcessMCPServerConfig,
-  normalizeEndpointName,
   EModelEndpoint,
   configSchema,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
-import type { AdminConfigMergeRules, AppConfig, Config, TWebSearchKeys } from '~/types';
+import type {
+  AdminConfigLayerIgnoreReason,
+  AdminConfigIgnoredOverride,
+  AdminConfigIgnoreReason,
+  AdminConfigLayerIgnored,
+  AdminConfigMergeRules,
+  ConfigIssueParams,
+  TWebSearchKeys,
+  AppConfig,
+  Config,
+} from '~/types';
+import type { ConfigEntryRename, ConfigFieldWrite } from './mutations';
 import type { ConfigDerivation, ConfigTouches } from './derive';
+import type { ConfigEntryLocation } from './collections';
 import type { AzureResolvedGroupField } from './azure';
-import type { ConfigFieldWrite } from './mutations';
+import {
+  MERGE_KEY_FOLDS,
+  ARRAY_MERGE_KEYS,
+  OVERRIDE_KEY_MAP,
+  remapOverridePath,
+  foldConfigMergeKey,
+  isConfigEntryAt,
+  readConfigEntryTombstone,
+  getConfigEntryIdentity,
+  getConfigArrayMergeKey,
+  getConfigMergeArrayPath,
+} from './collections';
 import {
   AZURE_RESOLVED_GROUP_FIELDS,
   toAzureGroupMapEntry,
@@ -35,9 +58,9 @@ import {
   getDerivedConfigIssues,
   WRITE_ONLY_DERIVED_ISSUES,
 } from './derive';
+import { setConfigFields, toConfigOverrideState, renameConfigEntriesTombstones } from './mutations';
+import { parseFieldPath, isDotFreePath, isSegmentPrefix, isKeyedConfigPath } from './paths';
 import { isBaseConfigPrincipal, sortByConfigPrecedence } from './precedence';
-import { parseFieldPath, isDotFreePath, isSegmentPrefix } from './paths';
-import { setConfigFields, toConfigOverrideState } from './mutations';
 import { webSearchPairedFields, unbindWebSearchKeys } from './web';
 import logger from '~/config/winston';
 
@@ -72,21 +95,63 @@ export function isDerivedConfigPath(segments: readonly string[]): boolean {
 }
 
 /**
- * A layer's overrides without the values it holds at derived paths (`DERIVED_CONFIG_PATHS`), with
- * one warning per layer; the same object when it holds none.
+ * A layer's overrides without the values it holds at derived paths (`DERIVED_CONFIG_PATHS`), each
+ * told to `report` or, without one, warned about; the same object when it holds none.
  */
-function withoutDerivedPaths(overrides: AnyObject, principal: string): AnyObject {
+function withoutDerivedPaths(
+  overrides: AnyObject,
+  principal: string,
+  report?: (segments: readonly string[]) => void,
+): AnyObject {
   let result = overrides;
   for (const path of DERIVED_PATH_SEGMENTS) {
     if (getPath(result, [...path]) === undefined) {
       continue;
     }
-    logger.warn(
-      `[mergeConfigOverrides] Ignoring ${path.join('.')} for ${principal}: it is derived from librechat.yaml, not written`,
-    );
+    if (report) {
+      report(path);
+    } else {
+      logger.warn(
+        `[mergeConfigOverrides] Ignoring ${path.join('.')} for ${principal}: it is derived from librechat.yaml, not written`,
+      );
+    }
     result = omitPath(result, [...path]) as AnyObject;
   }
   return result;
+}
+
+/** A field only librechat.yaml sets, as YAML key segments, and why the merge keeps its value. */
+export interface YamlHeldPath {
+  segments: readonly string[];
+  reason: Extract<AdminConfigIgnoreReason, 'base_only_path' | 'deployment_only_path'>;
+}
+
+/**
+ * Every field the merge sets back to librechat.yaml's value whatever a layer stores or
+ * tombstones there: `BASE_ONLY_CONFIG_PATHS`, which per-request code reads from the merged
+ * config, and `DEPLOYMENT_ONLY_CONFIG_PATHS`, read at startup or from librechat.yaml itself.
+ */
+export const YAML_HELD_PATHS: readonly YamlHeldPath[] = [
+  ...BASE_ONLY_CONFIG_PATHS.map(
+    (path): YamlHeldPath => ({ segments: path.split('.'), reason: 'base_only_path' }),
+  ),
+  ...Object.keys(DEPLOYMENT_ONLY_CONFIG_PATHS).map(
+    (path): YamlHeldPath => ({ segments: path.split('.'), reason: 'deployment_only_path' }),
+  ),
+];
+
+/** Told about each stored override or tombstone of `layer` that a fold leaves out. */
+type IgnoredSink = (layer: ConfigOverrideLayer, entry: AdminConfigIgnoredOverride) => void;
+
+/** {@link IgnoredSink} bound to the layer being folded. */
+type LayerIgnoredSink = (entry: AdminConfigIgnoredOverride) => void;
+
+function toIgnored(
+  segments: readonly string[],
+  reason: AdminConfigIgnoreReason,
+  kind: AdminConfigIgnoredOverride['kind'],
+): AdminConfigIgnoredOverride {
+  return { path: segments.join('.'), segments: [...segments], reason, kind };
 }
 
 /** Where the resolved Azure config sits in an AppConfig. */
@@ -127,51 +192,11 @@ function withoutAzureGroups<T extends AnyObject>(merged: T): T {
 }
 
 /**
- * Paths within the config tree where arrays of objects should be merged by
- * a key field rather than replaced wholesale. `deepMerge` matches items by
- * the given key, deep-merges matching pairs, preserves unmatched base items,
- * and appends new override-only items.
- *
- * Paths use AppConfig key names (post-OVERRIDE_KEY_MAP remapping),
- * not YAML-level key names. E.g. use `interfaceConfig.x`, not `interface.x`.
- */
-const ARRAY_MERGE_KEYS: Record<string, string> = {
-  'endpoints.custom': 'name',
-  'endpoints.azureOpenAI.groups': 'group',
-};
-
-/**
- * How a merge key is folded before items are matched, by `ARRAY_MERGE_KEYS` path: two
- * spellings the runtime serves as one item are one item to the merge too. Custom endpoint
- * names fold through `normalizeEndpointName`, so an override `ollama` lands on the YAML
- * `Ollama` instead of serving beside it with a different baseURL and key.
- */
-const MERGE_KEY_FOLDS: Record<string, (key: string) => string> = {
-  'endpoints.custom': normalizeEndpointName,
-};
-
-/**
  * Object-valued paths an override replaces whole instead of merging into. A theme
  * definition is one coherent value: merging two would keep the base theme's modes,
  * brands and tokens under the override's name. Uses AppConfig key names.
  */
 const ATOMIC_MERGE_PATHS = new Set<string>(['interfaceConfig.theme']);
-
-/**
- * Maps YAML-level override keys (TCustomConfig) to their AppConfig equivalents.
- * Overrides are stored with YAML keys but merged into the already-processed AppConfig
- * where some fields have been renamed by AppService.
- *
- * When AppService renames a field, add the mapping here. Map entries are
- * type-checked: keys must be valid TCustomConfig fields, values must be
- * valid AppConfig fields. The runtime lookup casts string keys to satisfy
- * strict indexing — unknown keys safely fall through via the ?? fallback.
- */
-const OVERRIDE_KEY_MAP: Partial<Record<keyof TCustomConfig, keyof AppConfig>> = {
-  mcpServers: 'mcpConfig',
-  interface: 'interfaceConfig',
-  turnstile: 'turnstileConfig',
-};
 
 /** AppConfig key → the override (YAML) section merged into it, the inverse of `OVERRIDE_KEY_MAP`. */
 const OVERRIDE_SECTION_BY_APP_KEY = new Map<string, string>(
@@ -214,35 +239,6 @@ function isSafePath(path: string): boolean {
 }
 
 /**
- * The key field that identifies entries of the merged-by-key array at an override (YAML) path,
- * such as `name` for `endpoints.custom`; `undefined` for any other path.
- */
-export function getConfigArrayMergeKey(segments: readonly string[]): string | undefined {
-  const arrayPath = getMergeArrayPath(segments);
-  return arrayPath === undefined ? undefined : ARRAY_MERGE_KEYS[arrayPath];
-}
-
-/** The `ARRAY_MERGE_KEYS` path of the merged-by-key array at an override (YAML) path. */
-function getMergeArrayPath(segments: readonly string[]): string | undefined {
-  if (segments.length === 0 || segments.some((segment) => segment.includes('.'))) {
-    return undefined;
-  }
-  const appConfigPath = remapOverridePath(segments.join('.'));
-  return hasOwn(ARRAY_MERGE_KEYS, appConfigPath) ? appConfigPath : undefined;
-}
-
-/**
- * The identity entry key `key` of the merged-by-key array at an override (YAML) path has: the
- * key as the runtime merge folds it (`foldConfigMergeKey`), so `Ollama` and `ollama` name one
- * custom endpoint to entry changes as they do to the merge. A key at any other path is its own
- * identity.
- */
-export function getConfigEntryIdentity(segments: readonly string[], key: string): string {
-  const arrayPath = getMergeArrayPath(segments);
-  return arrayPath === undefined ? key : foldConfigMergeKey(arrayPath, key);
-}
-
-/**
  * `combineFoldedConfigItems` for the merged-by-key array at an override (YAML) path: stored
  * items naming one entry in two spellings, combined as the runtime merge combines them.
  */
@@ -250,7 +246,7 @@ export function combineFoldedConfigEntries(
   segments: readonly string[],
   items: unknown[],
 ): unknown[] {
-  const arrayPath = getMergeArrayPath(segments);
+  const arrayPath = getConfigMergeArrayPath(segments);
   return arrayPath === undefined ? items : combineFoldedConfigItems(arrayPath, items);
 }
 
@@ -264,7 +260,7 @@ export function mergeConfigEntries(
   below: unknown,
   items: readonly unknown[],
 ): unknown[] {
-  const arrayPath = getMergeArrayPath(segments);
+  const arrayPath = getConfigMergeArrayPath(segments);
   if (arrayPath === undefined || !Array.isArray(below)) {
     return [...items];
   }
@@ -277,17 +273,22 @@ export function mergeConfigEntries(
   );
 }
 
-function remapOverridePath(path: string): string {
-  const [first, ...rest] = path.split('.');
-  const mappedFirst = OVERRIDE_KEY_MAP[first as keyof typeof OVERRIDE_KEY_MAP] ?? first;
-  return [mappedFirst, ...rest].join('.');
-}
-
 function isBaseOnlyOverridePath(path: string): boolean {
   return BASE_ONLY_OVERRIDE_SECTIONS.has(path.split('.')[0]);
 }
 
+/**
+ * Removes a path from `target`, stopping at arrays. A keyed path (`endpoints.custom["Name"]`)
+ * reaches into an array merged by key instead: it removes every entry whose key has the same
+ * identity (`Ollama` and `ollama` alike), or with a path inside the entry, that path from each
+ * of them. Any other path holding `["` is split on its dots, as before keyed paths existed, so a
+ * stored tombstone of a record key such as an MCP server named `a["b"]` keeps hiding it.
+ */
 function deletePath<T extends AnyObject>(target: T, path: string): T {
+  const entry = isKeyedConfigPath(path) ? readConfigEntryTombstone(path) : null;
+  if (entry) {
+    return deleteEntryPath(target, entry);
+  }
   if (!isSafePath(path)) {
     return target;
   }
@@ -309,6 +310,22 @@ function deletePath<T extends AnyObject>(target: T, path: string): T {
 
   delete cursor[segments[segments.length - 1]];
   return result as T;
+}
+
+function deleteEntryPath<T extends AnyObject>(target: T, location: ConfigEntryLocation): T {
+  const segments = [...location.segments];
+  const items = getPath(target, segments);
+  if (!Array.isArray(items) || !items.some((item) => isConfigEntryAt(location, item))) {
+    return target;
+  }
+  const inside = location.entry.rest.join('.');
+  const next =
+    inside === ''
+      ? items.filter((item) => !isConfigEntryAt(location, item))
+      : items.map((item) =>
+          isConfigEntryAt(location, item) ? deletePath(item as AnyObject, inside) : item,
+        );
+  return setPath(target, segments, next) as T;
 }
 
 function deleteConfigPath<T extends AnyObject>(target: T, path: string): T {
@@ -335,15 +352,6 @@ function deleteConfigPath<T extends AnyObject>(target: T, path: string): T {
   }
 
   return { ...target, mcpConfig: processServers } as T;
-}
-
-/**
- * Folds a merge key of the merged-by-key array at `arrayPath` into the identity layers match
- * on (`Ollama` and `ollama` are one custom endpoint); other keys come back unchanged. Code that
- * pairs items across writes, such as secret preservation, matches on the same identity.
- */
-export function foldConfigMergeKey(arrayPath: string, key: string): string {
-  return hasOwn(MERGE_KEY_FOLDS, arrayPath) ? MERGE_KEY_FOLDS[arrayPath](key) : key;
 }
 
 /** The identity an item of the merged-by-key array at `arrayPath` matches on. */
@@ -400,7 +408,7 @@ export function combineFoldedConfigItems(arrayPath: string, items: unknown[]): u
 }
 
 /** `combineFoldedConfigItems` over every folded array of a stored overrides document. */
-function combineStoredFoldedItems(overrides: unknown, principal: string): unknown {
+function combineStoredFoldedItems(overrides: unknown, principal: string, quiet = false): unknown {
   let result = overrides;
   for (const arrayPath of Object.keys(MERGE_KEY_FOLDS)) {
     const segments = arrayPath.split('.');
@@ -412,9 +420,11 @@ function combineStoredFoldedItems(overrides: unknown, principal: string): unknow
     if (combined === items) {
       continue;
     }
-    logger.warn(
-      `[mergeConfigOverrides] Combining "${arrayPath}" items that name one entry in different spellings for ${principal}; a write of this list must name each entry once`,
-    );
+    if (!quiet) {
+      logger.warn(
+        `[mergeConfigOverrides] Combining "${arrayPath}" items that name one entry in different spellings for ${principal}; a write of this list must name each entry once`,
+      );
+    }
     result = setPath(result, segments, combined);
   }
   return result;
@@ -552,6 +562,12 @@ export type ConfigOverrideIssue = {
    * because they can echo the submitted values.
    */
   code: string;
+  /**
+   * What the schema expected, for a zod issue attributed to the exact node that failed
+   * (`getConfigIssueParams`); absent when the issue is reported on an ancestor the override
+   * supplies, where the bound would describe a node the override did not write.
+   */
+  params?: ConfigIssueParams;
 };
 
 type IssuePath = Array<string | number>;
@@ -574,8 +590,100 @@ export function isAcceptedOverrideSection(key: string): boolean {
   return hasOwn(configSchema.shape, key);
 }
 
-function toIssue(segments: string[], code: string): ConfigOverrideIssue {
-  return { path: segments.join('.'), segments, code };
+function toIssue(
+  segments: string[],
+  code: string,
+  params?: ConfigIssueParams,
+): ConfigOverrideIssue {
+  return params
+    ? { path: segments.join('.'), segments, code, params }
+    : { path: segments.join('.'), segments, code };
+}
+
+type IssuePrimitive = string | number | boolean | null;
+
+const CUSTOM_REASON = /^[a-z][a-z0-9_]*$/;
+
+function isIssuePrimitive(value: unknown): value is IssuePrimitive {
+  return (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  );
+}
+
+/** A numeric bound as JSON can carry it: a date as epoch milliseconds, never a bigint. */
+function toIssueNumber(value: unknown): number | undefined {
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return Number.isFinite(time) ? time : undefined;
+  }
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+/** The bound fields of a `too_small` or `too_big` issue, always with `inclusive`, `exact`, `type`. */
+function getBoundParams(
+  bound: 'minimum' | 'maximum',
+  value: unknown,
+  issue: { inclusive: boolean; exact?: boolean; type: string },
+): ConfigIssueParams {
+  const number = toIssueNumber(value);
+  return {
+    ...(number !== undefined && { [bound]: number }),
+    inclusive: issue.inclusive,
+    exact: issue.exact ?? false,
+    type: issue.type,
+  };
+}
+
+/**
+ * The parts of a zod issue that describe the schema rather than the submitted value, by an
+ * allowlist per issue code: expected types and literals, accepted options, numeric bounds, the
+ * failed string check, a multiple, and a refinement's stable `reason`. A value the client sent
+ * is never copied (no `received` literal or enum value, no message), so the result is safe to
+ * return. `undefined` when the issue carries none of these.
+ */
+export function getConfigIssueParams(issue: SchemaIssue): ConfigIssueParams | undefined {
+  let params: ConfigIssueParams | undefined;
+  switch (issue.code) {
+    case 'invalid_type':
+      params = { expected: String(issue.expected), received: String(issue.received) };
+      break;
+    case 'invalid_literal':
+      params = isIssuePrimitive(issue.expected) ? { expected: issue.expected } : undefined;
+      break;
+    case 'invalid_enum_value':
+    case 'invalid_union_discriminator':
+      params = { options: (issue.options as unknown[]).filter(isIssuePrimitive) };
+      break;
+    case 'too_small':
+      params = getBoundParams('minimum', issue.minimum, issue);
+      break;
+    case 'too_big':
+      params = getBoundParams('maximum', issue.maximum, issue);
+      break;
+    case 'invalid_string': {
+      const { validation } = issue;
+      params = {
+        validation: typeof validation === 'string' ? validation : Object.keys(validation)[0],
+      };
+      break;
+    }
+    case 'not_multiple_of': {
+      const multipleOf = toIssueNumber(issue.multipleOf);
+      params = multipleOf !== undefined ? { multipleOf } : undefined;
+      break;
+    }
+    case 'custom': {
+      const reason: unknown = issue.params?.reason;
+      params = typeof reason === 'string' && CUSTOM_REASON.test(reason) ? { reason } : undefined;
+      break;
+    }
+    default:
+      params = undefined;
+  }
+  return params && Object.keys(params).length > 0 ? params : undefined;
 }
 
 /**
@@ -814,9 +922,13 @@ function isArrayStep(node: SchemaNode, segment: string, depth = 0): boolean {
  * define it), and whether the path continues past an array on the way. Below a field of a
  * known section that the schema does not define (a key it does not know, or what an
  * intersection or `any` holds), the stored value decides the shape, so an index segment there
- * is taken to name an array element.
+ * is taken to name an array element. Only steps from index `from` of `segments` on count toward
+ * `throughArray`, so a path inside an array entry can be judged on the entry's own arrays.
  */
-function resolveConfigSchemaPath(segments: readonly string[]): {
+function resolveConfigSchemaPath(
+  segments: readonly string[],
+  from = 0,
+): {
   node?: SchemaNode;
   throughArray: boolean;
 } {
@@ -827,13 +939,16 @@ function resolveConfigSchemaPath(segments: readonly string[]): {
   }
   let node: SchemaNode | undefined = shape[section];
   let throughArray = false;
-  for (const segment of rest) {
+  for (let index = 0; index < rest.length; index++) {
+    const segment = rest[index];
+    /** `from` counts in `segments`, where `rest[index]` is `segments[index + 1]`. */
+    const counts = index + 1 >= from;
     if (!node || OPAQUE_SCHEMA_TYPES.has(unwrapSchema(node)._def.typeName ?? '')) {
       node = undefined;
-      throughArray = throughArray || ARRAY_INDEX.test(segment);
+      throughArray = throughArray || (counts && ARRAY_INDEX.test(segment));
       continue;
     }
-    throughArray = throughArray || isArrayStep(node, segment);
+    throughArray = throughArray || (counts && isArrayStep(node, segment));
     node = getChildSchema(node, segment);
   }
   return { node, throughArray };
@@ -858,6 +973,18 @@ export function isConfigRecordPath(segments: readonly string[]): boolean {
  */
 export function isConfigArrayItemPath(segments: readonly string[]): boolean {
   return resolveConfigSchemaPath(segments).throughArray;
+}
+
+/**
+ * {@link isConfigArrayItemPath} for a path inside an entry of the merged-by-key array at
+ * `segments`: whether `rest` continues past an array of the entry's own schema (`models.default.0`),
+ * which a keyed tombstone cannot hide part of either.
+ */
+export function isConfigEntryArrayItemPath(
+  segments: readonly string[],
+  rest: readonly string[],
+): boolean {
+  return resolveConfigSchemaPath([...segments, '0', ...rest], segments.length + 1).throughArray;
 }
 
 /**
@@ -1025,7 +1152,7 @@ export function getConfigOverrideIssues(
   const merged = deepMerge(base as AnyObject, overrides);
   const issues = [...getDottedSectionIssues(overrides), ...getMergeKeyIssues(overrides)];
   const seen = new Set(issues.map((issue) => issue.path));
-  const report = (issuePath: IssuePath, code: string) => {
+  const report = (issuePath: IssuePath, code: string, schemaIssue?: SchemaIssue) => {
     const segments = attributeIssue(overrides, merged, issuePath);
     if (
       !segments ||
@@ -1038,7 +1165,8 @@ export function getConfigOverrideIssues(
       return;
     }
     seen.add(path);
-    issues.push(toIssue(segments, code));
+    const exact = schemaIssue != null && segments.length === issuePath.length;
+    issues.push(toIssue(segments, code, exact ? getConfigIssueParams(schemaIssue) : undefined));
   };
   const shape = configSchema.shape;
   const validSections = new Set<string>();
@@ -1056,9 +1184,12 @@ export function getConfigOverrideIssues(
     if (result.success && shapeIssues.length === 0) {
       validSections.add(section);
     }
-    for (const issue of [...shapeIssues, ...schemaIssues]) {
+    for (const issue of shapeIssues) {
+      report([section, ...issue.path], issue.code);
+    }
+    for (const issue of schemaIssues) {
       if (issue.code !== 'unrecognized_keys') {
-        report([section, ...issue.path], issue.code);
+        report([section, ...issue.path], issue.code, issue);
       }
     }
   }
@@ -1234,11 +1365,17 @@ export function getConfigChangeIssues(
  * field, then reset the old ones). A tombstone a deeper write clears as a side effect does
  * not: setting `memory.agent.enabled` under a hidden `memory.agent` brings the inherited agent
  * back, and a conflict with the stored fields is reported instead of being dropped at merge.
+ * Nor does a keyed tombstone, which a write never clears by its spelled path
+ * (`getPathClearedTombstones`): a segment `custom["Name"]` is a key of that spelling.
+ *
+ * `renames` are the entry renames the write carries out (a `renames` hint), which move the keyed
+ * tombstones of each old entry key to its new one (`renameConfigEntryTombstones`).
  */
 export function getConfigFieldIssues(
   fields: Record<string, unknown> | readonly ConfigFieldWrite[],
   base: Partial<TCustomConfig> = {},
   stored?: { overrides?: unknown; tombstones?: unknown[] } | null,
+  renames: readonly ConfigEntryRename[] = [],
   derivation: ConfigDerivation = {},
 ): ConfigOverrideIssue[] {
   const writes: readonly ConfigFieldWrite[] = Array.isArray(fields)
@@ -1252,9 +1389,30 @@ export function getConfigFieldIssues(
   if (indexed.length > 0) {
     return indexed;
   }
-  const candidate = setConfigFields(toConfigOverrideState(stored), writes);
-  const lifted = written.filter(isDotFreePath).map((segments) => segments.join('.'));
-  return getConfigChangeIssues(candidate, base, stored, written, lifted, derivation);
+  const candidate = renameConfigEntriesTombstones(
+    setConfigFields(toConfigOverrideState(stored), writes),
+    renames,
+  );
+  return getConfigChangeIssues(
+    candidate,
+    base,
+    stored,
+    written,
+    getLiftedConfigTombstones(written),
+    derivation,
+  );
+}
+
+/**
+ * The stored tombstones writes at `written` replace with their own values, as
+ * {@link getConfigFieldIssues} lifts them: each dot-free path, unless its spelling reads as a
+ * keyed tombstone, which a write never clears by its spelled path.
+ */
+export function getLiftedConfigTombstones(written: readonly (readonly string[])[]): string[] {
+  return written.flatMap((segments) => {
+    const path = segments.join('.');
+    return isDotFreePath(segments) && readConfigEntryTombstone(path) == null ? [path] : [];
+  });
 }
 
 function omitPath(target: unknown, segments: string[]): unknown {
@@ -1297,9 +1455,11 @@ function stripInvalidOverrides(
   config: ConfigOverrideLayer,
   base: Partial<TCustomConfig>,
   derivation: ConfigDerivation,
+  sink?: LayerIgnoredSink,
+  onStripped?: (issue: ConfigOverrideIssue) => void,
 ): AnyObject {
   const principal = `${config.principalType}/${config.principalId}`;
-  let stripped: unknown = combineStoredFoldedItems(config.overrides, principal);
+  let stripped: unknown = combineStoredFoldedItems(config.overrides, principal, sink != null);
   const getIssues = () =>
     getConfigOverrideIssues(stripped, base, derivation).filter(
       (issue) => !WRITE_ONLY_DERIVED_ISSUES.has(issue.code),
@@ -1314,31 +1474,63 @@ function stripInvalidOverrides(
       return stripped as AnyObject;
     }
     if (issues.some((issue) => issue.segments.length === 0)) {
-      logger.warn(`[mergeConfigOverrides] Ignoring malformed overrides document for ${principal}`);
+      if (sink) {
+        sink(toIgnored([], 'invalid', 'override'));
+      } else {
+        logger.warn(
+          `[mergeConfigOverrides] Ignoring malformed overrides document for ${principal}`,
+        );
+      }
+      onStripped?.(toIssue([], issues.find((issue) => issue.segments.length === 0)?.code ?? ''));
       return {};
     }
     const before = stripped;
     for (let index = issues.length - 1; index >= 0; index--) {
       const { path, segments, code } = issues[index];
-      logger.warn(
-        `[mergeConfigOverrides] Ignoring invalid override "${path}" for ${principal} (${code})`,
-      );
+      if (sink) {
+        sink(toIgnored(segments, 'invalid', 'override'));
+      } else {
+        logger.warn(
+          `[mergeConfigOverrides] Ignoring invalid override "${path}" for ${principal} (${code})`,
+        );
+      }
       stripped = omitPath(stripped, segments);
+      onStripped?.(issues[index]);
     }
     if (stripped === before) {
       break;
     }
   }
-  const failing = new Set(getIssues().map((issue) => issue.segments[0]));
-  logger.warn(
-    `[mergeConfigOverrides] Ignoring still-invalid sections ${[...failing].join(', ')} for ${principal}`,
-  );
+  const failing = new Map<string, string>();
+  for (const issue of getIssues()) {
+    if (!failing.has(issue.segments[0])) {
+      failing.set(issue.segments[0], issue.code);
+    }
+  }
+  if (sink) {
+    failing.forEach((_code, section) => sink(toIgnored([section], 'invalid', 'override')));
+  } else {
+    logger.warn(
+      `[mergeConfigOverrides] Ignoring still-invalid sections ${[...failing.keys()].join(', ')} for ${principal}`,
+    );
+  }
+  for (const [section, code] of failing) {
+    onStripped?.(toIssue([section], code));
+  }
   return Object.fromEntries(
     Object.entries(stripped as AnyObject).filter(([section]) => !failing.has(section)),
   );
 }
 
-function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
+/**
+ * A layer's `mcpServers` without the servers `current` (the merged MCP config below it) runs as
+ * a local process, or that the override would turn into one; `onDropped` is told each name.
+ */
+function filterMCPServerOverrides(
+  value: unknown,
+  current: unknown,
+  onDropped?: (serverName: string) => void,
+): AnyObject {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) {
     return {};
   }
@@ -1358,6 +1550,8 @@ function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
     ) {
       if (!isProcessMCPServerConfig(currentServer)) {
         filtered[serverName] = serverOverride;
+      } else {
+        onDropped?.(serverName);
       }
       continue;
     }
@@ -1369,6 +1563,8 @@ function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
     const resolved = deepMerge(baseServer, serverOverride as AnyObject);
     if (!isProcessMCPServerConfig(resolved)) {
       filtered[serverName] = serverOverride;
+    } else {
+      onDropped?.(serverName);
     }
   }
 
@@ -1533,7 +1729,10 @@ function describePrincipal(config: ConfigOverrideLayer): string {
  * checked (or by another writer) and would reach runtime state no override may set, so it is
  * dropped here, which neutralizes it without a migration. One warning per document.
  */
-function withAcceptedSections(config: ConfigOverrideLayer): ConfigOverrideLayer {
+function withAcceptedSections(
+  config: ConfigOverrideLayer,
+  sink?: LayerIgnoredSink,
+): ConfigOverrideLayer {
   const ignored = new Set<string>();
   let overrides = config.overrides;
   if (isPlainObject(overrides)) {
@@ -1543,6 +1742,7 @@ function withAcceptedSections(config: ConfigOverrideLayer): ConfigOverrideLayer 
         accepted[key] = value;
       } else {
         ignored.add(key);
+        sink?.(toIgnored([key], 'unknown_section', 'override'));
       }
     }
     overrides = accepted as Partial<TCustomConfig>;
@@ -1558,11 +1758,15 @@ function withAcceptedSections(config: ConfigOverrideLayer): ConfigOverrideLayer 
         return true;
       }
       ignored.add(section);
+      sink?.(toIgnored(path.split('.'), 'unknown_section', 'tombstone'));
       return false;
     });
   }
   if (ignored.size === 0) {
     return config;
+  }
+  if (sink) {
+    return { ...config, overrides, tombstones };
   }
   logger.warn(
     `[mergeConfigOverrides] Ignoring unknown config sections ${[...ignored].join(', ')} for ${describePrincipal(config)}`,
@@ -1609,15 +1813,20 @@ function resolveLayerAzureGroups(params: {
   served: AnyObject;
   below: unknown;
   config: ConfigOverrideLayer;
+  sink?: LayerIgnoredSink;
 }): LayerAzureResolution | null {
-  const { layerAzure, groups, belowGroups, yamlGroups, served, below, config } = params;
+  const { layerAzure, groups, belowGroups, yamlGroups, served, below, config, sink } = params;
   const mergeOver = (lower: unknown): AnyObject[] =>
     Array.isArray(lower) ? mergeArrayByKey(lower, groups, 'group', 2, AZURE_GROUPS_PATH) : groups;
   const resolved = resolveServedAzureGroups(mergeOver(belowGroups), getGroupNames(groups));
   if (!resolved.isValid) {
-    logger.warn(
-      `[mergeConfigOverrides] Ignoring ${AZURE_GROUPS_PATH} for ${describePrincipal(config)}: ${resolved.errors.join('; ')}`,
-    );
+    if (sink) {
+      sink(toIgnored(AZURE_GROUPS_PATH.split('.'), 'invalid', 'override'));
+    } else {
+      logger.warn(
+        `[mergeConfigOverrides] Ignoring ${AZURE_GROUPS_PATH} for ${describePrincipal(config)}: ${resolved.errors.join('; ')}`,
+      );
+    }
     return null;
   }
   const items = new Map<string, AnyObject>();
@@ -1729,6 +1938,89 @@ function withServedAzureModels<T extends AppConfig>(
   };
 }
 
+/** The Azure groups a layer's keyed tombstones name (`endpoints.azureOpenAI.groups["g"]`), whole or not. */
+function getAzureGroupTombstones(tombstones: readonly string[]): {
+  hidden: Set<string>;
+  touched: Set<string>;
+} {
+  const hidden = new Set<string>();
+  const touched = new Set<string>();
+  for (const path of tombstones) {
+    const entry = isKeyedConfigPath(path) ? readConfigEntryTombstone(path) : null;
+    if (entry == null || entry.segments.join('.') !== AZURE_GROUPS_PATH) {
+      continue;
+    }
+    (entry.entry.rest.length === 0 ? hidden : touched).add(entry.identity);
+  }
+  return { hidden, touched };
+}
+
+/** The key fields of a `groupMap` entry, which travel together. */
+const AZURE_GROUP_KEY_FIELDS = ['apiKey', 'apiKeyPreview', 'apiKeyBinding'] as const;
+
+/**
+ * `merged` once a layer's keyed tombstones of Azure groups (`tombstones`) applied, where the merge
+ * resolves Azure groups: the groups the YAML-shaped config keeps (`raw`) resolved again, as a
+ * layer's own groups are (`resolveLayerAzureGroups`). A hidden group leaves `groupMap`, and
+ * `modelGroupMap` and the model lists are resolved from the groups left. A group with a path
+ * hidden inside it is resolved again from what it keeps, with the key below it, which a tombstone
+ * never supplies; every other group keeps the entry below. Where the groups left do not resolve,
+ * the groups with a path hidden inside them are served no more either, with a warning; where none
+ * is left, no group is served (`withoutAzureGroups`).
+ */
+function withHiddenAzureGroups<T extends AnyObject>(
+  merged: T,
+  raw: Partial<TCustomConfig>,
+  tombstones: readonly string[],
+  config: ConfigOverrideLayer,
+): T {
+  const { hidden, touched } = getAzureGroupTombstones(tombstones);
+  const azureSegments = AZURE_CONFIG_PATH.split('.');
+  const azure = getPath(merged, azureSegments);
+  if ((hidden.size === 0 && touched.size === 0) || !isPlainObject(azure)) {
+    return merged;
+  }
+  const kept = getPath(raw, AZURE_GROUPS_PATH.split('.'));
+  let groups = Array.isArray(kept) ? kept.filter(isPlainObject) : [];
+  let resolved = resolveServedAzureGroups(groups, touched);
+  if (!resolved.isValid) {
+    logger.warn(
+      `[mergeConfigOverrides] Serving none of the ${AZURE_GROUPS_PATH} ${[...touched].join(', ')} for ${describePrincipal(config)}: they do not resolve once its tombstones apply: ${resolved.errors.join('; ')}`,
+    );
+    groups = groups.filter((item) => typeof item.group !== 'string' || !touched.has(item.group));
+    resolved = resolveServedAzureGroups(groups, new Set());
+  }
+  if (groups.length === 0 || !resolved.isValid) {
+    return withoutAzureGroups(merged);
+  }
+  const belowMap = isPlainObject(azure.groupMap) ? azure.groupMap : {};
+  const groupMap: AnyObject = {};
+  for (const [name, entry] of Object.entries(resolved.groupMap)) {
+    const below = belowMap[name];
+    if (!touched.has(name) && isPlainObject(below)) {
+      groupMap[name] = below;
+      continue;
+    }
+    const next: AnyObject = { ...(entry as AnyObject) };
+    for (const field of AZURE_GROUP_KEY_FIELDS) {
+      if (isPlainObject(below) && below[field] !== undefined) {
+        next[field] = below[field];
+      } else {
+        delete next[field];
+      }
+    }
+    groupMap[name] = next;
+  }
+  return setPath(merged, azureSegments, {
+    ...azure,
+    groupMap,
+    modelGroupMap: resolved.modelGroupMap,
+    modelNames: resolved.modelNames,
+    assistantModels: resolved.assistantModels,
+    assistantGroups: resolved.assistantGroups,
+  }) as T;
+}
+
 /** What {@link foldConfigLayers} leaves: the served config, the YAML-shaped one, and what layers wrote. */
 interface FoldResult<T> {
   merged: T;
@@ -1748,6 +2040,155 @@ function removesAzureGroups(path: string): boolean {
   return AZURE_GROUPS_PATH === path || AZURE_GROUPS_PATH.startsWith(`${path}.`);
 }
 
+/** What a tracked fold records about one layer (`resolveConfigLayers`). */
+interface LayerTrack {
+  /** The document as given. */
+  layer: ConfigOverrideLayer;
+  /** The document the fold read: `layer` with only accepted sections (`withAcceptedSections`). */
+  accepted: ConfigOverrideLayer;
+  /**
+   * What its overrides contributed to the YAML-shaped result, under AppConfig section names:
+   * invalid, base-only and filtered values removed, Azure `groups` as written.
+   */
+  contributed: AnyObject;
+  /** The tombstones the fold applied, in librechat.yaml keys. */
+  tombstoned: string[];
+  ignored: AdminConfigLayerIgnored[];
+}
+
+/**
+ * A fold's record of the YAML-shaped result and of what each layer could not apply. `resolved`
+ * is `librechat.yaml` folded exactly as `merged` is (same tombstones, filters, merge keys and
+ * atomic paths), kept under AppConfig section names (`interfaceConfig`, `mcpConfig`, ...) so the
+ * merge rules address it as they address `merged`.
+ */
+interface FoldTracker {
+  resolved: AnyObject;
+  layers: LayerTrack[];
+}
+
+function toLayerIgnored(
+  segments: readonly string[],
+  reason: AdminConfigLayerIgnoreReason,
+  extra?: Pick<AdminConfigLayerIgnored, 'code' | 'tombstone'>,
+): AdminConfigLayerIgnored {
+  return { path: segments.join('.'), segments: [...segments], reason, ...extra };
+}
+
+/** `tree` with its top-level keys in AppConfig names (`interface` → `interfaceConfig`, ...). */
+function toAppConfigKeys(tree: Partial<TCustomConfig>): AnyObject {
+  const result: AnyObject = {};
+  for (const [key, value] of Object.entries(tree)) {
+    if (value !== undefined) {
+      result[OVERRIDE_KEY_MAP[key as keyof typeof OVERRIDE_KEY_MAP] ?? key] = value;
+    }
+  }
+  return result;
+}
+
+/** `tree` with its top-level keys back in librechat.yaml names. */
+function toOverrideKeys(tree: AnyObject): Partial<TCustomConfig> {
+  const result: AnyObject = {};
+  for (const [key, value] of Object.entries(tree)) {
+    if (value !== undefined) {
+      result[OVERRIDE_SECTION_BY_APP_KEY.get(key) ?? key] = value;
+    }
+  }
+  return result as Partial<TCustomConfig>;
+}
+
+/** Starts a layer's record with the sections `withAcceptedSections` left out of it. */
+function startLayerTrack(
+  tracker: FoldTracker,
+  layer: ConfigOverrideLayer,
+  accepted: ConfigOverrideLayer,
+): LayerTrack {
+  const ignored: AdminConfigLayerIgnored[] = [];
+  if (accepted !== layer) {
+    if (isPlainObject(layer.overrides)) {
+      for (const key of Object.keys(layer.overrides)) {
+        if (!isAcceptedOverrideSection(key)) {
+          ignored.push(toLayerIgnored([key], 'unknown_section'));
+        }
+      }
+    }
+    for (const path of Array.isArray(layer.tombstones) ? layer.tombstones : []) {
+      if (typeof path === 'string' && !isAcceptedOverrideSection(path.split('.')[0])) {
+        ignored.push(toLayerIgnored(path.split('.'), 'unknown_section', { tombstone: true }));
+      }
+    }
+  }
+  const track: LayerTrack = { layer, accepted, contributed: {}, tombstoned: [], ignored };
+  tracker.layers.push(track);
+  return track;
+}
+
+/** The interface fields and sub-keys the permission filter removes from an interface override. */
+function getInterfacePermissionRemovals(value: AnyObject): string[][] {
+  const removed: string[][] = [];
+  for (const [field, fieldVal] of Object.entries(value)) {
+    if (!INTERFACE_PERMISSION_FIELDS.has(field)) {
+      continue;
+    }
+    if (isPlainObject(fieldVal)) {
+      for (const sub of Object.keys(fieldVal)) {
+        if (PERMISSION_SUB_KEYS.has(sub)) {
+          removed.push(['interface', field, sub]);
+        }
+      }
+    } else if (!RUNTIME_CONFIG_INTERFACE_FIELDS.has(field)) {
+      removed.push(['interface', field]);
+    }
+  }
+  return removed;
+}
+
+/**
+ * Reports what a tombstone leaves in place: a field only librechat.yaml sets, at or below the
+ * tombstone (the whole tombstone) or below it where the base config has a value the merge puts
+ * back (`isHeldValueSet`), and the MCP servers librechat.yaml runs as local processes (`merged`
+ * is the config below the layer).
+ */
+function reportTombstoneHeld(
+  path: string,
+  merged: AnyObject,
+  isHeldValueSet: (held: YamlHeldPath) => boolean,
+  sink: LayerIgnoredSink,
+): void {
+  const segments = path.split('.');
+  for (const held of YAML_HELD_PATHS) {
+    if (isSegmentPrefix(held.segments, segments)) {
+      sink(toIgnored(segments, held.reason, 'tombstone'));
+    } else if (isSegmentPrefix(segments, held.segments) && isHeldValueSet(held)) {
+      sink(toIgnored(held.segments, held.reason, 'tombstone'));
+    }
+  }
+  const servers = merged.mcpConfig;
+  if (segments[0] !== 'mcpServers' || !isPlainObject(servers)) {
+    return;
+  }
+  const names = segments.length > 1 ? [segments[1]] : Object.keys(servers);
+  for (const name of names) {
+    if (isProcessMCPServerConfig(servers[name])) {
+      const location = segments.length > 1 ? segments : ['mcpServers', name];
+      sink(toIgnored(location, 'process_mcp_server', 'tombstone'));
+    }
+  }
+}
+
+/** What a fold reports beside its result (`foldConfigLayers`). */
+interface FoldObservers {
+  /** Told about each stored override or tombstone a layer's fold leaves out. */
+  sink?: IgnoredSink;
+  /**
+   * For the `sink`: whether the merge puts back a held field below a tombstone; by default,
+   * whether the initial raw config (librechat.yaml) sets it.
+   */
+  isHeldValueSet?: (held: YamlHeldPath) => boolean;
+  /** Keeps the YAML-shaped result and each layer's unapplied parts. */
+  tracker?: FoldTracker;
+}
+
 /**
  * Folds override layers, in merge precedence order (`compareConfigPrecedence`), into
  * `merged`, the served config, and `raw`, the YAML-shaped config each layer is validated on
@@ -1763,7 +2204,10 @@ function removesAzureGroups(path: string): boolean {
  * are judged with `vertexConfigured` taken from `initialRaw`, librechat.yaml.
  * `webSearchWriters` names the layer behind each paired web search field, by its position in
  * that order, and `touches` what the layers wrote and removed. `afterLayer` runs after each layer
- * lands, and the next layer folds onto what it returns.
+ * lands, and the next layer folds onto what it returns. With a `sink`, the fold tells it what of
+ * each stored layer it leaves out (`getIgnoredConfigOverrides`); with a `tracker`, it also keeps
+ * the YAML-shaped result the served config corresponds to, and what of each layer it did not
+ * apply (`resolveConfigLayers`).
  */
 function foldConfigLayers<T extends AnyObject>(
   initial: T,
@@ -1771,6 +2215,11 @@ function foldConfigLayers<T extends AnyObject>(
   configs: readonly ConfigOverrideLayer[],
   afterLayer?: (step: FoldStep<T>) => T,
   options: ConfigDerivation = {},
+  {
+    sink,
+    tracker,
+    isHeldValueSet = (held) => getPath(initialRaw, [...held.segments]) !== undefined,
+  }: FoldObservers = {},
 ): FoldResult<T> {
   const derivation: ConfigDerivation = {
     ...options,
@@ -1784,7 +2233,10 @@ function foldConfigLayers<T extends AnyObject>(
   const resolvesAzureGroups = derivation.rederiveEndpoints === true;
   let anthropicModelsSet = false;
   for (let order = 0; order < sorted.length; order++) {
-    const config = withAcceptedSections(sorted[order]);
+    const source = sorted[order];
+    const layerSink: LayerIgnoredSink | undefined = sink && ((entry) => sink(source, entry));
+    const config = withAcceptedSections(source, layerSink);
+    const track = tracker && startLayerTrack(tracker, source, config);
     const below = merged;
     let contributed: AnyObject = {};
     const removed: string[] = [];
@@ -1794,47 +2246,105 @@ function foldConfigLayers<T extends AnyObject>(
     if (Array.isArray(config.tombstones)) {
       const removal: WebSearchWriter = { config, order, removed: true };
       for (const path of config.tombstones) {
-        if (
-          typeof path === 'string' &&
-          !isBaseOnlyOverridePath(path) &&
-          !isDerivedConfigPath(path.split('.')) &&
-          (isBasePrincipal || !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(path.split('.')[0]))
-        ) {
-          tombstoned.push(path);
-          for (const removedPath of getTombstoneRemovals(path, resolvesAzureGroups)) {
-            const mappedPath = remapOverridePath(removedPath);
-            removed.push(mappedPath);
-            merged = deleteConfigPath(merged, mappedPath);
-            raw = deletePath(raw as AnyObject, removedPath) as Partial<TCustomConfig>;
-          }
-          if (resolvesAzureGroups && path === AZURE_GROUPS_PATH) {
-            merged = withoutAzureGroups(merged);
-          }
-          recordWebSearchTombstone(webSearchWriters, path, removal);
+        if (typeof path !== 'string') {
+          continue;
         }
+        if (isBaseOnlyOverridePath(path)) {
+          layerSink?.(toIgnored(path.split('.'), 'base_only_section', 'tombstone'));
+          track?.ignored.push(
+            toLayerIgnored(path.split('.'), 'base_only_section', { tombstone: true }),
+          );
+          continue;
+        }
+        if (!isBasePrincipal && BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(path.split('.')[0])) {
+          layerSink?.(toIgnored(path.split('.'), 'dedicated_section', 'tombstone'));
+          track?.ignored.push(
+            toLayerIgnored(path.split('.'), 'base_principal_section', { tombstone: true }),
+          );
+          continue;
+        }
+        if (isDerivedConfigPath(path.split('.'))) {
+          layerSink?.(toIgnored(path.split('.'), 'derived_path', 'tombstone'));
+          track?.ignored.push(toLayerIgnored(path.split('.'), 'derived_path', { tombstone: true }));
+          continue;
+        }
+        if (layerSink) {
+          reportTombstoneHeld(path, merged, isHeldValueSet, layerSink);
+        }
+        tombstoned.push(path);
+        for (const removedPath of getTombstoneRemovals(path, resolvesAzureGroups)) {
+          const mappedPath = remapOverridePath(removedPath);
+          removed.push(mappedPath);
+          merged = deleteConfigPath(merged, mappedPath);
+          raw = deletePath(raw as AnyObject, removedPath) as Partial<TCustomConfig>;
+          if (tracker) {
+            tracker.resolved = deleteConfigPath(tracker.resolved, mappedPath);
+          }
+        }
+        if (resolvesAzureGroups && path === AZURE_GROUPS_PATH) {
+          merged = withoutAzureGroups(merged);
+        }
+        track?.tombstoned.push(path);
+        recordWebSearchTombstone(webSearchWriters, path, removal);
+      }
+      if (resolvesAzureGroups) {
+        merged = withHiddenAzureGroups(merged, raw, tombstoned, config);
       }
     }
 
     if (config.overrides && typeof config.overrides === 'object') {
       const remapped: AnyObject = {};
       const applied: AnyObject = {};
+      const valid = stripInvalidOverrides(
+        config,
+        raw,
+        derivation,
+        layerSink,
+        track &&
+          ((issue) =>
+            track.ignored.push(
+              toLayerIgnored(issue.segments, 'invalid_override', { code: issue.code }),
+            )),
+      );
       const writable = withoutDerivedPaths(
-        stripInvalidOverrides(config, raw, derivation),
+        valid,
         describePrincipal(config),
+        layerSink || track
+          ? (segments) => {
+              layerSink?.(toIgnored(segments, 'derived_path', 'override'));
+              track?.ignored.push(toLayerIgnored(segments, 'derived_path'));
+            }
+          : undefined,
       );
       for (const [key, value] of Object.entries(writable)) {
-        if (
-          BASE_ONLY_OVERRIDE_SECTIONS.has(key) ||
-          (!isBasePrincipal && BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(key))
-        ) {
+        if (BASE_ONLY_OVERRIDE_SECTIONS.has(key)) {
+          layerSink?.(toIgnored([key], 'base_only_section', 'override'));
+          track?.ignored.push(toLayerIgnored([key], 'base_only_section'));
+          continue;
+        }
+        if (!isBasePrincipal && BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(key)) {
+          layerSink?.(toIgnored([key], 'dedicated_section', 'override'));
+          track?.ignored.push(toLayerIgnored([key], 'base_principal_section'));
           continue;
         }
         applied[key] = value;
         const mappedKey = OVERRIDE_KEY_MAP[key as keyof typeof OVERRIDE_KEY_MAP] ?? key;
         if (mappedKey === 'mcpConfig') {
-          remapped[mappedKey] = filterMCPServerOverrides(value, merged[mappedKey]);
+          remapped[mappedKey] = filterMCPServerOverrides(
+            value,
+            merged[mappedKey],
+            layerSink &&
+              ((name) => layerSink(toIgnored([key, name], 'process_mcp_server', 'override'))),
+          );
           /** A server the filter removed must not complete a later layer's partial of it. */
           applied[key] = remapped[mappedKey];
+          if (track && isPlainObject(value)) {
+            for (const name of Object.keys(value)) {
+              if (!hasOwn(remapped[mappedKey] as AnyObject, name)) {
+                track.ignored.push(toLayerIgnored([key, name], 'process_mcp_server'));
+              }
+            }
+          }
         } else if (
           key === 'interface' &&
           value != null &&
@@ -1856,6 +2366,8 @@ function foldConfigLayers<T extends AnyObject>(
               for (const [sub, subVal] of Object.entries(fieldVal as AnyObject)) {
                 if (!PERMISSION_SUB_KEYS.has(sub)) {
                   uiOnly[sub] = subVal;
+                } else {
+                  layerSink?.(toIgnored([key, field, sub], 'interface_permission', 'override'));
                 }
               }
               if (Object.keys(uiOnly).length > 0) {
@@ -1865,11 +2377,16 @@ function foldConfigLayers<T extends AnyObject>(
               // Dual-purpose field: the boolean form is a runtime disable, not a
               // permission toggle, so preserve it (e.g. schedules: false).
               filtered[field] = fieldVal;
+            } else {
+              // other boolean permission fields (e.g. runCode: false) are fully stripped
+              layerSink?.(toIgnored([key, field], 'interface_permission', 'override'));
             }
-            // other boolean permission fields (e.g. runCode: false) are fully stripped
           }
           if (Object.keys(filtered).length > 0) {
             remapped[mappedKey] = filtered;
+          }
+          for (const segments of track ? getInterfacePermissionRemovals(value as AnyObject) : []) {
+            track?.ignored.push(toLayerIgnored(segments, 'interface_permission'));
           }
         } else {
           remapped[mappedKey] = value;
@@ -1877,6 +2394,13 @@ function foldConfigLayers<T extends AnyObject>(
       }
       const beforeOverrides = merged;
       const rawBelow = raw;
+      if (layerSink) {
+        for (const held of YAML_HELD_PATHS) {
+          if (getPath(applied, [...held.segments]) !== undefined) {
+            layerSink(toIgnored(held.segments, held.reason, 'override'));
+          }
+        }
+      }
       merged = deepMerge(merged, remapped);
       raw = deepMerge(raw as AnyObject, applied) as Partial<TCustomConfig>;
       recordWebSearchWrites(webSearchWriters, applied.webSearch, {
@@ -1886,6 +2410,10 @@ function foldConfigLayers<T extends AnyObject>(
       });
       contributed = remapped;
       appliedOverrides = applied;
+      if (tracker && track) {
+        track.contributed = remapped;
+        tracker.resolved = deepMerge(tracker.resolved, track.contributed);
+      }
       const layerAzure = getPath(applied, AZURE_CONFIG_PATH.split('.'));
       if (resolvesAzureGroups && isPlainObject(layerAzure) && Array.isArray(layerAzure.groups)) {
         const azureSegments = AZURE_CONFIG_PATH.split('.');
@@ -1900,10 +2428,15 @@ function foldConfigLayers<T extends AnyObject>(
           served: (getPath(merged, azureSegments) as AnyObject | undefined) ?? {},
           below: getPath(beforeOverrides, azureSegments),
           config,
+          sink: layerSink,
         });
         if (resolution) {
           merged = setPath(merged, azureSegments, resolution.served) as T;
           contributed = setPath(remapped, azureSegments, resolution.contributed) as AnyObject;
+        } else {
+          track?.ignored.push(
+            toLayerIgnored(AZURE_GROUPS_PATH.split('.'), 'azure_groups_unresolved'),
+          );
         }
       }
     }
@@ -1956,19 +2489,157 @@ export interface ConfigMergeResult {
   raw: Partial<TCustomConfig>;
 }
 
+/** One layer of {@link resolveConfigLayers}: the document as given, and what the merge left out. */
+export interface ConfigLayerResolution {
+  layer: ConfigOverrideLayer;
+  ignored: AdminConfigLayerIgnored[];
+}
+
+/** {@link resolveConfigLayers}' result. */
+export interface ConfigLayersResolution {
+  /** Exactly what {@link mergeConfigOverrides} returns for the same arguments. */
+  merged: AppConfig;
+  /**
+   * The librechat.yaml-shaped config the fold leaves, as {@link mergeConfigOverridesWithSource}
+   * returns it: what a caller derives the parts only the final config decides from.
+   */
+  raw: Partial<TCustomConfig>;
+  /** The same merge in librechat.yaml shape: `baseConfig.config` with every layer folded in. */
+  resolved: Partial<TCustomConfig>;
+  /** Every layer, in merge precedence order. */
+  layers: ConfigLayerResolution[];
+}
+
+/** The layers of a tracked fold whose contribution holds a value at `segments` (AppConfig keys). */
+function getWriters(tracker: FoldTracker, segments: readonly string[]): LayerTrack[] {
+  return tracker.layers.filter((track) => getPath(track.contributed, [...segments]) !== undefined);
+}
+
 /**
- * {@link mergeConfigOverrides}, with the librechat.yaml-shaped config the layers merge to, from
- * which a caller derives what only the final config decides (such as the interface defaults
- * model specs turn off, once tenant scoping has settled which specs are served).
+ * The layers of a tracked fold that applied a tombstone at or under `path` (librechat.yaml keys),
+ * or with `ancestors`, above it as well: a tombstone of `endpoints.agents` removes
+ * `endpoints.agents.pullRequests.host` with the rest.
  */
-export function mergeConfigOverridesWithSource(
+function getTombstoners(tracker: FoldTracker, path: string, ancestors: boolean): LayerTrack[] {
+  return tracker.layers.filter((track) =>
+    track.tombstoned.some(
+      (tombstone) =>
+        tombstone === path ||
+        tombstone.startsWith(`${path}.`) ||
+        (ancestors && path.startsWith(`${tombstone}.`)),
+    ),
+  );
+}
+
+/** Sets or removes (`undefined`) the value at `segments` of the tracker's resolved tree. */
+function setResolved(tracker: FoldTracker, segments: readonly string[], value: unknown): void {
+  tracker.resolved =
+    value === undefined
+      ? deletePath(tracker.resolved, segments.join('.'))
+      : (setPath(tracker.resolved, [...segments], value) as AnyObject);
+}
+
+/**
+ * Replays on the YAML-shaped result what {@link withServedAzureModels} did to the served config:
+ * an Azure model list a layer wrote directly, narrowed to what the merged groups serve, and
+ * `assistants` turned off when none of them supports assistants.
+ */
+function replayAzureServed(tracker: FoldTracker, before: AppConfig, after: AppConfig): void {
+  const segments = AZURE_CONFIG_PATH.split('.');
+  const served = getPath(after, segments);
+  const resolved = getPath(tracker.resolved, segments);
+  if (served === getPath(before, segments) || !isPlainObject(served) || !isPlainObject(resolved)) {
+    return;
+  }
+  for (const field of ['assistants', 'modelNames', 'assistantModels', 'assistantGroups']) {
+    if (!hasOwn(resolved, field) || isSameJson(resolved[field], served[field])) {
+      continue;
+    }
+    setResolved(tracker, [...segments, field], served[field]);
+    const writers =
+      field === 'assistants'
+        ? getWriters(tracker, segments)
+        : getWriters(tracker, [...segments, field]);
+    for (const track of writers) {
+      track.ignored.push(toLayerIgnored([...segments, field], 'azure_unserved'));
+    }
+  }
+}
+
+/**
+ * Replays on the YAML-shaped result what {@link preserveRuntimeStops} did to the served config:
+ * an interface feature the base config turns off stays off, in the shape the layers left it, or
+ * `false` where a tombstone removed it. Each layer that wrote it or tombstoned it, or anything
+ * above or below it, is told.
+ */
+function replayRuntimeStops(tracker: FoldTracker, baseConfig: AppConfig): void {
+  const baseInterface = (baseConfig as unknown as AnyObject).interfaceConfig;
+  const resolvedInterface = tracker.resolved.interfaceConfig;
+  if (!isPlainObject(baseInterface) || !isPlainObject(resolvedInterface)) {
+    return;
+  }
+  for (const key of RUNTIME_CONFIG_INTERFACE_FIELDS) {
+    if (!isRuntimeDisabled(baseInterface[key]) || isRuntimeDisabled(resolvedInterface[key])) {
+      continue;
+    }
+    const current = resolvedInterface[key];
+    setResolved(
+      tracker,
+      ['interfaceConfig', key],
+      isPlainObject(current) ? { ...current, use: false } : false,
+    );
+    const segments = ['interface', key];
+    for (const track of getWriters(tracker, ['interfaceConfig', key])) {
+      track.ignored.push(toLayerIgnored(segments, 'runtime_stop'));
+    }
+    for (const track of getTombstoners(tracker, segments.join('.'), true)) {
+      track.ignored.push(toLayerIgnored(segments, 'runtime_stop', { tombstone: true }));
+    }
+  }
+}
+
+/**
+ * Replays on the YAML-shaped result what {@link preserveBaseOnlyPaths} did to the served config:
+ * each field only librechat.yaml sets (`YAML_HELD_PATHS`: base-only and deployment-only) keeps
+ * the value `librechat.yaml` gives it. A layer is told when it wrote one, tombstoned one or
+ * anything below it, or tombstoned anything above one `librechat.yaml` sets, as write responses
+ * tell it (`base_only_path`, `deployment_only_path`).
+ */
+function replayBaseOnlyPaths(tracker: FoldTracker, baseYaml: Partial<TCustomConfig>): void {
+  for (const { segments, reason } of YAML_HELD_PATHS) {
+    const path = segments.join('.');
+    const appSegments = remapOverridePath(path).split('.');
+    const value = getPath(baseYaml, [...segments]);
+    const writers = getWriters(tracker, appSegments);
+    const tombstoners = getTombstoners(tracker, path, value !== undefined);
+    if (writers.length === 0 && tombstoners.length === 0) {
+      continue;
+    }
+    setResolved(tracker, appSegments, value);
+    for (const track of writers) {
+      track.ignored.push(toLayerIgnored(segments, reason));
+    }
+    for (const track of tombstoners) {
+      track.ignored.push(toLayerIgnored(segments, reason, { tombstone: true }));
+    }
+  }
+}
+
+function isSameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * The merge {@link mergeConfigOverridesWithSource} runs, and with a `tracker` the YAML-shaped
+ * result and each layer's unapplied parts, replaying on that result each step the served config
+ * takes after the fold.
+ */
+function mergeLayers(
   baseConfig: AppConfig,
   configs: readonly ConfigOverrideLayer[],
-  options: MergeConfigOverridesOptions = {},
+  options: MergeConfigOverridesOptions,
+  tracker?: FoldTracker,
 ): ConfigMergeResult {
-  if (!configs || configs.length === 0) {
-    return { appConfig: baseConfig, raw: baseConfig.config ?? {} };
-  }
   const { afterLayer, expandCustomEndpoint, rederiveEndpoints } = options;
   const derivation: ConfigDerivation = { expandCustomEndpoint, rederiveEndpoints };
   const folded = foldConfigLayers(
@@ -1994,18 +2665,41 @@ export function mergeConfigOverridesWithSource(
         });
       }),
     derivation,
+    { tracker },
   );
+  const served = withServedAzureModels(folded.merged, configs);
+  if (tracker) {
+    replayAzureServed(tracker, folded.merged, served);
+  }
   const derived = rederiveMergedConfig({
-    merged: withServedAzureModels(folded.merged, configs),
+    merged: served,
     raw: folded.raw as AnyObject,
     base: baseConfig,
     touches: folded.touches,
     derivation,
     principals: configs.map(describePrincipal).join(', '),
   });
-  const merged = bindWebSearchKeys(derived, folded.webSearchWriters, options.onWebSearchKeyUnbound);
+  const unbound: WebSearchKeyUnbound[] = [];
+  const onUnbound =
+    tracker || options.onWebSearchKeyUnbound
+      ? (binding: WebSearchKeyUnbound) => {
+          unbound.push(binding);
+          options.onWebSearchKeyUnbound?.(binding);
+        }
+      : undefined;
+  const bound = bindWebSearchKeys(derived, folded.webSearchWriters, onUnbound);
+  if (tracker) {
+    for (const { layer, apiKey } of unbound) {
+      setResolved(tracker, ['webSearch', apiKey], bound.webSearch?.[apiKey]);
+      tracker.layers
+        .find((track) => track.accepted === layer)
+        ?.ignored.push(toLayerIgnored(['webSearch', apiKey], 'secret_rebinding'));
+    }
+    replayRuntimeStops(tracker, baseConfig);
+    replayBaseOnlyPaths(tracker, baseConfig.config ?? {});
+  }
   return {
-    appConfig: preserveBaseOnlyPaths(baseConfig, preserveRuntimeStops(baseConfig, merged)),
+    appConfig: preserveBaseOnlyPaths(baseConfig, preserveRuntimeStops(baseConfig, bound)),
     raw: folded.raw,
   };
 }
@@ -2029,6 +2723,64 @@ export function mergeConfigOverrides(
   options: MergeConfigOverridesOptions = {},
 ): AppConfig {
   return mergeConfigOverridesWithSource(baseConfig, configs, options).appConfig;
+}
+
+/**
+ * {@link mergeConfigOverrides}, with the librechat.yaml-shaped config the layers merge to, from
+ * which a caller derives what only the final config decides (such as the interface defaults
+ * model specs turn off, once tenant scoping has settled which specs are served).
+ */
+export function mergeConfigOverridesWithSource(
+  baseConfig: AppConfig,
+  configs: readonly ConfigOverrideLayer[],
+  options: MergeConfigOverridesOptions = {},
+): ConfigMergeResult {
+  if (!configs || configs.length === 0) {
+    return { appConfig: baseConfig, raw: baseConfig.config ?? {} };
+  }
+  return mergeLayers(baseConfig, configs, options);
+}
+
+/**
+ * {@link mergeConfigOverrides}, and what it amounts to in librechat.yaml shape: `resolved` is
+ * `baseConfig.config` (the raw librechat.yaml) with each layer's tombstones and overrides folded
+ * in under the merge's own rules (precedence, merge keys, atomic paths, accepted, base-only and
+ * Base-only sections, invalid-override stripping, process MCP servers, the interface permission
+ * filter), followed by the steps the served config takes after the fold: Azure model lists the
+ * merged groups do not serve, web search keys withheld from a URL another layer decides, runtime
+ * stops and base-only fields. Each layer lists what of it the merge does not apply as written.
+ *
+ * Not replayed, because they are AppService derivations librechat.yaml never holds: the fields
+ * Azure `groups` resolve to (`groupMap`, `modelNames`, ...; `resolved` keeps the `groups`), what
+ * `rederiveMergedConfig` derives again (expanded custom parameters, Vertex AI, the agents
+ * capabilities, the Azure Assistants endpoint, and the model specs whose endpoint the layers
+ * leave), and the `afterLayer` policy a caller adds (the admin API replays its secret rebinding
+ * itself).
+ */
+export function resolveConfigLayers(
+  baseConfig: AppConfig,
+  configs: readonly ConfigOverrideLayer[],
+  options: MergeConfigOverridesOptions = {},
+): ConfigLayersResolution {
+  const tracker: FoldTracker = {
+    resolved: toAppConfigKeys(baseConfig.config ?? {}),
+    layers: [],
+  };
+  if (!configs || configs.length === 0) {
+    return {
+      merged: baseConfig,
+      raw: baseConfig.config ?? {},
+      resolved: toOverrideKeys(tracker.resolved),
+      layers: [],
+    };
+  }
+  const { appConfig: merged, raw } = mergeLayers(baseConfig, configs, options, tracker);
+  return {
+    merged,
+    raw,
+    resolved: toOverrideKeys(tracker.resolved),
+    layers: tracker.layers.map(({ layer, ignored }) => ({ layer, ignored })),
+  };
 }
 
 /**
@@ -2056,6 +2808,48 @@ export function resolveRawConfig(
   ).raw;
 }
 
+/**
+ * What the merge leaves out of `layer`'s stored overrides and tombstones, each at its own
+ * location: the parts no merge applies (unknown, base-only and dedicated sections, interface
+ * permissions, MCP servers librechat.yaml runs as processes), the values it sets back to
+ * librechat.yaml's (base-only and deployment-only fields), and the values that fail validation
+ * where it applies them. Judged exactly as the merge folds the layer over `baseYaml`
+ * (librechat.yaml) and the layers in `below` (those that merge first, such as the active Base),
+ * through the same steps. A field below a tombstone counts as put back when librechat.yaml sets
+ * it or `resolved`, the AppConfig librechat.yaml resolves to, holds it (defaults included), with
+ * the checks `derivation` adds (`getConfigOverrideIssues`). Each location is listed once per
+ * reason and kind; nothing about a value is returned.
+ */
+export function getIgnoredConfigOverrides(
+  baseYaml: Partial<TCustomConfig>,
+  layer: ConfigOverrideLayer,
+  below: readonly ConfigOverrideLayer[] = [],
+  resolved?: AppConfig,
+  derivation: ConfigDerivation = {},
+): AdminConfigIgnoredOverride[] {
+  const found = new Map<string, AdminConfigIgnoredOverride>();
+  foldConfigLayers(
+    { mcpConfig: baseYaml.mcpServers ?? null },
+    baseYaml,
+    [...below, layer],
+    undefined,
+    derivation,
+    {
+      sink: (source, entry) => {
+        const key = JSON.stringify([entry.kind, entry.reason, entry.segments]);
+        if (source === layer && !found.has(key)) {
+          found.set(key, entry);
+        }
+      },
+      isHeldValueSet: (held) =>
+        getPath(baseYaml, [...held.segments]) !== undefined ||
+        (resolved != null &&
+          getPath(resolved, remapOverridePath(held.segments.join('.')).split('.')) !== undefined),
+    },
+  );
+  return [...found.values()];
+}
+
 function getPath(target: unknown, segments: string[]): unknown {
   let current = target;
   for (const segment of segments) {
@@ -2066,13 +2860,14 @@ function getPath(target: unknown, segments: string[]): unknown {
 }
 
 /**
- * Puts back the base value of every `BASE_ONLY_CONFIG_PATHS` field, whatever an override set or a
- * tombstone removed on the way, so every reader of the merged config sees the operator's value.
+ * Puts back the base value of every field only librechat.yaml sets (`YAML_HELD_PATHS`: the
+ * base-only and deployment-only paths), whatever an override set or a tombstone removed on the
+ * way, so every reader of the merged config sees the operator's value.
  */
 function preserveBaseOnlyPaths<T extends AppConfig>(baseConfig: AppConfig, merged: T): T {
   let result: unknown = merged;
-  for (const path of BASE_ONLY_CONFIG_PATHS) {
-    const segments = path.split('.');
+  for (const held of YAML_HELD_PATHS) {
+    const segments = remapOverridePath(held.segments.join('.')).split('.');
     const value = getPath(baseConfig, segments);
     if (getPath(result, segments) !== value) result = setPath(result, segments, value);
   }
