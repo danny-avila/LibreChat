@@ -2401,6 +2401,40 @@ function getIgnoredParts(change: PreparedChange, held: YamlHeld): IgnoredPart[] 
   return [...parts, ...kept];
 }
 
+const AZURE_GROUPS_SEGMENTS = ['endpoints', EModelEndpoint.azureOpenAI, 'groups'];
+
+function isAzureGroupsTarget(segments: readonly string[]): boolean {
+  return (
+    segments.length === AZURE_GROUPS_SEGMENTS.length &&
+    isSegmentPrefix(AZURE_GROUPS_SEGMENTS, segments)
+  );
+}
+
+/**
+ * The parts of an applied change the merge leaves inert where the deployment does not resolve
+ * Azure groups (`CONFIG_REDERIVE_ENDPOINTS` off; `endpoint_rederive_off`): a `set` of the groups,
+ * or of an object whose value holds them, an `upsertEntry` or `rename` of a group, and a tombstone
+ * of the groups or of one of them (keyed). An `unset` or `removeEntry` only clears what is stored.
+ */
+function getInertGroupParts(change: PreparedChange): IgnoredPart[] {
+  const { segments } = change.target;
+  const whole: IgnoredPart[] = [{ segments: [...segments], reason: 'endpoint_rederive_off' }];
+  if (change.op === 'tombstone' || change.op === 'upsertEntry' || change.op === 'rename') {
+    return isAzureGroupsTarget(segments) ? whole : [];
+  }
+  if (change.op !== 'set' || change.paths) {
+    return [];
+  }
+  if (isSegmentPrefix(AZURE_GROUPS_SEGMENTS, segments)) {
+    return whole;
+  }
+  const inside = AZURE_GROUPS_SEGMENTS.slice(segments.length);
+  return isSegmentPrefix(segments, AZURE_GROUPS_SEGMENTS) &&
+    Array.isArray(getAtPath(change.value, inside))
+    ? [{ segments: [...AZURE_GROUPS_SEGMENTS], reason: 'endpoint_rederive_off' }]
+    : [];
+}
+
 /**
  * A `set` of a whole `mcpServers` value without the servers librechat.yaml runs as local
  * processes, re-encrypted, and the parts it left out; with nothing left, it resets the path. Any
@@ -4570,6 +4604,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           sent.push(...getSentEnvIssuePaths(change, next, envPolicy));
           for (const part of getIgnoredParts(change, yamlHeld)) {
             report.ignored.push({ ...ref, ...part });
+          }
+          if (!rederiveEndpoints) {
+            for (const part of getInertGroupParts(change)) {
+              report.ignored.push({ ...ref, ...part });
+            }
           }
           state = next;
         }

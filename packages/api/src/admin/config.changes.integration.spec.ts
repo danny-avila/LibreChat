@@ -1514,6 +1514,79 @@ describe('POST …/changes: entries librechat.yaml owns', () => {
   });
 });
 
+describe("POST …/changes: hiding or removing the endpoint a profile's model spec selects", () => {
+  const spec = (name: string, endpointName: string) => ({
+    name,
+    label: name,
+    preset: { endpoint: endpointName, model: 'm' },
+  });
+
+  it.each([
+    ['a keyed tombstone', { op: 'tombstone', fieldPath: 'endpoints.custom["yaml-endpoint"]' }],
+    ['a tombstone of the list', { op: 'tombstone', fieldPath: 'endpoints.custom' }],
+  ])("takes the spec with %s of librechat.yaml's endpoint", async (_case, op) => {
+    const params = nextParams();
+    const specs = [spec('yaml', 'yaml-endpoint'), spec('openai', 'openAI')];
+    expect(
+      (await patchFields([{ fieldPath: 'modelSpecs.list', value: specs }], params)).status,
+    ).toBe(200);
+
+    const { status, body } = await send({ ops: [op] }, params);
+
+    expect(status).toBe(200);
+    expect(body.applied.map(({ opIndex }) => opIndex)).toEqual([0]);
+    expect((await storedDocument(params.principalId))!.tombstones).toEqual([op.fieldPath]);
+  });
+
+  it.each([
+    ['removeEntry', { op: 'removeEntry', fieldPath: 'endpoints.custom', key: 'Router' }],
+    ['a keyed unset', { op: 'unset', fieldPath: 'endpoints.custom["Router"]' }],
+    ['a keyed tombstone', { op: 'tombstone', fieldPath: 'endpoints.custom["Router"]' }],
+    ['an unset of the list', { op: 'unset', fieldPath: 'endpoints.custom' }],
+  ])("takes the spec with %s of the profile's own endpoint", async (_case, op) => {
+    const params = nextParams();
+    const written = await patchFields(
+      [
+        { fieldPath: 'endpoints.custom', value: [endpoint('Router')] },
+        { fieldPath: 'modelSpecs.list', value: [spec('router', 'Router')] },
+      ],
+      params,
+    );
+    expect(written.status).toBe(200);
+
+    const { status, body } = await send({ ops: [op] }, params);
+
+    expect(status).toBe(200);
+    expect(body.applied.map(({ opIndex }) => opIndex)).toEqual([0]);
+    const { overrides } = (await storedDocument(params.principalId))!;
+    expect(valueAt(overrides, ['endpoints', 'custom']) ?? []).toEqual([]);
+    expect(valueAt(overrides, ['modelSpecs', 'list'])).toEqual([spec('router', 'Router')]);
+  });
+
+  it('still refuses a spec the batch writes for the endpoint it hides', async () => {
+    const params = nextParams();
+
+    const { status, body } = await send(
+      {
+        ops: [
+          { op: 'tombstone', fieldPath: 'endpoints.custom["yaml-endpoint"]' },
+          { op: 'set', fieldPath: 'modelSpecs.list', value: [spec('yaml', 'yaml-endpoint')] },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(400);
+    expect(body.issues).toEqual([
+      expect.objectContaining({
+        path: 'modelSpecs.list.0.preset.endpoint',
+        code: 'unknown_spec_endpoint',
+      }),
+    ]);
+    expect(await storedDocument(params.principalId)).toBeNull();
+  });
+});
+
 describe('POST …/changes: entry names the runtime folds together', () => {
   const CUSTOM = 'endpoints.custom';
   const ollama = (name: string, extra: Record<string, unknown> = {}) =>

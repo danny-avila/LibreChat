@@ -2,7 +2,12 @@ import { PrincipalType } from 'librechat-data-provider';
 import type { DeepPartial, TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, AdminConfigLayerIgnored } from '~/types';
 import type { ConfigOverrideLayer } from './resolution';
-import { mergeConfigOverrides, resolveConfigLayers, resolveRawConfig } from './resolution';
+import {
+  resolveRawConfig,
+  resolveConfigLayers,
+  mergeConfigOverrides,
+  getIgnoredConfigOverrides,
+} from './resolution';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { AppService } from './service';
 import logger from '~/config/winston';
@@ -425,6 +430,27 @@ describe('resolveConfigLayers', () => {
     ]);
   });
 
+  it("reports a layer's groups as inert where the deployment does not resolve them", () => {
+    const configs = PARITY_CASES.find(([name]) => name.startsWith('Azure groups'))![1]();
+    const resolution = resolveConfigLayers(appConfig, configs);
+    const served = resolution.merged.endpoints?.azureOpenAI;
+    expect(served?.groupMap).toEqual({});
+    expect(served?.modelNames).toEqual([]);
+    expect(resolution.resolved.endpoints?.azureOpenAI?.groups?.map((entry) => entry.group)).toEqual(
+      ['east'],
+    );
+    expect(ignoredOf(resolution, 0)).toEqual([
+      {
+        path: 'endpoints.azureOpenAI.groups',
+        segments: ['endpoints', 'azureOpenAI', 'groups'],
+        reason: 'endpoint_rederive_off',
+      },
+    ]);
+    expect(reasons(ignoredOf(resolution, 1))).toEqual([
+      ['endpoints.azureOpenAI.groups', 'invalid_override'],
+    ]);
+  });
+
   it('matches the validation floor where the merge applies a layer as written', () => {
     const configs = [
       base({ registration: { socialLogins: ['google'] } }),
@@ -447,5 +473,118 @@ describe('resolveConfigLayers', () => {
     const before = structuredClone(configs);
     resolveConfigLayers(appConfig, configs);
     expect(configs).toEqual(before);
+  });
+});
+
+describe('Azure groups the merge does not resolve, as each layer and a write report them', () => {
+  const azureGroup = (name: string, model: string) => ({
+    group: name,
+    apiKey: `${name}-key`,
+    instanceName: name,
+    version: '2024-10-21',
+    deploymentName: model,
+    models: { [model]: true },
+  });
+  const yaml = {
+    endpoints: {
+      azureOpenAI: { groups: [azureGroup('east', 'gpt-4o'), azureGroup('north', 'o3')] },
+    },
+  };
+  const groupsPath = 'endpoints.azureOpenAI.groups';
+  const groupsSegments = groupsPath.split('.');
+  let azureConfig: AppConfig;
+
+  beforeAll(async () => {
+    azureConfig = await AppService({ config: structuredClone(yaml) as DeepPartial<TCustomConfig> });
+  });
+
+  const servedGroups = (merged: AppConfig) =>
+    Object.keys(merged.endpoints?.azureOpenAI?.groupMap ?? {});
+
+  it('lists the groups and the tombstones of them a layer stores, without CONFIG_REDERIVE_ENDPOINTS', () => {
+    const writer = role({ endpoints: { azureOpenAI: { groups: [azureGroup('west', 'gpt-5')] } } }, [
+      'endpoints.azureOpenAI.groups["east"]',
+      'endpoints.azureOpenAI.groups["north"].models.o3',
+    ]);
+    const replacer = group({}, [groupsPath]);
+
+    const resolution = resolveConfigLayers(azureConfig, [writer, replacer]);
+
+    expect(servedGroups(resolution.merged)).toEqual(['east', 'north']);
+    expect(ignoredOf(resolution, 0)).toEqual([
+      {
+        path: 'endpoints.azureOpenAI.groups["east"]',
+        segments: [...groupsSegments, 'east'],
+        reason: 'endpoint_rederive_off',
+        tombstone: true,
+      },
+      {
+        path: 'endpoints.azureOpenAI.groups["north"].models.o3',
+        segments: [...groupsSegments, 'north', 'models', 'o3'],
+        reason: 'endpoint_rederive_off',
+        tombstone: true,
+      },
+      { path: groupsPath, segments: groupsSegments, reason: 'endpoint_rederive_off' },
+    ]);
+    expect(ignoredOf(resolution, 1)).toEqual([
+      {
+        path: groupsPath,
+        segments: groupsSegments,
+        reason: 'endpoint_rederive_off',
+        tombstone: true,
+      },
+    ]);
+    expect(getIgnoredConfigOverrides(yaml as Partial<TCustomConfig>, writer)).toEqual([
+      {
+        path: 'endpoints.azureOpenAI.groups["east"]',
+        segments: [...groupsSegments, 'east'],
+        reason: 'endpoint_rederive_off',
+        kind: 'tombstone',
+      },
+      {
+        path: 'endpoints.azureOpenAI.groups["north"].models.o3',
+        segments: [...groupsSegments, 'north', 'models', 'o3'],
+        reason: 'endpoint_rederive_off',
+        kind: 'tombstone',
+      },
+      {
+        path: groupsPath,
+        segments: groupsSegments,
+        reason: 'endpoint_rederive_off',
+        kind: 'override',
+      },
+    ]);
+
+    const applied = resolveConfigLayers(azureConfig, [writer, replacer], {
+      rederiveEndpoints: true,
+    });
+    expect(servedGroups(applied.merged)).toEqual([]);
+    expect(applied.layers.map(({ ignored }) => ignored)).toEqual([[], []]);
+  });
+
+  it('lists a tombstone that leaves its group unable to resolve, which is no longer served', () => {
+    const tombstone = 'endpoints.azureOpenAI.groups["north"].instanceName';
+    const hider = role({}, [tombstone]);
+    const unresolved = {
+      path: tombstone,
+      segments: [...groupsSegments, 'north', 'instanceName'],
+      reason: 'azure_groups_unresolved' as const,
+    };
+
+    const resolution = resolveConfigLayers(azureConfig, [hider], { rederiveEndpoints: true });
+
+    expect(servedGroups(resolution.merged)).toEqual(['east']);
+    expect(resolution.merged.endpoints?.azureOpenAI?.modelNames).toEqual(['gpt-4o']);
+    expect(ignoredOf(resolution, 0)).toEqual([{ ...unresolved, tombstone: true }]);
+    expect(
+      getIgnoredConfigOverrides(yaml as Partial<TCustomConfig>, hider, [], undefined, {
+        rederiveEndpoints: true,
+      }),
+    ).toEqual([{ ...unresolved, kind: 'tombstone' }]);
+
+    const kept = role({}, ['endpoints.azureOpenAI.groups["north"].models.o3']);
+    expect(
+      ignoredOf(resolveConfigLayers(azureConfig, [kept], { rederiveEndpoints: true }), 0),
+    ).toEqual([]);
   });
 });

@@ -595,6 +595,114 @@ describe('GET reports what the merge leaves out of a stored document', () => {
   });
 });
 
+describe('Azure groups a deployment without CONFIG_REDERIVE_ENDPOINTS stores but never serves', () => {
+  const azureGroup = (name: string, model: string) => ({
+    group: name,
+    apiKey: `${name}-key`,
+    instanceName: name,
+    version: '2024-10-21',
+    deploymentName: model,
+    models: { [model]: true },
+  });
+  const AZURE_YAML = {
+    endpoints: {
+      azureOpenAI: { groups: [azureGroup('east', 'gpt-4o'), azureGroup('north', 'o3')] },
+    },
+  };
+  const GROUPS = ['endpoints', 'azureOpenAI', 'groups'];
+  const handlersFor = (rederiveEndpoints: boolean) =>
+    createHandlers({
+      getAppConfig: async () => ({ config: structuredClone(AZURE_YAML) }) as never,
+      rederiveEndpoints,
+    });
+  const ops = [
+    {
+      op: 'upsertEntry',
+      fieldPath: 'endpoints.azureOpenAI.groups',
+      entry: azureGroup('west', 'gpt-5'),
+    },
+    { op: 'tombstone', fieldPath: 'endpoints.azureOpenAI.groups["east"]' },
+    { op: 'tombstone', fieldPath: 'endpoints.azureOpenAI.groups["north"].models.o3' },
+    { op: 'set', fieldPath: 'endpoints.azureOpenAI.titleModel', value: 'gpt-4o' },
+  ];
+
+  it('reports each group write and tombstone of them as inert, on the batch and on a read', async () => {
+    const params = nextParams();
+    const handlers = handlersFor(false);
+
+    const write = await call(handlers.applyConfigChanges, { params, body: { ops } });
+
+    expect(write.statusCode).toBe(200);
+    expect(
+      (write.body?.ignored as Array<{ opIndex: number; segments: string[]; reason: string }>).map(
+        ({ opIndex, segments, reason }) => [opIndex, segments, reason],
+      ),
+    ).toEqual([
+      [0, GROUPS, 'endpoint_rederive_off'],
+      [1, GROUPS, 'endpoint_rederive_off'],
+      [2, GROUPS, 'endpoint_rederive_off'],
+    ]);
+    const read = await call(handlers.getConfig, { params });
+    expect(describeAll(read.body?.ignored)).toEqual([
+      'override:endpoints.azureOpenAI.groups:endpoint_rederive_off',
+      'tombstone:endpoints.azureOpenAI.groups["east"]:endpoint_rederive_off',
+      'tombstone:endpoints.azureOpenAI.groups["north"].models.o3:endpoint_rederive_off',
+    ]);
+
+    const whole = nextParams();
+    const replaced = await call(handlers.applyConfigChanges, {
+      params: whole,
+      body: {
+        ops: [
+          { op: 'tombstone', fieldPath: 'endpoints.azureOpenAI.groups' },
+          {
+            op: 'set',
+            fieldPath: 'endpoints.azureOpenAI',
+            value: { groups: [azureGroup('west', 'gpt-5')] },
+          },
+        ],
+      },
+    });
+    expect(replaced.statusCode).toBe(200);
+    expect(replaced.body?.ignored).toEqual([
+      { opIndex: 0, op: 'tombstone', segments: GROUPS, reason: 'endpoint_rederive_off' },
+      { opIndex: 1, op: 'set', segments: GROUPS, reason: 'endpoint_rederive_off' },
+    ]);
+  });
+
+  it('reports none of them where the deployment resolves the groups', async () => {
+    const params = nextParams();
+    const handlers = handlersFor(true);
+
+    const write = await call(handlers.applyConfigChanges, { params, body: { ops } });
+
+    expect(write.statusCode).toBe(200);
+    expect(write.body?.ignored).toEqual([]);
+    expect((await call(handlers.getConfig, { params })).body?.ignored).toEqual([]);
+  });
+
+  it('reports a tombstone that leaves its group unable to resolve where the groups are resolved', async () => {
+    const params = nextParams();
+    const handlers = handlersFor(true);
+    const tombstone = 'endpoints.azureOpenAI.groups["north"].instanceName';
+
+    const write = await call(handlers.applyConfigChanges, {
+      params,
+      body: { ops: [{ op: 'tombstone', fieldPath: tombstone }] },
+    });
+
+    expect(write.statusCode).toBe(200);
+    expect((await call(handlers.getConfig, { params })).body?.ignored).toEqual([
+      {
+        path: tombstone,
+        segments: [...GROUPS, 'north', 'instanceName'],
+        reason: 'azure_groups_unresolved',
+        kind: 'tombstone',
+      },
+    ]);
+  });
+});
+
 describe('every 4xx a config handler answers carries a stable code', () => {
   const params = { principalType: 'role', principalId: 'codes' };
   const cases: Array<[string, keyof AdminConfigHandlers, Record<string, unknown>, string]> = [
