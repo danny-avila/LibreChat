@@ -24,8 +24,9 @@ import type {
 } from './types';
 import type { PromptServiceDependencies, PromptService } from './service';
 import { createPromptServiceFromAdapters, createPromptService } from './service';
-import { createPromptCatalogStore, createNativePromptAdapter } from './native';
+import { createNativePromptAdapter } from './native';
 import { PromptStoreError } from './errors';
+import { createPromptStore } from './store';
 import { CONSTANTS } from '~/mcp/enum';
 
 const filters: FiltersConfig = {
@@ -69,9 +70,7 @@ beforeEach(async () => {
     throw new Error('Test group was not created');
   }
   production = created.value.prompt;
-  group = (await createPromptCatalogStore(db).getPromptGroup(
-    production.groupId,
-  )) as PromptGroupRecord;
+  group = (await createPromptStore(db).getPromptGroup(production.groupId)) as PromptGroupRecord;
   grantPermission.mockClear();
 });
 
@@ -214,13 +213,14 @@ describe('createPromptService', () => {
     });
 
     it('throws a PromptStoreError when the group read fails', async () => {
-      const native = createNativePromptAdapter(db);
-      const catalog = createPromptCatalogStore(db);
-      jest.spyOn(catalog, 'getPromptGroup').mockRejectedValue(new Error('group read failed'));
+      const store = createPromptStore(db);
+      jest.spyOn(store, 'getPromptGroup').mockRejectedValue(new Error('group read failed'));
       const routed = createPromptServiceFromAdapters({
-        native,
-        langfuse: { resolvePrompt: jest.fn() },
-        catalog,
+        store,
+        sources: {
+          native: createNativePromptAdapter(store),
+          langfuse: { resolvePrompt: jest.fn() },
+        },
         grantCreatorOwnership: jest.fn(),
         grantPublicViewer: jest.fn(),
         logger: { warn: jest.fn(), error: jest.fn() },
@@ -501,8 +501,8 @@ describe('createPromptService', () => {
     });
 
     it('treats a race where findSourceGroup misses a row that already exists as unchanged, without granting', async () => {
-      const catalog = createPromptCatalogStore(db);
-      const created = await catalog.createSourceGroup({
+      const store = createPromptStore(db);
+      const created = await store.createSourceGroup({
         identity,
         name: 'Synced prompt',
         author,
@@ -511,12 +511,14 @@ describe('createPromptService', () => {
       if (!created.ok) {
         throw new Error('Setup insert failed');
       }
-      jest.spyOn(catalog, 'findSourceGroup').mockResolvedValue(null);
+      jest.spyOn(store, 'findSourceGroup').mockResolvedValue(null);
       const grantPublicViewer = jest.fn();
       const routed = createPromptServiceFromAdapters({
-        native: createNativePromptAdapter(db),
-        langfuse: { resolvePrompt: jest.fn() },
-        catalog,
+        store,
+        sources: {
+          native: createNativePromptAdapter(store),
+          langfuse: { resolvePrompt: jest.fn() },
+        },
         grantCreatorOwnership: jest.fn(),
         grantPublicViewer,
         logger: { warn: jest.fn(), error: jest.fn() },
@@ -553,13 +555,15 @@ describe('createPromptService', () => {
     });
 
     it('deletes the newly created group and rethrows when the grant fails', async () => {
-      const catalog = createPromptCatalogStore(db);
+      const store = createPromptStore(db);
       const grantPublicViewer = jest.fn().mockRejectedValue(new Error('grant failed'));
       const logError = jest.fn();
       const routed = createPromptServiceFromAdapters({
-        native: createNativePromptAdapter(db),
-        langfuse: { resolvePrompt: jest.fn() },
-        catalog,
+        store,
+        sources: {
+          native: createNativePromptAdapter(store),
+          langfuse: { resolvePrompt: jest.fn() },
+        },
         grantCreatorOwnership: jest.fn(),
         grantPublicViewer,
         logger: { warn: jest.fn(), error: logError },
@@ -574,7 +578,7 @@ describe('createPromptService', () => {
         }),
       ).rejects.toThrow('grant failed');
 
-      await expect(catalog.findSourceGroup(identity)).resolves.toBeNull();
+      await expect(store.findSourceGroup(identity)).resolves.toBeNull();
       expect(logError).toHaveBeenCalledTimes(1);
       expect(logError).toHaveBeenCalledWith(expect.stringContaining('[importSourceGroup]'), {
         groupId: expect.any(String),
@@ -583,14 +587,16 @@ describe('createPromptService', () => {
     });
 
     it('still rethrows the grant error and logs two errors when the rollback delete also fails', async () => {
-      const catalog = createPromptCatalogStore(db);
-      jest.spyOn(catalog, 'deletePromptGroup').mockRejectedValue(new Error('delete failed'));
+      const store = createPromptStore(db);
+      jest.spyOn(store, 'deletePromptGroup').mockRejectedValue(new Error('delete failed'));
       const grantPublicViewer = jest.fn().mockRejectedValue(new Error('grant failed'));
       const logError = jest.fn();
       const routed = createPromptServiceFromAdapters({
-        native: createNativePromptAdapter(db),
-        langfuse: { resolvePrompt: jest.fn() },
-        catalog,
+        store,
+        sources: {
+          native: createNativePromptAdapter(store),
+          langfuse: { resolvePrompt: jest.fn() },
+        },
         grantCreatorOwnership: jest.fn(),
         grantPublicViewer,
         logger: { warn: jest.fn(), error: logError },
@@ -927,16 +933,23 @@ describe('createPromptService', () => {
         savePrompt: _save,
         makePromptProduction: _promote,
         deletePrompt: _delete,
-        ...native
-      } = createNativePromptAdapter(db);
+        ...store
+      } = createPromptStore(db);
       const readOnly = createPromptServiceFromAdapters({
-        native,
-        langfuse: { resolvePrompt: jest.fn() },
-        catalog: createPromptCatalogStore(db),
+        store,
+        sources: {
+          native: createNativePromptAdapter(store),
+          langfuse: { resolvePrompt: jest.fn() },
+        },
         grantCreatorOwnership: jest.fn(),
         grantPublicViewer: jest.fn(),
         logger: { warn: jest.fn(), error: jest.fn() },
       });
+      const readPrompt = jest.spyOn(db, 'getPrompt');
+      const readGroup = jest.spyOn(db, 'getPromptGroup');
+      const savePrompt = jest.spyOn(db, 'savePrompt');
+      const makePromptProduction = jest.spyOn(db, 'makePromptProduction');
+      const deletePrompt = jest.spyOn(db, 'deletePrompt');
 
       await expect(
         readOnly.savePrompt({ groupId: group._id, prompt: undefined, author }),
@@ -949,6 +962,12 @@ describe('createPromptService', () => {
         readOnly.deletePrompt({ groupId: group._id, promptId: production._id }),
       ).resolves.toEqual({ ok: false, error: { type: 'unsupported', operation: 'deletePrompt' } });
       await expect(readOnly.getPrompts({ groupId: group._id })).resolves.toHaveLength(1);
+
+      expect(readPrompt).not.toHaveBeenCalled();
+      expect(readGroup).not.toHaveBeenCalled();
+      expect(savePrompt).not.toHaveBeenCalled();
+      expect(makePromptProduction).not.toHaveBeenCalled();
+      expect(deletePrompt).not.toHaveBeenCalled();
     });
   });
 
@@ -1009,10 +1028,10 @@ describe('createPromptService', () => {
       const langfuseGroup = makeLangfuseGroup();
       const resolved = makeLangfuseResolved({ groupId: langfuseGroup._id });
       const resolvePrompt = jest.fn().mockResolvedValue({ ok: true, value: resolved });
+      const store = createPromptStore(db);
       const routed = createPromptServiceFromAdapters({
-        native: createNativePromptAdapter(db),
-        langfuse: { resolvePrompt },
-        catalog: createPromptCatalogStore(db),
+        store,
+        sources: { native: createNativePromptAdapter(store), langfuse: { resolvePrompt } },
         grantCreatorOwnership: jest.fn(),
         grantPublicViewer: jest.fn(),
         logger: { warn: jest.fn(), error: jest.fn() },
@@ -1035,10 +1054,10 @@ describe('createPromptService', () => {
     it('rejects a disallowed source before calling the adapter', async () => {
       const langfuseGroup = makeLangfuseGroup();
       const resolvePrompt = jest.fn();
+      const store = createPromptStore(db);
       const routed = createPromptServiceFromAdapters({
-        native: createNativePromptAdapter(db),
-        langfuse: { resolvePrompt },
-        catalog: createPromptCatalogStore(db),
+        store,
+        sources: { native: createNativePromptAdapter(store), langfuse: { resolvePrompt } },
         grantCreatorOwnership: jest.fn(),
         grantPublicViewer: jest.fn(),
         logger: { warn: jest.fn(), error: jest.fn() },
@@ -1065,10 +1084,10 @@ describe('createPromptService', () => {
         prompt: 'Contains PRIVATE-VALUE',
       });
       const resolvePrompt = jest.fn().mockResolvedValue({ ok: true, value: resolved });
+      const store = createPromptStore(db);
       const routed = createPromptServiceFromAdapters({
-        native: createNativePromptAdapter(db),
-        langfuse: { resolvePrompt },
-        catalog: createPromptCatalogStore(db),
+        store,
+        sources: { native: createNativePromptAdapter(store), langfuse: { resolvePrompt } },
         grantCreatorOwnership: jest.fn(),
         grantPublicViewer: jest.fn(),
         logger: { warn: jest.fn(), error: jest.fn() },
@@ -1227,15 +1246,13 @@ describe('createPromptService', () => {
 
     it('rejects a disallowed source for an exact selection with nothing preloaded', async () => {
       const langfuseGroup = makeLangfuseGroup();
-      const catalog = createPromptCatalogStore(db);
-      jest.spyOn(catalog, 'getPromptGroup').mockResolvedValue(langfuseGroup);
-      const native = createNativePromptAdapter(db);
-      const revisionRead = jest.spyOn(native, 'getPrompt');
+      const store = createPromptStore(db);
+      jest.spyOn(store, 'getPromptGroup').mockResolvedValue(langfuseGroup);
+      const revisionRead = jest.spyOn(store, 'getPrompt');
       const resolvePrompt = jest.fn();
       const routed = createPromptServiceFromAdapters({
-        native,
-        langfuse: { resolvePrompt },
-        catalog,
+        store,
+        sources: { native: createNativePromptAdapter(store), langfuse: { resolvePrompt } },
         grantCreatorOwnership: jest.fn(),
         grantPublicViewer: jest.fn(),
         logger: { warn: jest.fn(), error: jest.fn() },
@@ -1257,16 +1274,15 @@ describe('createPromptService', () => {
 
     it('returns unsupported_selection for an exact selection dispatched to the Langfuse adapter', async () => {
       const langfuseGroup = makeLangfuseGroup();
-      const catalog = createPromptCatalogStore(db);
-      jest.spyOn(catalog, 'getPromptGroup').mockResolvedValue(langfuseGroup);
+      const store = createPromptStore(db);
+      jest.spyOn(store, 'getPromptGroup').mockResolvedValue(langfuseGroup);
       const resolvePrompt = jest.fn().mockResolvedValue({
         ok: false,
         error: { type: 'unsupported_selection', source: 'langfuse' },
       });
       const routed = createPromptServiceFromAdapters({
-        native: createNativePromptAdapter(db),
-        langfuse: { resolvePrompt },
-        catalog,
+        store,
+        sources: { native: createNativePromptAdapter(store), langfuse: { resolvePrompt } },
         grantCreatorOwnership: jest.fn(),
         grantPublicViewer: jest.fn(),
         logger: { warn: jest.fn(), error: jest.fn() },

@@ -11,4 +11,5 @@ export * from './records';
 export * from './schemas';
 export { createPromptService } from './service';
 export type { PromptService, PromptServiceDependencies, PromptServiceListResult } from './service';
+export * from './store';
 export * from './types';
