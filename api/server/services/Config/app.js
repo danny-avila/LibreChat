@@ -73,6 +73,7 @@ const appConfigService = createAppConfigService({
 });
 const {
   getAppConfig,
+  resolveConfigLayers,
   clearAppConfigCache,
   clearOverrideCache,
   reloadBaseConfig,
@@ -124,6 +125,7 @@ function reloadConfigCaches(tenantId) {
 
 module.exports = {
   getAppConfig,
+  resolveConfigLayers,
   overrideCacheTtl,
   invalidateConfigCaches,
   reloadConfigCaches,

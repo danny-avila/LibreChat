@@ -1,4 +1,9 @@
-import type { PrincipalType, PrincipalModel, TCustomConfig } from 'librechat-data-provider';
+import type {
+  PrincipalType,
+  PrincipalModel,
+  TCustomConfig,
+  TConfig,
+} from 'librechat-data-provider';
 
 /* ── Capability types (defined alongside the SystemCapabilities constant) ── */
 
@@ -282,6 +287,218 @@ export type AdminConfigChangeErrorResponse = {
   skipped?: AdminConfigChangesResponse['skipped'];
 };
 
+/* ── Admin config read APIs (resolved, effective, catalog, env status) ── */
+
+/**
+ * Why the merge leaves out part of a config document, or applies it otherwise than written, as a
+ * resolution reports it on the document's layer:
+ * - `unknown_section`: a top-level key or tombstone outside `configSchema` (`sectionAllowlist`).
+ * - `invalid_override`: a value that fails the schema over the layers below it; `code` is the
+ *   schema issue's code.
+ * - `base_only_section`: a section only `librechat.yaml` sets (`filters`, `turnstile`, ...).
+ * - `base_principal_section`: a section only the Base document holds (`langfuse`), in another.
+ * - `base_only_path`: a field only `librechat.yaml` sets (`rules.baseOnlyPaths`); it keeps the
+ *   `librechat.yaml` value.
+ * - `process_mcp_server`: an MCP server `librechat.yaml` runs as a local process.
+ * - `interface_permission`: an interface field that is a role permission.
+ * - `runtime_stop`: an interface feature `librechat.yaml` turns off, which stays off.
+ * - `azure_groups_unresolved`: Azure `groups` that do not resolve (a duplicate group or model, a
+ *   model without a deployment or version), which the Azure clients never read.
+ * - `azure_unserved`: an Azure model list, or `assistants`, the merged groups do not serve.
+ * - `secret_rebinding`: a credential the merge drops, or (`destination_restored`) a destination
+ *   it sets back, because the credential would be sent somewhere it was not entered for
+ *   (`secretRebinding`).
+ * - `env_reference_not_allowed`: a `${NAME}` reference outside the env allowlist (`envAllowlist`),
+ *   which resolves to nothing.
+ * - `invalid_theme`: an `interface.theme` the client would reject; `librechat.yaml`'s applies.
+ * - `tenant_hidden`: a custom endpoint `librechat.yaml` scopes to another tenant, or a model
+ *   spec that uses one.
+ */
+export type AdminConfigLayerIgnoreReason =
+  | 'unknown_section'
+  | 'invalid_override'
+  | 'base_only_section'
+  | 'base_principal_section'
+  | 'base_only_path'
+  | 'process_mcp_server'
+  | 'interface_permission'
+  | 'runtime_stop'
+  | 'azure_groups_unresolved'
+  | 'azure_unserved'
+  | 'secret_rebinding'
+  | 'destination_restored'
+  | 'env_reference_not_allowed'
+  | 'invalid_theme'
+  | 'tenant_hidden';
+
+/**
+ * Part of a layer the merge does not apply as written. `segments` locate it in librechat.yaml
+ * keys: in the document's overrides (array items by index), or for a credential or destination
+ * the merge drops or sets back, as write responses name it (a custom endpoint by its name). A
+ * tombstone above a `base_only_path` field or a `runtime_stop` feature names that field, which
+ * the merge keeps while it removes the rest (write responses name a base-only field the same way).
+ */
+export type AdminConfigLayerIgnored = {
+  path: string;
+  segments: string[];
+  reason: AdminConfigLayerIgnoreReason;
+  /** The schema issue code of an `invalid_override`. */
+  code?: string;
+  /** Set when it is one of the document's tombstones rather than an override. */
+  tombstone?: true;
+};
+
+/**
+ * One config document of a resolution, as a read of it returns it (filtered to the sections the
+ * caller can read, secrets redacted), with what the merge does not apply of it.
+ */
+export type AdminConfigLayer = {
+  principalType: PrincipalType;
+  principalId: string;
+  priority: number;
+  /** An inactive document is listed but not merged. */
+  isActive: boolean;
+  revision: string;
+  overrides: Partial<TCustomConfig>;
+  tombstones: string[];
+  ignored: AdminConfigLayerIgnored[];
+};
+
+/**
+ * 200 from `GET /api/admin/config/resolved/:principalType/:principalId` (`resolvedApi`): what a
+ * profile resolves to, in `librechat.yaml` shape. `yaml` is librechat.yaml as the caller's tenant
+ * sees it, `layers` the documents that merge over it (Base, then the profile) in merge order, and
+ * `resolved` the result. Each tree is limited to the sections the caller can read, with secrets
+ * redacted as reads redact them.
+ */
+export type AdminResolvedConfigResponse = {
+  principalType: PrincipalType;
+  principalId: string;
+  yaml: Partial<TCustomConfig>;
+  layers: AdminConfigLayer[];
+  resolved: Partial<TCustomConfig>;
+};
+
+/**
+ * 200 from `GET /api/admin/config/effective?userId=` (`resolvedApi`): what one user's requests
+ * resolve to, over every profile that applies to them (Base, their role, their groups, their own),
+ * in merge order. `principals` lists the principals the user resolves to, with or without a
+ * profile.
+ */
+export type AdminEffectiveConfigResponse = {
+  userId: string;
+  principals: Array<{ principalType: PrincipalType; principalId: string }>;
+  yaml: Partial<TCustomConfig>;
+  layers: AdminConfigLayer[];
+  resolved: Partial<TCustomConfig>;
+};
+
+/**
+ * Why an endpoint the catalog lists is not served:
+ * - `not_listed`: `ENDPOINTS` names the endpoints to serve, without this one;
+ * - `missing_credentials`: no credential for a built-in endpoint in the environment (`envVars`);
+ * - `missing_api_key`, `missing_base_url`, `missing_models`: a custom endpoint without an
+ *   `apiKey` (or one the merge dropped), a `baseURL`, or `models.default` or `models.fetch`.
+ */
+export type AdminCatalogEndpointReason =
+  | 'not_listed'
+  | 'missing_credentials'
+  | 'missing_api_key'
+  | 'missing_base_url'
+  | 'missing_models';
+
+export type AdminCatalogEndpoint = {
+  /** Whether the scope's users are served the endpoint (`GET /api/endpoints` lists it). */
+  enabled: boolean;
+  custom: boolean;
+  reason?: AdminCatalogEndpointReason;
+  /**
+   * Env names the endpoint takes its credentials or base URL from: a built-in endpoint's (from
+   * the environment), or the `${NAME}` references of a custom endpoint's `apiKey` and `baseURL`.
+   * Whether each is set is `GET /env-status`'s to say.
+   */
+  envVars: string[];
+  /** The entry `GET /api/endpoints` serves the scope's users, when enabled. */
+  config?: TConfig;
+};
+
+/** One endpoint's models for a scope; never fetched with any user's stored key. */
+export type AdminCatalogModels = {
+  /** What the scope's users are offered, as `GET /api/models` lists it for them. */
+  served: string[];
+  /**
+   * The list the scope's config sets: `models` of a built-in endpoint, the models of the Azure
+   * groups, or a custom endpoint's `models.default`. Absent when the config sets none.
+   */
+  configured?: string[];
+  /**
+   * What the endpoint offers without a configured list: a built-in endpoint's `*_MODELS` env
+   * list, the provider's model list or the built-in defaults, or what a custom endpoint with
+   * `models.fetch` fetches with the server's key. Absent for a custom endpoint that fetches
+   * nothing (no `fetch`, or a key or URL each user provides).
+   */
+  defaults?: string[];
+};
+
+/** A librechat.yaml or profile MCP server the scope's users can reach. */
+export type AdminCatalogMcpServer = {
+  name: string;
+  title?: string;
+  transport: 'stdio' | 'sse' | 'streamable-http' | 'websocket';
+  /** `yaml` when librechat.yaml defines it, `override` when a profile adds it. */
+  source: 'yaml' | 'override';
+  /** Runs as a local process (`stdio`), which profiles cannot change or hide. */
+  processBacked: boolean;
+};
+
+/** A tool agents can use, as `GET /api/agents/tools` lists it. */
+export type AdminCatalogTool = {
+  pluginKey: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  /** The server holds every credential the tool needs. */
+  authenticated?: boolean;
+  toolkit?: boolean;
+};
+
+/**
+ * 200 from `GET /api/admin/config/catalog?principalType=&principalId=` (`catalogApi`): what a
+ * scope serves, resolved as its users get it (Base by default). A part is present only for
+ * callers who can read its section: `endpoints` and `models` for `endpoints`, `mcpServers` for
+ * `mcpServers`, `tools` for `filteredTools` or `includedTools`.
+ */
+export type AdminConfigCatalogResponse = {
+  principalType: PrincipalType;
+  principalId: string;
+  endpoints?: Record<string, AdminCatalogEndpoint>;
+  models?: Record<string, AdminCatalogModels>;
+  /** The tools every scope offers: tool filtering is deployment-only. */
+  tools?: AdminCatalogTool[];
+  mcpServers?: AdminCatalogMcpServer[];
+};
+
+/**
+ * Where an env name `GET /env-status` reports is used: referenced in librechat.yaml (`yaml`), a
+ * default reference librechat.yaml loading fills in (`default`, such as `${SEARXNG_INSTANCE_URL}`),
+ * read by a built-in endpoint (`endpoint`), listed in `CONFIG_OVERRIDE_ENV_ALLOWLIST`
+ * (`allowlist`), or referenced in a stored profile (`override`).
+ */
+export type AdminConfigEnvSource = 'yaml' | 'default' | 'endpoint' | 'allowlist' | 'override';
+
+export type AdminConfigEnvStatus = {
+  /** The variable holds a non-blank value on this server; the value itself is never returned. */
+  set: boolean;
+  /** The value is `user_provided`: each user enters their own. */
+  userProvided?: true;
+  sources: AdminConfigEnvSource[];
+};
+
+/** 200 from `GET /api/admin/config/env-status` (`envStatus`). */
+export type AdminConfigEnvStatusResponse = {
+  vars: Record<string, AdminConfigEnvStatus>;
+};
+
 /* ── Admin config contract (GET /api/admin/config/meta) ─────────────── */
 
 /**
@@ -455,6 +672,29 @@ export type AdminConfigChangeErrorResponse = {
  *   reference librechat.yaml uses beside a new destination keeps it, so for allowlisted names
  *   (`envAllowlist`) the rule stops a destination change that leaves the reference out, not one
  *   that restates it. Header maps are not covered.
+ * - `resolvedApi`: `GET /resolved/:principalType/:principalId` returns what a profile resolves to
+ *   over librechat.yaml and the Base document (`AdminResolvedConfigResponse`), and
+ *   `GET /effective?userId=` what one user resolves to over every profile that applies to them
+ *   (`AdminEffectiveConfigResponse`; also needs `read:users` and `read:groups`, and answers 404
+ *   `USER_NOT_FOUND` for a user outside the caller's tenant). Both are in librechat.yaml shape,
+ *   merged exactly as requests merge them (the parity of `resolveConfigLayers` with the served
+ *   merge), with each document's `ignored` parts (`AdminConfigLayerIgnored`), read from the stored
+ *   documents rather than the override cache, limited to the sections the caller can read and
+ *   redacted as reads redact. A profile with no document resolves to Base; one whose principal
+ *   does not exist in the caller's tenant answers 404 `PRINCIPAL_NOT_FOUND`.
+ * - `catalogApi`: `GET /catalog?principalType=&principalId=` returns the endpoints (served or not,
+ *   with a `reason` and the env names they read), models (`served`, `configured`, `defaults`),
+ *   MCP servers and agent tools a scope (Base by default) offers, as its users get them
+ *   (`AdminConfigCatalogResponse`). Models are never loaded with a user's stored key, header
+ *   templates that name a user resolve to nothing, a scope's model lists are reused for
+ *   `limits.catalogModelsTtlMs` while its endpoint config is unchanged, and no User-Agent is
+ *   needed. Each part is present only for callers who can read its section.
+ * - `envStatus`: `GET /env-status` reports, for each env name librechat.yaml references, fills in
+ *   by default, or a built-in endpoint reads, and each name in `CONFIG_OVERRIDE_ENV_ALLOWLIST`,
+ *   whether it is set on the server and where it is used (`AdminConfigEnvStatusResponse`), never
+ *   its value. Names stored profiles reference are added for broad `manage:configs` holders
+ *   outside strict tenant isolation. A caller without broad read access sees only the names used
+ *   in sections it can read; infrastructure secrets (`CREDS_KEY`, ...) are never listed.
  * - `reloadRoute`: `POST /reload` reloads librechat.yaml on every instance without a config
  *   write. It is for an admin without a tenant who holds broad `manage:configs` (otherwise 403
  *   `FORBIDDEN`), since it reaches every tenant. The answering instance drops its cached
@@ -493,6 +733,9 @@ export type AdminConfigFeatureFlag =
   | 'yamlSecretPreview'
   | 'envAllowlist'
   | 'secretRebinding'
+  | 'resolvedApi'
+  | 'catalogApi'
+  | 'envStatus'
   | 'reloadRoute';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
@@ -584,6 +827,12 @@ export type AdminConfigMeta = {
      * resolved config from before a write.
      */
     overrideCacheTtlMs: number;
+    /**
+     * How long `GET /catalog` reuses a scope's model lists while its endpoint config is
+     * unchanged (`catalogApi`): librechat.yaml's `endpoints.catalogModelsTtlMs`, two minutes by
+     * default; `0` when every read resolves them.
+     */
+    catalogModelsTtlMs: number;
   };
   rules: AdminConfigRules;
 };
