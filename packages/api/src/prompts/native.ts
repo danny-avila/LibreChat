@@ -90,6 +90,17 @@ function toIdString(id: StoredId): string {
   return typeof id === 'string' ? id : id.toString();
 }
 
+/** The AI-2272 partial unique index is defense in depth: this maps the resulting
+ *  duplicate-key race to `createSourceGroup`'s `duplicate` outcome. */
+function isDuplicateKeyError(error: unknown): boolean {
+  return (error as { code?: number } | undefined)?.code === 11000;
+}
+
+/** A document validation failure, mapped to `createSourceGroup`'s `invalid` outcome. */
+function isValidationError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'ValidationError';
+}
+
 export function selectionUnavailableReason(selection: PromptSelection): 'production' | 'revision' {
   return selection.type === 'production' ? 'production' : 'revision';
 }
@@ -162,5 +173,26 @@ export function createPromptCatalogStore(db: PromptDatabase): PromptCatalogStore
       toPromptGroupRecord(await db.updatePromptGroup({ _id: groupId }, updates)),
     incrementPromptGroupUsage: (groupId) => db.incrementPromptGroupUsage(groupId),
     deletePromptGroup: (groupId) => db.deletePromptGroup({ _id: groupId }),
+    findSourceGroup: (identity) => db.findLangfusePromptGroup(identity),
+    createSourceGroup: async (input) => {
+      const { identity, name, author, authorName } = input;
+      try {
+        const value = await db.createLangfusePromptGroup({
+          ...identity,
+          name,
+          author,
+          authorName,
+        });
+        return { ok: true, value };
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return { ok: false, error: { code: 'duplicate' } };
+        }
+        if (isValidationError(error)) {
+          return { ok: false, error: { code: 'invalid', cause: error } };
+        }
+        throw error;
+      }
+    },
   };
 }

@@ -1,7 +1,6 @@
 const express = require('express');
 const {
   generateCheckAccess,
-  createPromptService,
   createPromptHandlers,
   invalidateLinkedPrompt,
 } = require('@librechat/api');
@@ -19,8 +18,8 @@ const {
   requireJwtAuth,
   configMiddleware,
 } = require('~/server/middleware');
-const { getEffectivePermissions, grantPermission } = require('~/server/services/PermissionService');
-const { getAppConfig } = require('~/server/services/Config');
+const { getEffectivePermissions } = require('~/server/services/PermissionService');
+const { promptService } = require('~/server/services/Prompts');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
@@ -30,11 +29,7 @@ const router = express.Router();
 const linkedInstructionsCache = getLogStores(CacheKeys.AGENT_LINKED_INSTRUCTIONS);
 
 const handlers = createPromptHandlers({
-  service: createPromptService({
-    db,
-    grantPermission,
-    getAppConfig,
-  }),
+  service: promptService,
   getPromptGroupAccessContext: db.getPromptGroupAccessContext,
   getEffectivePermissions,
   invalidateLinkedPrompt: (groupId, promptIds) =>

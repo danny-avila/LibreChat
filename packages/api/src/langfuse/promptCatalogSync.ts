@@ -1,4 +1,6 @@
-import type { TLangfusePromptListItem, TLangfusePromptListResponse } from 'librechat-data-provider';
+import type { TLangfusePromptListResponse } from 'librechat-data-provider';
+import type { PromptGroupSourceIdentity } from '~/prompts/types';
+import type { PromptService } from '~/prompts/service';
 import type { DistributedLock } from '~/cache/lock';
 import { makeSourceAuthorId } from '~/utils/author';
 
@@ -25,31 +27,13 @@ export type PromptCatalogSyncResult =
   | { ok: true; value: PromptCatalogSyncCounts }
   | { ok: false; error: { code: 'already_running' | 'lock_lost' } };
 
-/** The identity a synced group is found or created by. */
-export type PromptGroupSourceIdentity = {
-  sourceDestination: string;
-  sourceProjectId: string;
-  sourcePromptName: string;
-};
-
-export type PromptCatalogSyncCreateInput = PromptGroupSourceIdentity & {
-  name: string;
-  author: string;
-  authorName: string;
-};
-
 export type PromptCatalogSyncDeps = {
   listPrompts: (query: {
     type: 'text';
     limit: number;
     page: number;
   }) => Promise<TLangfusePromptListResponse>;
-  findPromptGroup: (identity: PromptGroupSourceIdentity) => Promise<{ _id: string } | null>;
-  createPromptGroup: (input: PromptCatalogSyncCreateInput) => Promise<{ _id: string }>;
-  isDuplicateKeyError: (error: unknown) => boolean;
-  isValidationError: (error: unknown) => boolean;
-  grantPublicViewer: (groupId: string) => Promise<void>;
-  deletePromptGroup: (groupId: string) => Promise<void>;
+  promptService: Pick<PromptService, 'importSourceGroup'>;
   lock: DistributedLock;
   lockLeaseMs: number;
   logger: {
@@ -59,65 +43,6 @@ export type PromptCatalogSyncDeps = {
   pageLimit?: number;
   maxPages?: number;
 };
-
-/** Finds-or-creates one Langfuse text prompt as a pointer-only group, granting
- *  a PUBLIC viewer entry only when it was just created. A match is left as is:
- *  no ACL write and no update statement run against an existing group. */
-async function syncOne(
-  item: TLangfusePromptListItem,
-  identity: PromptGroupSourceIdentity,
-  author: string,
-  deps: PromptCatalogSyncDeps,
-): Promise<'created' | 'unchanged' | 'skipped'> {
-  // The group insert and its initial PUBLIC grant below are separate writes. If an earlier
-  // run inserted the group and then exited before granting PUBLIC access, this run finds
-  // the group here and returns `unchanged` without retrying the grant, so the group keeps
-  // no PUBLIC viewer entry.
-  const existing = await deps.findPromptGroup(identity);
-  if (existing) {
-    return 'unchanged';
-  }
-
-  let created: { _id: string };
-  try {
-    created = await deps.createPromptGroup({
-      ...identity,
-      name: item.name,
-      author,
-      authorName: LANGFUSE_SYNC_AUTHOR_NAME,
-    });
-  } catch (error) {
-    if (deps.isDuplicateKeyError(error)) {
-      return 'unchanged';
-    }
-    if (deps.isValidationError(error)) {
-      deps.logger.warn(
-        '[langfuse] Could not save a synced prompt group that failed validation:',
-        item.name,
-        error,
-      );
-      return 'skipped';
-    }
-    throw error;
-  }
-
-  try {
-    await deps.grantPublicViewer(created._id);
-  } catch (error) {
-    deps.logger.error('[langfuse] Could not grant public access to a synced prompt group:', error);
-    try {
-      await deps.deletePromptGroup(created._id);
-    } catch (deleteError) {
-      deps.logger.error(
-        '[langfuse] Could not roll back an ungranted synced prompt group:',
-        deleteError,
-      );
-    }
-    throw error;
-  }
-
-  return 'created';
-}
 
 /**
  * Syncs every Langfuse text prompt in `source`'s project into the local
@@ -199,7 +124,12 @@ export async function syncLangfusePromptCatalog(
           sourceProjectId: source.projectId,
           sourcePromptName: item.name,
         };
-        const outcome = await syncOne(item, identity, author, deps);
+        const outcome = await deps.promptService.importSourceGroup({
+          identity,
+          name: item.name,
+          author,
+          authorName: LANGFUSE_SYNC_AUTHOR_NAME,
+        });
         counts[outcome] += 1;
       }
 

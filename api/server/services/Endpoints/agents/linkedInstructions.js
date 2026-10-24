@@ -1,10 +1,8 @@
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
-const { createPromptService, createLinkedInstructionsResolver } = require('@librechat/api');
-const { grantPermission } = require('~/server/services/PermissionService');
-const { getAppConfig } = require('~/server/services/Config');
+const { createLinkedInstructionsResolver } = require('@librechat/api');
+const { promptService } = require('~/server/services/Prompts');
 const { getLogStores } = require('~/cache');
-const db = require('~/models');
 
 /**
  * Shared resolver for an agent's `instructionsPrompt` link. Resolve and cache
@@ -13,11 +11,7 @@ const db = require('~/models');
  * `AGENT_LINKED_INSTRUCTIONS` cache namespace (`~/cache/getLogStores.js`).
  */
 const linkedInstructionsResolver = createLinkedInstructionsResolver({
-  promptService: createPromptService({
-    db,
-    grantPermission,
-    getAppConfig,
-  }),
+  promptService,
   cache: getLogStores(CacheKeys.AGENT_LINKED_INSTRUCTIONS),
   logger,
 });

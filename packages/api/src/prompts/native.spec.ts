@@ -16,6 +16,7 @@ beforeAll(async () => {
   await mongoose.connect(mongo.getUri());
   createModels(mongoose);
   db = createMethods(mongoose);
+  await mongoose.models.PromptGroup.syncIndexes();
 });
 
 beforeEach(async () => {
@@ -270,5 +271,84 @@ describe('createPromptCatalogStore', () => {
     const catalog = createPromptCatalogStore(db);
 
     await expect(catalog.getPromptGroup(new Types.ObjectId().toString())).resolves.toBeNull();
+  });
+
+  describe('findSourceGroup and createSourceGroup', () => {
+    const identity = {
+      sourceDestination: 'us',
+      sourceProjectId: 'project-1',
+      sourcePromptName: 'synced-prompt',
+    };
+
+    it('returns null for an identity with no stored group', async () => {
+      const catalog = createPromptCatalogStore(db);
+
+      await expect(catalog.findSourceGroup(identity)).resolves.toBeNull();
+    });
+
+    it('creates a source group and then finds it by identity', async () => {
+      const catalog = createPromptCatalogStore(db);
+
+      const created = await catalog.createSourceGroup({
+        identity,
+        name: 'Synced prompt',
+        author,
+        authorName: 'Langfuse Sync',
+      });
+
+      expect(created).toEqual({ ok: true, value: { _id: expect.any(String) } });
+      await expect(catalog.findSourceGroup(identity)).resolves.toEqual({
+        _id: created.ok ? created.value._id : undefined,
+      });
+    });
+
+    it('returns a duplicate error for a second insert with the same identity', async () => {
+      const catalog = createPromptCatalogStore(db);
+      await catalog.createSourceGroup({
+        identity,
+        name: 'Synced prompt',
+        author,
+        authorName: 'Langfuse Sync',
+      });
+
+      const result = await catalog.createSourceGroup({
+        identity,
+        name: 'Synced prompt again',
+        author,
+        authorName: 'Langfuse Sync',
+      });
+
+      expect(result).toEqual({ ok: false, error: { code: 'duplicate' } });
+    });
+
+    it('returns an invalid error with a cause for an empty name', async () => {
+      const catalog = createPromptCatalogStore(db);
+
+      const result = await catalog.createSourceGroup({
+        identity,
+        name: '',
+        author,
+        authorName: 'Langfuse Sync',
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        error: { code: 'invalid', cause: expect.any(Error) },
+      });
+    });
+
+    it('rethrows a non-Mongo, non-validation error', async () => {
+      const catalog = createPromptCatalogStore(db);
+      jest.spyOn(db, 'createLangfusePromptGroup').mockRejectedValueOnce(new Error('unavailable'));
+
+      await expect(
+        catalog.createSourceGroup({
+          identity,
+          name: 'Synced prompt',
+          author,
+          authorName: 'Langfuse Sync',
+        }),
+      ).rejects.toThrow('unavailable');
+    });
   });
 });

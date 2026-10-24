@@ -2,7 +2,6 @@ import type { TLangfusePromptListItem, TLangfusePromptListResponse } from 'libre
 import type { LangfusePromptSyncRunnerDeps, LangfusePromptSyncRequest } from './promptSyncRunner';
 import type { DistributedLock } from '~/cache/lock';
 import { createLangfusePromptSyncRunner } from './promptSyncRunner';
-import { makeSourceAuthorId } from '~/utils/author';
 
 function textItem(name: string): TLangfusePromptListItem {
   return { name, type: 'text', versions: [1], labels: [], tags: [], lastUpdatedAt: '2026-01-01' };
@@ -28,10 +27,7 @@ function createFakeLock(overrides: Partial<DistributedLock> = {}): DistributedLo
 function createDeps(overrides: Partial<LangfusePromptSyncRunnerDeps> = {}) {
   return {
     lock: createFakeLock(),
-    findLangfusePromptGroup: jest.fn().mockResolvedValue(null),
-    createLangfusePromptGroup: jest.fn().mockResolvedValue({ _id: 'group-1' }),
-    deletePromptGroup: jest.fn().mockResolvedValue({ message: 'Prompt group deleted' }),
-    grantPermission: jest.fn().mockResolvedValue(undefined),
+    promptService: { importSourceGroup: jest.fn().mockResolvedValue('created') },
     logger: { warn: jest.fn(), error: jest.fn() },
     ...overrides,
   };
@@ -50,123 +46,6 @@ function createRequest(
 }
 
 describe('createLangfusePromptSyncRunner', () => {
-  it('creates a pointer group for a new prompt and grants the PUBLIC viewer as the system user', async () => {
-    const deps = createDeps();
-    const run = createLangfusePromptSyncRunner(deps);
-
-    const result = await run(createRequest());
-
-    expect(result).toEqual({
-      ok: true,
-      value: { created: 1, unchanged: 0, skipped: 0, complete: true },
-    });
-    expect(deps.findLangfusePromptGroup).toHaveBeenCalledWith({
-      sourceDestination: 'eu',
-      sourceProjectId: 'project-1',
-      sourcePromptName: 'greeting',
-    });
-    expect(deps.createLangfusePromptGroup).toHaveBeenCalledWith({
-      name: 'greeting',
-      author: makeSourceAuthorId('langfuse', 'project-1', 't1'),
-      authorName: 'Langfuse Sync',
-      sourceDestination: 'eu',
-      sourceProjectId: 'project-1',
-      sourcePromptName: 'greeting',
-    });
-    expect(deps.grantPermission).toHaveBeenCalledTimes(1);
-    expect(deps.grantPermission).toHaveBeenCalledWith({
-      principalType: 'public',
-      principalId: null,
-      resourceType: 'promptGroup',
-      resourceId: 'group-1',
-      accessRoleId: 'promptGroup_viewer',
-      grantedBy: '000000000000000000000000',
-    });
-    expect(deps.deletePromptGroup).not.toHaveBeenCalled();
-    expect(deps.lock.release).toHaveBeenCalledTimes(1);
-  });
-
-  it('counts an existing group as unchanged without creating or granting', async () => {
-    const deps = createDeps({
-      findLangfusePromptGroup: jest.fn().mockResolvedValue({ _id: 'existing-id' }),
-    });
-    const run = createLangfusePromptSyncRunner(deps);
-
-    const result = await run(createRequest());
-
-    expect(result).toEqual({
-      ok: true,
-      value: { created: 0, unchanged: 1, skipped: 0, complete: true },
-    });
-    expect(deps.createLangfusePromptGroup).not.toHaveBeenCalled();
-    expect(deps.grantPermission).not.toHaveBeenCalled();
-  });
-
-  it('maps a duplicate-key error (code 11000) on create to unchanged without granting', async () => {
-    const duplicateError = Object.assign(new Error('duplicate key'), { code: 11000 });
-    const deps = createDeps({
-      createLangfusePromptGroup: jest.fn().mockRejectedValue(duplicateError),
-    });
-    const run = createLangfusePromptSyncRunner(deps);
-
-    const result = await run(createRequest());
-
-    expect(result).toEqual({
-      ok: true,
-      value: { created: 0, unchanged: 1, skipped: 0, complete: true },
-    });
-    expect(deps.grantPermission).not.toHaveBeenCalled();
-    expect(deps.logger.warn).not.toHaveBeenCalled();
-  });
-
-  it('maps a ValidationError on create to skipped with a warning', async () => {
-    const validationError = new Error('invalid document');
-    validationError.name = 'ValidationError';
-    const deps = createDeps({
-      createLangfusePromptGroup: jest.fn().mockRejectedValue(validationError),
-    });
-    const run = createLangfusePromptSyncRunner(deps);
-
-    const result = await run(createRequest());
-
-    expect(result).toEqual({
-      ok: true,
-      value: { created: 0, unchanged: 0, skipped: 1, complete: true },
-    });
-    expect(deps.grantPermission).not.toHaveBeenCalled();
-    expect(deps.logger.warn).toHaveBeenCalledTimes(1);
-    expect(deps.logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('failed validation'),
-      'greeting',
-      validationError,
-    );
-  });
-
-  it('rethrows an unexpected create error, which is neither a duplicate key nor a validation failure', async () => {
-    const deps = createDeps({
-      createLangfusePromptGroup: jest.fn().mockRejectedValue(new Error('boom')),
-    });
-    const run = createLangfusePromptSyncRunner(deps);
-
-    await expect(run(createRequest())).rejects.toThrow('boom');
-    expect(deps.grantPermission).not.toHaveBeenCalled();
-    expect(deps.lock.release).toHaveBeenCalledTimes(1);
-  });
-
-  it('deletes the created group and rethrows when the grant fails', async () => {
-    const grantError = new Error('grant failed');
-    const deps = createDeps({ grantPermission: jest.fn().mockRejectedValue(grantError) });
-    const run = createLangfusePromptSyncRunner(deps);
-
-    await expect(run(createRequest())).rejects.toBe(grantError);
-    expect(deps.deletePromptGroup).toHaveBeenCalledWith({ _id: 'group-1' });
-    expect(deps.logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('Could not grant public access'),
-      grantError,
-    );
-    expect(deps.lock.release).toHaveBeenCalledTimes(1);
-  });
-
   it('acquires and extends the lock with the per-request lease', async () => {
     const deps = createDeps();
     const run = createLangfusePromptSyncRunner(deps);
@@ -223,14 +102,6 @@ describe('createLangfusePromptSyncRunner', () => {
     expect(second.listPrompts).toHaveBeenCalledTimes(1);
     expect(deps.lock.acquire).toHaveBeenNthCalledWith(1, 'prompt-sync:langfuse:t1', 300_000);
     expect(deps.lock.acquire).toHaveBeenNthCalledWith(2, 'prompt-sync:langfuse:', 300_000);
-    expect(deps.createLangfusePromptGroup).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        sourceDestination: 'us',
-        sourceProjectId: 'project-2',
-        author: makeSourceAuthorId('langfuse', 'project-2'),
-      }),
-    );
   });
 
   it('returns already_running without listing when the lock is held', async () => {
@@ -245,5 +116,15 @@ describe('createLangfusePromptSyncRunner', () => {
     expect(result).toEqual({ ok: false, error: { code: 'already_running' } });
     expect(request.listPrompts).not.toHaveBeenCalled();
     expect(deps.lock.release).not.toHaveBeenCalled();
+  });
+
+  it('passes a rejection from importSourceGroup to the caller', async () => {
+    const deps = createDeps({
+      promptService: { importSourceGroup: jest.fn().mockRejectedValue(new Error('boom')) },
+    });
+    const run = createLangfusePromptSyncRunner(deps);
+
+    await expect(run(createRequest())).rejects.toThrow('boom');
+    expect(deps.lock.release).toHaveBeenCalledTimes(1);
   });
 });

@@ -125,6 +125,36 @@ export interface PromptListInput {
 
 export type PromptOperation = 'savePrompt' | 'makePromptProduction' | 'deletePrompt';
 
+/** The identity a synced group is found or created by. */
+export type PromptGroupSourceIdentity = {
+  sourceDestination: string;
+  sourceProjectId: string;
+  sourcePromptName: string;
+};
+
+/** The input to `PromptService.importSourceGroup`: a source-pointer group's identity
+ *  plus the display fields a found-or-created group is named and authored by. */
+export type ImportSourceGroupInput = {
+  readonly identity: PromptGroupSourceIdentity;
+  readonly name: string;
+  readonly author: string;
+  readonly authorName: string;
+};
+
+/** `created` is a new group; `unchanged` covers both an existing match and a
+ *  duplicate-key race lost to a concurrent insert; `skipped` is a document that
+ *  failed validation and was never saved. */
+export type PromptSourceImportOutcome = 'created' | 'unchanged' | 'skipped';
+
+export type CreateSourceGroupResult =
+  | { readonly ok: true; readonly value: { readonly _id: string } }
+  | {
+      readonly ok: false;
+      readonly error:
+        | { readonly code: 'duplicate' }
+        | { readonly code: 'invalid'; readonly cause: unknown };
+    };
+
 export type PromptServiceError =
   | { readonly type: 'invalid_input'; readonly message: string; readonly details?: unknown }
   | { readonly type: 'blocked_content'; readonly finding: ProtectionFinding }
@@ -220,6 +250,13 @@ export interface PromptCatalogStore {
   updatePromptGroup(groupId: string, updates: Record<string, unknown>): Promise<PromptGroupRecord>;
   incrementPromptGroupUsage(groupId: string): Promise<{ readonly numberOfGenerations: number }>;
   deletePromptGroup(groupId: string): Promise<{ readonly message: string }>;
+  /** Finds a source-pointer group by its source identity, for `importSourceGroup`'s
+   *  find-before-create step. */
+  findSourceGroup(identity: PromptGroupSourceIdentity): Promise<{ readonly _id: string } | null>;
+  /** Creates a source-pointer group: name and source identity only, never content.
+   *  Returns a typed failure for a duplicate-key race or a document validation
+   *  failure; any other failure throws. */
+  createSourceGroup(input: ImportSourceGroupInput): Promise<CreateSourceGroupResult>;
 }
 
 /** The data-schemas prompt methods the native adapter and catalog store use. */
@@ -252,6 +289,15 @@ export interface PromptDatabase {
   updatePromptGroup(filter: { _id: string }, data: Record<string, unknown>): Promise<object>;
   incrementPromptGroupUsage(groupId: string): Promise<{ numberOfGenerations: number }>;
   deletePromptGroup(filter: { _id: string }): Promise<{ message: string }>;
+  findLangfusePromptGroup(identity: PromptGroupSourceIdentity): Promise<{ _id: string } | null>;
+  createLangfusePromptGroup(input: {
+    name: string;
+    author: string;
+    authorName: string;
+    sourceDestination: string;
+    sourceProjectId: string;
+    sourcePromptName: string;
+  }): Promise<{ _id: string }>;
   /** Reads the deployment's base config, which the Langfuse adapter's source resolver
    *  checks for the prompt-sync switch. Returns the plain override document, not the
    *  Mongoose model `~/models` resolves it from. */
@@ -275,7 +321,11 @@ export interface PromptServiceAdapters {
     readonly userId: string;
     readonly groupId: string;
   }) => Promise<void>;
+  /** Grants a PUBLIC viewer entry, for a source-pointer group just imported by
+   *  `importSourceGroup`. */
+  readonly grantPublicViewer: (input: { readonly groupId: string }) => Promise<void>;
   readonly logger: {
-    error(message: string, error: unknown): void;
+    warn(message: string, ...args: unknown[]): void;
+    error(message: string, ...args: unknown[]): void;
   };
 }

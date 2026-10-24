@@ -1,3 +1,9 @@
+jest.mock('~/admin/secrets', () => ({
+  decryptConfigSecret: jest.fn((value: string) =>
+    value === 'v3:test:tenant-a-secret' ? 'tenant-a-secret' : undefined,
+  ),
+}));
+
 import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { AccessRoleIds, PrincipalType, ResourceType } from 'librechat-data-provider';
@@ -5,6 +11,7 @@ import {
   logger,
   createModels,
   createMethods,
+  tenantStorage,
   BASE_CONFIG_PRINCIPAL_ID,
 } from '@librechat/data-schemas';
 import type { FiltersConfig } from 'librechat-data-provider';
@@ -19,6 +26,7 @@ import type { PromptServiceDependencies, PromptService } from './service';
 import { createPromptServiceFromAdapters, createPromptService } from './service';
 import { createPromptCatalogStore, createNativePromptAdapter } from './native';
 import { PromptStoreError } from './errors';
+import { CONSTANTS } from '~/mcp/enum';
 
 const filters: FiltersConfig = {
   prompts: {
@@ -44,6 +52,7 @@ beforeAll(async () => {
   await mongoose.connect(mongo.getUri());
   createModels(mongoose);
   db = createMethods(mongoose);
+  await mongoose.models.PromptGroup.syncIndexes();
 });
 
 beforeEach(async () => {
@@ -213,7 +222,8 @@ describe('createPromptService', () => {
         langfuse: { resolvePrompt: jest.fn() },
         catalog,
         grantCreatorOwnership: jest.fn(),
-        logger: { error: jest.fn() },
+        grantPublicViewer: jest.fn(),
+        logger: { warn: jest.fn(), error: jest.fn() },
       });
 
       const rejection: unknown = await routed
@@ -428,6 +438,182 @@ describe('createPromptService', () => {
         expect.stringContaining('[createPromptGroup] Failed to grant owner permissions'),
         expect.any(Error),
       );
+    });
+  });
+
+  describe('importSourceGroup', () => {
+    const identity = {
+      sourceDestination: 'us',
+      sourceProjectId: 'project-1',
+      sourcePromptName: 'synced-prompt',
+    };
+
+    it('creates a pointer group with source fields and no productionId, and grants a PUBLIC viewer as the system user', async () => {
+      const outcome = await service.importSourceGroup({
+        identity,
+        name: 'Synced prompt',
+        author,
+        authorName: 'Langfuse Sync',
+      });
+
+      expect(outcome).toBe('created');
+      const found = await db.findLangfusePromptGroup(identity);
+      expect(found).not.toBeNull();
+      const stored = (await mongoose.models.PromptGroup.findById(found?._id).lean()) as {
+        productionId?: unknown;
+      } | null;
+      expect(stored).toMatchObject({
+        source: 'langfuse',
+        ...identity,
+        name: 'Synced prompt',
+        author: new Types.ObjectId(author),
+        authorName: 'Langfuse Sync',
+      });
+      expect(stored).not.toHaveProperty('productionId');
+      expect(grantPermission).toHaveBeenCalledWith({
+        principalType: PrincipalType.PUBLIC,
+        principalId: null,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: found?._id,
+        accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
+        grantedBy: CONSTANTS.SYSTEM_USER_ID,
+      });
+    });
+
+    it('leaves a second import for the same identity unchanged, without granting again', async () => {
+      await service.importSourceGroup({
+        identity,
+        name: 'Synced prompt',
+        author,
+        authorName: 'Langfuse Sync',
+      });
+      grantPermission.mockClear();
+
+      const outcome = await service.importSourceGroup({
+        identity,
+        name: 'Synced prompt',
+        author,
+        authorName: 'Langfuse Sync',
+      });
+
+      expect(outcome).toBe('unchanged');
+      expect(grantPermission).not.toHaveBeenCalled();
+    });
+
+    it('treats a race where findSourceGroup misses a row that already exists as unchanged, without granting', async () => {
+      const catalog = createPromptCatalogStore(db);
+      const created = await catalog.createSourceGroup({
+        identity,
+        name: 'Synced prompt',
+        author,
+        authorName: 'Langfuse Sync',
+      });
+      if (!created.ok) {
+        throw new Error('Setup insert failed');
+      }
+      jest.spyOn(catalog, 'findSourceGroup').mockResolvedValue(null);
+      const grantPublicViewer = jest.fn();
+      const routed = createPromptServiceFromAdapters({
+        native: createNativePromptAdapter(db),
+        langfuse: { resolvePrompt: jest.fn() },
+        catalog,
+        grantCreatorOwnership: jest.fn(),
+        grantPublicViewer,
+        logger: { warn: jest.fn(), error: jest.fn() },
+      });
+
+      const outcome = await routed.importSourceGroup({
+        identity,
+        name: 'Synced prompt',
+        author,
+        authorName: 'Langfuse Sync',
+      });
+
+      expect(outcome).toBe('unchanged');
+      expect(grantPublicViewer).not.toHaveBeenCalled();
+    });
+
+    it('skips an empty name and warns with safe metadata only, saving nothing', async () => {
+      const logWarn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+      const outcome = await service.importSourceGroup({
+        identity,
+        name: '',
+        author,
+        authorName: 'Langfuse Sync',
+      });
+
+      expect(outcome).toBe('skipped');
+      expect(logWarn).toHaveBeenCalledTimes(1);
+      expect(logWarn).toHaveBeenCalledWith(
+        '[importSourceGroup] Skipped a source group that failed validation',
+        { name: '', code: 'invalid', type: 'Error' },
+      );
+      await expect(db.findLangfusePromptGroup(identity)).resolves.toBeNull();
+    });
+
+    it('deletes the newly created group and rethrows when the grant fails', async () => {
+      const catalog = createPromptCatalogStore(db);
+      const grantPublicViewer = jest.fn().mockRejectedValue(new Error('grant failed'));
+      const logError = jest.fn();
+      const routed = createPromptServiceFromAdapters({
+        native: createNativePromptAdapter(db),
+        langfuse: { resolvePrompt: jest.fn() },
+        catalog,
+        grantCreatorOwnership: jest.fn(),
+        grantPublicViewer,
+        logger: { warn: jest.fn(), error: logError },
+      });
+
+      await expect(
+        routed.importSourceGroup({
+          identity,
+          name: 'Synced prompt',
+          author,
+          authorName: 'Langfuse Sync',
+        }),
+      ).rejects.toThrow('grant failed');
+
+      await expect(catalog.findSourceGroup(identity)).resolves.toBeNull();
+      expect(logError).toHaveBeenCalledTimes(1);
+      expect(logError).toHaveBeenCalledWith(expect.stringContaining('[importSourceGroup]'), {
+        groupId: expect.any(String),
+        type: 'Error',
+      });
+    });
+
+    it('still rethrows the grant error and logs two errors when the rollback delete also fails', async () => {
+      const catalog = createPromptCatalogStore(db);
+      jest.spyOn(catalog, 'deletePromptGroup').mockRejectedValue(new Error('delete failed'));
+      const grantPublicViewer = jest.fn().mockRejectedValue(new Error('grant failed'));
+      const logError = jest.fn();
+      const routed = createPromptServiceFromAdapters({
+        native: createNativePromptAdapter(db),
+        langfuse: { resolvePrompt: jest.fn() },
+        catalog,
+        grantCreatorOwnership: jest.fn(),
+        grantPublicViewer,
+        logger: { warn: jest.fn(), error: logError },
+      });
+
+      await expect(
+        routed.importSourceGroup({
+          identity,
+          name: 'Synced prompt',
+          author,
+          authorName: 'Langfuse Sync',
+        }),
+      ).rejects.toThrow('grant failed');
+
+      expect(logError).toHaveBeenCalledTimes(2);
+      expect(logError).toHaveBeenNthCalledWith(1, expect.stringContaining('[importSourceGroup]'), {
+        groupId: expect.any(String),
+        type: 'Error',
+      });
+      expect(logError).toHaveBeenNthCalledWith(2, expect.stringContaining('[importSourceGroup]'), {
+        groupId: expect.any(String),
+        type: 'Error',
+      });
     });
   });
 
@@ -748,7 +934,8 @@ describe('createPromptService', () => {
         langfuse: { resolvePrompt: jest.fn() },
         catalog: createPromptCatalogStore(db),
         grantCreatorOwnership: jest.fn(),
-        logger: { error: jest.fn() },
+        grantPublicViewer: jest.fn(),
+        logger: { warn: jest.fn(), error: jest.fn() },
       });
 
       await expect(
@@ -827,7 +1014,8 @@ describe('createPromptService', () => {
         langfuse: { resolvePrompt },
         catalog: createPromptCatalogStore(db),
         grantCreatorOwnership: jest.fn(),
-        logger: { error: jest.fn() },
+        grantPublicViewer: jest.fn(),
+        logger: { warn: jest.fn(), error: jest.fn() },
       });
 
       await expect(
@@ -852,7 +1040,8 @@ describe('createPromptService', () => {
         langfuse: { resolvePrompt },
         catalog: createPromptCatalogStore(db),
         grantCreatorOwnership: jest.fn(),
-        logger: { error: jest.fn() },
+        grantPublicViewer: jest.fn(),
+        logger: { warn: jest.fn(), error: jest.fn() },
       });
 
       await expect(
@@ -881,7 +1070,8 @@ describe('createPromptService', () => {
         langfuse: { resolvePrompt },
         catalog: createPromptCatalogStore(db),
         grantCreatorOwnership: jest.fn(),
-        logger: { error: jest.fn() },
+        grantPublicViewer: jest.fn(),
+        logger: { warn: jest.fn(), error: jest.fn() },
       });
 
       await expect(
@@ -1047,7 +1237,8 @@ describe('createPromptService', () => {
         langfuse: { resolvePrompt },
         catalog,
         grantCreatorOwnership: jest.fn(),
-        logger: { error: jest.fn() },
+        grantPublicViewer: jest.fn(),
+        logger: { warn: jest.fn(), error: jest.fn() },
       });
 
       await expect(
@@ -1077,7 +1268,8 @@ describe('createPromptService', () => {
         langfuse: { resolvePrompt },
         catalog,
         grantCreatorOwnership: jest.fn(),
-        logger: { error: jest.fn() },
+        grantPublicViewer: jest.fn(),
+        logger: { warn: jest.fn(), error: jest.fn() },
       });
 
       await expect(
@@ -1197,6 +1389,74 @@ describe('createPromptService', () => {
       });
       expect(findConfigByPrincipal).not.toHaveBeenCalled();
       expect(getAppConfig).not.toHaveBeenCalled();
+    });
+
+    it('serves two concurrent Langfuse resolves on one shared instance, each tied to its own tenant and config', async () => {
+      process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE = 'true';
+      const groupA = makeLangfuseGroup({
+        sourcePromptName: 'prompt-a',
+        sourceDestination: 'us',
+        sourceProjectId: 'project-a',
+        tenantId: 'a',
+      });
+      const groupB = makeLangfuseGroup({
+        sourcePromptName: 'prompt-b',
+        sourceDestination: 'us',
+        sourceProjectId: 'project-b',
+        tenantId: 'b',
+      });
+
+      // Each request reads its own stored credentials. Tenant a finishes later
+      // with a mismatched project. Tenant b has no usable secret key.
+      const findConfigByPrincipal = jest
+        .spyOn(db, 'findConfigByPrincipal')
+        .mockImplementation(async () => {
+          const tenantId = tenantStorage.getStore()?.tenantId;
+          await new Promise((resolve) => setTimeout(resolve, tenantId === 'a' ? 20 : 0));
+          return {
+            overrides: {
+              langfuse: {
+                promptSync: { enabled: true },
+                publicKey: `tenant-${tenantId}-public-key`,
+                secretKey: tenantId === 'a' ? 'v3:test:tenant-a-secret' : undefined,
+                destination: 'us',
+                projectId: tenantId === 'a' ? 'a-mismatched-project' : 'project-b',
+              },
+            },
+          };
+        });
+      getAppConfig.mockResolvedValue({} as never);
+      const shared = createPromptService({ db, grantPermission, getAppConfig });
+
+      const [resultA, resultB] = await Promise.all([
+        tenantStorage.run({ tenantId: 'a' }, async () =>
+          shared.resolvePrompt({
+            groupId: groupA._id,
+            selection: { type: 'production' },
+            loadedGroup: groupA,
+          }),
+        ),
+        tenantStorage.run({ tenantId: 'b' }, async () =>
+          shared.resolvePrompt({
+            groupId: groupB._id,
+            selection: { type: 'production' },
+            loadedGroup: groupB,
+          }),
+        ),
+      ]);
+
+      expect(resultA).toEqual({
+        ok: false,
+        error: { type: 'source_unavailable', source: 'langfuse', reason: 'source_changed' },
+      });
+      expect(resultB).toEqual({
+        ok: false,
+        error: { type: 'source_unavailable', source: 'langfuse', reason: 'not_configured' },
+      });
+      expect(findConfigByPrincipal).toHaveBeenCalledTimes(2);
+      expect(getAppConfig).toHaveBeenCalledTimes(2);
+      expect(getAppConfig).toHaveBeenCalledWith({ tenantId: 'a' });
+      expect(getAppConfig).toHaveBeenCalledWith({ tenantId: 'b' });
     });
   });
 });
