@@ -1364,9 +1364,9 @@ it.each(['long input', 'mismatched input', 'safe boundary', 'append'] as const)(
       (req as ServerRequest).user = { id: scope.user } as ServerRequest['user'];
       next();
     });
-    app.get(
-      '/api/convos/:parentConversationId/subagents/:threadId',
-      createSubagentThreadViewHandler(methods),
+    const handler = createSubagentThreadViewHandler(methods);
+    app.get('/api/convos/:parentConversationId/subagents/:threadId', (req, res) =>
+      handler(req as ServerRequest, res),
     );
     const response = await request(app)
       .get(
