@@ -221,8 +221,19 @@ function getSignedOpenIdUserId(
   }
 }
 
-function getStoredPathCandidates(canonicalPath: string): string[] {
-  return [canonicalPath, `${canonicalPath}?manual=false`, `${canonicalPath}?manual=true`];
+function getStoredPathCandidates(imagePath: ImagePath): string[] {
+  const { canonicalPath, ownerId, filename } = imagePath;
+  const candidates = [
+    canonicalPath,
+    `${canonicalPath}?manual=false`,
+    `${canonicalPath}?manual=true`,
+  ];
+  const storedPath = `/images/${ownerId}/${filename}`;
+  // Legacy raw filenames are aliases only when URL parsing cannot change their identity.
+  if (storedPath !== canonicalPath && !/[?#%]/.test(filename)) {
+    candidates.push(storedPath, `${storedPath}?manual=false`, `${storedPath}?manual=true`);
+  }
+  return candidates;
 }
 
 async function authenticateRequest(
@@ -316,7 +327,7 @@ async function canViewAgentAvatar(
   const agent = await deps.getAgent(
     {
       id: imagePath.agentId,
-      'avatar.filepath': { $in: getStoredPathCandidates(imagePath.canonicalPath) },
+      'avatar.filepath': { $in: getStoredPathCandidates(imagePath) },
     },
     { _id: 1 },
   );
@@ -359,7 +370,7 @@ async function canViewAssistantAvatar(
   deps: ImageAuthorizationDeps,
 ): Promise<boolean> {
   const assistant = await deps.getAssistant(
-    { avatarFilepath: getStoredPathCandidates(imagePath.canonicalPath) },
+    { avatarFilepath: getStoredPathCandidates(imagePath) },
     { _id: 1, assistant_id: 1, endpoint: 1 },
   );
   if (!assistant) {

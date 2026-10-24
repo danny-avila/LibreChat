@@ -699,6 +699,7 @@ describe('createImageAuthorizationMiddleware', () => {
     const privateBytes = Buffer.from('VICTIM_PRIVATE_BYTES');
     const ownerBytes = Buffer.from('OWNER_IMAGE_BYTES');
     const publicBytes = Buffer.from('PUBLIC_AVATAR_BYTES');
+    const assistantFilenames = ['company logo.png', '会社.png', 'company+logo.png'];
     let imageRoot: string;
 
     beforeAll(() => {
@@ -716,6 +717,10 @@ describe('createImageAuthorizationMiddleware', () => {
         [`${VIEWER_ID}/profile%2F.png`, ownerBytes],
         [`${OWNER_ID}/${AGENT_PATH.split('/').pop()}?private.png`, privateBytes],
         [`${OWNER_ID}/${AGENT_PATH.split('/').pop()}?manual=true`, privateBytes],
+        ...assistantFilenames.map((filename) => [`${OWNER_ID}/${filename}`, publicBytes] as const),
+        [`${OWNER_ID}/company logo.png?manual=true`, privateBytes],
+        [`${OWNER_ID}/company logo.png#private`, privateBytes],
+        [`${OWNER_ID}/company%20logo.png`, privateBytes],
       ] as const;
       for (const [filename, bytes] of files) {
         writeFileSync(join(imageRoot, filename), bytes);
@@ -757,7 +762,14 @@ describe('createImageAuthorizationMiddleware', () => {
         app = express();
         const router = express.Router();
         router.use(staticCache(imageRoot, { skipGzipScan }) as RequestHandler);
-        app.use(`${basePath}/images`, createImageAuthorizationMiddleware({}, deps), router);
+        app.use(
+          `${basePath}/images`,
+          createImageAuthorizationMiddleware(
+            { assistantEndpoints: [{ endpoint: 'assistants', privateAssistants: false }] },
+            deps,
+          ),
+          router,
+        );
       });
 
       it('denies direct victim requests with and without an active session', async () => {
@@ -807,6 +819,60 @@ describe('createImageAuthorizationMiddleware', () => {
         expect(response.headers['cache-control']).toBe('private, no-store');
         expect(response.headers['content-encoding']).toBe(skipGzipScan ? undefined : 'gzip');
       });
+
+      describe.each(['raw', 'encoded'])('stored assistant paths: %s', (representation) => {
+        it.each(assistantFilenames)(
+          'serves shared assistant avatar %s to a non-owner',
+          async (filename) => {
+            const storedPath = `/images/${OWNER_ID}/${
+              representation === 'raw' ? filename : encodeURIComponent(filename)
+            }`;
+            for (const suffix of ['', '?manual=false', '?manual=true']) {
+              jest.mocked(deps.getAssistant).mockImplementation(async (query) =>
+                query.avatarFilepath?.includes(`${storedPath}${suffix}`)
+                  ? {
+                      _id: new Types.ObjectId(AGENT_DB_ID),
+                      assistant_id: 'asst_shared',
+                      endpoint: 'assistants',
+                    }
+                  : null,
+              );
+              const result = await request(app)
+                .get(`${basePath}/images/${OWNER_ID}/${encodeURIComponent(filename)}`)
+                .set('Cookie', `refreshToken=${signUser(VIEWER_ID)}`)
+                .set('Accept-Encoding', 'gzip');
+              expect(result.status).toBe(200);
+              expect(result.body).toEqual(publicBytes);
+              expect(result.headers['cache-control']).toBe('private, no-store');
+            }
+          },
+        );
+      });
+
+      it.each(['%3Fmanual=true', '%23private', '%2520logo.png'])(
+        'does not alias an assistant filename suffix %s to a stored URL',
+        async (suffix) => {
+          const storedPath = `/images/${OWNER_ID}/${
+            suffix === '%2520logo.png' ? 'company%20logo.png' : 'company logo.png'
+          }?manual=true`;
+          jest.mocked(deps.getAssistant).mockImplementation(async (query) =>
+            query.avatarFilepath?.includes(storedPath)
+              ? {
+                  _id: new Types.ObjectId(AGENT_DB_ID),
+                  assistant_id: 'asst_shared',
+                  endpoint: 'assistants',
+                }
+              : null,
+          );
+          const filename =
+            suffix === '%2520logo.png' ? `company${suffix}` : `company%20logo.png${suffix}`;
+          const result = await request(app)
+            .get(`${basePath}/images/${OWNER_ID}/${filename}`)
+            .set('Cookie', `refreshToken=${signUser(VIEWER_ID)}`);
+          expect(result.status).toBe(403);
+          expect(result.body).not.toEqual(privateBytes);
+        },
+      );
 
       it('serves the exact PUBLIC avatar but not a filename with an encoded delimiter', async () => {
         const response = await request(app)
