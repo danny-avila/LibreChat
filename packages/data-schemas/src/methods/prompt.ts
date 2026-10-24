@@ -4,6 +4,7 @@ import {
   PermissionBits,
   ResourceType,
   SystemCategories,
+  PromptGroupSources,
   Time,
 } from 'librechat-data-provider';
 import type { Model, Types } from 'mongoose';
@@ -234,7 +235,7 @@ export function createPromptMethods(
       const groups = await PromptGroup.find(query)
         .sort({ numberOfGenerations: -1, updatedAt: -1, _id: 1 })
         .select(
-          'name numberOfGenerations oneliner category author authorName createdAt updatedAt command productionId',
+          'name numberOfGenerations oneliner category author authorName createdAt updatedAt command productionId source sourcePromptName sourceProjectId sourceDestination',
         )
         .lean();
       return await attachProductionPrompts(groups as unknown as Array<Record<string, unknown>>);
@@ -303,7 +304,7 @@ export function createPromptMethods(
           .skip(skip)
           .limit(limit)
           .select(
-            'name numberOfGenerations oneliner category productionId author authorName createdAt updatedAt command',
+            'name numberOfGenerations oneliner category productionId author authorName createdAt updatedAt command source sourcePromptName sourceProjectId sourceDestination',
           )
           .lean(),
         PromptGroup.countDocuments(query),
@@ -443,7 +444,7 @@ export function createPromptMethods(
     const findQuery = PromptGroup.find(matchQuery)
       .sort({ numberOfGenerations: -1, updatedAt: -1, _id: 1 })
       .select(
-        'name numberOfGenerations oneliner category productionId author authorName createdAt updatedAt command',
+        'name numberOfGenerations oneliner category productionId author authorName createdAt updatedAt command source sourcePromptName sourceProjectId sourceDestination',
       );
 
     if (isPaginated && normalizedLimit) {
@@ -526,7 +527,17 @@ export function createPromptMethods(
       const { prompt, group, author, authorName } = saveData;
 
       let newPromptGroup = await PromptGroup.findOneAndUpdate(
-        { ...group, author, authorName, productionId: null },
+        /**
+         * Only reuse native groups, including legacy groups with no source. Mirrored
+         * groups can also lack a productionId, but must not receive a native prompt.
+         */
+        {
+          ...group,
+          author,
+          authorName,
+          productionId: null,
+          source: { $in: [PromptGroupSources.native, null] },
+        },
         { $setOnInsert: { ...group, author, authorName, productionId: null } },
         { new: true, upsert: true },
       )
