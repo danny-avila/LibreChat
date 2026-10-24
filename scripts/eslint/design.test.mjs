@@ -126,6 +126,10 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
     "cn('[&:disabled:hover]:opacity-50')",
     "cn('[&:not(:disabled)]:hover:opacity-50 [&:disabled:hover]:opacity-50')",
     "cn(disabled && '[.foo_&]:opacity-50')",
+    "cn('[&[data-disabled=true]]:opacity-50', disabledFillClasses)",
+    'cn("[&[data-disabled=\'true\']]:opacity-50", disabledFillClasses)',
+    "cn('[&[aria-disabled=true]]:opacity-50', disabledFillClasses)",
+    'cn(\'[&[aria-disabled="true"]]:opacity-50\', disabledFillClasses)',
     "const faded = 'opacity-50'; cn(busy && faded, busy && disabledFillClasses)",
     "const faded = 'opacity-50'; cn(faded)",
     "cn('[&:is(:disabled)]:opacity-50 [&:where(:disabled)]:opacity-40', disabledFillClasses)",
@@ -222,6 +226,22 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
     {
       code: "cn('*:disabled:opacity-50', 'theme-disabled:*:opacity-100')",
       errors: [missing('*:disabled:opacity-50')],
+    },
+    {
+      code: "cn('[&[data-disabled=true]]:opacity-50')",
+      errors: [missing('[&[data-disabled=true]]:opacity-50')],
+    },
+    {
+      code: 'cn("[&[data-disabled=\'true\']]:opacity-50")',
+      errors: [missing("[&[data-disabled='true']]:opacity-50")],
+    },
+    {
+      code: "cn('[&[aria-disabled=true]]:opacity-50')",
+      errors: [missing('[&[aria-disabled=true]]:opacity-50')],
+    },
+    {
+      code: 'cn(\'[&[aria-disabled="true"]]:opacity-50\')',
+      errors: [missing('[&[aria-disabled="true"]]:opacity-50')],
     },
     {
       code: "cn('[&:disabled]:opacity-40')",

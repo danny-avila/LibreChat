@@ -92,10 +92,11 @@ const isPlaced = (variant) =>
       /:has\(/.test(variant)));
 
 /** The disabled markers `theme-disabled` matches (`:disabled`, `[data-disabled]`,
- *  `[aria-disabled='true']`, and `[&:is(:disabled)]`, which implies one); a self variant spelled
+ *  `[aria-disabled='true']`, and `[&:is(:disabled)]`, which implies one; a valued
+ *  `[&[data-disabled=true]]` selects a subset of `[data-disabled]`); a self variant spelled
  *  with another marker, such as `data-[state=disabled]`, is one no recipe restores. */
 const SELF_MARKERS = new RegExp(
-  String.raw`^(?:disabled|aria-disabled|data-disabled|data-\[disabled(?:=["']?true["']?)?\]|aria-\[disabled=["']?true["']?\]|\[&:(?:disabled|(?:is|where)\(:disabled\))\]|\[&\[data-disabled\]\]|\[&\[aria-disabled=["']?true["']?\]\])$`,
+  String.raw`^(?:disabled|aria-disabled|data-disabled|data-\[disabled(?:=["']?true["']?)?\]|aria-\[disabled=["']?true["']?\]|\[&:(?:disabled|(?:is|where)\(:disabled\))\]|\[&\[data-disabled(?:=["']?[\w-]+["']?)?\]\]|\[&\[aria-disabled=["']?true["']?\]\])$`,
 );
 
 const TOPOLOGY_ORDER = ['group', 'peer', 'within', 'self'];
