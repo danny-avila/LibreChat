@@ -54,6 +54,7 @@ type ImagePath = {
 
 type AssistantImageRecord = Pick<IAssistant, '_id' | 'assistant_id'> & {
   endpoint?: string;
+  user?: IAssistant['user'];
 };
 
 type ResolvedImageConfig = {
@@ -371,7 +372,7 @@ async function canViewAssistantAvatar(
 ): Promise<boolean> {
   const assistant = await deps.getAssistant(
     { avatarFilepath: getStoredPathCandidates(imagePath) },
-    { _id: 1, assistant_id: 1, endpoint: 1 },
+    { _id: 1, assistant_id: 1, endpoint: 1, user: 1 },
   );
   if (!assistant) {
     return false;
@@ -383,7 +384,7 @@ async function canViewAssistantAvatar(
   if (!viewer || viewer.tenantId !== owner.tenantId) {
     return false;
   }
-  if (isSharedAssistant(assistant, configs)) {
+  if (assistant.user?.toString() === viewerId || isSharedAssistant(assistant, configs)) {
     return true;
   }
   const principals = await loadPrincipals(viewerId, viewer, deps);
