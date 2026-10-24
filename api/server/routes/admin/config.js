@@ -2,6 +2,7 @@ const express = require('express');
 const {
   rejectUnsafeConfigKeys,
   createAdminConfigHandlers,
+  allowBeforeTermsAcceptance,
   createAdminConfigReadHandlers,
   createAdminConfigCatalogHandlers,
 } = require('@librechat/api');
@@ -82,7 +83,8 @@ const catalogHandlers = createAdminConfigCatalogHandlers({
   overrideEnvAllowlist: process.env.CONFIG_OVERRIDE_ENV_ALLOWLIST,
 });
 
-router.use(requireJwtAuth, requireAdminAccess, rejectUnsafeConfigKeys);
+/** Config reads and writes stay open to an admin who has not accepted the terms. */
+router.use(allowBeforeTermsAcceptance, requireJwtAuth, requireAdminAccess, rejectUnsafeConfigKeys);
 
 router.get('/', handlers.listConfigs);
 router.get('/meta', handlers.getConfigMeta);

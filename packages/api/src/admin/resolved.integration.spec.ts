@@ -361,6 +361,7 @@ describe('GET /resolved/:principalType/:principalId', () => {
       hasAnyConfigReadAccess: async () => false,
     });
     expect(forbidden.statusCode).toBe(403);
+    expect(forbidden.body?.code).toBe('FORBIDDEN');
     const invalid = await getResolved('tenant', 'x');
     expect(invalid.statusCode).toBe(400);
   });
@@ -439,6 +440,7 @@ describe('GET /effective?userId=', () => {
       hasCapability: async (_user, capability: SystemCapability) => capability === 'read:users',
     });
     expect(withoutGroups.statusCode).toBe(403);
+    expect(withoutGroups.body?.code).toBe('FORBIDDEN');
     const withoutConfigs = await getEffective(userId, {
       hasAnyConfigReadAccess: async () => false,
     });

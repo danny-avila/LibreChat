@@ -37,16 +37,18 @@ import type { GetAppConfigOptions } from '~/app/service';
 import type { ManifestTool } from '~/tools/available';
 import type { ServerRequest } from '~/types/http';
 import {
+  canReadSection,
+  getCapabilityUser,
+  validatePrincipalType,
+  forbiddenResponse,
+  authRequiredResponse,
+  principalNotFoundResponse,
+} from './config';
+import {
   parseEnvAllowlist,
   collectEnvReferenceSections,
   collectDefaultEnvReferenceSections,
 } from '~/app/allowlist';
-import {
-  canReadSection,
-  getCapabilityUser,
-  validatePrincipalType,
-  principalNotFoundResponse,
-} from './config';
 import { resolveServedCustomEndpoints } from '~/endpoints/custom/config';
 import { listAvailableTools } from '~/tools/available';
 import { getSafeErrorMetadata } from '~/utils/errors';
@@ -493,10 +495,10 @@ export function createAdminConfigCatalogHandlers(deps: AdminConfigCatalogDeps): 
       }
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
       if (!(await hasAnyConfigReadAccess(user))) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
       const isBase = isBaseConfigPrincipal({ principalType, principalId });
       const [readable, exists] = await Promise.all([
@@ -576,10 +578,10 @@ export function createAdminConfigCatalogHandlers(deps: AdminConfigCatalogDeps): 
     try {
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
       if (!(await hasAnyConfigReadAccess(user))) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
       const [baseConfig, overrides] = await Promise.all([
         getAppConfig({ tenantId: user.tenantId, baseOnly: true }),

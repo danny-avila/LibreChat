@@ -29,6 +29,7 @@ import {
   BASE_ONLY_CONFIG_PATHS,
   BASE_ONLY_CONFIG_SECTIONS,
   PROCESS_MCP_SERVER_FIELDS,
+  DEPLOYMENT_ONLY_CONFIG_PATHS,
   INTERFACE_PERMISSION_FIELDS,
   mapModelToAzureConfig,
   BASE_PRINCIPAL_CONFIG_SECTIONS,
@@ -59,6 +60,7 @@ import {
   encryptConfigSecretFields,
   resolveRuntimeConfigSecrets,
 } from './secrets';
+import { allowBeforeTermsAcceptance, createTermsAcceptanceGate } from '~/middleware/terms';
 import { createRequestSanitizer, rejectUnsafeConfigKeys } from '~/middleware/sanitize';
 import { resolvePreAuthAppConfig, resolvePreLoginAppConfig } from '~/app/resolve';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
@@ -271,7 +273,7 @@ describe('GET /api/admin/config/meta', () => {
     const forbidden = mockRes();
     await createHandlers({ hasAnyConfigReadAccess }).getConfigMeta(mockReq(), forbidden);
     expect(forbidden.statusCode).toBe(403);
-    expect(forbidden.body).toEqual({ error: 'Insufficient permissions' });
+    expect(forbidden.body).toEqual({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
     expect(hasAnyConfigReadAccess).toHaveBeenCalledWith(expect.objectContaining({ id: 'u1' }));
   });
 
@@ -300,6 +302,7 @@ describe('GET /api/admin/config/meta', () => {
     expect(meta.metaVersion).toBe(1);
     expect(Object.keys(meta.versions)).toEqual(['librechat', 'dataProvider', 'configSchema']);
     expect(Object.keys(meta.features).sort()).toEqual([
+      'adminTermsExempt',
       'awaitedInvalidation',
       'azureGroupSecrets',
       'catalogApi',
@@ -309,6 +312,7 @@ describe('GET /api/admin/config/meta', () => {
       'envAllowlist',
       'envStatus',
       'expectedRevision',
+      'issueParams',
       'preAuthBaseOverrides',
       'principalCheck',
       'priorityRoute',
@@ -321,6 +325,7 @@ describe('GET /api/admin/config/meta', () => {
       'secretRebinding',
       'sectionAllowlist',
       'webSearchStoredKeys',
+      'writeReport',
       'yamlMcpHide',
       'yamlSecretPreview',
     ]);
@@ -338,6 +343,7 @@ describe('GET /api/admin/config/meta', () => {
       'baseOnlyPaths',
       'baseOnlySections',
       'basePrincipalSections',
+      'deploymentOnlyPaths',
       'interface',
       'overrideKeyMap',
       'processMcpFields',
@@ -374,6 +380,9 @@ describe('GET /api/admin/config/meta', () => {
       catalogApi: true,
       envStatus: true,
       reloadRoute: true,
+      writeReport: true,
+      issueParams: true,
+      adminTermsExempt: true,
     });
   });
 
@@ -408,6 +417,7 @@ describe('meta rules equal the rules the server applies', () => {
     expect(meta.rules.baseOnlySections).toEqual([...BASE_ONLY_CONFIG_SECTIONS]);
     expect(meta.rules.basePrincipalSections).toEqual([...BASE_PRINCIPAL_CONFIG_SECTIONS]);
     expect(meta.rules.baseOnlyPaths).toEqual([...BASE_ONLY_CONFIG_PATHS]);
+    expect(meta.rules.deploymentOnlyPaths).toEqual({ ...DEPLOYMENT_ONLY_CONFIG_PATHS });
     expect(meta.rules.processMcpFields).toEqual([...PROCESS_MCP_SERVER_FIELDS]);
     expect(meta.rules.interface).toEqual({
       permissionFields: [...INTERFACE_PERMISSION_FIELDS],
@@ -508,7 +518,28 @@ describe('meta rules equal the rules the server applies', () => {
     const writeConfigDocument = jest.fn();
     for (const section of meta.rules.baseOnlySections) {
       const res = await patch([{ fieldPath: `${section}.x`, value: 1 }], { writeConfigDocument });
-      expect(res.body).toEqual({ message: 'No actionable field entries provided', revision: null });
+      expect(res.body).toEqual({
+        message: 'No actionable field entries provided',
+        revision: null,
+        config: null,
+        applied: [],
+        skipped: [{ path: `${section}.x`, segments: [section, 'x'], reason: 'base_only_section' }],
+      });
+    }
+    expect(writeConfigDocument).not.toHaveBeenCalled();
+  });
+
+  it('skips writes to every listed deployment-only path, and the merge keeps the YAML value', async () => {
+    const writeConfigDocument = jest.fn();
+    for (const path of Object.keys(meta.rules.deploymentOnlyPaths)) {
+      const res = await patch([{ fieldPath: path, value: 1 }], { writeConfigDocument });
+      expect(res.body?.skipped).toEqual([
+        { path, segments: path.split('.'), reason: 'deployment_only_path' },
+      ]);
+      const merged = mergeConfigOverrides({ config: {} } as AppConfig, [
+        storedConfig(setIn({}, path.split('.'), 1)),
+      ]);
+      expect([path, getIn(merged, path)]).toEqual([path, undefined]);
     }
     expect(writeConfigDocument).not.toHaveBeenCalled();
   });
@@ -1805,6 +1836,130 @@ const FEATURE_PROBES: Record<AdminConfigFeatureFlag, () => Promise<boolean>> = {
       audited[1].metadata?.code === 'CONFIG_RELOAD_INVALID' &&
       audited[2].outcome === 'failure'
     );
+  },
+  async writeReport() {
+    const base = {
+      config: {
+        mcpServers: { local: { type: 'stdio', command: 'node', args: ['server.js'] } },
+      },
+    } as Partial<AppConfig> as AppConfig;
+    const getAppConfig = jest.fn().mockResolvedValue(base);
+    const writeConfigDocument = jest.fn(
+      async (_type: string, _id: string, draft: ConfigDraft): Promise<ConfigRecord> =>
+        storedConfig(draft.overrides ?? {}, draft.tombstones),
+    );
+    const written = await patch(
+      [
+        { fieldPath: 'interface', value: { prompts: false, modelSelect: true } },
+        {
+          fieldPath: 'endpoints.agents',
+          value: { eventDriven: { deadLetterRetentionDays: 1 }, recursionLimit: 20 },
+        },
+        { fieldPath: 'rateLimits.fileUploads.ipMax', value: 1 },
+      ],
+      { getAppConfig, writeConfigDocument },
+    );
+    const stdio = await patch([{ fieldPath: 'mcpServers.local.title', value: 'Local' }], {
+      getAppConfig,
+      writeConfigDocument,
+    });
+    const stored = storedConfig(
+      { rateLimits: { fileUploads: { ipMax: 1 } }, mcpServers: { local: { title: 'Local' } } },
+      ['filters'],
+    );
+    const read = mockRes();
+    await createHandlers({
+      getAppConfig,
+      findConfigByPrincipal: jest.fn(async (_type: PrincipalType, id: string) =>
+        id === 'r1' ? stored : null,
+      ),
+    }).getConfig(mockReq({ params: { principalType: 'role', principalId: 'r1' } }), read);
+    const invalid = await write('patchConfigField', {
+      params: { principalType: 'nobody', principalId: 'r1' },
+      body: { entries: [] },
+    });
+    const summarize = (list: unknown) =>
+      (list as Array<{ path: string; reason?: string; kind?: string }>)
+        .map(({ path, reason, kind }) => [kind, path, reason].filter(Boolean).join(':'))
+        .sort();
+    return (
+      written.statusCode === 200 &&
+      JSON.stringify(summarize(written.body?.applied)) ===
+        JSON.stringify(['endpoints.agents', 'interface']) &&
+      JSON.stringify(summarize(written.body?.skipped)) ===
+        JSON.stringify([
+          'endpoints.agents.eventDriven:deployment_only_path',
+          'interface.prompts:interface_permission',
+          'rateLimits.fileUploads.ipMax:deployment_only_path',
+        ]) &&
+      JSON.stringify(writeConfigDocument.mock.calls[0]?.[2].overrides) ===
+        JSON.stringify({
+          interface: { modelSelect: true },
+          endpoints: { agents: { recursionLimit: 20 } },
+        }) &&
+      stdio.statusCode === 400 &&
+      stdio.body?.code === 'PROCESS_MCP_SERVER_OVERRIDE' &&
+      writeConfigDocument.mock.calls.length === 1 &&
+      read.body?.ignoredBasis === 'base' &&
+      JSON.stringify(summarize(read.body?.ignored)) ===
+        JSON.stringify([
+          'override:mcpServers.local:process_mcp_server',
+          'override:rateLimits:deployment_only_path',
+          'tombstone:filters:base_only_section',
+        ]) &&
+      invalid.statusCode === 400 &&
+      invalid.body?.code === 'INVALID_PRINCIPAL_TYPE'
+    );
+  },
+  async issueParams() {
+    const res = await patch([
+      { fieldPath: 'endpoints.agents.recursionLimit', value: 0 },
+      { fieldPath: 'endpoints.allowedAddresses', value: ['localhost'] },
+    ]);
+    const issues = [...((res.body?.issues as Array<{ path: string }>) ?? [])].sort((a, b) =>
+      a.path.localeCompare(b.path),
+    );
+    return (
+      res.statusCode === 400 &&
+      JSON.stringify(issues) ===
+        JSON.stringify([
+          {
+            path: 'endpoints.agents.recursionLimit',
+            segments: ['endpoints', 'agents', 'recursionLimit'],
+            code: 'too_small',
+            params: { minimum: 1, inclusive: true, exact: false, type: 'number' },
+          },
+          {
+            path: 'endpoints.allowedAddresses.0',
+            segments: ['endpoints', 'allowedAddresses', '0'],
+            code: 'custom',
+            params: { reason: 'missing_port' },
+          },
+        ])
+    );
+  },
+  async adminTermsExempt() {
+    const gate = createTermsAcceptanceGate({
+      getAppConfig: jest.fn().mockResolvedValue({
+        interfaceConfig: { termsOfService: { modalAcceptance: true } },
+      }),
+    });
+    const passes = async (optedOut: boolean): Promise<boolean> => {
+      const req = {
+        method: 'PATCH',
+        baseUrl: '/api/admin/config',
+        path: '/role/r1/fields',
+        user: { id: 'u1', role: 'ADMIN', termsAccepted: false },
+      } as unknown as Request;
+      if (optedOut) {
+        allowBeforeTermsAcceptance(req, mockRes(), jest.fn());
+      }
+      const next = jest.fn();
+      const res = mockRes();
+      await gate(req, res, next);
+      return next.mock.calls.length === 1 && res.body === undefined;
+    };
+    return (await passes(true)) && !(await passes(false));
   },
 };
 

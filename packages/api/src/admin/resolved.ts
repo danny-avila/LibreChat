@@ -28,6 +28,8 @@ import {
   collectConfigSections,
   validatePrincipalType,
   redactConfigForResponse,
+  forbiddenResponse,
+  authRequiredResponse,
   principalNotFoundResponse,
   filterSectionsByReadAccess,
   filterConfigDocForReadAccess,
@@ -188,10 +190,10 @@ export function createAdminConfigReadHandlers(deps: AdminConfigReadDeps): {
       }
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
       if (!(await hasAnyConfigReadAccess(user))) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
       if (!resolveConfigLayers) {
         return res.status(501).json({ error: 'Resolved config is not available' });
@@ -245,7 +247,7 @@ export function createAdminConfigReadHandlers(deps: AdminConfigReadDeps): {
       }
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
       const [canReadConfigs, canReadUsers, canReadGroups] = await Promise.all([
         hasAnyConfigReadAccess(user),
@@ -253,7 +255,7 @@ export function createAdminConfigReadHandlers(deps: AdminConfigReadDeps): {
         hasCapability(user, SystemCapabilities.READ_GROUPS),
       ]);
       if (!canReadConfigs || !canReadUsers || !canReadGroups) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
       if (
         !resolveConfigLayers ||

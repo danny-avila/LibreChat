@@ -5,6 +5,7 @@ import {
   PERMISSION_SUB_KEYS,
   BASE_ONLY_CONFIG_PATHS,
   DATA_PROVIDER_VERSION,
+  DEPLOYMENT_ONLY_CONFIG_PATHS,
   BASE_ONLY_CONFIG_SECTIONS,
   PROCESS_MCP_SERVER_FIELDS,
   INTERFACE_PERMISSION_FIELDS,
@@ -52,6 +53,9 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   catalogApi: true,
   envStatus: true,
   reloadRoute: true,
+  writeReport: true,
+  issueParams: true,
+  adminTermsExempt: true,
 };
 
 /**
@@ -73,6 +77,7 @@ export function buildAdminConfigMeta(limits: AdminConfigMeta['limits']): AdminCo
       baseOnlySections: [...BASE_ONLY_CONFIG_SECTIONS],
       basePrincipalSections: [...BASE_PRINCIPAL_CONFIG_SECTIONS],
       baseOnlyPaths: [...BASE_ONLY_CONFIG_PATHS],
+      deploymentOnlyPaths: { ...DEPLOYMENT_ONLY_CONFIG_PATHS },
       ...getConfigMergeRules(),
       ...getConfigSecretRules(),
       processMcpFields: [...PROCESS_MCP_SERVER_FIELDS],

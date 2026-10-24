@@ -2,6 +2,7 @@ import type {
   PrincipalType,
   PrincipalModel,
   TCustomConfig,
+  DeploymentOnlyConfigReason,
   TConfig,
 } from 'librechat-data-provider';
 
@@ -47,10 +48,169 @@ export type AdminConfigResponse = {
   config: AdminConfig;
 };
 
-/** A write the server had nothing to apply for; `revision` is the stored document's, if any. */
+/** A location in a config document: its dotted `path`, and the same location key by key. */
+export type AdminConfigLocation = {
+  path: string;
+  /** Unambiguous where a record key itself holds a dot (`gpt-4.1`). */
+  segments: string[];
+};
+
+/**
+ * What a write did with each location it addressed (`writeReport`): stored or removed
+ * (`applied`), or left alone because the generic config API never stores it there (`skipped`,
+ * with the reason). A skipped part of a written value is listed at its own location, and the
+ * rest of the value is stored.
+ */
+export type AdminConfigWriteReport = {
+  applied: AdminConfigLocation[];
+  skipped: Array<AdminConfigLocation & { reason: AdminConfigSkipReason }>;
+};
+
+/**
+ * 200 or 201 from PUT, PATCH `/fields`, POST `/fields/tombstone` and DELETE `/fields`: the
+ * written document as a read shows it, the write report, and the credentials the document's
+ * layer drops at merge (`secretRebinding`).
+ */
+export type AdminConfigWriteResponse = AdminConfigResponse &
+  AdminConfigWriteReport & {
+    ignored?: AdminConfigIgnoredSecret[];
+  };
+
+/**
+ * A write the server had nothing to apply for; `revision` is the stored document's, if any.
+ * With `writeReport`, a write whose every location was skipped also carries the report and the
+ * stored document (`null` when the principal has none).
+ */
 export type AdminConfigNoopResponse = {
   message: string;
   revision: string | null;
+} & Partial<AdminConfigWriteReport & { config: AdminConfig | null }>;
+
+/**
+ * A stored override, or tombstone, that the runtime merge leaves out (`writeReport`), at its own
+ * location. `kind` says which of the document's parts holds it: removing the override (DELETE
+ * `/fields` at `path`) or the tombstone clears it.
+ */
+export type AdminConfigIgnoredOverride = AdminConfigLocation & {
+  reason: AdminConfigIgnoreReason;
+  kind: 'override' | 'tombstone';
+};
+
+/**
+ * GET `/:principalType/:principalId`. `ignored` lists what the document stores that the merge
+ * does not apply, judged as the merge applies the document: over librechat.yaml for Base
+ * (`ignoredBasis: 'yaml'`), and over librechat.yaml and the active Base document for any other
+ * principal (`ignoredBasis: 'base'`), whose users can hold other profiles in between that change
+ * the result. Limited to the sections the caller can read. Both are left out together, rather
+ * than claiming nothing is ignored, when the server cannot judge the document: librechat.yaml
+ * (the base config) or, for a principal other than Base, the Base document cannot be read, or
+ * building the report fails. A missing `ignored` means unknown, not empty.
+ */
+export type AdminConfigReadResponse = AdminConfigResponse & {
+  ignored?: Array<AdminConfigIgnoredOverride | AdminConfigIgnoredSecret>;
+  ignoredBasis?: 'yaml' | 'base';
+};
+
+/**
+ * Bounds and options a zod issue names, copied from the schema and never from the submitted
+ * value, so they are safe to return (`issueParams`). Present only where the issue is attributed
+ * to the exact node that failed.
+ */
+export type ConfigIssueParams = {
+  /** `invalid_type`: the type the schema expects. `invalid_literal`: the literal it expects. */
+  expected?: string | number | boolean | null;
+  /** `invalid_type`: the type that was found: a type name, never the value. */
+  received?: string;
+  /** `invalid_enum_value`, `invalid_union_discriminator`: the values the schema accepts. */
+  options?: Array<string | number | boolean | null>;
+  /** `too_small`: the bound, when it is a number (a date bound in epoch milliseconds). */
+  minimum?: number;
+  /** `too_big`: the bound, when it is a number (a date bound in epoch milliseconds). */
+  maximum?: number;
+  /** `too_small`, `too_big`: whether the bound itself is allowed. */
+  inclusive?: boolean;
+  /** `too_small`, `too_big`: whether the length or size must equal the bound. */
+  exact?: boolean;
+  /** `too_small`, `too_big`: what is bounded (`number`, `string`, `array`, `set`, `date`). */
+  type?: string;
+  /** `invalid_string`: the check that failed (`url`, `email`, `regex`, `startsWith`, ...). */
+  validation?: string;
+  /** `not_multiple_of`: the step the value must be a multiple of. */
+  multipleOf?: number;
+  /** `custom`: the stable reason a refinement names (`missing_port`), never its message. */
+  reason?: string;
+};
+
+/** One validation issue as the admin API returns it: a location, a stable code, safe params. */
+export type AdminConfigIssue = AdminConfigLocation & {
+  code: string;
+  params?: ConfigIssueParams;
+};
+
+/**
+ * 400 `CONFIG_OVERRIDE_INVALID`: the written document fails validation. Messages are never
+ * returned, because schema messages can echo the submitted values.
+ */
+export type AdminConfigInvalidResponse = {
+  error: string;
+  code: 'CONFIG_OVERRIDE_INVALID';
+  issues: AdminConfigIssue[];
+  /** `POST …/changes` only: the batch's skipped report. */
+  skipped?: AdminConfigChangesResponse['skipped'];
+};
+
+/**
+ * The stable `code` the admin config API's own 4xx responses carry (`writeReport`), beside a
+ * human-readable `error`: every handler response, the unsafe-key check, and the capability
+ * middleware, which answers `AUTH_REQUIRED` and `FORBIDDEN` with a `message` instead of
+ * `error`. Shared layers in front of them answer without a `code`: the session check (401
+ * `{ message }` for a missing, invalid or expired token; read it as `AUTH_REQUIRED`), body
+ * parsing (400 for malformed JSON, 413 for an oversized body) and an unmatched route (404
+ * `Endpoint not found`).
+ */
+export type AdminConfigErrorCode =
+  | 'AUTH_REQUIRED'
+  | 'FORBIDDEN'
+  | 'FORBIDDEN_SECTION'
+  | 'INVALID_PRINCIPAL_TYPE'
+  | 'INVALID_OVERRIDES'
+  | 'INVALID_FIELD_PATH'
+  | 'DUPLICATE_FIELD_PATH'
+  | 'ENTRIES_REQUIRED'
+  | 'PATCH_TOO_LARGE'
+  | 'OPS_REQUIRED'
+  | 'TOO_MANY_OPS'
+  | 'INVALID_CHANGE'
+  | 'INVALID_DRY_RUN'
+  | 'INVALID_PRIORITY'
+  | 'INVALID_IS_ACTIVE'
+  | 'INVALID_EXPECTED_REVISION'
+  | 'PROCESS_MCP_CONFIG'
+  | 'PROCESS_MCP_SERVER_OVERRIDE'
+  | 'LANGFUSE_HEADERS_CONFIG'
+  | 'SECRET_PATH'
+  | 'UNKNOWN_SECTION'
+  | 'CONFIG_UNSAFE_KEY'
+  | 'CONFIG_PATH_INVALID'
+  | 'CONFIG_ENTRY_INVALID'
+  | 'CONFIG_RENAME_INVALID'
+  | 'CONFIG_OVERRIDE_INVALID'
+  | 'CONFIG_SECRET_REENTRY_REQUIRED'
+  | 'MCP_API_KEY_REENTRY_REQUIRED'
+  | 'MCP_OAUTH_SECRET_REENTRY_REQUIRED'
+  | 'CONFIG_NOT_FOUND'
+  | 'PRINCIPAL_NOT_FOUND'
+  | 'CONFIG_VERSION_CONFLICT'
+  | 'CONFIG_KEY_NOT_STORABLE'
+  | 'INVALID_PRINCIPAL'
+  | 'INVALID_USER_ID'
+  | 'USER_NOT_FOUND'
+  | 'CONFIG_RELOAD_INVALID';
+
+/** A 4xx of the admin config API. Route-specific fields (`section`, `opIndex`, `reason`, ...) ride beside. */
+export type AdminConfigErrorResponse = {
+  error: string;
+  code: AdminConfigErrorCode;
 };
 
 /** 409: the stored document is not at the `expectedRevision` the write named. */
@@ -187,30 +347,58 @@ export type AdminConfigChangesRequest = AdminConfigWritePrecondition & {
 };
 
 /**
- * Why a change, or part of a `set` value, was not stored. The rest of the batch still applies.
+ * Why a write, a change, or part of a written value, was not stored. The rest of the request
+ * still applies, and it answers 200 (owner decision: skip and report, never 400).
  * - `base_only_section`: a section only `librechat.yaml` configures (`filters`, …).
  * - `base_only_path`: a field of an overridable section only `librechat.yaml` sets
- *   (`endpoints.agents.pullRequests.provider`, …).
+ *   (`endpoints.agents.pullRequests.provider`, …, `rules.baseOnlyPaths`), Base included.
+ * - `deployment_only_path`: a field only `librechat.yaml` sets because it is read at startup or
+ *   is an operator boundary (`rateLimits`, `cloudfront`, the tool filters, …,
+ *   `rules.deploymentOnlyPaths`), Base included.
  * - `dedicated_section`: a section with its own admin API (`langfuse`).
  * - `interface_permission`: an interface field that is a role permission.
+ * - `process_mcp_server`: a whole-document (PUT) or whole-section (`mcpServers`) write's entry
+ *   for an MCP server `librechat.yaml` runs as a local process, whose configuration overrides
+ *   never change. A write to a path inside such a server is refused instead (400
+ *   `PROCESS_MCP_SERVER_OVERRIDE`).
+ *
+ * Removing a stored value (DELETE `/fields`, an `unset` change) is cleanup and is never skipped
+ * for `base_only_path`, `deployment_only_path` or `process_mcp_server`.
  */
 export type AdminConfigSkipReason =
   | 'base_only_section'
   | 'base_only_path'
+  | 'deployment_only_path'
   | 'dedicated_section'
-  | 'interface_permission';
+  | 'interface_permission'
+  | 'process_mcp_server';
 
 /**
- * Why a stored change, or part of one (at its own `segments`), has no effect at runtime.
- * - `process_mcp_server`: a `set`, `tombstone` or `rename` addresses an MCP server
- *   `librechat.yaml` runs as a local process, whose configuration overrides never change, or a
- *   whole-section `mcpServers` tombstone leaves that server in place. An `unset` there is not
- *   reported: it asks for the YAML value, which is what runs.
- * - `base_only_path`: a `tombstone` above a base-only field `librechat.yaml` sets
- *   (`endpoints.agents.pullRequests.provider`, …) leaves that field in place and hides only the
- *   rest.
+ * Why a stored override, tombstone, change or part of one (at its own `segments`) has no effect
+ * at runtime. `POST …/changes` reports `process_mcp_server`, `base_only_path` and
+ * `deployment_only_path` for the changes it applies; GET `/:principalType/:principalId` reports
+ * every reason for what the document stores.
+ * - `process_mcp_server`: an override or tombstone of an MCP server `librechat.yaml` runs as a
+ *   local process, whose configuration overrides never change, or each such server a
+ *   whole-section `mcpServers` tombstone leaves in place.
+ * - `base_only_path`, `deployment_only_path`: a value stored at such a field (the merge keeps
+ *   `librechat.yaml`'s), or a field of either kind `librechat.yaml` sets below a tombstone, which
+ *   the merge puts back so the tombstone hides only the rest.
+ * - `invalid`: a value that fails validation where the merge applies it, so the value beneath
+ *   stays (stored before validation existed, or valid only over other layers).
+ * - `unknown_section`: a top-level key `configSchema` does not define (`sectionAllowlist`).
+ * - `base_only_section`, `dedicated_section`, `interface_permission`: as in
+ *   {@link AdminConfigSkipReason}, for a value or tombstone already stored.
  */
-export type AdminConfigIgnoreReason = 'process_mcp_server' | 'base_only_path';
+export type AdminConfigIgnoreReason =
+  | 'process_mcp_server'
+  | 'base_only_path'
+  | 'deployment_only_path'
+  | 'invalid'
+  | 'unknown_section'
+  | 'base_only_section'
+  | 'dedicated_section'
+  | 'interface_permission';
 
 /**
  * A credential the runtime merge leaves out of a document's layer, or a destination it sets back,
@@ -283,7 +471,7 @@ export type AdminConfigChangeErrorResponse = {
   code: string;
   opIndex?: number;
   reason?: string;
-  issues?: Array<{ path: string; segments: string[]; code: string }>;
+  issues?: AdminConfigIssue[];
   skipped?: AdminConfigChangesResponse['skipped'];
 };
 
@@ -299,6 +487,8 @@ export type AdminConfigChangeErrorResponse = {
  * - `base_principal_section`: a section only the Base document holds (`langfuse`), in another.
  * - `base_only_path`: a field only `librechat.yaml` sets (`rules.baseOnlyPaths`); it keeps the
  *   `librechat.yaml` value.
+ * - `deployment_only_path`: a field only `librechat.yaml` sets, read at startup or from
+ *   `librechat.yaml` itself (`rules.deploymentOnlyPaths`); it keeps the `librechat.yaml` value.
  * - `process_mcp_server`: an MCP server `librechat.yaml` runs as a local process.
  * - `interface_permission`: an interface field that is a role permission.
  * - `runtime_stop`: an interface feature `librechat.yaml` turns off, which stays off.
@@ -320,6 +510,7 @@ export type AdminConfigLayerIgnoreReason =
   | 'base_only_section'
   | 'base_principal_section'
   | 'base_only_path'
+  | 'deployment_only_path'
   | 'process_mcp_server'
   | 'interface_permission'
   | 'runtime_stop'
@@ -335,8 +526,9 @@ export type AdminConfigLayerIgnoreReason =
  * Part of a layer the merge does not apply as written. `segments` locate it in librechat.yaml
  * keys: in the document's overrides (array items by index), or for a credential or destination
  * the merge drops or sets back, as write responses name it (a custom endpoint by its name). A
- * tombstone above a `base_only_path` field or a `runtime_stop` feature names that field, which
- * the merge keeps while it removes the rest (write responses name a base-only field the same way).
+ * tombstone above a `base_only_path` or `deployment_only_path` field or a `runtime_stop` feature
+ * names that field, which the merge keeps while it removes the rest (write responses name such a
+ * field the same way).
  */
 export type AdminConfigLayerIgnored = {
   path: string;
@@ -712,6 +904,36 @@ export type AdminConfigEnvStatusResponse = {
  *   restarts. Every reload that runs is audited as `config.reloaded` with `metadata.broadcast`, a
  *   failed one with outcome `failure` and its `code`. A committed config write still reloads the
  *   file too, on the next read.
+ * - `writeReport`: PUT, PATCH `/fields`, POST `/fields/tombstone` and DELETE `/fields` answer with
+ *   `applied` and `skipped` beside `config` (`AdminConfigWriteResponse`), and a write whose every
+ *   location is skipped answers 200 with `message`, `revision`, the stored `config` (or `null`)
+ *   and the report. Skipped (`AdminConfigSkipReason`), Base included: base-only and dedicated
+ *   sections, interface permissions (a whole `interface` value keeps its other fields), base-only
+ *   and deployment-only fields (`rules.baseOnlyPaths`, `rules.deploymentOnlyPaths`; a write above
+ *   one stores the rest of its value, a removal of one is cleanup and applies), and in a PUT or a
+ *   whole `mcpServers` value the servers librechat.yaml runs as local processes. A value cut out
+ *   whole resets its path, in request order among a PATCH's entries. A write, rename
+ *   or tombstone inside such a server answers 400 `PROCESS_MCP_SERVER_OVERRIDE` on PATCH, POST
+ *   `/fields/tombstone` and `/changes` (with `opIndex`); DELETE `/fields` and `unset` stay
+ *   allowed. POST `/fields/tombstone` at an array element or inside one answers 400
+ *   `CONFIG_PATH_INVALID` (`inside_array`), as `/changes` does. The merge keeps librechat.yaml's
+ *   value at every deployment-only field. GET `/:principalType/:principalId` adds `ignored` and
+ *   `ignoredBasis` (`AdminConfigReadResponse`): every stored override or tombstone the merge
+ *   leaves out, with its `kind` and reason, and the credentials it drops (`secret_rebinding`);
+ *   both are left out when the server cannot judge the document. The config API's own 4xx
+ *   responses carry a stable `code` (`AdminConfigErrorCode`); the capability middleware adds
+ *   `AUTH_REQUIRED` and `FORBIDDEN` beside its `message`. The session check's 401 (an invalid
+ *   or expired token) and an unmatched route's 404 carry none.
+ * - `issueParams`: `CONFIG_OVERRIDE_INVALID` issues carry `params` (`ConfigIssueParams`) where
+ *   the issue is attributed to the exact node that failed: the expected type or literal, the
+ *   accepted options, numeric bounds with `inclusive`, `exact` and `type`, the failed string
+ *   check, the multiple, or a refinement's stable `reason`; never a submitted value or a
+ *   message. Each refused `allowedAddresses` entry is one `custom` issue with `reason` `empty`,
+ *   `format`, `missing_port` or `public_ip`.
+ * - `adminTermsExempt`: the admin config API (`/api/admin/config`, its reads and writes and
+ *   `POST /reload`) stays open to an admin who has not accepted the terms of service
+ *   (`interface.termsOfService.modalAcceptance`), so they can turn the setting off. Every other
+ *   route, admin routes that start work included, still answers 403 `terms_not_accepted`.
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'
@@ -736,7 +958,10 @@ export type AdminConfigFeatureFlag =
   | 'resolvedApi'
   | 'catalogApi'
   | 'envStatus'
-  | 'reloadRoute';
+  | 'reloadRoute'
+  | 'writeReport'
+  | 'issueParams'
+  | 'adminTermsExempt';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
 
@@ -786,6 +1011,12 @@ export type AdminConfigRules = AdminConfigMergeRules & {
   basePrincipalSections: string[];
   /** Fields inside overridable sections that only `librechat.yaml` sets. */
   baseOnlyPaths: string[];
+  /**
+   * Fields only `librechat.yaml` sets because they are read at startup (`startup`), are an
+   * operator boundary (`operator`) or are no longer read (`unused`). Writes skip them
+   * (`deployment_only_path`), Base included, and the merge keeps `librechat.yaml`'s value.
+   */
+  deploymentOnlyPaths: Record<string, DeploymentOnlyConfigReason>;
   secretFields: AdminConfigSecretFieldRule[];
   arraySecretFields: AdminConfigArraySecretFieldRule[];
   /** Secrets of record entries, kept and encrypted per entry like array secrets. */

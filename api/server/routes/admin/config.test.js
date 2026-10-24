@@ -4,12 +4,21 @@ const mongoSanitize = require('express-mongo-sanitize');
 const { createRequestSanitizer } = require('@librechat/api');
 
 let hasAdminAccess;
+/** Whether the deployment asks for terms acceptance, which the signed-in admin has not given. */
+let mockTermsRequired = false;
+/** Authenticates, then runs the real terms gate, as `requireJwtAuth` chains it. */
 const mockRequireJwtAuth = jest.fn((req, res, next) => {
   if (req.headers.authorization !== 'Bearer admin') {
     return res.status(401).json({ message: 'Unauthorized' });
   }
-  req.user = { id: 'user-1', _id: 'user-1', role: 'ADMIN' };
-  next();
+  req.user = { id: 'user-1', _id: 'user-1', role: 'ADMIN', termsAccepted: !mockTermsRequired };
+  const { createTermsAcceptanceGate } = require('@librechat/api');
+  const gate = createTermsAcceptanceGate({
+    getAppConfig: async () => ({
+      interfaceConfig: { termsOfService: { modalAcceptance: mockTermsRequired } },
+    }),
+  });
+  return gate(req, res, next);
 });
 const mockRequireCapability = jest.fn(() => (_req, res, next) => {
   if (!hasAdminAccess) {
@@ -87,6 +96,7 @@ describe('admin config routes', () => {
 
   beforeEach(() => {
     hasAdminAccess = true;
+    mockTermsRequired = false;
     mockDb.listAllConfigs.mockResolvedValue([]);
     mockDb.findConfigByPrincipal.mockResolvedValue(null);
     mockDb.writeConfigDocument.mockImplementation(async (principalType, principalId, draft) => ({
@@ -159,6 +169,35 @@ describe('admin config routes', () => {
     expect(response.body.config.overrides.endpoints.bedrock.inferenceProfiles).toEqual({
       [PROFILE]: ARN,
     });
+  });
+
+  it('takes config writes from an admin who has not accepted the terms, unlike other routes', async () => {
+    mockTermsRequired = true;
+    const gated = express();
+    gated.use(express.json());
+    gated.post('/api/agents/chat', mockRequireJwtAuth, (_req, res) => res.json({ ok: true }));
+
+    const chat = await request(gated)
+      .post('/api/agents/chat')
+      .set('authorization', 'Bearer admin')
+      .send({})
+      .expect(403);
+    expect(chat.body.code).toBe('terms_not_accepted');
+
+    const response = await request(app)
+      .patch('/api/admin/config/role/__base__/fields')
+      .set('authorization', 'Bearer admin')
+      .send({
+        entries: [{ fieldPath: 'interface.termsOfService.modalAcceptance', value: false }],
+      })
+      .expect(200);
+    expect(response.body.applied).toEqual([
+      {
+        path: 'interface.termsOfService.modalAcceptance',
+        segments: ['interface', 'termsOfService', 'modalAcceptance'],
+      },
+    ]);
+    expect(mockDb.writeConfigDocument).toHaveBeenCalledTimes(1);
   });
 
   it('serves the config contract behind the same auth', async () => {

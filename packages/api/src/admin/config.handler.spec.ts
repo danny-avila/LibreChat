@@ -473,6 +473,7 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(400);
       expect(res.body).toEqual({
         error: 'Process-backed MCP servers can only be configured in librechat.yaml',
+        code: 'PROCESS_MCP_CONFIG',
       });
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
@@ -494,6 +495,7 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(400);
       expect(res.body).toEqual({
         error: 'Langfuse request headers can only be configured in librechat.yaml',
+        code: 'LANGFUSE_HEADERS_CONFIG',
       });
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
@@ -517,6 +519,7 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(400);
       expect(res.body).toEqual({
         error: 'Langfuse request headers can only be configured in librechat.yaml',
+        code: 'LANGFUSE_HEADERS_CONFIG',
       });
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
@@ -624,6 +627,9 @@ describe('createAdminConfigHandlers', () => {
       expect(res.body).toEqual({
         message: 'No actionable override sections provided',
         revision: null,
+        config: null,
+        applied: [],
+        skipped: [{ path: 'langfuse', segments: ['langfuse'], reason: 'dedicated_section' }],
       });
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
@@ -671,7 +677,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.upsertConfigOverrides(req, res);
 
       expect(res.statusCode).toBe(403);
-      expect(res.body).toEqual({ error: 'Insufficient permissions' });
+      expect(res.body).toEqual({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
 
@@ -984,7 +990,19 @@ describe('createAdminConfigHandlers', () => {
       await handlers.deleteConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body).toEqual({ message: 'No actionable field path provided', revision: null });
+      expect(res.body).toEqual({
+        message: 'No actionable field path provided',
+        revision: null,
+        config: null,
+        applied: [],
+        skipped: [
+          {
+            path: 'langfuse.enabled',
+            segments: ['langfuse', 'enabled'],
+            reason: 'dedicated_section',
+          },
+        ],
+      });
       expect(deps.unsetConfigField).not.toHaveBeenCalled();
     });
 
@@ -1128,7 +1146,19 @@ describe('createAdminConfigHandlers', () => {
       await handlers.tombstoneConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body).toEqual({ message: 'No actionable field path provided', revision: null });
+      expect(res.body).toEqual({
+        message: 'No actionable field path provided',
+        revision: null,
+        config: null,
+        applied: [],
+        skipped: [
+          {
+            path: 'langfuse.enabled',
+            segments: ['langfuse', 'enabled'],
+            reason: 'dedicated_section',
+          },
+        ],
+      });
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
 
@@ -1297,6 +1327,7 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(400);
       expect(res.body).toEqual({
         error: 'Process-backed MCP servers can only be configured in librechat.yaml',
+        code: 'PROCESS_MCP_CONFIG',
       });
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
@@ -1317,6 +1348,7 @@ describe('createAdminConfigHandlers', () => {
         expect(res.statusCode).toBe(400);
         expect(res.body).toEqual({
           error: 'Langfuse request headers can only be configured in librechat.yaml',
+          code: 'LANGFUSE_HEADERS_CONFIG',
         });
       }
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
@@ -1373,7 +1405,19 @@ describe('createAdminConfigHandlers', () => {
       await handlers.patchConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body).toEqual({ message: 'No actionable field entries provided', revision: null });
+      expect(res.body).toEqual({
+        message: 'No actionable field entries provided',
+        revision: null,
+        config: null,
+        applied: [],
+        skipped: [
+          {
+            path: 'langfuse.enabled',
+            segments: ['langfuse', 'enabled'],
+            reason: 'dedicated_section',
+          },
+        ],
+      });
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
 
@@ -2764,7 +2808,7 @@ describe('createAdminConfigHandlers', () => {
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
         body: {
-          overrides: { registration: { oauthStateTtlMs: 5 }, interface: { modelSelect: false } },
+          overrides: { githubCompare: { timeoutMs: 0 }, interface: { modelSelect: false } },
         },
       });
       const res = mockRes();
@@ -2777,9 +2821,10 @@ describe('createAdminConfigHandlers', () => {
         code: 'CONFIG_OVERRIDE_INVALID',
         issues: [
           {
-            path: 'registration.oauthStateTtlMs',
-            segments: ['registration', 'oauthStateTtlMs'],
+            path: 'githubCompare.timeoutMs',
+            segments: ['githubCompare', 'timeoutMs'],
             code: 'too_small',
+            params: { minimum: 1, inclusive: true, exact: false, type: 'number' },
           },
         ],
       });
@@ -2787,18 +2832,19 @@ describe('createAdminConfigHandlers', () => {
     });
 
     it('validates a whole-document write on the base its retained tombstones leave', async () => {
-      const base = {
-        config: {
-          cloudfront: { domain: 'https://cdn.example.com', imageSigning: 'cookies' },
-        },
-      };
-      const body = { overrides: { cloudfront: { requireSignedAccess: true } } };
+      /** A reset refill needs a whole interval; only a stored tombstone of the mode lifts that. */
+      const base = { config: { balance: { refillMode: 'reset' } } };
+      const body = { overrides: { balance: { refillIntervalValue: 1.5 } } };
       const params = { principalType: 'role', principalId: 'admin' };
 
       const kept = createHandlers({ getAppConfig: jest.fn().mockResolvedValue(base) });
       const keptRes = mockRes();
       await kept.handlers.upsertConfigOverrides(mockReq({ params, body }), keptRes);
-      expect(keptRes.statusCode).toBe(201);
+      expect(keptRes.statusCode).toBe(400);
+      expect(keptRes.body?.issues).toEqual([
+        expect.objectContaining({ path: 'balance.refillIntervalValue', code: 'custom' }),
+      ]);
+      expect(kept.deps.writeConfigDocument).not.toHaveBeenCalled();
 
       const tombstoned = createHandlers({
         getAppConfig: jest.fn().mockResolvedValue(base),
@@ -2806,16 +2852,13 @@ describe('createAdminConfigHandlers', () => {
           _id: 'c1',
           configVersion: 1,
           overrides: {},
-          tombstones: ['cloudfront.imageSigning'],
+          tombstones: ['balance.refillMode'],
         }),
       });
       const tombstonedRes = mockRes();
       await tombstoned.handlers.upsertConfigOverrides(mockReq({ params, body }), tombstonedRes);
-      expect(tombstonedRes.statusCode).toBe(400);
-      expect(tombstonedRes.body?.issues).toEqual([
-        expect.objectContaining({ path: 'cloudfront.requireSignedAccess' }),
-      ]);
-      expect(tombstoned.deps.writeConfigDocument).not.toHaveBeenCalled();
+      expect(tombstonedRes.statusCode).toBe(200);
+      expect(tombstoned.deps.writeConfigDocument).toHaveBeenCalledTimes(1);
     });
 
     it('accepts a partial section whose provided fields are valid', async () => {
@@ -2824,7 +2867,7 @@ describe('createAdminConfigHandlers', () => {
         params: { principalType: 'role', principalId: 'admin' },
         body: {
           overrides: {
-            registration: { oauthStateTtlMs: 120_000 },
+            registration: { allowedDomains: ['example.com'] },
             mcpServers: { github: { timeout: 5000 } },
             endpoints: { custom: [{ name: 'groq', apiKey: 'sk-test' }] },
           },
@@ -2954,7 +2997,7 @@ describe('createAdminConfigHandlers', () => {
         body: {
           entries: [
             { fieldPath: 'interface.customWelcome', value: 'hi' },
-            { fieldPath: 'registration.oauthStateTtlMs', value: 'soon' },
+            { fieldPath: 'githubCompare.timeoutMs', value: 'soon' },
           ],
         },
       });
@@ -2964,7 +3007,12 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(400);
       expect(res.body?.issues).toEqual([
-        expect.objectContaining({ path: 'registration.oauthStateTtlMs' }),
+        {
+          path: 'githubCompare.timeoutMs',
+          segments: ['githubCompare', 'timeoutMs'],
+          code: 'invalid_type',
+          params: { expected: 'number', received: 'string' },
+        },
       ]);
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });
@@ -4203,6 +4251,15 @@ describe('createAdminConfigHandlers', () => {
       expect(res.body).toEqual({
         message: 'No actionable field entries provided',
         revision: storedRevision,
+        config: expect.objectContaining({ revision: storedRevision }),
+        applied: [],
+        skipped: [
+          {
+            path: 'interface.prompts',
+            segments: ['interface', 'prompts'],
+            reason: 'interface_permission',
+          },
+        ],
       });
       expect(deps.writeConfigDocument).not.toHaveBeenCalled();
     });

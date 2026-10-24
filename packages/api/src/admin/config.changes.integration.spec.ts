@@ -285,6 +285,7 @@ describe('POST …/changes: one atomic write', () => {
         path: 'mcpServers.new.title',
         segments: ['mcpServers', 'new', 'title'],
         code: 'invalid_type',
+        params: { expected: 'string', received: 'number' },
       },
     ]);
     expect(deps.writeConfigDocument).not.toHaveBeenCalled();
@@ -1279,32 +1280,52 @@ describe('POST …/changes: entries librechat.yaml owns', () => {
         path: 'endpoints.custom.2.baseURL',
         segments: ['endpoints', 'custom', '2', 'baseURL'],
         code: 'invalid_type',
+        params: { expected: 'string', received: 'number' },
       },
     ]);
   });
 
-  it('reports writes to a YAML stdio server as applied but ignored at runtime', async () => {
+  it('refuses a write inside a YAML stdio server, and leaves one out of a whole-section value', async () => {
     const params = nextParams();
-    const { status, body } = await send(
+    const refused = await send(
       {
         ops: [
-          { op: 'set', fieldPath: 'mcpServers.yaml-stdio.title', value: 'Local' },
           { op: 'set', fieldPath: 'mcpServers.yaml-http.title', value: 'Remote' },
+          { op: 'set', fieldPath: 'mcpServers.yaml-stdio.title', value: 'Local' },
         ],
       },
       params,
     );
+    expect(refused.status).toBe(400);
+    expect(refused.body).toMatchObject({ code: 'PROCESS_MCP_SERVER_OVERRIDE', opIndex: 1 });
+    expect(await storedDocument(params.principalId)).toBeNull();
 
+    const { status, body } = await send(
+      {
+        ops: [
+          {
+            op: 'set',
+            fieldPath: 'mcpServers',
+            value: { 'yaml-stdio': { title: 'Local' }, 'yaml-http': { title: 'Remote' } },
+          },
+        ],
+      },
+      params,
+    );
     expect(status).toBe(200);
-    expect(body.applied).toHaveLength(2);
-    expect(body.ignored).toEqual([
+    expect(body.applied).toEqual([{ opIndex: 0, op: 'set', segments: ['mcpServers'] }]);
+    expect(body.skipped).toEqual([
       {
         opIndex: 0,
         op: 'set',
-        segments: ['mcpServers', 'yaml-stdio', 'title'],
+        segments: ['mcpServers', 'yaml-stdio'],
         reason: 'process_mcp_server',
       },
     ]);
+    expect(body.ignored).toEqual([]);
+    expect((await storedDocument(params.principalId))!.overrides).toEqual({
+      mcpServers: { 'yaml-http': { title: 'Remote' } },
+    });
   });
 
   it('reports the YAML stdio servers a whole-section tombstone leaves in place as ignored', async () => {
@@ -1364,7 +1385,7 @@ describe('POST …/changes: entries librechat.yaml owns', () => {
     expect((await storedDocument(params.principalId))!.tombstones).toEqual(['endpoints.agents']);
   });
 
-  it('reports a rename under a YAML stdio server as ignored, but not an unset there', async () => {
+  it('refuses a rename under a YAML stdio server, but not an unset there', async () => {
     const params = nextParams();
     await seedDocument(
       params.principalId,
@@ -1379,7 +1400,7 @@ describe('POST …/changes: entries librechat.yaml owns', () => {
       [],
     );
 
-    const { status, body } = await send(
+    const rename = await send(
       {
         ops: [
           {
@@ -1388,24 +1409,22 @@ describe('POST …/changes: entries librechat.yaml owns', () => {
             from: 'OLD',
             to: 'NEW',
           },
-          { op: 'unset', fieldPath: 'mcpServers.yaml-stdio.title' },
         ],
       },
       params,
     );
+    expect(rename.status).toBe(400);
+    expect(rename.body).toMatchObject({ code: 'PROCESS_MCP_SERVER_OVERRIDE', opIndex: 0 });
 
+    const { status, body } = await send(
+      { ops: [{ op: 'unset', fieldPath: 'mcpServers.yaml-stdio.title' }] },
+      params,
+    );
     expect(status).toBe(200);
-    expect(body.applied.map((ref) => ref.opIndex)).toEqual([0, 1]);
-    expect(body.ignored).toEqual([
-      {
-        opIndex: 0,
-        op: 'rename',
-        segments: ['mcpServers', 'yaml-stdio', 'customUserVars'],
-        reason: 'process_mcp_server',
-      },
-    ]);
+    expect(body.applied.map((ref) => ref.opIndex)).toEqual([0]);
+    expect(body.ignored).toEqual([]);
     expect((await storedDocument(params.principalId))!.overrides).toEqual({
-      mcpServers: { 'yaml-stdio': { customUserVars: { NEW: { title: 'T', description: 'D' } } } },
+      mcpServers: { 'yaml-stdio': { customUserVars: { OLD: { title: 'T', description: 'D' } } } },
     });
   });
 
@@ -1897,7 +1916,12 @@ describe('POST …/changes: no-ops, dry runs and preconditions', () => {
     );
     expect(rewritten.status).toBe(400);
     expect(rewritten.body.issues).toEqual([
-      { path: 'balance.startBalance', segments: ['balance', 'startBalance'], code: 'invalid_type' },
+      {
+        path: 'balance.startBalance',
+        segments: ['balance', 'startBalance'],
+        code: 'invalid_type',
+        params: { expected: 'number', received: 'string' },
+      },
     ]);
   });
 
