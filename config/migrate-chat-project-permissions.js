@@ -44,10 +44,12 @@ async function migrateChatProjectPermissions({ dryRun = true, batchSize = 100 } 
     const ownedFilter = { user: { $type: 'string', $regex: /^[a-f\d]{24}$/i } };
     const totalProjects = await ChatProject.countDocuments({});
     const migratableProjects = await ChatProject.countDocuments(ownedFilter);
+    /** The owner role is never granted to anyone but the creator, so each entry is one
+     *  already-migrated project. */
     const alreadyMigrated = await AclEntry.countDocuments({
       resourceType: RESOURCE_TYPE_CHAT_PROJECT,
       principalType: PRINCIPAL_USER,
-      permBits: ownerRole.permBits,
+      roleId: ownerRole._id,
     });
     logger.info(`Found ${totalProjects} Chat Projects total`, {
       migratableProjects,

@@ -350,4 +350,25 @@ describe('ChatProject handlers - sharing', () => {
     expect(getChatProjectView).toHaveBeenCalledWith('member', projectId);
     expect(result.body).toMatchObject({ isShared: true, permissions: 1 });
   });
+
+  it("returns an editor's own view after an update, not the owner's document", async () => {
+    const getChatProjectView = jest
+      .fn()
+      .mockResolvedValue({ _id: projectId, user: 'owner', isShared: true, permissions: 3 });
+    const { handlers } = setup({
+      getChatProjectView,
+      updateChatProject: jest
+        .fn()
+        .mockResolvedValue({ _id: projectId, user: 'owner', conversationCount: 9 }),
+    });
+    const { res, result } = response();
+    await handlers.updateProject(
+      request({ user: { id: 'editor' }, params: { projectId }, body: { name: 'Renamed' } }),
+      res,
+    );
+    expect(result.statusCode).toBe(200);
+    expect(getChatProjectView).toHaveBeenCalledWith('editor', projectId);
+    expect(result.body).toMatchObject({ isShared: true, permissions: 3 });
+    expect(result.body).not.toHaveProperty('conversationCount', 9);
+  });
 });

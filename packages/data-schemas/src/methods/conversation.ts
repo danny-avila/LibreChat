@@ -655,6 +655,11 @@ export interface ConversationMethodDeps
    * with them. Without it, only the user's own projects are accepted.
    */
   hasChatProjectAccess?: (user: string, projectId: string) => Promise<boolean>;
+  /**
+   * Ids of every project the user can currently use (owned or shared). Lets the "unassigned"
+   * chat list keep a chat whose project was unshared from the user, instead of hiding it.
+   */
+  listAccessibleChatProjectIds?: (user: string) => Promise<string[]>;
   deleteAgentQueuedTurns?: (
     user: string,
     conversations: Array<{ conversationId: string; tenantId?: string; allTenants?: true }>,
@@ -3693,9 +3698,17 @@ export function createConversationMethods(
     }
 
     if (projectId === 'unassigned') {
-      filters.push({
-        $or: [{ chatProjectId: null }, { chatProjectId: { $exists: false } }],
-      } as FilterQuery<IConversation>);
+      const unassigned: FilterQuery<IConversation>[] = [
+        { chatProjectId: null },
+        { chatProjectId: { $exists: false } },
+      ];
+      /** A chat in a project the user can no longer see, such as one unshared from them,
+       *  belongs back in their unassigned list rather than nowhere. */
+      if (deps?.listAccessibleChatProjectIds) {
+        const accessible = await deps.listAccessibleChatProjectIds(user);
+        unassigned.push({ chatProjectId: { $nin: accessible } } as FilterQuery<IConversation>);
+      }
+      filters.push({ $or: unassigned } as FilterQuery<IConversation>);
     } else if (projectId) {
       filters.push({ chatProjectId: projectId } as FilterQuery<IConversation>);
     }

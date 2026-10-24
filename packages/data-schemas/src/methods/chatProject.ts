@@ -96,6 +96,8 @@ export interface ChatProjectMethods {
   hasChatProjectAccess(user: string, projectId: string): Promise<boolean>;
   /** The project as the user sees it; members get their own chat stats, not the owner's. */
   getChatProjectView(user: string, projectId: string): Promise<IChatProject | null>;
+  /** Ids of every project the user owns or was granted VIEW on. */
+  listAccessibleChatProjectIds(user: string): Promise<string[]>;
   createChatProject(
     user: string,
     input: CreateChatProjectInput,
@@ -595,6 +597,20 @@ export function createChatProjectMethods(
     return { projects: await annotateSharedProjects(user, projects), nextCursor };
   }
 
+  async function listAccessibleChatProjectIds(user: string): Promise<string[]> {
+    const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
+    const [owned, shared] = await Promise.all([
+      ChatProject.find({ user }).select('_id').lean(),
+      listSharedProjectIds(user),
+    ]);
+    return [
+      ...new Set([
+        ...owned.map((project) => String(project._id)),
+        ...shared.map((id) => id.toString()),
+      ]),
+    ];
+  }
+
   /** Ids of projects other users shared with this user, by user, role, group, or public grant. */
   async function listSharedProjectIds(user: string): Promise<Types.ObjectId[]> {
     if (!deps.getUserPrincipals || !deps.findAccessibleResources || !isValidObjectIdString(user)) {
@@ -602,11 +618,22 @@ export function createChatProjectMethods(
     }
     try {
       const principals = await deps.getUserPrincipals({ userId: user });
-      return await deps.findAccessibleResources(
+      const accessible = await deps.findAccessibleResources(
         principals,
         ResourceType.CHAT_PROJECT,
         PermissionBits.VIEW,
       );
+      if (accessible.length === 0) {
+        return [];
+      }
+      /** Owners hold an owner entry on their own projects; those are already matched by
+       *  `user`, so leave them out and keep the shared-id list to projects others own. */
+      const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
+      const owned = await ChatProject.find({ _id: { $in: accessible }, user })
+        .select('_id')
+        .lean();
+      const ownedIds = new Set(owned.map((project) => String(project._id)));
+      return accessible.filter((id) => !ownedIds.has(id.toString()));
     } catch (error) {
       logger.warn('[chatProject] Failed to list shared projects', error);
       return [];
@@ -1032,6 +1059,7 @@ export function createChatProjectMethods(
     getChatProjectAccess,
     hasChatProjectAccess,
     getChatProjectView,
+    listAccessibleChatProjectIds,
     createChatProject,
     getChatProject,
     listChatProjects,

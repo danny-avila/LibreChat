@@ -308,14 +308,18 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies): {
     }
 
     try {
-      const project = await deps.updateChatProject(
-        getUserId(req),
-        projectId,
-        input,
-        req.config?.projects,
-      );
+      const userId = getUserId(req);
+      const project = await deps.updateChatProject(userId, projectId, input, req.config?.projects);
       if (!project) {
         return res.status(404).json({ error: PROJECT_NOT_FOUND });
+      }
+      /** An editor gets their own view back: the stored document carries the owner's
+       *  chat stats, and the client caches this response as the project. */
+      if (project.user !== userId) {
+        const view = await deps.getChatProjectView(userId, projectId);
+        return view
+          ? res.status(200).json(view)
+          : res.status(404).json({ error: PROJECT_NOT_FOUND });
       }
       return res.status(200).json(project);
     } catch (error) {

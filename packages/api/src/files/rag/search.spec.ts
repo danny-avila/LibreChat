@@ -7,8 +7,9 @@ const hit = (source: string): [{ page_content: string; metadata: { source: strin
 
 function setup() {
   const httpClient = {
-    post: jest.fn((_url: string, body: { file_id: string }) =>
-      Promise.resolve({ data: [hit(body.file_id)] }),
+    post: jest.fn(
+      (_url: string, body: { file_id: string }, _config?: { headers?: Record<string, string> }) =>
+        Promise.resolve({ data: [hit(body.file_id)] }),
     ),
   };
   const generateShortLivedToken = jest.fn((userId: string) => `token-for-${userId}`);

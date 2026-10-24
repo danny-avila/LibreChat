@@ -321,9 +321,34 @@ describe('conversation saves in shared projects', () => {
         },
       );
 
-    const memberChat = await save(member);
-    const outsiderChat = await save(outsider);
+    const memberChat = (await save(member)) as IConversation | null;
+    const outsiderChat = (await save(outsider)) as IConversation | null;
     expect(memberChat?.chatProjectId).toBe(id);
     expect(outsiderChat?.chatProjectId ?? null).toBeNull();
+  });
+});
+
+describe('unassigned chat list after a share is revoked', () => {
+  it("lists a member's chat as unassigned once the project is unshared", async () => {
+    const owner = await createUser();
+    const member = await createUser();
+    const project = await methods.createChatProject(owner, { name: 'Revoked' });
+    const id = project._id!.toString();
+    await share(id, member, RoleBits.VIEWER);
+    const chat = await createConversation(member, id);
+
+    const convos = createConversationMethods(mongoose, {
+      getMessages: jest.fn().mockResolvedValue([]),
+      deleteMessages: jest.fn(),
+      listAccessibleChatProjectIds: methods.listAccessibleChatProjectIds,
+    });
+    const unassignedIds = async () =>
+      (await convos.getConvosByCursor(member, { projectId: 'unassigned' })).conversations.map(
+        (convo) => convo.conversationId,
+      );
+
+    expect(await unassignedIds()).not.toContain(chat.conversationId);
+    await AclEntry.deleteMany({ resourceType: ResourceType.CHAT_PROJECT });
+    expect(await unassignedIds()).toContain(chat.conversationId);
   });
 });
