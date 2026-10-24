@@ -62,6 +62,7 @@ describe('assistant avatar multipart authorization', () => {
     await mongoose.connect(mongo.getUri());
     mongoose.set('strictQuery', true);
     ({ Assistant, User, File } = createModels(mongoose));
+    await User.init();
     const upload = multer({ dest: directory });
     app = express();
     // Authenticated user/config fixture; exercise real multipart parsing, route, guard and DB.
@@ -118,8 +119,8 @@ describe('assistant avatar multipart authorization', () => {
     requestUser = attacker;
     await User.deleteMany({});
     await User.collection.insertMany([
-      { _id: attacker, tenantId: 'tenant-a' },
-      { _id: victim, tenantId: 'tenant-a' },
+      { _id: attacker, email: 'attacker@example.test', tenantId: 'tenant-a' },
+      { _id: victim, email: 'owner@example.test', tenantId: 'tenant-a' },
     ]);
     await Assistant.deleteMany({});
     await File.deleteMany({});
@@ -338,7 +339,11 @@ describe('assistant avatar multipart authorization', () => {
       }
       const unknownAuthor = new mongoose.Types.ObjectId();
       if (scenario === 'foreign') {
-        await User.collection.insertOne({ _id: unknownAuthor, tenantId: 'tenant-b' });
+        await User.collection.insertOne({
+          _id: unknownAuthor,
+          email: 'foreign@example.test',
+          tenantId: 'tenant-b',
+        });
       }
       providers[id] = {
         id,
