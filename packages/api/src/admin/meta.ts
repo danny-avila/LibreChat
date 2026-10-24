@@ -14,7 +14,7 @@ import {
   RUNTIME_CONFIG_INTERFACE_FIELDS,
 } from 'librechat-data-provider';
 import type { AppConfig, AdminConfigFeatures, AdminConfigMeta } from '@librechat/data-schemas';
-import { getConfigSecretRules } from './secrets';
+import { RENAME_HINT_PATHS, getConfigSecretRules } from './secrets';
 
 /**
  * How long `GET /catalog` reuses a scope's model lists while its endpoint config is unchanged:
@@ -56,6 +56,8 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   writeReport: true,
   issueParams: true,
   adminTermsExempt: true,
+  keyedTombstones: true,
+  renameHints: true,
 };
 
 /**
@@ -74,6 +76,7 @@ export function buildAdminConfigMeta(limits: AdminConfigMeta['limits']): AdminCo
     limits: { ...limits },
     rules: {
       acceptedSections: Object.keys(configSchema.shape),
+      renameHintPaths: [...RENAME_HINT_PATHS],
       baseOnlySections: [...BASE_ONLY_CONFIG_SECTIONS],
       basePrincipalSections: [...BASE_PRINCIPAL_CONFIG_SECTIONS],
       baseOnlyPaths: [...BASE_ONLY_CONFIG_PATHS],

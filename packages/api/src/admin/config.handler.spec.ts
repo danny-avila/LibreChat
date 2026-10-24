@@ -860,7 +860,7 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).toHaveBeenCalledWith(
         'role',
         'admin',
-        ['interface.modelSelect'],
+        [{ segments: ['interface', 'modelSelect'] }],
         undefined,
         {
           expectedRevision: undefined,
@@ -882,7 +882,7 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).toHaveBeenCalledWith(
         'role',
         'admin',
-        ['interface.mcpServers.placeholder'],
+        [{ segments: ['interface', 'mcpServers', 'placeholder'] }],
         undefined,
         {
           expectedRevision: undefined,
@@ -949,7 +949,7 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).toHaveBeenCalledWith(
         'role',
         'admin',
-        ['skillSync.github.enabled'],
+        [{ segments: ['skillSync', 'github', 'enabled'] }],
         undefined,
         {
           expectedRevision: undefined,
@@ -971,7 +971,7 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).toHaveBeenCalledWith(
         'role',
         'admin',
-        ['interface.modelSelect'],
+        [{ segments: ['interface', 'modelSelect'] }],
         undefined,
         {
           expectedRevision: undefined,
@@ -3178,7 +3178,7 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).toHaveBeenCalledWith(
         'role',
         '__base__',
-        ['turnstileConfig.siteKey'],
+        [{ segments: ['turnstileConfig', 'siteKey'] }],
         undefined,
         { expectedRevision: undefined },
       );
@@ -3238,7 +3238,7 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).toHaveBeenCalledWith(
         'role',
         'editor',
-        ['ocr.apiKey', 'ocr.apiKeyPreview'],
+        [{ segments: ['ocr', 'apiKey'] }, { segments: ['ocr', 'apiKeyPreview'] }],
         undefined,
         { expectedRevision: undefined },
       );
@@ -3569,9 +3569,15 @@ describe('createAdminConfigHandlers', () => {
       await handlers.deleteConfigField(mockReq({ params, query: { fieldPath: 'paths' } }), res);
 
       expect(res.statusCode).toBe(200);
-      expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', ['paths'], undefined, {
-        expectedRevision: undefined,
-      });
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        [{ segments: ['paths'] }],
+        undefined,
+        {
+          expectedRevision: undefined,
+        },
+      );
     });
 
     it('does not let a section-scoped manager remove a value under an unknown section', async () => {

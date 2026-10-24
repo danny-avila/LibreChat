@@ -241,6 +241,23 @@ describe('createAppConfigService', () => {
       expect(config.modelSpecs).toBeUndefined();
     });
 
+    it('keeps the other added endpoints when another tenant owns every spec', async () => {
+      const deps = createDeps({
+        loadBaseConfig: jest.fn().mockResolvedValue({
+          endpoints: { custom: [{ name: 'ClickHouse', tenantId: 'dwh-org' }] },
+          modelSpecs: {
+            list: [{ name: 'dwh-spec', preset: { endpoint: 'ClickHouse' } }],
+            addedEndpoints: ['agents', 'ClickHouse'],
+          },
+        }),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const config = await getAppConfig({ role: 'USER', tenantId: 'other-org' });
+
+      expect(config.modelSpecs).toEqual({ list: [], addedEndpoints: ['agents'] });
+    });
+
     describe('tenant isolation invariants', () => {
       async function tenantBase(interfaceConfig?: AppConfig['interfaceConfig']) {
         return AppService({

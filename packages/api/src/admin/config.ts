@@ -35,9 +35,11 @@ import {
   isConfigArrayItemPath,
   isAcceptedOverrideSection,
   MAX_CONFIG_CHANGE_OPS,
+  MAX_CONFIG_ENTRY_KEY_LENGTH,
   getConfigChangeIssues,
   getConfigArrayMergeKey,
   getIndexedMergeKeyIssues,
+  getLiftedConfigTombstones,
   getConfigBatchWrittenPaths,
   isSameConfigValue,
   isConfigRevision,
@@ -69,6 +71,12 @@ import {
   toConfigIdentityPath,
   renameConfigIdentityPath,
   resolveConfigIdentityPath,
+  parseConfigPath,
+  formatKeyedPath,
+  isConfigEntryKey,
+  isKeyedConfigPath,
+  isConfigEntryArrayItemPath,
+  renameConfigEntriesTombstones,
 } from '@librechat/data-schemas';
 import type {
   AppConfig,
@@ -92,6 +100,7 @@ import type {
   AdminConfigSkipReason,
   AdminConfigIgnoreReason,
   AdminConfigIgnoredSecret,
+  AdminConfigAppliedLocation,
   AdminConfigLocation,
   AdminConfigWriteReport,
   AdminConfigErrorCode,
@@ -104,6 +113,9 @@ import type {
   ConfigMutationOutcome,
   ConfigMutationPlan,
   ConfigIdentityStep,
+  ConfigEntryStep,
+  ConfigLocation,
+  ConfigEntryRename,
   YamlHeldPath,
 } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
@@ -117,6 +129,8 @@ import type { ServerRequest } from '~/types/http';
 import type { RecordAuditEntry } from './audit';
 import type { SecretReentry } from './reentry';
 import {
+  RENAME_HINT_PATHS,
+  getArraySecretKey,
   encryptConfigSecretFields,
   encryptConfigSecrets,
   carryRenamedConfigSecrets,
@@ -134,19 +148,20 @@ import {
   redactResolvedConfigSecrets,
 } from './secrets';
 import {
+  SECRET_BINDINGS,
+  REBINDING_SECTIONS,
+  getSecretBindingKey,
+  getRebindingIdentity,
+  toIgnoredSecretOverride,
+  withoutStoredSecretBindings,
+} from '~/app/rebinding';
+import {
   parseEnvAllowlist,
   getEnvReferenceIssues,
   createEnvReferencePolicy,
   ENV_REFERENCE_NOT_ALLOWED,
   hasDisallowedStoredReference,
 } from '~/app/allowlist';
-import {
-  SECRET_BINDINGS,
-  REBINDING_SECTIONS,
-  getRebindingIdentity,
-  toIgnoredSecretOverride,
-  withoutStoredSecretBindings,
-} from '~/app/rebinding';
 import {
   MCP_SERVER_SECTIONS,
   findSecretReentry,
@@ -244,26 +259,57 @@ const DOT_FREE_SECTIONS = new Set(['mcpServers', 'mcpConfig', 'langfuse']);
 
 /**
  * Where a field write, removal or tombstone lands. `fieldPath` is the dotted spelling that the
- * section, permission and secret guards read; it names exactly `segments` when `dotFree`.
+ * section, permission and secret guards read; it names exactly `segments` when `dotFree`. With
+ * `entry`, the target is one entry of the array merged by key at `segments`, by its key, or a
+ * path inside it, and `fieldPath` is its canonical keyed path (`endpoints.custom["Name"]`).
  */
 interface FieldTarget {
   segments: string[];
   fieldPath: string;
   dotFree: boolean;
+  entry?: ConfigEntryStep;
 }
 
 type FieldTargetRead =
   | { ok: true; target: FieldTarget }
   | { ok: false; error: string; reason?: ConfigPathErrorReason };
 
+const KEYED_PATH_ERROR =
+  'Invalid keyed path: an entry is named by a JSON string key right after an array merged by key, as in endpoints.custom["Name"].headers';
+
+/**
+ * Reads a keyed `fieldPath` (`endpoints.custom["Name"].headers.X`): one entry of an array
+ * merged by key, by its key, and a path inside it. Nothing submitted is echoed back.
+ */
+function readKeyedTarget(fieldPath: string): FieldTargetRead {
+  const location = parseConfigPath(fieldPath);
+  if (!location?.entry || !getConfigArrayMergeKey(location.segments)) {
+    return { ok: false, error: KEYED_PATH_ERROR, reason: 'keyed_path' };
+  }
+  const { key, rest } = location.entry;
+  return {
+    ok: true,
+    target: {
+      segments: [...location.segments],
+      fieldPath: formatKeyedPath(location.segments, key, rest),
+      dotFree: true,
+      entry: { key, rest: [...rest] },
+    },
+  };
+}
+
 /**
  * Reads a target from exactly one of `fieldPath` (validated as it always was) and `segments`.
  * Both spellings share the {@link MAX_CONFIG_PATH_DEPTH} cap. A segment that contains a dot is
  * refused wherever a guard would split it: as the section, inside sections whose guards read
- * dotted paths, and on a registered secret's path.
+ * dotted paths, and on a registered secret's path. A `fieldPath` holding an entry key step
+ * (`["`) is read as a keyed path ({@link readKeyedTarget}).
  */
 function readFieldTarget(fieldPath: unknown, segments: unknown): FieldTargetRead {
   if (segments === undefined) {
+    if (typeof fieldPath === 'string' && isKeyedConfigPath(fieldPath)) {
+      return readKeyedTarget(fieldPath);
+    }
     if (typeof fieldPath !== 'string' || !isValidFieldPath(fieldPath)) {
       return { ok: false, error: `Invalid or unsafe field path: ${String(fieldPath)}` };
     }
@@ -363,7 +409,7 @@ function toOrderedWrites(
 }
 
 /** One step of a field patch: a write, or the reset of a path (a secret with its preview). */
-type PatchStep = { write: ConfigFieldWrite } | { reset: string[][] };
+type PatchStep = { write: ConfigFieldWrite } | { reset: ConfigLocation[] };
 
 /**
  * A field patch's steps in request order: each entry's writes as {@link toOrderedWrites} orders
@@ -410,25 +456,27 @@ function toStepWrites(steps: readonly PatchStep[]): ConfigFieldWrite[] {
 
 /**
  * Validation of a patch with resets, as `getConfigFieldIssues` judges writes alone: the end
- * state the steps leave, with issues on every written or reset path, and those it introduced.
+ * state the steps leave, with the keyed tombstones of each renamed entry (`renames`) moved to
+ * its new key, and issues on every written or reset path, and those it introduced.
  */
 function getPatchStepIssues(
   steps: readonly PatchStep[],
   floor: Partial<TCustomConfig>,
   stored: ConfigRecord | null,
+  renames: readonly ConfigEntryRename[],
 ): ConfigOverrideIssue[] {
   const written = steps.flatMap((step) =>
-    'write' in step ? [[...step.write.segments]] : step.reset,
+    'write' in step ? [[...step.write.segments]] : step.reset.map(({ segments }) => [...segments]),
   );
   const indexed = getIndexedMergeKeyIssues(written);
   if (indexed.length > 0) {
     return indexed;
   }
-  const lifted = toStepWrites(steps)
-    .map(({ segments }) => [...segments])
-    .filter(isDotFreePath)
-    .map((segments) => segments.join('.'));
-  const candidate = applyPatchSteps(toConfigOverrideState(stored), steps);
+  const lifted = getLiftedConfigTombstones(toStepWrites(steps).map(({ segments }) => segments));
+  const candidate = renameConfigEntriesTombstones(
+    applyPatchSteps(toConfigOverrideState(stored), steps),
+    renames,
+  );
   return getConfigChangeIssues(candidate, floor, stored, written, lifted);
 }
 
@@ -768,6 +816,24 @@ function toSkippedLocation(part: SkippedPart): AdminConfigLocation & {
 
 function toLocation(segments: readonly string[]): AdminConfigLocation {
   return { path: segments.join('.'), segments: [...segments] };
+}
+
+/**
+ * The report of a write at one field target: a keyed target by its keyed path, its collection,
+ * the entry key and the path inside the entry, as a change ref names it.
+ */
+function toTargetReport(target: FieldTarget): AdminConfigWriteReport {
+  if (!target.entry) {
+    return { applied: [toLocation(target.segments)], skipped: [] };
+  }
+  const { key, rest } = target.entry;
+  const applied: AdminConfigAppliedLocation = {
+    path: target.fieldPath,
+    segments: [...target.segments],
+    key,
+    ...(rest.length > 0 && { entryPath: [...rest] }),
+  };
+  return { applied: [applied], skipped: [] };
 }
 
 /**
@@ -1419,10 +1485,30 @@ const UNSAFE_NAME = /^(?:\$|__)|^(?:constructor|prototype)$/;
 
 type RenamesRead = { ok: true; renames: ConfigSecretRename[] } | { ok: false; reason: string };
 
+const RENAME_PATHS: ReadonlySet<string> = new Set(RENAME_HINT_PATHS);
+
+function isRenamePath(path: unknown): path is ConfigSecretRename['path'] {
+  return typeof path === 'string' && RENAME_PATHS.has(path);
+}
+
+/** Whether a hint renames entries of an array merged by key, rather than keys of a record. */
+function isEntryRename(rename: ConfigSecretRename): boolean {
+  return getConfigArrayMergeKey(parseFieldPath(rename.path)) !== undefined;
+}
+
+/** How a hint's name is compared with the others of its path: an entry key by its identity. */
+function getRenameIdentity(path: ConfigSecretRename['path'], name: string): string {
+  return getConfigEntryIdentity(parseFieldPath(path), name);
+}
+
 /**
- * Reads the body's `renames` hint: `[{ path: 'mcpServers', previousName, name }]`, telling the
- * write that the server it writes as `name` was renamed (or duplicated) from the stored
- * `previousName`, so secrets it omits are carried from there. Never stored.
+ * Reads the body's `renames` hint: `[{ path, previousName, name }]` for `mcpServers` (a server
+ * renamed or duplicated from the stored `previousName`) or `endpoints.custom` (a custom endpoint
+ * renamed from the stored entry named `previousName`), telling the write to carry the secrets the
+ * entry it writes as `name` omits from there. Never stored. A custom endpoint name must be one a
+ * keyed path can address (`isConfigEntryKey`), since the entry's keyed tombstones move with it,
+ * and one entry is renamed once per write (`duplicate_source`): its tombstones move to one name.
+ * A server may be duplicated, so several hints may share its `previousName`.
  */
 function readRenames(value: unknown): RenamesRead {
   if (value === undefined || value === null) {
@@ -1433,9 +1519,10 @@ function readRenames(value: unknown): RenamesRead {
   }
   const renames: ConfigSecretRename[] = [];
   const targets = new Set<string>();
+  const sources = new Set<string>();
   for (const item of value) {
     const { path, previousName, name } = (item ?? {}) as Record<string, unknown>;
-    if (path !== 'mcpServers') {
+    if (!isRenamePath(path)) {
       return { ok: false, reason: 'unsupported_path' };
     }
     if (
@@ -1443,19 +1530,39 @@ function readRenames(value: unknown): RenamesRead {
       typeof name !== 'string' ||
       previousName === '' ||
       name === '' ||
-      previousName === name ||
       UNSAFE_NAME.test(previousName) ||
-      UNSAFE_NAME.test(name)
+      UNSAFE_NAME.test(name) ||
+      getRenameIdentity(path, previousName) === getRenameIdentity(path, name)
     ) {
       return { ok: false, reason: 'invalid_name' };
     }
-    if (targets.has(name)) {
+    const rename: ConfigSecretRename = { path, previousName, name };
+    const entry = isEntryRename(rename);
+    if (entry && (!isConfigEntryKey(previousName) || !isConfigEntryKey(name))) {
+      return { ok: false, reason: 'invalid_name' };
+    }
+    const target = JSON.stringify([path, getRenameIdentity(path, name)]);
+    if (targets.has(target)) {
       return { ok: false, reason: 'duplicate_target' };
     }
-    targets.add(name);
-    renames.push({ path, previousName, name });
+    targets.add(target);
+    const source = JSON.stringify([path, getRenameIdentity(path, previousName)]);
+    if (entry && sources.has(source)) {
+      return { ok: false, reason: 'duplicate_source' };
+    }
+    sources.add(source);
+    renames.push(rename);
   }
   return { ok: true, renames };
+}
+
+/** The entry renames a hint carries out, which move the old entries' keyed tombstones. */
+function toEntryRenames(renames: readonly ConfigSecretRename[]): ConfigEntryRename[] {
+  return renames.filter(isEntryRename).map(({ path, previousName, name }) => ({
+    segments: parseFieldPath(path),
+    from: previousName,
+    to: name,
+  }));
 }
 
 function invalidRenameResponse(res: Response, reason: string): Response {
@@ -1475,15 +1582,85 @@ function writesTarget(writes: readonly ConfigFieldWrite[], target: readonly stri
 }
 
 /**
- * Why a rename hint cannot apply to this write: its source is not a stored server, or the write
- * does not write its target.
+ * The entries `writes` leave in the merged-by-key array at `segments`: those of the last write
+ * that covers it, or `undefined` when none does or it leaves no array there.
+ */
+function getWrittenArray(
+  writes: readonly ConfigFieldWrite[],
+  segments: readonly string[],
+): unknown[] | undefined {
+  let items: unknown[] | undefined;
+  let covered = false;
+  for (const write of writes) {
+    if (isSegmentPrefix(write.segments, segments)) {
+      const value = getAtPath(write.value, segments.slice(write.segments.length));
+      items = Array.isArray(value) ? value : undefined;
+      covered = true;
+    }
+  }
+  return covered ? items : undefined;
+}
+
+/** Whether `items` holds an entry of the merged-by-key array at `segments` keyed `name`. */
+function holdsEntry(items: unknown, segments: readonly string[], name: string): boolean {
+  const keyField = getConfigArrayMergeKey(segments);
+  return (
+    keyField !== undefined &&
+    Array.isArray(items) &&
+    items.some(getConfigEntryMatcher(segments, keyField, name))
+  );
+}
+
+/**
+ * Why an entry rename hint cannot apply to this write: either name is one librechat.yaml
+ * defines (`inherited_entry`, as for a batch `rename`), `previousName` is not a stored entry of
+ * the principal (`source_not_found`), `name` already is one (`target_exists`), the write does not
+ * write `name` (`target_not_written`) or still writes `previousName` (`source_still_written`).
+ */
+function getEntryRenameIssue(
+  { path, previousName, name }: ConfigSecretRename,
+  stored: { overrides?: unknown } | null,
+  writes: readonly ConfigFieldWrite[],
+  base: Partial<TCustomConfig>,
+): string | null {
+  const segments = parseFieldPath(path);
+  const yamlItems = getAtPath(base, segments);
+  if (holdsEntry(yamlItems, segments, previousName) || holdsEntry(yamlItems, segments, name)) {
+    return 'inherited_entry';
+  }
+  const storedItems = getAtPath(stored?.overrides, segments);
+  if (!holdsEntry(storedItems, segments, previousName)) {
+    return 'source_not_found';
+  }
+  if (holdsEntry(storedItems, segments, name)) {
+    return 'target_exists';
+  }
+  const written = getWrittenArray(writes, segments);
+  if (!holdsEntry(written, segments, name)) {
+    return 'target_not_written';
+  }
+  return holdsEntry(written, segments, previousName) ? 'source_still_written' : null;
+}
+
+/**
+ * Why a rename hint cannot apply to this write: for a server, its source is not a stored server,
+ * or the write does not write its target; for a custom endpoint, see {@link getEntryRenameIssue}.
  */
 function getRenameIssue(
   renames: readonly ConfigSecretRename[],
   stored: { overrides?: unknown } | null,
   writes: readonly ConfigFieldWrite[],
+  base: Partial<TCustomConfig>,
 ): string | null {
-  for (const { path, previousName, name } of renames) {
+  for (const rename of renames) {
+    if (isEntryRename(rename)) {
+      const issue = getEntryRenameIssue(rename, stored, writes, base);
+      if (issue) {
+        return issue;
+      }
+      continue;
+    }
+    const { path, previousName, name } = rename;
     const storedRecord = (stored?.overrides as Record<string, unknown> | undefined)?.[path];
     if (
       storedRecord == null ||
@@ -1675,10 +1852,10 @@ interface PreparedChange {
   /** `upsertEntry`: the entry with secrets encrypted. */
   entry?: Record<string, unknown>;
   /**
-   * `unset` and `tombstone`: the paths removed together (a secret and its preview). `set`: the
-   * paths it resets instead, when nothing of its value is stored.
+   * `unset` and `tombstone`: the paths removed together (a secret and its preview), or the keyed
+   * location. `set`: the paths it resets instead, when nothing of its value is stored.
    */
-  paths?: string[][];
+  paths?: ConfigLocation[];
 }
 
 type PreparedRead =
@@ -1716,6 +1893,9 @@ function toChangeRef(
   if (change.key !== undefined && change.op !== 'rename') {
     ref.key = change.key;
   }
+  if (change.target.entry && change.target.entry.rest.length > 0) {
+    ref.entryPath = [...change.target.entry.rest];
+  }
   return ref;
 }
 
@@ -1727,11 +1907,69 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value !== '';
 }
 
-/** The paths an `unset` of `target` removes together: a secret and its preview companion. */
-function getRemovalPaths(target: FieldTarget): string[][] {
+/**
+ * The locations an `unset` of `target` removes together: a secret and its preview companion,
+ * or a keyed target's entry location.
+ */
+function getRemovalPaths(target: FieldTarget): ConfigLocation[] {
+  if (target.entry) {
+    return [{ segments: target.segments, entry: target.entry }];
+  }
   return target.dotFree
-    ? getConfigSecretMutationPaths(target.fieldPath).map(parseFieldPath)
-    : [target.segments];
+    ? getConfigSecretMutationPaths(target.fieldPath).map((path) => ({
+        segments: parseFieldPath(path),
+      }))
+    : [{ segments: target.segments }];
+}
+
+const INSIDE_ARRAY_TOMBSTONE_ERROR =
+  'A tombstone can hide a whole array, not an element or a path inside one; hide an entry of a collection merged by key by its key, as in endpoints.custom["Name"]';
+
+const KEYED_WRITE_ERROR =
+  'A keyed path can be hidden (tombstone) or reset (unset), not written: write the entry in its collection';
+
+/** A 400 a keyed target answers with: a message, a stable code and a reason. */
+interface KeyedTargetError {
+  error: string;
+  code: 'CONFIG_PATH_INVALID' | 'SECRET_PATH';
+  reason?: ConfigPathErrorReason;
+}
+
+/**
+ * Why a keyed target cannot be hidden or reset, checked before anything is read: it names the
+ * entry's key field (hide the whole entry instead), the entry's registered secret, its preview
+ * or its destination fingerprint, or for a tombstone, a path inside one of the entry's own
+ * arrays, which the merge cannot hide part of.
+ */
+function getKeyedTargetError(target: FieldTarget, tombstone: boolean): KeyedTargetError | null {
+  const { segments, entry } = target;
+  if (!entry) {
+    return null;
+  }
+  const [field] = entry.rest;
+  if (field !== undefined && field === getConfigArrayMergeKey(segments)) {
+    return {
+      error: "An entry's key cannot be removed: hide or reset the whole entry instead",
+      code: 'CONFIG_PATH_INVALID',
+      reason: 'merge_key',
+    };
+  }
+  const secretKey = getArraySecretKey(segments.join('.'));
+  const removalError = getFieldRemovalError(target.fieldPath);
+  if (removalError || (secretKey && field === getSecretBindingKey(secretKey))) {
+    return {
+      error: 'Secret fields of an entry cannot be addressed by key: write the entry instead',
+      code: 'SECRET_PATH',
+    };
+  }
+  if (tombstone && isConfigEntryArrayItemPath(segments, entry.rest)) {
+    return {
+      error: 'A tombstone can hide a whole array, not an element or a path inside one',
+      code: 'CONFIG_PATH_INVALID',
+      reason: 'inside_array',
+    };
+  }
+  return null;
 }
 
 /**
@@ -1790,6 +2028,14 @@ function prepareEntryChange(
       return changeFailure(
         index,
         'A rename needs non-empty from and to',
+        'CONFIG_ENTRY_INVALID',
+        'invalid_entry',
+      );
+    }
+    if (keyField && !isConfigEntryKey(raw.to)) {
+      return changeFailure(
+        index,
+        'An entry renamed in a collection merged by key needs a name a keyed path can address',
         'CONFIG_ENTRY_INVALID',
         'invalid_entry',
       );
@@ -1862,17 +2108,29 @@ function prepareEntryChange(
 function getChangeIdentity(
   raw: Record<string, unknown>,
   op: ChangeOpKind,
-  segments: readonly string[],
+  target: FieldTarget,
 ): string {
-  if (!isEntryOp(op)) {
-    return JSON.stringify(['path', segments]);
-  }
+  const { segments, entry } = target;
   const toEntry = (key: unknown): string =>
     JSON.stringify([
       'entry',
       segments,
       typeof key === 'string' ? getConfigEntryIdentity(segments, key) : null,
     ]);
+  /** A keyed change of a whole entry addresses what an entry change of that key does. */
+  if (entry) {
+    return entry.rest.length === 0
+      ? toEntry(entry.key)
+      : JSON.stringify([
+          'entry',
+          segments,
+          getConfigEntryIdentity(segments, entry.key),
+          entry.rest,
+        ]);
+  }
+  if (!isEntryOp(op)) {
+    return JSON.stringify(['path', segments]);
+  }
   if (op === 'rename') {
     return toEntry(raw.from);
   }
@@ -1914,6 +2172,9 @@ function prepareChange(raw: unknown, index: number): PreparedRead {
   if (op !== 'unset' && !isAcceptedOverrideSection(section)) {
     return changeFailure(index, 'Unknown config section', 'UNKNOWN_SECTION');
   }
+  if (target.entry && op !== 'unset' && op !== 'tombstone') {
+    return changeFailure(index, KEYED_WRITE_ERROR, 'CONFIG_PATH_INVALID', 'keyed_path');
+  }
   const sectionSkip = getFieldSkipReason(target.fieldPath);
 
   let prepared:
@@ -1932,31 +2193,41 @@ function prepareChange(raw: unknown, index: number): PreparedRead {
         'dotted_segment',
       );
     }
-    if (op === 'tombstone' && isConfigArrayItemPath(target.segments)) {
+    const keyedError = getKeyedTargetError(target, op === 'tombstone');
+    if (keyedError) {
+      return changeFailure(index, keyedError.error, keyedError.code, keyedError.reason);
+    }
+    if (op === 'tombstone' && !target.entry && isConfigArrayItemPath(target.segments)) {
       return changeFailure(
         index,
-        'A tombstone can hide a whole array, not an element or a path inside one',
+        INSIDE_ARRAY_TOMBSTONE_ERROR,
         'CONFIG_PATH_INVALID',
         'inside_array',
       );
     }
-    const removalError = target.dotFree ? getFieldRemovalError(target.fieldPath) : null;
+    const removalError =
+      target.dotFree && !target.entry ? getFieldRemovalError(target.fieldPath) : null;
     if (removalError) {
       return changeFailure(index, removalError.error, removalError.code);
     }
     /** Unsetting a stored field only librechat.yaml sets is cleanup: only a tombstone is skipped. */
     const skipReason =
       sectionSkip ?? (op === 'tombstone' ? getHeldPathSkipReason(target.segments) : null);
+    const change: PreparedChange = {
+      ...base,
+      key: target.entry?.key,
+      paths: getRemovalPaths(target),
+    };
     prepared = skipReason
-      ? { ok: true, change: null, skipped: [{ ...toChangeRef(base), reason: skipReason }] }
-      : { ok: true, change: { ...base, paths: getRemovalPaths(target) }, skipped: [] };
+      ? { ok: true, change: null, skipped: [{ ...toChangeRef(change), reason: skipReason }] }
+      : { ok: true, change, skipped: [] };
   }
   if (!prepared.ok) {
     return prepared;
   }
   return {
     ok: true,
-    identity: getChangeIdentity(raw, op, target.segments),
+    identity: getChangeIdentity(raw, op, target),
     section,
     change: prepared.change,
     skipped: prepared.skipped,
@@ -1969,7 +2240,7 @@ function expandChange(change: PreparedChange, overrides: unknown): ConfigChange[
   switch (change.op) {
     case 'set': {
       if (change.paths) {
-        return change.paths.map((path) => ({ op: 'unset', segments: path }));
+        return change.paths.map((path) => ({ op: 'unset', segments: path.segments }));
       }
       if (!change.fields) {
         return [{ op: 'set', segments, value: change.value }];
@@ -1982,8 +2253,8 @@ function expandChange(change: PreparedChange, overrides: unknown): ConfigChange[
     }
     case 'unset':
     case 'tombstone':
-      return (change.paths ?? [segments]).map(
-        (path) => ({ op: change.op, segments: path }) as ConfigChange,
+      return (change.paths ?? [{ segments }]).map(
+        (path) => ({ op: change.op, segments: path.segments, entry: path.entry }) as ConfigChange,
       );
     case 'upsertEntry': {
       /** An entry that omits its secret keeps the one stored on the entry of the same key. */
@@ -2115,6 +2386,9 @@ function withoutProcessServers(
 /** How an applied change is named in audit metadata: its path, plus the entry it addressed. */
 function describeChange(change: PreparedChange): string {
   const path = describeFieldTarget(change.target);
+  if (change.target.entry) {
+    return path;
+  }
   if (change.op === 'rename') {
     return `${path}[${JSON.stringify(change.key)}->${JSON.stringify(change.to)}]`;
   }
@@ -2908,6 +3182,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const meta = buildAdminConfigMeta({
         maxPatchEntries: MAX_PATCH_ENTRIES,
         maxChangeOps: MAX_CONFIG_CHANGE_OPS,
+        maxEntryKeyLength: MAX_CONFIG_ENTRY_KEY_LENGTH,
         overrideCacheTtlMs,
         catalogModelsTtlMs: getCatalogModelsTtlMs(baseConfig),
       });
@@ -3219,23 +3494,27 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             ) {
               return { draft: null, result: { status: 403 } };
             }
-            const renameIssue = getRenameIssue(renames.renames, stored, requestWrites);
+            const renameIssue = getRenameIssue(renames.renames, stored, requestWrites, baseYaml);
             if (renameIssue) {
               return { draft: null, result: { status: 400, renameIssue } };
             }
             /** Secrets an object omits are kept before validation sees the document. */
             const preserved = preserveConfigSecrets(encryptedOverrides, stored?.overrides);
             carryRenamedConfigSecrets(preserved, stored?.overrides, renames.renames);
-            /** A full replace keeps the principal's tombstones, so they shape its base. */
+            /** A full replace keeps the principal's tombstones (a renamed entry's move with it). */
+            const storedState = renameConfigEntriesTombstones(
+              toConfigOverrideState(stored),
+              toEntryRenames(renames.renames),
+            );
             const issues = getConfigOverrideIssues(
               preserved,
-              applyConfigTombstones(floor, stored?.tombstones),
+              applyConfigTombstones(floor, storedState.tombstones),
             );
             if (issues.length > 0) {
               return { draft: null, result: { status: 400, issues } };
             }
             /** A changed URL beside a stored key that stays needs that key entered again. */
-            const candidate = replaceConfigOverrides(toConfigOverrideState(stored), preserved);
+            const candidate = replaceConfigOverrides(storedState, preserved);
             const reentry = getKeptKeyReentryIssues(stored, candidate, entered, baseConfig);
             if (reentry.length > 0) {
               return { draft: null, result: { status: 400, reentry } };
@@ -3259,10 +3538,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
               principalType,
               principalId,
               stored,
-              candidate: replaceConfigOverrides(
-                toConfigOverrideState(stored),
-                next as Partial<TCustomConfig>,
-              ),
+              candidate: replaceConfigOverrides(storedState, next as Partial<TCustomConfig>),
               entered,
               base,
               baseConfig,
@@ -3410,6 +3686,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         const read = readFieldTarget(entry?.fieldPath, entry?.segments);
         if (!read.ok) {
           return fieldTargetErrorResponse(res, read);
+        }
+        if (read.target.entry) {
+          return fieldTargetErrorResponse(res, { error: KEYED_WRITE_ERROR, reason: 'keyed_path' });
         }
         const section = getTopLevelSection(read.target.fieldPath);
         if (!isAcceptedOverrideSection(section)) {
@@ -3568,7 +3847,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             if (!stored && !(await canCreateFor(principalType, principalId))) {
               return { draft: null, result: { status: 404 } };
             }
-            const renameIssue = getRenameIssue(renames.renames, stored, requestWrites);
+            const renameIssue = getRenameIssue(renames.renames, stored, requestWrites, baseYaml);
             if (renameIssue) {
               return { draft: null, result: { status: 400, renameIssue } };
             }
@@ -3584,13 +3863,18 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             }
             const steps = toOrderedSteps(ordered, preservedFields);
             const writes = toStepWrites(steps);
+            /** A renamed custom endpoint's keyed tombstones move to its new name. */
+            const entryRenames = toEntryRenames(renames.renames);
             const fieldIssues = hasResets
-              ? getPatchStepIssues(steps, floor, stored)
-              : getConfigFieldIssues(writes, floor, stored);
+              ? getPatchStepIssues(steps, floor, stored, entryRenames)
+              : getConfigFieldIssues(writes, floor, stored, entryRenames);
             if (fieldIssues.length > 0) {
               return { draft: null, result: { status: 400, issues: fieldIssues } };
             }
-            const state = applyPatchSteps(toConfigOverrideState(stored), steps);
+            const state = renameConfigEntriesTombstones(
+              applyPatchSteps(toConfigOverrideState(stored), steps),
+              entryRenames,
+            );
             /** A changed URL beside a stored key that stays needs that key entered again. */
             const reentry = getKeptKeyReentryIssues(stored, state, entered, baseConfig);
             if (reentry.length > 0) {
@@ -3684,6 +3968,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
   /**
    * POST /:principalType/:principalId/fields/tombstone — Suppress an inherited config path.
+   *
+   * An entry of an array merged by key is hidden by its key (`endpoints.custom["Name"]`, or a
+   * path inside it); a path into an array by position is refused, since the merge removes
+   * inherited values from objects only and would never apply it.
    */
   async function tombstoneConfigField(req: ServerRequest, res: Response): Promise<Response> {
     try {
@@ -3737,14 +4025,18 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (!isAcceptedOverrideSection(section)) {
         return unknownSectionResponse(res);
       }
-      /** The merge hides inherited values in objects only, so a tombstone there would do nothing. */
-      if (isConfigArrayItemPath(read.target.segments)) {
+      const keyedError = getKeyedTargetError(read.target, true);
+      if (keyedError) {
+        return res.status(400).json(keyedError);
+      }
+      /** The merge hides inherited values in objects only: an entry is hidden by its key. */
+      if (!read.target.entry && isConfigArrayItemPath(read.target.segments)) {
         return fieldTargetErrorResponse(res, {
-          error: 'A tombstone can hide a whole array, not an element or a path inside one',
+          error: INSIDE_ARRAY_TOMBSTONE_ERROR,
           reason: 'inside_array',
         });
       }
-      const removalError = getFieldRemovalError(fieldPath);
+      const removalError = read.target.entry ? null : getFieldRemovalError(fieldPath);
       if (removalError) {
         return errorResponse(res, 400, removalError.code, removalError.error);
       }
@@ -3826,14 +4118,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const ignored = isBoundSecretSection(parseFieldPath(fieldPath)[0])
         ? await reportIgnored(config, getConfigPartition(config))
         : [];
-      return sendWrittenConfig(
-        res,
-        200,
-        config,
-        access,
-        ignored,
-        toWriteReport([read.target.segments], []),
-      );
+      return sendWrittenConfig(res, 200, config, access, ignored, toTargetReport(read.target));
     } catch (error) {
       logger.error('[adminConfig] tombstoneConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to tombstone config field' });
@@ -3842,7 +4127,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
   /**
    * DELETE /:principalType/:principalId/fields?fieldPath=dotted.path
-   * (or `?segments=<JSON array>` for a path whose keys contain dots)
+   * (or `?segments=<JSON array>` for a path whose keys contain dots, or a keyed path such as
+   * `endpoints.custom["Name"].headers`, which resets the principal's own entry or path and the
+   * keyed tombstones of that entry at or below it)
    *
    * Unlike the writes, a path under an unknown section is accepted: removing it only clears
    * what an earlier write stored there (the merge ignores it either way), and it is the only
@@ -3883,7 +4170,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const { target } = read;
       const { fieldPath } = target;
-      const removalError = getFieldRemovalError(fieldPath);
+      const keyedError = getKeyedTargetError(target, false);
+      if (keyedError) {
+        return res.status(400).json(keyedError);
+      }
+      const removalError = target.entry ? null : getFieldRemovalError(fieldPath);
       if (removalError) {
         return errorResponse(res, 400, removalError.code, removalError.error);
       }
@@ -3924,7 +4215,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       let config: ConfigRecord | null;
       try {
-        if (isBoundRemoval(target)) {
+        if (target.entry || isBoundRemoval(target)) {
           const outcome = await removeConfigPath(
             principalType,
             principalId,
@@ -3939,15 +4230,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           config = outcome.record;
         } else {
           /**
-           * A secret and its preview companion are removed together, in one write. A path with
-           * a dotted key never names a secret, so it goes by its segments alone.
+           * A secret and its preview companion are removed together, in one write. Every path
+           * goes by its segments: the store reads a dotted string holding `["` as a keyed path,
+           * so a `segments` key such as `custom["Name"]` would otherwise reach an entry past the
+           * guards of the branch above. By segments it names that key as written.
            */
           config = await unsetConfigField(
             principalType,
             principalId,
-            target.dotFree
-              ? getConfigSecretMutationPaths(fieldPath)
-              : [{ segments: target.segments }],
+            getRemovalPaths(target),
             undefined,
             { expectedRevision: expected.value },
           );
@@ -3968,14 +4259,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const ignored = isBoundSecretSection(target.segments[0])
         ? await reportIgnored(config, getConfigPartition(config))
         : [];
-      return sendWrittenConfig(
-        res,
-        200,
-        config,
-        access,
-        ignored,
-        toWriteReport([target.segments], []),
-      );
+      return sendWrittenConfig(res, 200, config, access, ignored, toTargetReport(target));
     } catch (error) {
       logger.error('[adminConfig] deleteConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to delete config field' });
