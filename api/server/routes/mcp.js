@@ -35,6 +35,7 @@ const {
   prepareMCPAuthorizationMutation,
   persistMCPAuthorizationTransaction,
   resolveMCPOAuthTarget,
+  canAccessMCPOAuthFlow,
 } = require('@librechat/api');
 const {
   createMCPServerController,
@@ -97,16 +98,7 @@ const OAUTH_CSRF_COOKIE_PATH = '/api/mcp';
 const getOAuthFlowId = (userId, serverName) =>
   MCPOAuthHandler.generateFlowId(userId, serverName, getTenantId());
 
-const canAccessOAuthFlow = (flowId, userId) => {
-  const parsed = MCPOAuthHandler.parseFlowId(flowId);
-  if (!parsed) {
-    return false;
-  }
-  if (parsed.tenantId && parsed.tenantId !== getTenantId()) {
-    return false;
-  }
-  return parsed.userId === userId || parsed.userId === 'system';
-};
+const canAccessOAuthFlow = (flowId, userId) => canAccessMCPOAuthFlow(flowId, userId, getTenantId());
 
 /** What `resolveMCPOAuthTarget` reads: the principal's resolved servers and its config. */
 const getOAuthTargetDeps = () => ({
