@@ -22,6 +22,9 @@ const {
   getRoleByName,
   getUserById,
   getFiles,
+  acquireResourceLock,
+  renewResourceLock,
+  releaseResourceLock,
 } = require('~/models');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
@@ -433,22 +436,28 @@ const uploadAssistantAvatar = async (req, res) => {
       getUserById,
     });
 
-    const buffer = await fs.readFile(req.file.path);
-    const image = await uploadImageBuffer({
-      req,
-      context: FileContext.avatar,
-      metadata: { buffer },
-    });
-
     const updatedAssistant = await commitAssistantAvatar(
       {
         req,
         query: assistantQuery,
         identity: avatarIdentity,
-        avatar: { filepath: image.filepath, source: image.source ?? appConfig.fileStrategy },
+        uploadAvatar: async () => {
+          const buffer = await fs.readFile(req.file.path);
+          const image = await uploadImageBuffer({
+            req,
+            context: FileContext.avatar,
+            metadata: { buffer },
+          });
+          return { filepath: image.filepath, source: image.source ?? appConfig.fileStrategy };
+        },
         metadata: _metadata,
+        leaseOptions: {
+          ttlMs: req.config.config?.permissions?.leaseTtlMs,
+          waitMs: req.config.config?.permissions?.leaseWaitMs,
+        },
       },
       {
+        lease: { acquireResourceLock, renewResourceLock, releaseResourceLock },
         updateAssistantAvatar,
         updateProvider: (id, body) => openai.beta.assistants.update(id, body),
         getFiles,

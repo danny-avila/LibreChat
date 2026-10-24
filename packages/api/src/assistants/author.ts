@@ -1,6 +1,10 @@
 import { logger, SystemCapabilities } from '@librechat/data-schemas';
 import type { RequestHandler } from 'express';
 import type { CapabilityUser, HasCapabilityFn } from '../middleware/capabilities';
+import {
+  ResourcePermissionsBusyError,
+  ResourcePermissionsUnavailableError,
+} from '../acl/accessControlService';
 
 interface AssistantAuthorRequest {
   params: { id?: unknown; assistant_id?: unknown };
@@ -86,6 +90,12 @@ export class AssistantIdValidationError extends Error {
 }
 
 export function getAssistantErrorStatus(error: unknown): number {
+  if (
+    error instanceof ResourcePermissionsBusyError ||
+    error instanceof ResourcePermissionsUnavailableError
+  ) {
+    return error.statusCode;
+  }
   return error instanceof AssistantIdValidationError ? 400 : 500;
 }
 

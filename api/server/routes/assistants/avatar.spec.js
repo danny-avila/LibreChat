@@ -164,7 +164,7 @@ describe('assistant avatar multipart authorization', () => {
     getStrategyFunctions.mockReturnValue({ deleteFile: deleteStoredFile });
   });
 
-  async function upload(id, fields = {}, query = '') {
+  async function upload(id, fields = {}, query = '', checkTemporaryFiles = true) {
     let req = request(app)
       .post(`/api/files/images/assistants/${id}/avatar${query}`)
       .field('endpoint', 'assistants');
@@ -175,7 +175,9 @@ describe('assistant avatar multipart authorization', () => {
       filename: 'avatar.png',
       contentType: 'image/png',
     });
-    expect(await fs.readdir(directory)).toEqual([]);
+    if (checkTemporaryFiles) {
+      expect(await fs.readdir(directory)).toEqual([]);
+    }
     return response;
   }
 
@@ -497,6 +499,82 @@ describe('assistant avatar multipart authorization', () => {
     } finally {
       mutate.mockRestore();
     }
+  });
+
+  it('serializes overlapping provider commits and keeps the final avatar readable', async () => {
+    const originalPath = `/images/${attacker}/original.png`;
+    const firstPath = `/images/${attacker}/first.png`;
+    const secondPath = `/images/${attacker}/second.png`;
+    await Assistant.updateOne(
+      { assistant_id: 'asst-attacker' },
+      {
+        $set: { avatar: { filepath: originalPath, source: 'local' } },
+      },
+    );
+    await File.collection.insertMany([
+      {
+        file_id: 'original-overlap',
+        filepath: originalPath,
+        user: attacker,
+        tenantId: 'tenant-a',
+        source: 'local',
+        context: 'avatar',
+      },
+      {
+        file_id: 'first-overlap',
+        filepath: firstPath,
+        user: attacker,
+        tenantId: 'tenant-a',
+        source: 'local',
+        context: 'avatar',
+      },
+      {
+        file_id: 'second-overlap',
+        filepath: secondPath,
+        user: attacker,
+        tenantId: 'tenant-a',
+        source: 'local',
+        context: 'avatar',
+      },
+    ]);
+    providers['asst-attacker'].metadata = {
+      author: attacker.toString(),
+      avatar: originalPath,
+      avatar_source: 'local',
+    };
+    let finishFirst;
+    let signalFirst;
+    const firstStarted = new Promise((resolve) => {
+      signalFirst = resolve;
+    });
+    const firstResponse = new Promise((resolve) => {
+      finishFirst = resolve;
+    });
+    let providerAvatar = originalPath;
+    update.mockImplementation(async (id, { metadata }) => {
+      if (metadata.avatar === firstPath) {
+        signalFirst();
+        await firstResponse;
+      }
+      providerAvatar = metadata.avatar;
+      return { id, metadata };
+    });
+    uploadImageBuffer
+      .mockResolvedValueOnce({ filepath: firstPath, source: 'local' })
+      .mockResolvedValueOnce({ filepath: secondPath, source: 'local' });
+    const first = upload('asst-attacker', {}, '', false);
+    await firstStarted;
+    const second = upload('asst-attacker', {}, '', false);
+    setTimeout(finishFirst, 5);
+    const responses = await Promise.all([first, second]);
+    expect(await fs.readdir(directory)).toEqual([]);
+    expect(responses.map((response) => response.status)).toEqual([201, 201]);
+    expect(providerAvatar).toBe(secondPath);
+    const reference = await Assistant.findOne({ assistant_id: 'asst-attacker' }).lean();
+    expect(reference.avatar.filepath).toBe(providerAvatar);
+    expect(await File.findOne({ filepath: providerAvatar }).lean()).not.toBeNull();
+    expect(await File.findOne({ filepath: originalPath }).lean()).toBeNull();
+    expect(await File.findOne({ filepath: firstPath }).lean()).toBeNull();
   });
 
   it('keeps the owner of an existing shared assistant when another user changes its avatar', async () => {

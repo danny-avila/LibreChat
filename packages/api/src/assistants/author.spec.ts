@@ -5,6 +5,10 @@ import {
   createAssistantAuthorValidator,
   resolveAssistantAvatarIdentity,
 } from './author';
+import {
+  ResourcePermissionsBusyError,
+  ResourcePermissionsUnavailableError,
+} from '../acl/accessControlService';
 
 const makeRequest = () => ({
   params: {} as { id?: unknown; assistant_id?: unknown },
@@ -40,6 +44,8 @@ describe('assistant author validation', () => {
     const error = new AssistantIdValidationError('Invalid Assistant ID');
     expect(error.code).toBe('invalid_assistant_id');
     expect(getAssistantErrorStatus(error)).toBe(400);
+    expect(getAssistantErrorStatus(new ResourcePermissionsBusyError())).toBe(409);
+    expect(getAssistantErrorStatus(new ResourcePermissionsUnavailableError())).toBe(503);
     expect(getAssistantErrorStatus(new Error('database unavailable'))).toBe(500);
     expect(getAssistantErrorStatus({ code: 'invalid_assistant_id' })).toBe(500);
   });
