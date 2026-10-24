@@ -21,7 +21,7 @@ export { resolveConfigSecret, redactConfigSecretMaps } from './secrets';
 export type { AdminConfigDeps } from './config';
 export type { AdminConfigReadDeps } from './resolved';
 export type { AdminConfigCatalogDeps, CatalogScopeRequest, CatalogScopeUser } from './catalog';
-export type { AdminLangfuseDeps } from './langfuse';
+export type { AdminLangfuseDeps, LangfuseAdminConfig } from './langfuse';
 export type { AdminGrantsDeps, GrantPrincipalType } from './grants';
 export type { AdminGroupsDeps } from './groups';
 export type {

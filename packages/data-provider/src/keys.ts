@@ -150,6 +150,7 @@ export enum MutationKeys {
   updateLangfuseConnection = 'updateLangfuseConnection',
   testLangfuseConnection = 'testLangfuseConnection',
   updateLangfusePromptSync = 'updateLangfusePromptSync',
+  syncLangfusePrompts = 'syncLangfusePrompts',
   createAgentApiKey = 'createAgentApiKey',
   deleteAgentApiKey = 'deleteAgentApiKey',
   fileUpload = 'fileUpload',

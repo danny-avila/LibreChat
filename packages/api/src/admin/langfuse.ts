@@ -17,12 +17,15 @@ import type {
   TUpdateLangfusePromptSyncRequest,
   TLangfusePromptListResponse,
   TLangfusePromptGetResponse,
+  TLangfusePromptSyncResult,
   TLangfusePromptErrorBody,
 } from 'librechat-data-provider';
-import type { ConfigRecord, MessageMethods } from '@librechat/data-schemas';
+import type { MessageMethods } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { LangfusePromptConnection, LangfuseTextPromptSelector } from '~/langfuse/prompts';
 import type { LangfuseTenantDestination } from '~/langfuse/tenantDestinations';
+import type { LangfusePromptSyncRunner } from '~/langfuse/promptSyncRunner';
+import type { StoredBaseConfig } from '~/langfuse/promptSync';
 import type { ServerRequest } from '~/types/http';
 import type { RecordAuditEntry } from './audit';
 import {
@@ -30,11 +33,14 @@ import {
   isLangfusePromptSyncAvailable,
   getLangfusePromptSyncTimeoutMs,
   getLangfuseConnectionAvailability,
+  getLangfusePromptSyncLockLeaseMs,
+  getLangfusePromptSyncMaxPages,
 } from '~/langfuse/policy';
 import {
   readStoredLangfuse,
   buildPromptSyncConnection,
   toLangfusePromptErrorResponse,
+  getPromptSyncSourceIdentity,
 } from '~/langfuse/promptSync';
 import {
   getLangfuseTenantDestinations,
@@ -76,12 +82,19 @@ export interface LangfuseConnectionEvent {
   verification_result: 'skipped' | 'success' | 'failed';
 }
 
+/** Stored base-config fields the Langfuse admin handlers read. The data-schemas `ConfigRecord` satisfies it. */
+export interface LangfuseAdminConfig extends StoredBaseConfig {
+  priority?: number;
+  isActive?: boolean;
+  updatedAt?: Date;
+}
+
 export interface AdminLangfuseDeps {
   findConfigByPrincipal: (
     principalType: PrincipalType,
     principalId: string,
     options?: { includeInactive?: boolean },
-  ) => Promise<ConfigRecord | null>;
+  ) => Promise<LangfuseAdminConfig | null>;
   /**
    * Sets the fields in one compare-and-swap write, re-reading on a concurrent change. An
    * omitted priority keeps the stored one (Base merges first whatever its priority).
@@ -92,13 +105,14 @@ export interface AdminLangfuseDeps {
     principalModel: PrincipalModel,
     fields: Record<string, unknown>,
     priority?: number,
-  ) => Promise<ConfigRecord | null>;
+  ) => Promise<LangfuseAdminConfig | null>;
   toggleConfigActive: (
     principalType: PrincipalType,
     principalId: string,
     isActive: boolean,
-  ) => Promise<ConfigRecord | null>;
+  ) => Promise<LangfuseAdminConfig | null>;
   getMessages: MessageMethods['getMessages'];
+  syncPromptCatalog: LangfusePromptSyncRunner;
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
   recordConnectionUpdate?: (event: LangfuseConnectionEvent) => void;
   /** Optional audit emission for connection and prompt sync updates; fail-open unless `auditFailClosed`. */
@@ -110,7 +124,7 @@ function getTenantId(req: ServerRequest): string | undefined {
   return (req.user as { tenantId?: string } | undefined)?.tenantId;
 }
 
-function buildStatus(config: ConfigRecord | null): TLangfuseConnectionStatus {
+function buildStatus(config: LangfuseAdminConfig | null): TLangfuseConnectionStatus {
   const stored = readStoredLangfuse(config);
   const configured = Boolean(stored?.publicKey && stored?.secretKey);
   const promptSyncAvailable = isLangfusePromptSyncAvailable();
@@ -212,7 +226,7 @@ function respondToPromptRequestError(res: Response, error: unknown, logPrefix: s
   }
 
   logger.error(logPrefix, error);
-  return res.status(500).json({ code: 'upstream' } satisfies TLangfusePromptErrorBody);
+  return res.status(500).json({ code: 'internal' } satisfies TLangfusePromptErrorBody);
 }
 
 type LangfuseVerificationFailure = {
@@ -367,12 +381,14 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
   updatePromptSync: (req: ServerRequest, res: Response) => Promise<Response>;
   listPrompts: (req: ServerRequest, res: Response) => Promise<Response>;
   getPrompt: (req: ServerRequest, res: Response) => Promise<Response>;
+  syncPrompts: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
   const {
     findConfigByPrincipal,
     patchConfigFields,
     toggleConfigActive,
     getMessages,
+    syncPromptCatalog,
     invalidateConfigCaches,
     recordConnectionUpdate = (event) =>
       logger.info({ message: '[adminLangfuse] Connection updated', ...event }),
@@ -385,7 +401,9 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
     logPrefix: '[adminLangfuse]',
   });
 
-  function findBaseConfig(options?: { includeInactive?: boolean }): Promise<ConfigRecord | null> {
+  function findBaseConfig(options?: {
+    includeInactive?: boolean;
+  }): Promise<LangfuseAdminConfig | null> {
     return options
       ? findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, options)
       : findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID);
@@ -843,6 +861,73 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
     }
   }
 
+  /** Syncs every Langfuse text prompt in the tenant's project into the local
+   *  catalog as read-only pointer groups. Gated the same way as `listPrompts`/
+   *  `getPrompt` (deployment, tenant switch, resolvable connection), plus the
+   *  source identity the runner records on each new group. Runs under the
+   *  per-tenant distributed lock the runner itself acquires; a lock already
+   *  held or lost mid-run never reaches this handler as a thrown error, so
+   *  those map to `409`/`503` instead of the generic catch-all.
+   *
+   *  The sync runs inside this HTTP request. The page cap (default 50 pages
+   *  of 100 prompts each, 5,000 prompts) is the request-sized ceiling; a
+   *  larger catalog is truncated at the cap with a warning log, not an
+   *  error — the response's `complete: false` tells the caller the run
+   *  stopped before every upstream page was read. The lock lease (default
+   *  300 s) is renewed after every page but the last, and only between
+   *  pages, so a page whose own processing outlasts the lease can still let
+   *  a second run start concurrently. The sync is append-only: it creates
+   *  pointers for new Langfuse text prompts and never deletes, re-grants or
+   *  reconciles existing groups, so a prompt deleted in Langfuse keeps its
+   *  local pointer; a truncated run is not resumed from where it stopped —
+   *  a later run re-lists from page 1. */
+  async function syncPrompts(req: ServerRequest, res: Response): Promise<Response> {
+    const gate = await gatePromptSyncTenantSwitch(res);
+    if (gate.response) {
+      return gate.response;
+    }
+
+    const connection = resolvePromptSyncConnection(req, gate.stored);
+    if (!connection) {
+      return res.status(409).json({ code: 'not_configured' } satisfies TLangfusePromptErrorBody);
+    }
+
+    const timeoutMs = getLangfusePromptSyncTimeoutMs();
+    try {
+      const identity = await getPromptSyncSourceIdentity(
+        req.config,
+        gate.stored,
+        getTenantId(req),
+        timeoutMs,
+      );
+      if (!identity) {
+        return res.status(409).json({ code: 'not_configured' } satisfies TLangfusePromptErrorBody);
+      }
+
+      const result = await syncPromptCatalog({
+        source: {
+          destination: identity.destination,
+          projectId: identity.projectId,
+          tenantId: getTenantId(req),
+        },
+        listPrompts: (query) => listLangfusePrompts(connection, query, { timeoutMs }),
+        lockLeaseMs: getLangfusePromptSyncLockLeaseMs(req.config),
+        maxPages: getLangfusePromptSyncMaxPages(req.config),
+      });
+
+      if (!result.ok) {
+        const status = result.error.code === 'already_running' ? 409 : 503;
+        return res
+          .status(status)
+          .json({ code: result.error.code } satisfies TLangfusePromptErrorBody);
+      }
+
+      return res.status(200).json(result.value satisfies TLangfusePromptSyncResult);
+    } catch (error) {
+      return respondToPromptRequestError(res, error, '[adminLangfuse] syncPrompts error:');
+    }
+  }
+
   return {
     getConnection,
     getSessionLink,
@@ -851,5 +936,6 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
     updatePromptSync,
     listPrompts,
     getPrompt,
+    syncPrompts,
   };
 }

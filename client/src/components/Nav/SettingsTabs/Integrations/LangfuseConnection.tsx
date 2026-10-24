@@ -18,12 +18,15 @@ import type {
 } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
 import {
+  useGetStartupConfig,
   useGetLangfuseConnectionQuery,
   useUpdateLangfuseConnectionMutation,
   useTestLangfuseConnectionMutation,
   useUpdateLangfusePromptSyncMutation,
+  useSyncLangfusePromptsMutation,
 } from '~/data-provider';
 import LangfusePromptsDialog from './LangfusePromptsDialog';
+import { getPromptErrorMessage } from './promptErrors';
 import { useLocalize } from '~/hooks';
 
 type ConnectionTestState = 'idle' | 'unverified' | 'checking' | 'connected' | 'failed';
@@ -104,6 +107,11 @@ function getDisplayPublicKey(publicKey: string): string {
 export default function LangfuseConnection() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const { data: startupConfig } = useGetStartupConfig();
+  // The server's `POST /prompts/sync` route requires `manage:prompts` in addition to the
+  // `langfuse` config capability that gates this whole tab, so an admin can see the
+  // connection without being able to run the sync.
+  const canManagePrompts = startupConfig?.langfusePromptManageAccess === true;
   const {
     data: status,
     isLoading: isConnectionLoading,
@@ -114,6 +122,7 @@ export default function LangfuseConnection() {
   const updateMutation = useUpdateLangfuseConnectionMutation();
   const testMutation = useTestLangfuseConnectionMutation();
   const promptSyncMutation = useUpdateLangfusePromptSyncMutation();
+  const syncPromptsMutation = useSyncLangfusePromptsMutation();
 
   const [connectionStatus, setConnectionStatus] = useState<TLangfuseConnectionStatus>();
   const [destination, setDestination] = useState('');
@@ -197,7 +206,7 @@ export default function LangfuseConnection() {
     trimmedPublicKey !== '' &&
     ((!connectionCredentialsChanged && secretConfigured) || trimmedSecretKey !== '');
   const isSavingStatus = updateMutation.isLoading || promptSyncMutation.isLoading;
-  const busy = testMutation.isLoading || isSavingStatus;
+  const busy = testMutation.isLoading || isSavingStatus || syncPromptsMutation.isLoading;
 
   useEffect(() => {
     const storedConnectionTestKey = getStoredConnectionTestKey(connectionStatus);
@@ -389,6 +398,35 @@ export default function LangfuseConnection() {
         },
       },
     );
+  };
+
+  const handleSyncPrompts = () => {
+    syncPromptsMutation.mutate(undefined, {
+      onSuccess: (result) => {
+        if (result.complete === false) {
+          showToast({
+            message: localize('com_ui_langfuse_prompt_sync_incomplete', {
+              0: result.created,
+              1: result.unchanged,
+              2: result.skipped,
+            }),
+            status: 'warning',
+          });
+          return;
+        }
+        showToast({
+          message: localize('com_ui_langfuse_prompt_sync_result', {
+            0: result.created,
+            1: result.unchanged,
+            2: result.skipped,
+          }),
+          status: 'success',
+        });
+      },
+      onError: (error) => {
+        showToast({ message: getPromptErrorMessage(error, localize), status: 'error' });
+      },
+    });
   };
 
   if (isConnectionLoading && connectionStatus == null) {
@@ -594,7 +632,7 @@ export default function LangfuseConnection() {
             <Switch
               checked={connectionStatus.promptSync.enabled}
               onCheckedChange={handlePromptSyncChange}
-              disabled={isSavingStatus}
+              disabled={isSavingStatus || syncPromptsMutation.isLoading}
               aria-labelledby="langfuse-prompt-sync-label"
             />
           </div>
@@ -604,8 +642,25 @@ export default function LangfuseConnection() {
             </p>
           )}
           {connectionStatus.promptSync.enabled && (
-            <div>
-              <Button variant="outline" size="sm" onClick={() => setIsPromptsDialogOpen(true)}>
+            <div className="flex flex-wrap items-center gap-2">
+              {canManagePrompts && (
+                <Button variant="submit" size="sm" disabled={busy} onClick={handleSyncPrompts}>
+                  {syncPromptsMutation.isLoading ? (
+                    <span className="flex items-center gap-2">
+                      <Spinner className="h-4 w-4" />
+                      {localize('com_ui_langfuse_prompt_sync_running')}
+                    </span>
+                  ) : (
+                    localize('com_ui_langfuse_prompt_sync_run')
+                  )}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => setIsPromptsDialogOpen(true)}
+              >
                 {localize('com_ui_langfuse_prompt_sync_open')}
               </Button>
             </div>

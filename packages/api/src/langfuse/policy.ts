@@ -118,6 +118,40 @@ export function getLangfusePromptSyncTimeoutMs(): number {
   );
 }
 
+const DEFAULT_PROMPT_SYNC_LOCK_LEASE_MS = 300_000;
+const MIN_PROMPT_SYNC_LOCK_LEASE_MS = 60_000;
+const MAX_PROMPT_SYNC_LOCK_LEASE_MS = 3_600_000;
+
+/** Prompt sync lock lease, in milliseconds. Configured on librechat.yaml's
+ *  langfuse.promptSync.lockLeaseMs; clamps to the supported range and falls
+ *  back to the default when unset. */
+export function getLangfusePromptSyncLockLeaseMs(appConfig: AppConfig | undefined): number {
+  const leaseMs = appConfig?.langfuse?.promptSync?.lockLeaseMs;
+  if (leaseMs == null) {
+    return DEFAULT_PROMPT_SYNC_LOCK_LEASE_MS;
+  }
+  return Math.round(
+    Math.min(MAX_PROMPT_SYNC_LOCK_LEASE_MS, Math.max(MIN_PROMPT_SYNC_LOCK_LEASE_MS, leaseMs)),
+  );
+}
+
+const DEFAULT_PROMPT_SYNC_MAX_PAGES = 50;
+const MIN_PROMPT_SYNC_MAX_PAGES = 1;
+const MAX_PROMPT_SYNC_MAX_PAGES = 1000;
+
+/** Page cap for one sync request, in pages of up to 100 Langfuse prompts
+ *  each. Configured on librechat.yaml's langfuse.promptSync.maxPages;
+ *  clamps to the supported range and falls back to the default when unset. */
+export function getLangfusePromptSyncMaxPages(appConfig: AppConfig | undefined): number {
+  const maxPages = appConfig?.langfuse?.promptSync?.maxPages;
+  if (maxPages == null) {
+    return DEFAULT_PROMPT_SYNC_MAX_PAGES;
+  }
+  return Math.round(
+    Math.min(MAX_PROMPT_SYNC_MAX_PAGES, Math.max(MIN_PROMPT_SYNC_MAX_PAGES, maxPages)),
+  );
+}
+
 /** Whether the deployment offers Langfuse connection settings, and if not, why. */
 export type LangfuseConnectionAvailability =
   | { available: true }
