@@ -73,6 +73,21 @@ const balanceSchema: Schema<t.IBalance> = new Schema<t.IBalance>({
     default: undefined,
     select: false,
   },
+  /** User toggle: personal spend limit is enforced only when true */
+  personalSpendEnabled: {
+    type: Boolean,
+    default: false,
+  },
+  /** Personal cap for the current balance allotment; cleared when the balance refills/resets */
+  personalSpendLimit: {
+    type: Number,
+    default: undefined,
+  },
+  /** Credits spent under the personal cap in the current allotment; reset on refill/reset */
+  personalSpendUsed: {
+    type: Number,
+    default: 0,
+  },
 });
 
 export default balanceSchema;

@@ -2256,7 +2256,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           );
         }
         if (scheduleId && errorFinalized) {
-          const balanceRefusal = err?.message?.includes(ViolationTypes.TOKEN_BALANCE);
+          const balanceRefusal =
+            err?.message?.includes(ViolationTypes.TOKEN_BALANCE) ||
+            err?.message?.includes(ViolationTypes.PERSONAL_SPEND_LIMIT);
           await recordScheduleOutcome({
             scheduleId,
             scheduledFor,

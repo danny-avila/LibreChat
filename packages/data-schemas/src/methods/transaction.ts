@@ -261,12 +261,19 @@ export function createTransactionMethods(
         const potentialNewCredits = currentCredits + incrementValue;
         const newCredits = Math.max(0, potentialNewCredits);
 
-        const updatePayload = {
+        const updatePayload: {
+          $set: Record<string, unknown>;
+          $inc?: { personalSpendUsed: number };
+        } = {
           $set: {
             tokenCredits: newCredits,
             ...(setValues ?? {}),
           },
         };
+        /** Lifetime personal spend tracks settled debits only; refills and top-ups do not reverse it */
+        if (incrementValue < 0) {
+          updatePayload.$inc = { personalSpendUsed: Math.abs(incrementValue) };
+        }
 
         let updatedBalance: IBalance | null = null;
         if (currentBalanceDoc) {
@@ -385,6 +392,10 @@ export function createTransactionMethods(
           tokenCredits: credits,
           lastRefill: now,
           pendingRefill,
+          /** Personal spend tracks the current allotment; a refill/reset starts a new period */
+          personalSpendUsed: 0,
+          personalSpendLimit: null,
+          personalSpendEnabled: false,
         },
       },
     );
@@ -531,7 +542,8 @@ export function createTransactionMethods(
       }
 
       const credits = record.tokenCredits ?? 0;
-      const balance = credits - (record.reservedCredits ?? 0);
+      const reservedCredits = record.reservedCredits ?? 0;
+      const balance = credits - reservedCredits;
       if (
         refillSettled &&
         !refilled &&
@@ -545,6 +557,19 @@ export function createTransactionMethods(
       const reserved = balance >= amount;
       if (!reserved || !(amount > 0)) {
         return { reserved, balance };
+      }
+
+      const personalLimit = record.personalSpendLimit;
+      const personalActive =
+        record.personalSpendEnabled === true &&
+        typeof personalLimit === 'number' &&
+        Number.isFinite(personalLimit) &&
+        personalLimit >= 0;
+      if (personalActive) {
+        const personalUsed = record.personalSpendUsed ?? 0;
+        if (personalUsed + reservedCredits + amount > personalLimit) {
+          return { reserved: false, balance, reason: 'personal_spend_limit' };
+        }
       }
 
       const held = Math.ceil(amount);

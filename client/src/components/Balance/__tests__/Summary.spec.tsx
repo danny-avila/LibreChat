@@ -43,6 +43,22 @@ describe('balance Summary', () => {
       '+5,000,000 available in 3 days',
     );
     expect(screen.getByTestId('balance-status')).toHaveTextContent('38% used');
+    expect(screen.queryByTestId('balance-personal-limit')).not.toBeInTheDocument();
+  });
+
+  it('maps personal remaining only when the personal limit is enabled', () => {
+    render(
+      <Summary
+        state={success('credits', {
+          personalSpendEnabled: true,
+          personalSpendLimit: 1_000,
+          personalSpendUsed: 250,
+        })}
+      />,
+    );
+    expect(screen.getByTestId('balance-personal-limit')).toHaveTextContent(
+      '750 of 1,000 personal limit remaining',
+    );
   });
 
   it('shows money in currency mode', () => {

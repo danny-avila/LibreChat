@@ -257,7 +257,10 @@ export async function checkBalance(
     logger.debug('[Balance.check] No balance record found for user', { user });
   }
 
-  const type = ViolationTypes.TOKEN_BALANCE;
+  const type =
+    result?.reason === 'personal_spend_limit'
+      ? ViolationTypes.PERSONAL_SPEND_LIMIT
+      : ViolationTypes.TOKEN_BALANCE;
   const errorMessage: Record<string, unknown> = {
     type,
     balance: Math.max(0, result?.balance ?? 0),

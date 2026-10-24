@@ -90,7 +90,10 @@ const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/ch
         messageData,
         'Message too long. The Assistants API has a limit of 32,768 characters per message. Please shorten it and try again.',
       );
-    } else if (error?.message?.includes(ViolationTypes.TOKEN_BALANCE)) {
+    } else if (
+      error?.message?.includes(ViolationTypes.TOKEN_BALANCE) ||
+      error?.message?.includes(ViolationTypes.PERSONAL_SPEND_LIMIT)
+    ) {
       return sendResponse(req, res, messageData, error.message);
     } else {
       logger.error(`[${originPath}]`, error);

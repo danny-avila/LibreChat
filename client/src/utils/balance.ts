@@ -26,6 +26,14 @@ export interface BalanceSummary {
   refillMode: BalanceRefillMode;
   /** When the next auto-refill becomes eligible; null without auto-refill. */
   nextRefill: Date | null;
+  /**
+   * Personal spend remaining on the current balance when the user has enabled a finite limit.
+   * Null when the feature is off or no limit is set — surfaces must not map personal budget then.
+   * Cleared when the balance refills or resets.
+   */
+  personalRemaining: number | null;
+  personalUsed: number | null;
+  personalLimit: number | null;
 }
 
 interface SummaryOptions {
@@ -80,6 +88,20 @@ export function summarizeBalance(
     tone = 'warning';
   }
 
+  const personalLimitActive =
+    balance.personalSpendEnabled === true &&
+    typeof balance.personalSpendLimit === 'number' &&
+    Number.isFinite(balance.personalSpendLimit) &&
+    balance.personalSpendLimit >= 0;
+  const personalUsed = personalLimitActive
+    ? Math.max(0, Number.isFinite(balance.personalSpendUsed) ? (balance.personalSpendUsed ?? 0) : 0)
+    : null;
+  const personalLimit = personalLimitActive ? balance.personalSpendLimit! : null;
+  const personalRemaining =
+    personalLimit != null && personalUsed != null
+      ? Math.max(0, personalLimit - personalUsed)
+      : null;
+
   return {
     display,
     credits,
@@ -89,6 +111,9 @@ export function summarizeBalance(
     refillAmount,
     refillMode: balance.refillMode ?? 'add',
     nextRefill: balance.autoRefillEnabled ? getNextRefill(balance) : null,
+    personalRemaining,
+    personalUsed,
+    personalLimit,
   };
 }
 

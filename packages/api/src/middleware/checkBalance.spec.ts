@@ -103,6 +103,30 @@ describe('checkBalance', () => {
     );
   });
 
+  it('throws a PERSONAL_SPEND_LIMIT violation when the personal gate refuses', async () => {
+    const deps = createMockDeps({
+      reserveBalance: jest.fn().mockResolvedValue({
+        reserved: false,
+        balance: 500,
+        reason: 'personal_spend_limit',
+      }),
+    });
+
+    await expect(checkBalance({ req, res, txData: baseTxData }, deps)).rejects.toThrow();
+
+    expect(deps.logViolation).toHaveBeenCalledWith(
+      req,
+      res,
+      ViolationTypes.PERSONAL_SPEND_LIMIT,
+      expect.objectContaining({
+        type: ViolationTypes.PERSONAL_SPEND_LIMIT,
+        balance: 500,
+        tokenCost: 100,
+      }),
+      0,
+    );
+  });
+
   it('reports no less than zero balance when reservations exceed the credits', async () => {
     const deps = createMockDeps({
       reserveBalance: jest.fn().mockResolvedValue({ reserved: false, balance: -200 }),

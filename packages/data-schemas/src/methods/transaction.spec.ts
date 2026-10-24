@@ -1847,4 +1847,161 @@ describe('Balance Reservations', () => {
       expect(await Transaction.countDocuments({ user, context: 'autoRefill' })).toBe(1);
     });
   });
+
+  describe('personal spend limit', () => {
+    test('skips the personal gate when the toggle is off', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await Balance.create({
+        user,
+        tokenCredits: 1000,
+        personalSpendEnabled: false,
+        personalSpendLimit: 100,
+        personalSpendUsed: 90,
+      });
+
+      await expect(reserve(user.toString(), 200)).resolves.toEqual({
+        reserved: true,
+        balance: 1000,
+      });
+    });
+
+    test('rejects when enabled and used plus reserved plus amount exceeds the limit', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await Balance.create({
+        user,
+        tokenCredits: 1000,
+        personalSpendEnabled: true,
+        personalSpendLimit: 100,
+        personalSpendUsed: 80,
+      });
+
+      await expect(reserve(user.toString(), 30)).resolves.toEqual({
+        reserved: false,
+        balance: 1000,
+        reason: 'personal_spend_limit',
+      });
+    });
+
+    test('admits when enabled and the request fits under the personal limit', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await Balance.create({
+        user,
+        tokenCredits: 1000,
+        personalSpendEnabled: true,
+        personalSpendLimit: 100,
+        personalSpendUsed: 50,
+      });
+
+      await expect(reserve(user.toString(), 40)).resolves.toEqual({
+        reserved: true,
+        balance: 1000,
+      });
+    });
+
+    test('blocks further admits when the limit is below already-used spend', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await Balance.create({
+        user,
+        tokenCredits: 1000,
+        personalSpendEnabled: true,
+        personalSpendLimit: 50,
+        personalSpendUsed: 80,
+      });
+
+      await expect(reserve(user.toString(), 1)).resolves.toEqual({
+        reserved: false,
+        balance: 1000,
+        reason: 'personal_spend_limit',
+      });
+    });
+
+    test('increments personalSpendUsed on spend regardless of the toggle', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await Balance.create({
+        user,
+        tokenCredits: 500,
+        personalSpendEnabled: false,
+        personalSpendUsed: 10,
+      });
+
+      await updateBalance({ user: user.toString(), incrementValue: -25 });
+
+      const stored = await Balance.findOne({ user }).lean();
+      expect(stored?.tokenCredits).toBe(475);
+      expect(stored?.personalSpendUsed).toBe(35);
+    });
+
+    test('does not reverse personalSpendUsed on a credit top-up', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await Balance.create({
+        user,
+        tokenCredits: 100,
+        personalSpendUsed: 40,
+      });
+
+      await updateBalance({ user: user.toString(), incrementValue: 50 });
+
+      const stored = await Balance.findOne({ user }).lean();
+      expect(stored?.tokenCredits).toBe(150);
+      expect(stored?.personalSpendUsed).toBe(40);
+    });
+
+    test('clears personal spend fields when the balance auto-refills', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const lastRefill = new Date(Date.now() - 60_000);
+      await Balance.create({
+        user,
+        tokenCredits: 0,
+        autoRefillEnabled: true,
+        refillMode: 'add',
+        refillAmount: 1000,
+        refillIntervalValue: 1,
+        refillIntervalUnit: 'seconds',
+        lastRefill,
+        personalSpendEnabled: true,
+        personalSpendLimit: 250,
+        personalSpendUsed: 200,
+      });
+
+      await expect(reserve(user.toString(), 100)).resolves.toEqual({
+        reserved: true,
+        balance: 1000,
+      });
+
+      const stored = await Balance.findOne({ user }).lean();
+      expect(stored?.tokenCredits).toBe(1000);
+      expect(stored?.personalSpendEnabled).toBe(false);
+      expect(stored?.personalSpendLimit ?? null).toBeNull();
+      expect(stored?.personalSpendUsed).toBe(0);
+    });
+
+    test('clears personal spend fields when the balance resets', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const lastRefill = new Date(Date.now() - 60_000);
+      await Balance.create({
+        user,
+        tokenCredits: 100,
+        autoRefillEnabled: true,
+        refillMode: 'reset',
+        refillAmount: 1000,
+        refillIntervalValue: 1,
+        refillIntervalUnit: 'seconds',
+        lastRefill,
+        personalSpendEnabled: true,
+        personalSpendLimit: 250,
+        personalSpendUsed: 200,
+      });
+
+      await expect(reserve(user.toString(), 50)).resolves.toEqual({
+        reserved: true,
+        balance: 1000,
+      });
+
+      const stored = await Balance.findOne({ user }).lean();
+      expect(stored?.tokenCredits).toBe(1000);
+      expect(stored?.personalSpendEnabled).toBe(false);
+      expect(stored?.personalSpendLimit ?? null).toBeNull();
+      expect(stored?.personalSpendUsed).toBe(0);
+    });
+  });
 });

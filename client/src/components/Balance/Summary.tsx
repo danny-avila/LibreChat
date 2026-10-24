@@ -63,7 +63,7 @@ function useRefillText(summary: BalanceSummary, currency?: CurrencyConfig): stri
 function Reading({ summary, currency }: { summary: BalanceSummary; currency?: CurrencyConfig }) {
   const localize = useLocalize();
   const refillText = useRefillText(summary, currency);
-  const { display, credits, usedPercent, tone } = summary;
+  const { display, credits, usedPercent, tone, personalRemaining, personalLimit } = summary;
 
   let value: string;
   if (display === 'percent') {
@@ -85,6 +85,14 @@ function Reading({ summary, currency }: { summary: BalanceSummary; currency?: Cu
   } else if (display !== 'percent' && usedPercent != null) {
     status = localize('com_ui_balance_used', { 0: String(usedPercent) });
   }
+
+  const personalText =
+    personalRemaining != null && personalLimit != null && display !== 'percent'
+      ? localize('com_ui_balance_personal_remaining', {
+          0: formatBalanceAmount(personalRemaining, display, currency),
+          1: formatBalanceAmount(personalLimit, display, currency),
+        })
+      : null;
 
   return (
     <>
@@ -111,6 +119,14 @@ function Reading({ summary, currency }: { summary: BalanceSummary; currency?: Cu
           data-testid="balance-status"
         >
           {status}
+        </span>
+      )}
+      {personalText != null && (
+        <span
+          className="text-text-secondary col-span-2 min-w-0 text-xs"
+          data-testid="balance-personal-limit"
+        >
+          {personalText}
         </span>
       )}
     </>
