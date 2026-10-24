@@ -7,8 +7,14 @@ import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 
 import { runLighthouse } from './lighthouse/process.mts';
 
-for (const failures of [0, 1, 2]) {
-  test(`Lighthouse reports ${failures} failed attempts without disclosing child payloads`, async (t) => {
+for (const [failures, diagnostic, stderr] of [
+  [0, 'NO_NAVSTART', 'Runtime error encountered: Trace failed (NO_NAVSTART)'],
+  [1, 'NO_NAVSTART', 'Runtime error encountered: Trace failed (NO_NAVSTART)'],
+  [2, 'NO_NAVSTART', 'Runtime error encountered: Trace failed (NO_NAVSTART)'],
+  [2, 'CHROME_CONNECTION_FAILED', 'Unable to connect to Chrome'],
+  [2, 'CHROME_PROTOCOL_TIMEOUT', 'Debugger protocol timed out while connecting to Chrome.'],
+] as const) {
+  test(`Lighthouse reports ${failures} ${diagnostic} attempts without disclosing child payloads`, async (t) => {
     const directory = await mkdtemp(path.join(tmpdir(), 'lighthouse-process-'));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const cli = path.join(directory, 'cli.cjs');
@@ -24,7 +30,7 @@ for (const failures of [0, 1, 2]) {
       fs.writeFileSync(counter, String(attempt));
       console.log(${JSON.stringify(secret)});
       console.error(process.argv.join(' '));
-      console.error('Runtime error encountered: Trace failed (NO_NAVSTART)');
+      console.error(${JSON.stringify(stderr)});
       process.exit(attempt <= ${failures} ? 1 : 0);
     `,
     );
@@ -39,7 +45,7 @@ for (const failures of [0, 1, 2]) {
     });
     if (failures === 2) {
       await assert.rejects(running, (error: Error) => {
-        assert.equal(error.message, 'Lighthouse process failed (exit 1, NO_NAVSTART).');
+        assert.equal(error.message, `Lighthouse process failed (exit 1, ${diagnostic}).`);
         assert.deepEqual(Object.getOwnPropertyNames(error), ['stack', 'message']);
         assert.ok(!inspect(error).includes(secret));
         assert.ok(!inspect(error).includes(url));

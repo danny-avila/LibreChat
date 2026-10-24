@@ -16,12 +16,16 @@ function failureMessage(error: unknown): string {
     ) {
       details.push(`exit ${error.code}`);
     }
-    if (
-      'stderr' in error &&
-      typeof error.stderr === 'string' &&
-      error.stderr.includes('(NO_NAVSTART)')
-    ) {
-      details.push('NO_NAVSTART');
+    if ('stderr' in error && typeof error.stderr === 'string') {
+      if (error.stderr.includes('(NO_NAVSTART)')) {
+        details.push('NO_NAVSTART');
+      }
+      if (error.stderr.includes('Unable to connect to Chrome')) {
+        details.push('CHROME_CONNECTION_FAILED');
+      }
+      if (error.stderr.includes('Debugger protocol timed out while connecting to Chrome.')) {
+        details.push('CHROME_PROTOCOL_TIMEOUT');
+      }
     }
   }
   return `Lighthouse process failed${details.length ? ` (${details.join(', ')})` : ''}.`;

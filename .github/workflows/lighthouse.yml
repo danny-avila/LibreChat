@@ -28,6 +28,7 @@ jobs:
     timeout-minutes: 20
     env:
       E2E_CHROMIUM_CHANNEL: chromium
+      LIGHTHOUSE_CHROME_FLAGS: --no-sandbox
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
