@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { inspect } = require('util');
 const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -2064,7 +2065,12 @@ describe('MCP Routes', () => {
     });
 
     it('should redirect to error page when callback processing fails', async () => {
-      MCPOAuthHandler.getFlowState.mockRejectedValue(new Error('Callback error'));
+      const secret = 'sentinel-callback-credential';
+      const error = Object.assign(new Error(secret), {
+        config: { data: secret, headers: { Authorization: secret } },
+        response: { status: 401, data: { refresh_token: secret } },
+      });
+      MCPOAuthHandler.getFlowState.mockRejectedValue(error);
       const flowId = 'test-user-id:test-server';
       const csrfToken = generateTestCsrfToken(flowId);
 
@@ -2079,6 +2085,12 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe(`${basePath}/oauth/error?error=callback_failed`);
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).toHaveBeenCalledWith('[MCP OAuth] OAuth callback error', {
+        type: 'Error',
+        status: 401,
+      });
+      expect(inspect(logger.error.mock.calls, { depth: null })).not.toContain(secret);
     });
 
     it('should handle system-level OAuth completion', async () => {

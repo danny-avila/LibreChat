@@ -202,7 +202,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       expect(loggedDiagnostics()).not.toContain(secret);
     });
 
-    it('omits token-exchange errors from logs without changing flow failure handling', async () => {
+    it('sanitizes token-exchange errors before persisting or propagating the failure', async () => {
       const error = Object.assign(new Error(secret), {
         config: { data: secret, headers: { Authorization: header } },
         response: { status: 401, data: { refresh_token: secret } },
@@ -224,15 +224,27 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       } as unknown as FlowStateManager<MCPOAuthTokens>;
       mockExchangeAuthorization.mockRejectedValueOnce(error);
 
-      await expect(
-        MCPOAuthHandler.completeOAuthFlow('test-flow', 'auth-code', flowManager, {}),
-      ).rejects.toBe(error);
+      const failure = await MCPOAuthHandler.completeOAuthFlow(
+        'test-flow',
+        'auth-code',
+        flowManager,
+        {},
+      ).catch((error: unknown) => error);
+      expect(failure).toEqual(
+        expect.objectContaining({
+          message: 'OAuth token exchange failed',
+          status: 401,
+        }),
+      );
+      expect(failure).not.toBe(error);
+      expect(inspect(failure, { depth: null })).not.toContain(secret);
+      expect(inspect(failure, { depth: null })).not.toContain(header);
       expect(failFlowIfCurrent).toHaveBeenCalledWith(
         'test-flow',
         'mcp_oauth',
         123,
         'flow-state',
-        error,
+        failure,
       );
       expect(logger.error).toHaveBeenCalledWith('[MCPOAuth] Failed to complete OAuth flow', {
         error: { type: 'Error', status: 401 },

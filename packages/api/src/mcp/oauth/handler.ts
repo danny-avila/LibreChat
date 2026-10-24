@@ -39,6 +39,7 @@ import { createHardenedOAuthFetch } from './hardenedFetch';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
 import { getOAuthCallbackUrl } from '~/oauth/url';
+import { getSafeOAuthError } from './errors';
 import { getOAuthUrlPort } from './url';
 
 /** Type for the OAuth metadata from the SDK */
@@ -1343,6 +1344,8 @@ export class MCPOAuthHandler {
           metadata.allowedDomains,
           metadata.allowedAddresses,
         ),
+      }).catch((error: unknown) => {
+        throw getSafeOAuthError(error, 'OAuth token exchange failed');
       });
 
       logger.debug('[MCPOAuth] Token exchange successful', {

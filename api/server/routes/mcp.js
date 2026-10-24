@@ -10,6 +10,7 @@ const {
 } = require('librechat-data-provider');
 const {
   getBasePath,
+  getSafeErrorMetadata,
   createSafeUser,
   createAuthIdentityContext,
   MCPOAuthHandler,
@@ -738,7 +739,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     const redirectUrl = `${basePath}/oauth/success?serverName=${encodeURIComponent(serverName)}`;
     res.redirect(redirectUrl);
   } catch (error) {
-    logger.error('[MCP OAuth] OAuth callback error', error);
+    logger.error('[MCP OAuth] OAuth callback error', getSafeErrorMetadata(error));
     res.redirect(`${basePath}/oauth/error?error=callback_failed`);
   }
 });
