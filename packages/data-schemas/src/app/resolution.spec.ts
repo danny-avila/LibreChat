@@ -4356,6 +4356,35 @@ describe('model spec endpoints', () => {
       ).toBeUndefined();
     },
   );
+
+  it('lets a change hide or remove the endpoint a stored spec selects, and refuses a spec it writes there', () => {
+    const router = { ...gateway, name: 'Router' };
+    const stored = {
+      overrides: {
+        endpoints: { custom: [router] },
+        modelSpecs: { list: [spec('Gateway'), spec('Router')] },
+      },
+      tombstones: [],
+    };
+    const change = (changes: Parameters<typeof applyConfigChanges>[1]) => {
+      const { state } = applyConfigChanges(stored, changes);
+      return getConfigChangeIssues(
+        state,
+        yaml,
+        stored,
+        changes.map((step) => [...step.segments]),
+      );
+    };
+
+    expect(change([{ op: 'tombstone', segments: ['endpoints', 'custom'] }])).toEqual([]);
+    expect(change([{ op: 'unset', segments: ['endpoints', 'custom'] }])).toEqual([]);
+    expect(
+      change([
+        { op: 'tombstone', segments: ['endpoints', 'custom'] },
+        { op: 'set', segments: ['modelSpecs', 'list'], value: [spec('Router')] },
+      ]).map(({ path, code }) => [path, code]),
+    ).toEqual([['modelSpecs.list.0.preset.endpoint', 'unknown_spec_endpoint']]);
+  });
 });
 
 describe('issue params', () => {

@@ -1320,6 +1320,11 @@ function getIssueLocation(segments: readonly string[], overrides: unknown): stri
  * (at the same location, entries of merged-by-key arrays matched by key) are left to merge
  * time so they do not block an unrelated change.
  *
+ * A derived issue the merge copes with on its own (`WRITE_ONLY_DERIVED_ISSUES`: a model spec
+ * whose endpoint is not configured, which the merge leaves out) is reported only where the change
+ * writes, never as one it introduced elsewhere: hiding or removing the endpoint a stored spec
+ * selects takes the spec with it, as the single-field routes let it.
+ *
  * The stored document is judged on the base its own tombstones leave, so an issue that a
  * removed tombstone brings back counts as new. `lifted` names stored tombstones to treat as
  * already removed there: tombstones the change replaced with values of its own.
@@ -1345,11 +1350,13 @@ export function getConfigChangeIssues(
     candidateState.overrides,
     applyConfigTombstones(base, candidateState.tombstones),
     derivation,
-  ).filter(
-    (issue) =>
-      !existing.has(getIssueLocation(issue.segments, candidateState.overrides)) ||
-      written.some((segments) => isRelatedPath(issue.segments, [...segments])),
-  );
+  ).filter((issue) => {
+    const touched = written.some((segments) => isRelatedPath(issue.segments, [...segments]));
+    if (touched || WRITE_ONLY_DERIVED_ISSUES.has(issue.code)) {
+      return touched;
+    }
+    return !existing.has(getIssueLocation(issue.segments, candidateState.overrides));
+  });
 }
 
 /**
@@ -1791,6 +1798,18 @@ function suppliesGroupKey(item: AnyObject | undefined): boolean {
   return item != null && hasOwn(item, 'apiKey') && item.apiKey !== undefined;
 }
 
+/** The key fields of a `groupMap` entry, which travel together. */
+const AZURE_GROUP_KEY_FIELDS = ['apiKey', 'apiKeyPreview', 'apiKeyBinding'] as const;
+
+/** A `groupMap` entry without its key fields. */
+function withoutGroupKey(entry: AnyObject): AnyObject {
+  const next: AnyObject = { ...entry };
+  for (const field of AZURE_GROUP_KEY_FIELDS) {
+    delete next[field];
+  }
+  return next;
+}
+
 /**
  * A layer's Azure `groups` resolved as AppService resolves librechat.yaml's
  * (`resolveServedAzureGroups`), merged by `group` over the groups below (the YAML-shaped config
@@ -1799,7 +1818,9 @@ function suppliesGroupKey(item: AnyObject | undefined): boolean {
  * read `groupMap`, `modelGroupMap` and the model lists, never `groups`, so those are what change:
  * - `groupMap`: each group the layer names is resolved again; every other group keeps the entry
  *   below, as the merge left it. A named group keeps the key below unless the layer supplies one,
- *   so a key a lower layer's merge dropped stays dropped.
+ *   so a key a lower layer's merge dropped stays dropped, and a group the config below does not
+ *   serve (one a lower layer's tombstone left unable to resolve) has none: its YAML-shaped item
+ *   still holds the key below it, which no layer below sends anywhere.
  * - `modelGroupMap` and the model lists: resolved from all the merged groups.
  * A resolved field the layer also writes directly merges over them (objects) or replaces them.
  * `null` when the merged groups do not resolve: the layer's groups then stay unread, with a
@@ -1842,9 +1863,13 @@ function resolveLayerAzureGroups(params: {
     if (entry == null) {
       continue;
     }
+    if (suppliesGroupKey(item)) {
+      groupMap[name] = entry;
+      continue;
+    }
     const inherited = isPlainObject(belowMap[name]) ? belowMap[name].apiKey : undefined;
     groupMap[name] =
-      suppliesGroupKey(item) || inherited === undefined ? entry : { ...entry, apiKey: inherited };
+      inherited === undefined ? withoutGroupKey(entry) : { ...entry, apiKey: inherited };
   }
   const alone: AnyObject = {};
   for (const item of mergeOver(yamlGroups)) {
@@ -1854,12 +1879,7 @@ function resolveLayerAzureGroups(params: {
       continue;
     }
     const entry = toAzureGroupMapEntry(item);
-    if (!suppliesGroupKey(own)) {
-      delete entry.apiKey;
-      delete entry.apiKeyPreview;
-      delete entry.apiKeyBinding;
-    }
-    alone[name] = entry;
+    alone[name] = suppliesGroupKey(own) ? entry : withoutGroupKey(entry);
   }
   const ownMap = layerAzure.groupMap;
   const derived: Record<AzureResolvedGroupField, unknown> = {
@@ -1938,6 +1958,17 @@ function withServedAzureModels<T extends AppConfig>(
   };
 }
 
+/** A keyed tombstone of an Azure group (`endpoints.azureOpenAI.groups["g"]`, or a path inside it). */
+function readAzureGroupTombstone(path: string): ConfigEntryLocation | null {
+  const entry = isKeyedConfigPath(path) ? readConfigEntryTombstone(path) : null;
+  return entry != null && entry.segments.join('.') === AZURE_GROUPS_PATH ? entry : null;
+}
+
+/** Whether a tombstone removes Azure groups and nothing else: the whole list, or a keyed one. */
+function isAzureGroupsTombstone(path: string): boolean {
+  return path === AZURE_GROUPS_PATH || readAzureGroupTombstone(path) != null;
+}
+
 /** The Azure groups a layer's keyed tombstones name (`endpoints.azureOpenAI.groups["g"]`), whole or not. */
 function getAzureGroupTombstones(tombstones: readonly string[]): {
   hidden: Set<string>;
@@ -1946,17 +1977,20 @@ function getAzureGroupTombstones(tombstones: readonly string[]): {
   const hidden = new Set<string>();
   const touched = new Set<string>();
   for (const path of tombstones) {
-    const entry = isKeyedConfigPath(path) ? readConfigEntryTombstone(path) : null;
-    if (entry == null || entry.segments.join('.') !== AZURE_GROUPS_PATH) {
-      continue;
+    const entry = readAzureGroupTombstone(path);
+    if (entry != null) {
+      (entry.entry.rest.length === 0 ? hidden : touched).add(entry.identity);
     }
-    (entry.entry.rest.length === 0 ? hidden : touched).add(entry.identity);
   }
   return { hidden, touched };
 }
 
-/** The key fields of a `groupMap` entry, which travel together. */
-const AZURE_GROUP_KEY_FIELDS = ['apiKey', 'apiKeyPreview', 'apiKeyBinding'] as const;
+/** {@link withHiddenAzureGroups}' result: the served config, and the groups it no longer serves. */
+interface HiddenAzureGroups<T> {
+  merged: T;
+  /** The groups with a path hidden inside them that the groups left do not let resolve. */
+  unresolved: ReadonlySet<string>;
+}
 
 /**
  * `merged` once a layer's keyed tombstones of Azure groups (`tombstones`) applied, where the merge
@@ -1965,33 +1999,41 @@ const AZURE_GROUP_KEY_FIELDS = ['apiKey', 'apiKeyPreview', 'apiKeyBinding'] as c
  * `modelGroupMap` and the model lists are resolved from the groups left. A group with a path
  * hidden inside it is resolved again from what it keeps, with the key below it, which a tombstone
  * never supplies; every other group keeps the entry below. Where the groups left do not resolve,
- * the groups with a path hidden inside them are served no more either, with a warning; where none
- * is left, no group is served (`withoutAzureGroups`).
+ * the groups with a path hidden inside them are served no more either (`unresolved`, judged on
+ * `raw` alone, with a warning unless `quiet`); where none is left, no group is served
+ * (`withoutAzureGroups`).
  */
 function withHiddenAzureGroups<T extends AnyObject>(
   merged: T,
   raw: Partial<TCustomConfig>,
   tombstones: readonly string[],
   config: ConfigOverrideLayer,
-): T {
+  quiet = false,
+): HiddenAzureGroups<T> {
   const { hidden, touched } = getAzureGroupTombstones(tombstones);
+  if (hidden.size === 0 && touched.size === 0) {
+    return { merged, unresolved: new Set() };
+  }
   const azureSegments = AZURE_CONFIG_PATH.split('.');
   const azure = getPath(merged, azureSegments);
-  if ((hidden.size === 0 && touched.size === 0) || !isPlainObject(azure)) {
-    return merged;
-  }
   const kept = getPath(raw, AZURE_GROUPS_PATH.split('.'));
   let groups = Array.isArray(kept) ? kept.filter(isPlainObject) : [];
   let resolved = resolveServedAzureGroups(groups, touched);
+  const unresolved = resolved.isValid ? new Set<string>() : touched;
   if (!resolved.isValid) {
-    logger.warn(
-      `[mergeConfigOverrides] Serving none of the ${AZURE_GROUPS_PATH} ${[...touched].join(', ')} for ${describePrincipal(config)}: they do not resolve once its tombstones apply: ${resolved.errors.join('; ')}`,
-    );
+    if (!quiet && isPlainObject(azure)) {
+      logger.warn(
+        `[mergeConfigOverrides] Serving none of the ${AZURE_GROUPS_PATH} ${[...touched].join(', ')} for ${describePrincipal(config)}: they do not resolve once its tombstones apply: ${resolved.errors.join('; ')}`,
+      );
+    }
     groups = groups.filter((item) => typeof item.group !== 'string' || !touched.has(item.group));
     resolved = resolveServedAzureGroups(groups, new Set());
   }
+  if (!isPlainObject(azure)) {
+    return { merged, unresolved };
+  }
   if (groups.length === 0 || !resolved.isValid) {
-    return withoutAzureGroups(merged);
+    return { merged: withoutAzureGroups(merged), unresolved };
   }
   const belowMap = isPlainObject(azure.groupMap) ? azure.groupMap : {};
   const groupMap: AnyObject = {};
@@ -2011,7 +2053,7 @@ function withHiddenAzureGroups<T extends AnyObject>(
     }
     groupMap[name] = next;
   }
-  return setPath(merged, azureSegments, {
+  const next = setPath(merged, azureSegments, {
     ...azure,
     groupMap,
     modelGroupMap: resolved.modelGroupMap,
@@ -2019,6 +2061,7 @@ function withHiddenAzureGroups<T extends AnyObject>(
     assistantModels: resolved.assistantModels,
     assistantGroups: resolved.assistantGroups,
   }) as T;
+  return { merged: next, unresolved };
 }
 
 /** What {@link foldConfigLayers} leaves: the served config, the YAML-shaped one, and what layers wrote. */
@@ -2073,6 +2116,22 @@ function toLayerIgnored(
   extra?: Pick<AdminConfigLayerIgnored, 'code' | 'tombstone'>,
 ): AdminConfigLayerIgnored {
   return { path: segments.join('.'), segments: [...segments], reason, ...extra };
+}
+
+/** A reason both a write's `ignored` and a resolution's layer list give. */
+type SharedIgnoreReason = AdminConfigIgnoreReason & AdminConfigLayerIgnoreReason;
+
+/**
+ * Where an ignored tombstone sits: its path as stored, which DELETE `/fields` takes, and its
+ * segments, with a keyed tombstone's entry named by its key, as write responses name a
+ * credential in one.
+ */
+function getTombstoneLocation(path: string): { path: string; segments: string[] } {
+  const entry = isKeyedConfigPath(path) ? readConfigEntryTombstone(path) : null;
+  return {
+    path,
+    segments: entry ? [...entry.segments, entry.entry.key, ...entry.entry.rest] : path.split('.'),
+  };
 }
 
 /** `tree` with its top-level keys in AppConfig names (`interface` → `interfaceConfig`, ...). */
@@ -2199,8 +2258,10 @@ interface FoldObservers {
  * (`resolveLayerAzureGroups`), a tombstone of them removes those fields, and a layer that writes
  * or removes `endpoints.anthropic.vertex`, or removes `endpoints.anthropic.models`, has Vertex AI
  * derived again (`deriveVertexEndpoint`), keeping the models a layer set only while no later
- * layer has removed them;
- * without it, those overrides stay inert in `merged`, as before the merge derived them. Layers
+ * layer has removed them, and a tombstone inside a group that leaves it unable to resolve is
+ * reported (`azure_groups_unresolved`);
+ * without it, those overrides stay inert in `merged`, as before the merge derived them, and a
+ * layer's Azure groups and its tombstones of them are reported (`endpoint_rederive_off`). Layers
  * are judged with `vertexConfigured` taken from `initialRaw`, librechat.yaml.
  * `webSearchWriters` names the layer behind each paired web search field, by its position in
  * that order, and `touches` what the layers wrote and removed. `afterLayer` runs after each layer
@@ -2287,8 +2348,28 @@ function foldConfigLayers<T extends AnyObject>(
         track?.tombstoned.push(path);
         recordWebSearchTombstone(webSearchWriters, path, removal);
       }
+      const reportTombstone = (path: string, reason: SharedIgnoreReason) => {
+        const location = getTombstoneLocation(path);
+        layerSink?.({ ...location, reason, kind: 'tombstone' });
+        track?.ignored.push({ ...location, reason, tombstone: true });
+      };
       if (resolvesAzureGroups) {
-        merged = withHiddenAzureGroups(merged, raw, tombstoned, config);
+        const hidden = withHiddenAzureGroups(merged, raw, tombstoned, config, layerSink != null);
+        merged = hidden.merged;
+        for (const path of tombstoned) {
+          const entry = readAzureGroupTombstone(path);
+          if (
+            entry != null &&
+            entry.entry.rest.length > 0 &&
+            hidden.unresolved.has(entry.identity)
+          ) {
+            reportTombstone(path, 'azure_groups_unresolved');
+          }
+        }
+      } else {
+        for (const path of tombstoned.filter(isAzureGroupsTombstone)) {
+          reportTombstone(path, 'endpoint_rederive_off');
+        }
       }
     }
 
@@ -2415,9 +2496,13 @@ function foldConfigLayers<T extends AnyObject>(
         tracker.resolved = deepMerge(tracker.resolved, track.contributed);
       }
       const layerAzure = getPath(applied, AZURE_CONFIG_PATH.split('.'));
+      const groupsSegments = AZURE_GROUPS_PATH.split('.');
+      if (!resolvesAzureGroups && isPlainObject(layerAzure) && Array.isArray(layerAzure.groups)) {
+        layerSink?.(toIgnored(groupsSegments, 'endpoint_rederive_off', 'override'));
+        track?.ignored.push(toLayerIgnored(groupsSegments, 'endpoint_rederive_off'));
+      }
       if (resolvesAzureGroups && isPlainObject(layerAzure) && Array.isArray(layerAzure.groups)) {
         const azureSegments = AZURE_CONFIG_PATH.split('.');
-        const groupsSegments = AZURE_GROUPS_PATH.split('.');
         const resolution = resolveLayerAzureGroups({
           layerAzure,
           groups: layerAzure.groups.filter(isPlainObject),
@@ -2434,9 +2519,7 @@ function foldConfigLayers<T extends AnyObject>(
           merged = setPath(merged, azureSegments, resolution.served) as T;
           contributed = setPath(remapped, azureSegments, resolution.contributed) as AnyObject;
         } else {
-          track?.ignored.push(
-            toLayerIgnored(AZURE_GROUPS_PATH.split('.'), 'azure_groups_unresolved'),
-          );
+          track?.ignored.push(toLayerIgnored(groupsSegments, 'azure_groups_unresolved'));
         }
       }
     }

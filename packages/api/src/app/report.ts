@@ -2,6 +2,8 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import {
   logger,
   getAtPath,
+  parseConfigPath,
+  isSegmentPrefix,
   resolveRawConfig,
   isVertexConfigured,
   mergeConfigEntries,
@@ -49,7 +51,8 @@ export interface EndpointOverrideReport {
   ignoredVertex: string[];
   /**
    * Documents whose Azure `groups`, merged by `group` over the groups below them (librechat.yaml's,
-   * and the active Base profile's for any other document), resolve, or that tombstone them.
+   * and the active Base profile's for any other document), resolve, or that tombstone them: the
+   * whole list, a group, or a path inside one.
    */
   azureGroups: string[];
   /**
@@ -79,6 +82,22 @@ function getGroupNames(groups: unknown[]): Set<string> {
 
 function getTombstones(config: ReportedConfig): string[] {
   return (config.tombstones ?? []).filter((path): path is string => typeof path === 'string');
+}
+
+/**
+ * Whether a tombstone removes Azure `groups` and nothing above them: the whole list, or a keyed
+ * tombstone of a group or of a path inside one (`endpoints.azureOpenAI.groups["east"].version`).
+ */
+function isAzureGroupsTombstone(tombstone: string): boolean {
+  if (tombstone === AZURE_GROUPS_PATH) {
+    return true;
+  }
+  const location = parseConfigPath(tombstone);
+  return (
+    location?.entry != null &&
+    location.segments.length === AZURE_GROUPS.length &&
+    isSegmentPrefix(AZURE_GROUPS, location.segments)
+  );
 }
 
 /** Whether a document writes `segments`, or tombstones it or anything below it. */
@@ -146,7 +165,7 @@ export function getEndpointOverrideReport(
     }
     const groups = getAtPath(config.overrides, AZURE_GROUPS);
     if (!Array.isArray(groups)) {
-      if (tombstones.includes(AZURE_GROUPS_PATH)) {
+      if (tombstones.some(isAzureGroupsTombstone)) {
         report.azureGroups.push(description);
       }
       continue;

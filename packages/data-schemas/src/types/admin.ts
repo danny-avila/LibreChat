@@ -396,9 +396,12 @@ export type AdminConfigSkipReason =
 
 /**
  * Why a stored override, tombstone, change or part of one (at its own `segments`) has no effect
- * at runtime. `POST …/changes` reports `process_mcp_server`, `base_only_path` and
- * `deployment_only_path` for the changes it applies; GET `/:principalType/:principalId` reports
- * every reason for what the document stores.
+ * at runtime. `POST …/changes` reports `process_mcp_server`, `base_only_path`,
+ * `deployment_only_path` and `endpoint_rederive_off` for the changes it applies; GET
+ * `/:principalType/:principalId` reports every reason for what the document stores. A keyed
+ * tombstone keeps its keyed `path` (`endpoints.azureOpenAI.groups["east"].version`, which DELETE
+ * `/fields` takes) and names its entry by key in `segments` (`endpoints`, `azureOpenAI`,
+ * `groups`, `east`, `version`), as a credential in an entry is named.
  * - `process_mcp_server`: an override or tombstone of an MCP server `librechat.yaml` runs as a
  *   local process, whose configuration overrides never change, or each such server a
  *   whole-section `mcpServers` tombstone leaves in place.
@@ -410,6 +413,13 @@ export type AdminConfigSkipReason =
  * - `unknown_section`: a top-level key `configSchema` does not define (`sectionAllowlist`).
  * - `base_only_section`, `dedicated_section`, `interface_permission`, `derived_path`: as in
  *   {@link AdminConfigSkipReason}, for a value or tombstone already stored.
+ * - `endpoint_rederive_off`: Azure `groups` a document writes, or a tombstone of them (the whole
+ *   list, a group, or a path inside one), where the deployment does not resolve them
+ *   (`CONFIG_REDERIVE_ENDPOINTS` off, `features.endpointRederive`): the Azure clients read the
+ *   groups librechat.yaml resolves to. They are stored, and apply once the switch is on.
+ *   `POST …/changes` reports it for the changes that write or tombstone them.
+ * - `azure_groups_unresolved`: a tombstone of a path inside an Azure group that leaves the group
+ *   unable to resolve, so the Azure clients are served no such group.
  */
 export type AdminConfigIgnoreReason =
   | 'process_mcp_server'
@@ -420,7 +430,9 @@ export type AdminConfigIgnoreReason =
   | 'base_only_section'
   | 'dedicated_section'
   | 'interface_permission'
-  | 'derived_path';
+  | 'derived_path'
+  | 'endpoint_rederive_off'
+  | 'azure_groups_unresolved';
 
 /**
  * A credential the runtime merge leaves out of a document's layer, or a destination it sets back,
@@ -518,7 +530,12 @@ export type AdminConfigChangeErrorResponse = {
  * - `interface_permission`: an interface field that is a role permission.
  * - `runtime_stop`: an interface feature `librechat.yaml` turns off, which stays off.
  * - `azure_groups_unresolved`: Azure `groups` that do not resolve (a duplicate group or model, a
- *   model without a deployment or version), which the Azure clients never read.
+ *   model without a deployment or version), which the Azure clients never read, or a tombstone of
+ *   a path inside a group that leaves the group unable to resolve, so it is not served.
+ * - `endpoint_rederive_off`: Azure `groups` a layer writes, or its tombstone of them (the whole
+ *   list, a group, or a path inside one), where the deployment does not resolve them
+ *   (`CONFIG_REDERIVE_ENDPOINTS` off): `resolved` shows them merged, while the Azure clients read
+ *   the groups librechat.yaml resolves to.
  * - `azure_unserved`: an Azure model list, or `assistants`, the merged groups do not serve.
  * - `secret_rebinding`: a credential the merge drops, or (`destination_restored`) a destination
  *   it sets back, because the credential would be sent somewhere it was not entered for
@@ -542,6 +559,7 @@ export type AdminConfigLayerIgnoreReason =
   | 'interface_permission'
   | 'runtime_stop'
   | 'azure_groups_unresolved'
+  | 'endpoint_rederive_off'
   | 'azure_unserved'
   | 'secret_rebinding'
   | 'destination_restored'
@@ -553,7 +571,8 @@ export type AdminConfigLayerIgnoreReason =
 /**
  * Part of a layer the merge does not apply as written. `segments` locate it in librechat.yaml
  * keys: in the document's overrides (array items by index), or for a credential or destination
- * the merge drops or sets back, as write responses name it (a custom endpoint by its name). A
+ * the merge drops or sets back, or a keyed tombstone, as write responses name it (a custom
+ * endpoint or Azure group by its key, with `path` the tombstone as stored). A
  * tombstone above a `base_only_path` or `deployment_only_path` field or a `runtime_stop` feature
  * names that field, which the merge keeps while it removes the rest (write responses name such a
  * field the same way).
