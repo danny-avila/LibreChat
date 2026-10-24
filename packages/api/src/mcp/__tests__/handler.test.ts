@@ -132,6 +132,8 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         client_id: 'test-client',
         client_secret: secret,
         redirect_uris: [],
+        logo_uri: undefined,
+        tos_uri: undefined,
       });
       mockStartAuthorization.mockResolvedValue({
         authorizationUrl: new URL('https://auth.example.com/oauth/authorize'),
@@ -165,7 +167,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
           configured ? config : undefined,
         );
 
-        expect(result.flowMetadata.clientInfo.client_secret).toBe(secret);
+        expect(result.flowMetadata.clientInfo?.client_secret).toBe(secret);
         expect(result.flowMetadata.codeVerifier).toBe(verifier);
         expect(result.flowMetadata.oauthHeaders).toEqual({ Authorization: header });
         expect(new URL(result.authorizationUrl).searchParams.get('state')).toBe(
