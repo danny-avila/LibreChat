@@ -284,6 +284,18 @@ const projectedTaskActivity = (
   taskId: string,
 ): ReturnType<typeof projectSubagentActivity> => {
   if (assistant?.subagentActivityProjectionJson != null) {
+    const transcript = assistant.subagentTranscript;
+    if (
+      transcript?.taskId === taskId &&
+      (transcript.mode === 'append' || (input != null && input.textProjectionTruncated !== true))
+    ) {
+      const restored = projectSubagentActivity(
+        transcript.messagesJson,
+        transcript.mode,
+        input?.textProjectionTruncated === true ? undefined : input?.text,
+      );
+      if (restored.activity.some((item) => item.type === 'steer')) return restored;
+    }
     return projectPersistedMessageActivityJson(
       assistant.subagentActivityProjectionJson,
       assistant.subagentActivityProjectionTruncated === true,

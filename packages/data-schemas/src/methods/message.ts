@@ -3023,31 +3023,7 @@ export function createMessageMethods(
         $and: [
           { $in: ['$subagentActivityProjection.version', [1, 2]] },
           {
-            $or: [
-              { $eq: ['$subagentActivityProjection.version', 2] },
-              {
-                $cond: [
-                  {
-                    $and: [
-                      '$_subagentTranscriptSourceIsString',
-                      {
-                        $lte: [
-                          '$_subagentTranscriptSourceBytes',
-                          SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
-                        ],
-                      },
-                    ],
-                  },
-                  {
-                    $lt: [
-                      { $indexOfBytes: ['$subagentTranscript.messagesJson', '"source":"steer"'] },
-                      0,
-                    ],
-                  },
-                  true,
-                ],
-              },
-            ],
+            $eq: ['$messageId', { $concat: ['$subagentActivityProjection.taskId', ':assistant'] }],
           },
           '$_subagentActivityProjectionSourceIsString',
           {
@@ -3061,8 +3037,28 @@ export function createMessageMethods(
       const transcriptAvailable = {
         $and: [
           '$_subagentTranscriptSourceIsString',
+          { $eq: ['$messageId', { $concat: ['$subagentTranscript.taskId', ':assistant'] }] },
           {
             $lte: ['$_subagentTranscriptSourceBytes', SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT],
+          },
+        ],
+      };
+      // Legacy reprojection is optional: retain the usable projection until the
+      // API validates the current input boundary against the bounded transcript.
+      const legacySteeringTranscriptAvailable = {
+        $and: [
+          { $eq: ['$subagentActivityProjection.version', 1] },
+          {
+            $cond: [
+              transcriptAvailable,
+              {
+                $gte: [
+                  { $indexOfBytes: ['$subagentTranscript.messagesJson', '"source":"steer"'] },
+                  0,
+                ],
+              },
+              false,
+            ],
           },
         ],
       };
@@ -3594,13 +3590,23 @@ export function createMessageMethods(
         },
         subagentTranscript: {
           $cond: [
-            activityProjectionAvailable,
-            null,
+            {
+              $and: [
+                transcriptAvailable,
+                {
+                  $or: [
+                    { $eq: [activityProjectionAvailable, false] },
+                    legacySteeringTranscriptAvailable,
+                  ],
+                },
+              ],
+            },
             {
               taskId: '$subagentTranscript.taskId',
               mode: '$subagentTranscript.mode',
               messagesJson: '$subagentTranscript.messagesJson',
             },
+            null,
           ],
         },
       };
@@ -3805,6 +3811,9 @@ export function createMessageMethods(
           return {
             ...projected,
             subagentActivityProjectionJson: source.subagentActivityProjectionJson,
+            ...(source.subagentTranscript == null
+              ? {}
+              : { subagentTranscript: source.subagentTranscript }),
             ...(source.subagentActivityProjectionTruncated === true
               ? { subagentActivityProjectionTruncated: true }
               : {}),

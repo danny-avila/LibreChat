@@ -566,6 +566,111 @@ describe('subagent thread parent-scoped view', () => {
     expect(JSON.stringify(view)).not.toContain('private-fingerprint');
   });
 
+  it.each([
+    'truncated input',
+    'missing input',
+    'mismatched boundary',
+    'malformed source',
+    'other task',
+    'earlier steer only',
+  ] as const)(
+    'preserves usable legacy activity with %s instead of an unsafe reconstruction',
+    async (condition) => {
+      const input = message('task-1:user', 'running', true);
+      if (condition === 'truncated input')
+        Object.assign(input, {
+          text: 'Long current task. '.repeat(575).slice(0, 8192),
+          textProjectionTruncated: true,
+        });
+      const activity = [
+        { type: 'reasoning', text: 'Retained current reasoning.' },
+        { type: 'writing', text: 'Retained current activity.' },
+      ];
+      const transcript = [
+        { type: 'human', data: { content: 'Previous task.' } },
+        {
+          type: 'human',
+          data: {
+            content: 'Previous guidance.',
+            additional_kwargs: { injected: true, source: 'steer' },
+          },
+        },
+        { type: 'ai', data: { content: 'Private previous activity.' } },
+        {
+          type: 'human',
+          data: { content: condition === 'mismatched boundary' ? 'Other prompt.' : input.text },
+        },
+        { type: 'ai', data: { content: 'Current reconstructed activity.' } },
+      ];
+      const selected = {
+        ...message('task-1:assistant', 'completed'),
+        subagentActivityProjectionJson: JSON.stringify(activity),
+        subagentTranscript: {
+          taskId: condition === 'other task' ? 'task-other' : 'task-1',
+          mode: 'replace' as const,
+          messagesJson: condition === 'malformed source' ? 'not-json' : JSON.stringify(transcript),
+        },
+      };
+      const handler = createSubagentThreadViewHandler({
+        getConvoOwnership: jest.fn().mockResolvedValue(parent),
+        getSubagentThreadForParent: jest
+          .fn()
+          .mockResolvedValue({ ...child, subagentThreadLease: undefined }),
+        getMessagesForSubagentThreadView: jest
+          .fn()
+          .mockResolvedValue(condition === 'missing input' ? [selected] : [selected, input]),
+      });
+      const { response, json } = createResponse();
+      await handler(createRequest({}, { taskId: 'task-1' }), response);
+      expect(json.mock.calls[0][0]).toMatchObject({ activity, activityTruncated: false });
+      expect(JSON.stringify(json.mock.calls[0][0])).not.toContain('Private previous activity.');
+    },
+  );
+
+  it('reprojects legacy activity only when current-task guidance has a safe transcript boundary', async () => {
+    const selected = {
+      ...message('task-1:assistant', 'completed'),
+      subagentActivityProjectionJson: JSON.stringify([
+        { type: 'writing', text: 'Old projection without guidance.' },
+      ]),
+      subagentTranscript: {
+        taskId: 'task-1',
+        mode: 'replace' as const,
+        messagesJson: JSON.stringify([
+          { type: 'human', data: { content: 'Previous task.' } },
+          { type: 'ai', data: { content: 'Private previous activity.' } },
+          { type: 'human', data: { content: 'Investigate this.' } },
+          { type: 'ai', data: { content: 'Before guidance.' } },
+          {
+            type: 'human',
+            data: {
+              content: 'Current guidance.',
+              additional_kwargs: { injected: true, source: 'steer' },
+            },
+          },
+          { type: 'ai', data: { content: 'After guidance.' } },
+        ]),
+      },
+    };
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest
+        .fn()
+        .mockResolvedValue({ ...child, subagentThreadLease: undefined }),
+      getMessagesForSubagentThreadView: jest
+        .fn()
+        .mockResolvedValue([selected, message('task-1:user', 'running', true)]),
+    });
+    const { response, json } = createResponse();
+    await handler(createRequest({}, { taskId: 'task-1' }), response);
+    expect(json.mock.calls[0][0].activity).toEqual([
+      { type: 'writing', text: 'Before guidance.' },
+      { type: 'steer', steer: 'Current guidance.' },
+      { type: 'writing', text: 'After guidance.' },
+    ]);
+    expect(JSON.stringify(json.mock.calls[0][0])).not.toContain('Private previous activity.');
+  });
+
   it('fences replacement activity to the exact selected task input', async () => {
     const selected = {
       ...message('task-1:assistant', 'completed'),

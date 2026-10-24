@@ -3803,11 +3803,68 @@ describe('Message Operations', () => {
         });
         if (version === 1) {
           expect(message.subagentTranscript?.messagesJson).toBe(transcript);
-          expect(message.subagentActivityProjectionJson).toBeUndefined();
+          expect(message.subagentActivityProjectionJson).toBe(projection);
         } else {
           expect(message.subagentActivityProjectionJson).toBe(projection);
           expect(message.subagentTranscript).toBeUndefined();
         }
+      },
+    );
+
+    it.each([undefined, 'task-long'] as const)(
+      'retains the legacy fallback beside bounded steering history with selected task %s',
+      async (selectedTaskId) => {
+        const conversationId = uuidv4();
+        const prompt = 'Long current task. '.repeat(575);
+        const projection = JSON.stringify([
+          { type: 'reasoning', text: 'Retained current reasoning.' },
+          { type: 'writing', text: 'Retained current activity.' },
+        ]);
+        const transcript = JSON.stringify([
+          { type: 'human', data: { content: 'Previous task.' } },
+          {
+            type: 'human',
+            data: {
+              content: 'Previous guidance.',
+              additional_kwargs: { injected: true, source: 'steer' },
+            },
+          },
+          { type: 'human', data: { content: prompt } },
+          { type: 'ai', data: { content: 'Current activity.' } },
+        ]);
+        await saveMessage(mockCtx, {
+          messageId: 'task-long:user',
+          conversationId,
+          user: 'user123',
+          text: prompt,
+          isCreatedByUser: true,
+        });
+        await saveMessage(mockCtx, {
+          messageId: 'task-long:assistant',
+          parentMessageId: 'task-long:user',
+          conversationId,
+          user: 'user123',
+          text: 'Result',
+          subagentTranscript: { taskId: 'task-long', mode: 'replace', messagesJson: transcript },
+          subagentActivityProjection: {
+            taskId: 'task-long',
+            version: 1,
+            activityJson: projection,
+            truncated: false,
+          },
+        });
+        const records = await getMessagesForSubagentThreadView({
+          user: 'user123',
+          conversationId,
+          selectedTaskId,
+          limit: 3,
+          textCodePointLimit: 8192,
+        });
+        const input = records.find((message) => message.messageId === 'task-long:user');
+        const assistant = records.find((message) => message.messageId === 'task-long:assistant');
+        expect(input?.textProjectionTruncated).toBe(true);
+        expect(assistant?.subagentActivityProjectionJson).toBe(projection);
+        expect(assistant?.subagentTranscript?.messagesJson).toBe(transcript);
       },
     );
 
