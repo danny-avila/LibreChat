@@ -164,8 +164,47 @@ describe('agents chat message-ID ingress', () => {
   });
 
   it.each([
+    ['overrideUserMessageId', 'a'.repeat(257)],
+    ['overrideUserMessageId', 'a'.repeat(257) + '__0'],
+    ['overrideUserMessageId', 'safe__' + '0'.repeat(80_000)],
+    ['overrideUserMessageId', 'a'.repeat(256) + '__' + '0'.repeat(17)],
+    ['overrideUserMessageId', '_'.repeat(80_000) + 'X'],
+    ['overrideUserMessageId', '__0'],
+    ['overrideUserMessageId', 'invalid/id__0'],
+    ['overrideUserMessageId', 'valid__invalid/id'],
+    ['overrideUserMessageId', ''],
+    ['overrideUserMessageId', 42],
+    ['overrideParentMessageId', 'a'.repeat(257)],
+    ['overrideParentMessageId', 'invalid/id'],
+    ['parentMessageId', 'a'.repeat(258)],
+    ['parentMessageId', {}],
+  ])('rejects an invalid effective identity from %s before admission', async (field, value) => {
+    const app = createAuthenticatedApp();
+    const response = await request(app)
+      .post('/api/agents/chat/agents')
+      .set('Authorization', 'Bearer test-user')
+      .send({ messageId: 'valid-user', responseMessageId: 'valid-response', [field]: value });
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('INVALID_MESSAGE_ID');
+    expect(response.body.error).toContain(field);
+    expect(require('~/server/controllers/agents/request')).not.toHaveBeenCalled();
+    expect(require('@librechat/api').GenerationJobManager.getJob).not.toHaveBeenCalled();
+  });
+
+  it.each([
     {},
-    { messageId: null, responseMessageId: null },
+    {
+      messageId: null,
+      responseMessageId: null,
+      overrideUserMessageId: null,
+      overrideParentMessageId: null,
+    },
+    { messageId: 'valid-user', overrideUserMessageId: 'recovery-user' },
+    { messageId: 'valid-user', overrideUserMessageId: 'a'.repeat(256) + '__0' },
+    { messageId: 'valid-user', overrideUserMessageId: 'a'.repeat(256) + '__9007199254740991' },
+    { messageId: 'valid-user', overrideUserMessageId: 'existing-user__1' },
+    { messageId: 'valid-user', overrideParentMessageId: 'a'.repeat(256), isRegenerate: true },
+    { messageId: 'valid-user', parentMessageId: 'a'.repeat(257) },
     { messageId: '550e8400-e29b-41d4-a716-446655440000' },
     {
       compact: true,
