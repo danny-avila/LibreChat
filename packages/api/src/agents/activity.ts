@@ -313,6 +313,7 @@ export function projectPersistedMessageActivityJson(
 }
 
 const reasoningBlockText = (block: Record<string, unknown>): string => {
+  if (typeof block.think === 'string') return block.think;
   if (typeof block.reasoning === 'string') return block.reasoning;
   if (typeof block.thinking === 'string') return block.thinking;
   if (typeof block.text === 'string') return block.text;
@@ -331,7 +332,7 @@ const visibleContent = (
     if (!isRecord(block) || typeof block.type !== 'string') continue;
     if ((block.type === 'text' || block.type === 'text-plain') && typeof block.text === 'string') {
       text.push(block.text);
-    } else if (block.type === 'reasoning' || block.type === 'thinking') {
+    } else if (block.type === 'think' || block.type === 'reasoning' || block.type === 'thinking') {
       /** The same user reads this exact reasoning in the main chat view, so the
        *  bounded projection keeps its text rather than only a lifecycle marker. */
       hasReasoning = true;
@@ -726,6 +727,7 @@ export class SubagentPublicRecorder {
         if (!isRecord(block)) continue;
         const reasoning =
           event.phase === 'reasoning_delta' ||
+          block.type === 'think' ||
           block.type === 'reasoning' ||
           block.type === 'thinking';
         if (!reasoning && block.type !== 'text' && block.type !== 'text-plain') continue;

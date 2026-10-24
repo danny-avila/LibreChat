@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { SubagentResolutionError } from '@librechat/agents';
 import { Constants, EModelEndpoint, ContentTypes } from 'librechat-data-provider';
+import { InMemorySubagentTaskStore, SubagentResolutionError } from '@librechat/agents';
 import { AIMessage, HumanMessage, ToolMessage } from '@librechat/agents/langchain/messages';
 import {
   createMethods,
@@ -28,9 +28,9 @@ import type {
   SubagentTaskControlHandler,
   SubagentTaskControlTransport,
 } from './subagentTaskRouting';
+import type { SubagentActivityEnvelope, SubagentActivityUpdateEvent } from './subagentActivity';
 import type { SubagentTaskWakeupRegistration } from './subagentThreads';
 import type { IEventTransport } from '~/stream/interfaces/IJobStore';
-import type { SubagentActivityEnvelope } from './subagentActivity';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import {
   buildSubagentThreadTaskConfig,
@@ -298,6 +298,124 @@ beforeEach(async () => {
 });
 
 describe('SubagentThreadTaskStore', () => {
+  it('forwards the same immutable activity identity to the parent and detached stream', async () => {
+    const userId = 'shared-progress-identity';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const forwarded: Array<
+      SubagentUpdateEvent &
+        Pick<SubagentActivityUpdateEvent, 'activityEventId' | 'activitySequence'>
+    > = [];
+    const originalStart = InMemorySubagentTaskStore.prototype.start;
+    jest.spyOn(InMemorySubagentTaskStore.prototype, 'start').mockImplementation(function (
+      this: InMemorySubagentTaskStore,
+      request,
+    ) {
+      return originalStart.call(this, {
+        ...request,
+        run: async (runtime) => {
+          const forward = runtime.reportProgress;
+          return request.run({
+            ...runtime,
+            reportProgress: (event) => {
+              forwarded.push(event);
+              forward(event);
+            },
+          });
+        },
+      });
+    });
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let runtime!: SubagentTaskRuntime;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async (child) => {
+          runtime = child;
+          await gate;
+          return { content: 'Hello' };
+        },
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    const events: SubagentActivityEnvelope[] = [];
+    const subscription = store.subscribeActivity(requireThreadId(started), taskId, {
+      onEvent: (event) => {
+        if (event.event === 'on_subagent_update') events.push(event);
+      },
+    });
+    await subscription.ready;
+    await waitUntil(() => runtime != null, 'the shared-identity runtime');
+    const metadata = {
+      runId: 'parent',
+      subagentRunId: 'child',
+      subagentType: 'worker',
+      subagentAgentId: 'worker',
+      timestamp: '2026-10-24T00:00:00Z',
+    };
+    const step: SubagentUpdateEvent = {
+      ...metadata,
+      phase: 'run_step',
+      data: {
+        id: 'text',
+        index: 0,
+        stepDetails: { type: 'message_creation', message_creation: { message_id: 'text' } },
+      },
+    };
+    const delta: SubagentUpdateEvent = {
+      ...metadata,
+      phase: 'message_delta',
+      data: { id: 'text', delta: { content: [{ type: 'text', text: 'Hello' }] } },
+    };
+    try {
+      runtime.reportProgress(step);
+      runtime.reportProgress(delta);
+      await store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'steer', message: 'Continue' },
+        'control',
+      );
+      runtime.drain('tool');
+      runtime.reportProgress({
+        ...step,
+        data: {
+          id: 'after',
+          index: 1,
+          stepDetails: { type: 'message_creation', message_creation: { message_id: 'after' } },
+        },
+      });
+      await waitUntil(() => events.length === 4, 'both delivery paths');
+      expect(
+        forwarded.map(({ activityEventId, activitySequence }) => ({
+          activityEventId,
+          activitySequence,
+        })),
+      ).toEqual(
+        [0, 1, 3].map((sequence) => ({
+          activityEventId: `${taskId}:${sequence}`,
+          activitySequence: sequence,
+        })),
+      );
+      for (const event of forwarded) {
+        expect(
+          events.find(({ data }) => data.activityEventId === event.activityEventId)?.data,
+        ).toMatchObject(event);
+      }
+      expect(step).not.toHaveProperty('activityEventId');
+      expect(delta).not.toHaveProperty('activitySequence');
+    } finally {
+      release();
+      await waitForSettled(store, config.scopeId, started);
+      subscription.unsubscribe();
+      store.destroyActivityStream();
+    }
+  });
+
   it.each(['success', 'error', 'cancel'] as const)(
     'persists public injection order without private messages on %s',
     async (outcome) => {
@@ -352,6 +470,18 @@ describe('SubagentThreadTaskStore', () => {
         });
       };
       write('before', 0, 'Before');
+      runtime.reportProgress({
+        runId: 'root',
+        subagentRunId: taskId,
+        subagentType: 'worker',
+        subagentAgentId: 'agent',
+        timestamp: '2026-10-24T00:00:00Z',
+        phase: 'reasoning_delta',
+        data: {
+          id: 'before',
+          delta: { content: [{ type: 'think', think: 'Visible reasoning.' }] },
+        },
+      });
       const accepted = await store.controlTask(
         config.scopeId,
         taskId,
@@ -405,6 +535,7 @@ describe('SubagentThreadTaskStore', () => {
       const activity = JSON.parse(saved.subagentActivityProjection!.activityJson);
       expect(activity).toEqual([
         { type: 'writing', text: 'Before' },
+        { type: 'reasoning', text: 'Visible reasoning.' },
         {
           type: 'steer',
           steer: 'Guidance',

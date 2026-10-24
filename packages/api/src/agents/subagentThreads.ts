@@ -1744,13 +1744,20 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 subagentKind: request.subagentKind,
                 subagentAgentId: request.subagentType,
               };
-              const publish = (event: SubagentActivityUpdateEvent): void => {
+              const stamp = <T extends SubagentActivityUpdateEvent>(
+                event: T,
+              ): T & { activitySequence: number } => {
                 const sequence = activitySequence++;
-                const activityEvent: SubagentActivityUpdateEvent = {
+                return {
                   ...event,
                   activityEventId: `${runtime.taskId}:${sequence}`,
                   activitySequence: sequence,
                 };
+              };
+              const publish = (
+                activityEvent: SubagentActivityUpdateEvent & { activitySequence: number },
+              ): void => {
+                const sequence = activityEvent.activitySequence;
                 lease.content?.record(activityEvent, sequence);
                 if (activityEvent.phase === 'steer_applied') {
                   publicRecorder.steer(activityEvent.data as TSteerAppliedEvent);
@@ -1779,12 +1786,14 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 const index = ++maxContentIndex;
                 slots.contentParts[index] = { type: ContentTypes.STEER, steer: '' };
                 contentOffset++;
-                publish({
-                  ...identity,
-                  phase: 'steer_applied',
-                  data: { ...data, index },
-                  timestamp,
-                });
+                publish(
+                  stamp({
+                    ...identity,
+                    phase: 'steer_applied',
+                    data: { ...data, index },
+                    timestamp,
+                  }),
+                );
               };
               const activityRuntime: SubagentTaskRuntime = {
                 ...runtime,
@@ -1858,9 +1867,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                     }
                   }
                   maxContentIndex = Math.max(maxContentIndex, slots.contentParts.length - 1);
-                  runtime.reportProgress(normalized);
-                  recordActivity(recorder, normalized);
-                  publish(normalized);
+                  const activityEvent = stamp(normalized);
+                  runtime.reportProgress(activityEvent);
+                  recordActivity(recorder, activityEvent);
+                  publish(activityEvent);
                 },
               };
               const result = await runWithDetachedSubagentUsage(detachedUsage, () =>

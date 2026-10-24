@@ -495,6 +495,26 @@ describe('bounded public observations', () => {
     timestamp: '2026-10-23T00:00:00.000Z',
   });
 
+  it.each([
+    { type: 'think', think: 'Public reasoning.' },
+    { type: 'reasoning', reasoning: 'Public reasoning.' },
+    { type: 'thinking', thinking: 'Public reasoning.' },
+    { type: 'text', text: 'Public reasoning.' },
+  ])('retains visible reasoning from the $type wire shape', (block) => {
+    const recorder = new SubagentPublicRecorder();
+    recorder.record(
+      progress('run_step', {
+        id: 'reasoning',
+        stepDetails: { type: 'message_creation', message_creation: { message_id: 'reasoning' } },
+      }),
+    );
+    recorder.record(progress('reasoning_delta', { id: 'reasoning', delta: { content: [block] } }));
+    expect(recorder.snapshot()).toEqual({
+      activity: [{ type: 'reasoning', text: 'Public reasoning.' }],
+      truncated: false,
+    });
+  });
+
   it('isolates repeated provider call IDs by step and ignores duplicate announcements', () => {
     const recorder = new SubagentPublicRecorder();
     const step = (id: string) =>
