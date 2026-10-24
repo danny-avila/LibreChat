@@ -1244,6 +1244,17 @@ export function getSubagentTaskContent(
   );
 }
 
+export function getSubagentControlReceipt(
+  parentConversationId: string,
+  threadId: string,
+  taskId: string,
+  invocationId: string,
+): Promise<t.SubagentControlResponse> {
+  return request.get(
+    endpoints.subagentControlReceipt(parentConversationId, threadId, taskId, invocationId),
+  );
+}
+
 export function controlSubagentTask(
   parentConversationId: string,
   threadId: string,

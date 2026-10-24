@@ -186,6 +186,14 @@ export const subagentTaskContent = (
 export const subagentControl = (parentConversationId: string, threadId: string) =>
   `${conversationsRoot}/${encodeURIComponent(parentConversationId)}/subagents/${encodeURIComponent(threadId)}/control`;
 
+export const subagentControlReceipt = (
+  parentConversationId: string,
+  threadId: string,
+  taskId: string,
+  invocationId: string,
+) =>
+  `${parentSubagents(parentConversationId)}/${encodeURIComponent(threadId)}/tasks/${encodeURIComponent(taskId)}/controls/${encodeURIComponent(invocationId)}`;
+
 export const backgroundTasks = (conversationId: string) =>
   `${conversationsRoot}/${encodeURIComponent(conversationId)}/background-tasks`;
 
