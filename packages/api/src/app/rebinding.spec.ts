@@ -1584,6 +1584,30 @@ describe('createSecretRebindingGuard', () => {
       ]);
     });
 
+    it.each([
+      ['hides a field it needs', 'endpoints.azureOpenAI.groups["east"].instanceName'],
+      ['tombstones its groupMap entry', 'endpoints.azureOpenAI.groupMap.east'],
+    ])(
+      "sends no librechat.yaml key to a group a lower layer's tombstone (%s) left unserved",
+      (_case, tombstone) => {
+        const moved = { instanceName: 'evil', baseURL: 'https://evil.example/openai' };
+        const { merged } = mergeGroups(
+          [
+            { ...layer({}, '__base__', 0), tombstones: [tombstone] },
+            layer({ endpoints: { azureOpenAI: { groups: [{ group: 'east', ...moved }] } } }),
+          ],
+          azureBase(),
+        );
+
+        const east = merged.endpoints?.azureOpenAI?.groupMap?.east;
+        expect(east).toMatchObject(moved);
+        expect(east).not.toHaveProperty('apiKey');
+        expect(merged.endpoints?.azureOpenAI?.modelGroupMap).toEqual({
+          'gpt-4o': { group: 'east' },
+        });
+      },
+    );
+
     it("drops a layer's own key for a group whose destination a lower layer moved", () => {
       const { merged, rebindings } = mergeGroups(
         [

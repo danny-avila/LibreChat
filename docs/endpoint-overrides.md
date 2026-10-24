@@ -62,6 +62,11 @@ applies, as for a `librechat.yaml` with an empty spec list.
 A tombstone in the `__base__` profile applies to every principal. Every other profile merges after
 `__base__`.
 
+Hiding or removing an endpoint is never refused because the profile's own model specs select it
+(`/changes`, PATCH and the single-field routes alike): those specs go with the endpoint. A write of
+a spec for an endpoint that is not configured answers 400 `unknown_spec_endpoint`, a spec in the
+same batch as the hide included.
+
 Hiding is undone by:
 
 - deleting the tombstone (`DELETE …/fields?fieldPath=endpoints.custom%5B%22Name%22%5D`);
@@ -170,7 +175,11 @@ preview are written with the group, never by its key. The Azure clients read wha
 resolve to, so a hidden group or field takes effect only where the deployment resolves the groups
 a profile leaves (`CONFIG_REDERIVE_ENDPOINTS=true`, `features.endpointRederive`): the groups left
 are resolved again, and a group that no longer resolves once a field inside it is hidden is not
-served. Without it, the tombstone is stored and inert, as the profile's group overrides are.
+served; GET of the document and the resolved view list that tombstone in `ignored` with reason
+`azure_groups_unresolved`. A higher profile that writes such a group again gets no key from below
+it: enter the key with the group. Without the switch, the tombstone is stored and inert, as the
+profile's group overrides are, and GET of the document, the resolved view and the `/changes`
+response list each of them in `ignored` with reason `endpoint_rederive_off`.
 
 ## After upgrading
 

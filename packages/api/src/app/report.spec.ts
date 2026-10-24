@@ -73,6 +73,26 @@ describe('getEndpointOverrideReport', () => {
     });
   });
 
+  it('lists a document whose only Azure groups override is a keyed tombstone of one', () => {
+    const report = getEndpointOverrideReport(
+      [
+        config('hide', {}, { tombstones: ['endpoints.azureOpenAI.groups["east"]'] }),
+        config(
+          'inside',
+          {},
+          { tombstones: ['endpoints.azureOpenAI.groups["east"].models.gpt-4o'] },
+        ),
+        config('custom', {}, { tombstones: ['endpoints.custom["east"]'] }),
+        config('endpoint', {}, { tombstones: ['endpoints.azureOpenAI.titleModel'] }),
+      ],
+      yaml,
+    );
+
+    expect(report.azureGroups).toEqual(['role/hide', 'role/inside']);
+    expect(report.rederived).toEqual([]);
+    expect(report.unresolvedAzureGroups).toEqual([]);
+  });
+
   it('lists Vertex AI overrides as applied only where librechat.yaml configures Vertex AI', () => {
     const configs = [
       config('vertex', { endpoints: { anthropic: { vertex: { models: ['m'] } } } }),
