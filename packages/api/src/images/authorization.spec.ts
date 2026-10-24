@@ -10,7 +10,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import type { Express, NextFunction, Request, RequestHandler, Response } from 'express';
 import type { ImageAuthorizationDeps } from './authorization';
 import { createImageAuthorizationMiddleware } from './authorization';
-import staticCache from '../../../../api/server/utils/staticCache';
+import staticCache from '~/api/server/utils/staticCache';
 
 const VIEWER_ID = '65cfb246f7ecadb8b1e8036b';
 const OWNER_ID = '65cfb246f7ecadb8b1e8036c';
