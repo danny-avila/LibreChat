@@ -4741,6 +4741,7 @@ export enum KnownEndpoints {
   unify = 'unify',
   vercel = 'vercel',
   xai = 'xai',
+  minimax = 'minimax',
 }
 
 export enum FetchTokenConfig {
@@ -4775,6 +4776,7 @@ export const alternateName = {
   [KnownEndpoints.deepseek]: 'DeepSeek',
   [KnownEndpoints.moonshot]: 'Moonshot',
   [KnownEndpoints.xai]: 'xAI',
+  [KnownEndpoints.minimax]: 'MiniMax',
   [KnownEndpoints.vercel]: 'Vercel',
   [KnownEndpoints.helicone]: 'Helicone',
 };
