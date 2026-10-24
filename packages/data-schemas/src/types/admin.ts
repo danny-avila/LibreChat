@@ -377,9 +377,13 @@ export type AdminConfigChangesRequest = AdminConfigWritePrecondition & {
  *   for an MCP server `librechat.yaml` runs as a local process, whose configuration overrides
  *   never change. A write to a path inside such a server is refused instead (400
  *   `PROCESS_MCP_SERVER_OVERRIDE`).
+ * - `derived_path`: a field the server derives from another one (`rules.derivedPaths`:
+ *   `endpoints.anthropic.vertexConfig`, from `endpoints.anthropic.vertex`), which the merge never
+ *   applies from an override. A `set` or `tombstone` there is skipped; an `unset` clears a value
+ *   an older server stored.
  *
  * Removing a stored value (DELETE `/fields`, an `unset` change) is cleanup and is never skipped
- * for `base_only_path`, `deployment_only_path` or `process_mcp_server`.
+ * for `base_only_path`, `deployment_only_path`, `process_mcp_server` or `derived_path`.
  */
 export type AdminConfigSkipReason =
   | 'base_only_section'
@@ -387,7 +391,8 @@ export type AdminConfigSkipReason =
   | 'deployment_only_path'
   | 'dedicated_section'
   | 'interface_permission'
-  | 'process_mcp_server';
+  | 'process_mcp_server'
+  | 'derived_path';
 
 /**
  * Why a stored override, tombstone, change or part of one (at its own `segments`) has no effect
@@ -403,7 +408,7 @@ export type AdminConfigSkipReason =
  * - `invalid`: a value that fails validation where the merge applies it, so the value beneath
  *   stays (stored before validation existed, or valid only over other layers).
  * - `unknown_section`: a top-level key `configSchema` does not define (`sectionAllowlist`).
- * - `base_only_section`, `dedicated_section`, `interface_permission`: as in
+ * - `base_only_section`, `dedicated_section`, `interface_permission`, `derived_path`: as in
  *   {@link AdminConfigSkipReason}, for a value or tombstone already stored.
  */
 export type AdminConfigIgnoreReason =
@@ -414,7 +419,8 @@ export type AdminConfigIgnoreReason =
   | 'unknown_section'
   | 'base_only_section'
   | 'dedicated_section'
-  | 'interface_permission';
+  | 'interface_permission'
+  | 'derived_path';
 
 /**
  * A credential the runtime merge leaves out of a document's layer, or a destination it sets back,
@@ -522,6 +528,8 @@ export type AdminConfigChangeErrorResponse = {
  * - `invalid_theme`: an `interface.theme` the client would reject; `librechat.yaml`'s applies.
  * - `tenant_hidden`: a custom endpoint `librechat.yaml` scopes to another tenant, or a model
  *   spec that uses one.
+ * - `derived_path`: a field the server derives from another one (`rules.derivedPaths`), which the
+ *   merge never applies from a layer, value or tombstone.
  */
 export type AdminConfigLayerIgnoreReason =
   | 'unknown_section'
@@ -539,7 +547,8 @@ export type AdminConfigLayerIgnoreReason =
   | 'destination_restored'
   | 'env_reference_not_allowed'
   | 'invalid_theme'
-  | 'tenant_hidden';
+  | 'tenant_hidden'
+  | 'derived_path';
 
 /**
  * Part of a layer the merge does not apply as written. `segments` locate it in librechat.yaml
@@ -816,12 +825,14 @@ export type AdminConfigEnvStatusResponse = {
  *   rule (`secretRebinding`) applies to those.
  * - `azureGroupSecrets`: `endpoints.azureOpenAI.groups[].apiKey` is stored encrypted with
  *   `apiKeyPreview`, matched across writes by `group` (omit it to keep it), left out of reads
- *   and decrypted for the Azure clients, which use it: the merge resolves a profile's `groups`
- *   as AppService resolves librechat.yaml's, into the `groupMap`, `modelGroupMap`, model list
- *   and assistant models the clients read. A profile's `groups` replace the groups below whole,
- *   as its array does, and a tombstone of `groups` removes everything they resolve to; groups
- *   that do not resolve (a duplicate group or model, a model without a deployment or version)
- *   stay unread, with a warning. The merged model lists name only models a merged group serves:
+ *   and decrypted for the Azure clients, which use it where the merge resolves a profile's
+ *   `groups` (`endpointRederive`, `CONFIG_REDERIVE_ENDPOINTS=true`): as AppService resolves
+ *   librechat.yaml's, into the `groupMap`, `modelGroupMap`, model list and assistant models the
+ *   clients read. Without it, a profile's `groups` and a tombstone of them are stored but inert.
+ *   A profile's `groups` merge by `group` over the groups below (`azureGroupMergeKey`), and a
+ *   tombstone of `groups` removes everything they resolve to; groups that do not resolve (a
+ *   duplicate group or model, a model without a deployment or version) stay unread, with a
+ *   warning. The merged model lists name only models a merged group serves:
  *   a `modelNames`, `assistantModels` or `assistantGroups` an override writes directly is
  *   narrowed to them, with a warning. When none of the models the merge leaves supports
  *   assistants, `assistants` is off for that profile, with a warning, rather than on without a
@@ -858,10 +869,13 @@ export type AdminConfigEnvStatusResponse = {
  *   search and Langfuse keys, which are stored encrypted and sent as entered, so a `${...}`
  *   inside one is part of the key (a whole `${VAR}` reference there is still checked). Custom
  *   endpoint, Azure group and MCP credentials are expanded by their clients once decrypted and
- *   stay checked. At runtime an unlisted reference in a stored override resolves to nothing. The
- *   allowlist decides which names a value may reference, not where the value is sent: an allowed
- *   name may appear in any value, a URL, a header or a key beside a host of the writer's
- *   choosing.
+ *   stay checked. Vertex AI's settings (`endpoints.anthropic.vertex`) are narrower: the merge
+ *   resolves them into the `vertexConfig` reads return (`endpointRederive`), so they may
+ *   reference only the names librechat.yaml's own Vertex AI settings reference (those of its key
+ *   file only in `serviceKeyFile`), whatever else the allowlist holds. At runtime an unlisted
+ *   reference in a stored override resolves to nothing. The allowlist decides which names a
+ *   value may reference, not where the value is sent: an allowed name may appear in any value, a
+ *   URL, a header or a key beside a host of the writer's choosing.
  * - `secretRebinding`: the merge drops a credential a layer would send somewhere it was not
  *   entered for: an inherited one whose destination the layer changes without entering it again,
  *   or the layer's own one whose destination a layer below changed (MCP servers, custom
@@ -990,6 +1004,65 @@ export type AdminConfigEnvStatusResponse = {
  *   `target_not_written`, `source_still_written` (the write keeps `previousName`; swap names with
  *   `/changes` `rename` ops), `duplicate_source` (two hints rename one entry), `duplicate_target`
  *   or `invalid_name`. A `/changes` `rename` of a custom endpoint moves its keyed tombstones too.
+ * - `azureGroupMergeKey`: `endpoints.azureOpenAI.groups` merges by `group`
+ *   (`rules.arrayMergeKeys`), as `endpoints.custom` merges by `name`: a profile's group merges
+ *   over the group of that name below it (its models by name), a new one is added, and groups it
+ *   does not name stay. Every item needs a unique `group` (`missing_merge_key`,
+ *   `duplicate_merge_key`); a write addressing an item by index answers 400
+ *   `indexed_merge_key_write`; `/changes` takes `upsertEntry`, `removeEntry` and `rename` on
+ *   `endpoints.azureOpenAI.groups`, and a keyed path (`keyedTombstones`) names a group by its
+ *   `group`: `endpoints.azureOpenAI.groups["name"]` hides an inherited group, or a path inside it,
+ *   and the merge resolves the groups left again (with `endpointRederive`; a group that no longer
+ *   resolves once a path inside it is hidden is not served). To replace librechat.yaml's groups,
+ *   tombstone `groups` and write the profile's own. A write whose groups, merged that way over librechat.yaml and Base,
+ *   do not resolve (a duplicate model, a model without a deployment name or version, a group
+ *   without its instance, or a written group's `${VAR}` that is not set) answers 400
+ *   `CONFIG_OVERRIDE_INVALID` with `invalid_azure_groups` at `endpoints.azureOpenAI.groups`;
+ *   stored groups that do not resolve are left out of the merge, with a warning. Writes are
+ *   checked this way whether or not the groups apply yet: the merge serves them only with
+ *   `endpointRederive`.
+ * - `customParamsExpansion`: a custom endpoint's `customParams` are expanded for the runtime
+ *   from its librechat.yaml form, for librechat.yaml and every profile that writes the endpoint:
+ *   compact `paramDefinitions` (`{ key, default }`) get the defaults of `defaultParamsEndpoint`,
+ *   a changed `defaultParamsEndpoint` picks the new endpoint's, and an endpoint named for or
+ *   pointing at OpenRouter gets OpenRouter's defaults, a profile's own included. GET `/base`
+ *   returns librechat.yaml's `config` as written (compact), and `endpoints.custom` expanded.
+ *   Definitions startup would refuse (an unknown key or `defaultParamsEndpoint`, malformed
+ *   settings) answer 400 `CONFIG_OVERRIDE_INVALID` with `invalid_param_definitions` at the
+ *   endpoint's `customParams`; stored ones are left out of the merge, with a warning.
+ * - `specInterfaceRederive`: the interface controls model specs decide (`modelSelect`,
+ *   `parameters`, `presets`) follow the model specs a principal is served, where neither
+ *   librechat.yaml nor a profile sets them: a profile that adds specs turns them off (the model
+ *   selector stays on with `addedEndpoints`), and one that removes every spec (a tombstone, an
+ *   empty list, or tenant scoping) turns them back on. A model spec whose endpoint the layers
+ *   leave unconfigured (a tombstone of `endpoints.custom` or `endpoints` removing the custom
+ *   endpoint it names) is not served, as startup skips librechat.yaml's, until a layer defines the
+ *   endpoint again; built-in endpoints keep their specs. A profile that turns `memory` on or off,
+ *   or changes the agents endpoint, has the agents `memory` capability derived again, so it is
+ *   offered only while memory is on. A model spec whose `preset.endpoint` is neither a built-in
+ *   endpoint nor a configured custom endpoint answers 400 `CONFIG_OVERRIDE_INVALID` with
+ *   `unknown_spec_endpoint` at that field.
+ * - `endpointRederive`: on only where the deployment sets `CONFIG_REDERIVE_ENDPOINTS=true` (off
+ *   by default for one release; it becomes the default after). Then a profile's Azure `groups`
+ *   resolve into what the Azure clients read (`azureGroupSecrets`, `azureGroupMergeKey`), a
+ *   tombstone of them leaves the profile no Azure group, and a profile's
+ *   `endpoints.anthropic.vertex` derives the Vertex AI setup and the Anthropic models it serves,
+ *   as librechat.yaml's does at startup: `enabled: false` turns Vertex AI off for the profile and
+ *   serves the YAML-shaped `endpoints.anthropic.models`, and models a profile sets in
+ *   `endpoints.anthropic.models` stay over Vertex's. A profile that turns Azure `assistants` on
+ *   or off, or tombstones the Azure endpoint, gets the Azure Assistants endpoint derived again.
+ *   Off, those overrides are stored but inert, and checked on write all the same. Whether on or
+ *   off, `vertex.serviceKeyFile` and `vertex.region` stay librechat.yaml's
+ *   (`rules.baseOnlyPaths`): the merge ignores them wherever stored, and a change batch skips and
+ *   reports a write of them. The merge never applies a profile's `endpoints.anthropic.vertexConfig`
+ *   (what `vertex` resolves to, as GET `/base` shows it), value or tombstone, and writes skip it
+ *   (`rules.derivedPaths`, `derived_path`). A profile may turn Vertex AI on only where
+ *   librechat.yaml configures `endpoints.anthropic.vertex` (on or off), whose key file and region
+ *   it runs on. A Vertex AI setup that does not load (an unset `${VAR}`, a region, project ID or
+ *   deployment name that would leave its place in the request URL, a model name sent as written
+ *   that would, or one turned on where librechat.yaml configures none) answers 400 `CONFIG_OVERRIDE_INVALID` with
+ *   `invalid_vertex_config` at `endpoints.anthropic.vertex`, and a stored one is left out of the
+ *   merge, with a warning.
  */
 export type AdminConfigFeatureFlag =
   | 'dottedKeys'
@@ -1019,7 +1092,11 @@ export type AdminConfigFeatureFlag =
   | 'issueParams'
   | 'adminTermsExempt'
   | 'keyedTombstones'
-  | 'renameHints';
+  | 'renameHints'
+  | 'azureGroupMergeKey'
+  | 'customParamsExpansion'
+  | 'specInterfaceRederive'
+  | 'endpointRederive';
 
 export type AdminConfigFeatures = Record<AdminConfigFeatureFlag, boolean>;
 
@@ -1058,6 +1135,13 @@ export type AdminConfigMergeRules = {
   atomicMergePaths: string[];
   /** Override sections the resolved config (`GET /base`) holds under another name. */
   overrideKeyMap: Record<string, string>;
+  /**
+   * Fields the resolved config (`GET /base`) holds that the server derives from other fields
+   * (`endpoints.anthropic.vertexConfig`, from `endpoints.anthropic.vertex`): the merge never
+   * applies an override's value or tombstone there, `POST …/changes` skips a `set` or `tombstone`
+   * of one (`derived_path`), and PUT, PATCH and the tombstone route leave them out.
+   */
+  derivedPaths: string[];
 };
 
 export type AdminConfigRules = AdminConfigMergeRules & {

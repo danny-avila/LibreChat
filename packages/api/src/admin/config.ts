@@ -1,6 +1,7 @@
 import {
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
+  DERIVED_CONFIG_PATHS,
   configSchema,
   PrincipalType,
   PrincipalModel,
@@ -67,6 +68,7 @@ import {
   isConfigRevisionConflict,
   ConfigRevisionConflictError,
   isConfigOverrideStateEmpty,
+  isVertexConfigured,
   toConfigDraft,
   toConfigIdentityPath,
   renameConfigIdentityPath,
@@ -113,6 +115,7 @@ import type {
   ConfigMutationOutcome,
   ConfigMutationPlan,
   ConfigIdentityStep,
+  ConfigDerivation,
   ConfigEntryStep,
   ConfigLocation,
   ConfigEntryRename,
@@ -179,6 +182,7 @@ import { createAdminAuditEmitter, configTarget } from './audit';
 import { DEFAULT_OVERRIDE_CACHE_TTL } from '~/app/service';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { mergeOverrideLayers } from '~/app/overrides';
+import { expandCustomEndpoint } from '~/app/params';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
@@ -464,6 +468,7 @@ function getPatchStepIssues(
   floor: Partial<TCustomConfig>,
   stored: ConfigRecord | null,
   renames: readonly ConfigEntryRename[],
+  derivation: ConfigDerivation,
 ): ConfigOverrideIssue[] {
   const written = steps.flatMap((step) =>
     'write' in step ? [[...step.write.segments]] : step.reset.map(({ segments }) => [...segments]),
@@ -477,7 +482,7 @@ function getPatchStepIssues(
     applyPatchSteps(toConfigOverrideState(stored), steps),
     renames,
   );
-  return getConfigChangeIssues(candidate, floor, stored, written, lifted);
+  return getConfigChangeIssues(candidate, floor, stored, written, lifted, derivation);
 }
 
 /** Applies a patch's steps in order to the stored document's state. */
@@ -664,6 +669,8 @@ const SKIP_DESCRIPTIONS: Readonly<Record<AdminConfigSkipReason, string>> = {
   dedicated_section: 'dedicated tenant-wide config field %s in the generic config API',
   interface_permission: 'interface permission field %s — use role permissions instead',
   process_mcp_server: 'override of process-backed MCP server %s - configure it in librechat.yaml',
+  derived_path:
+    'derived config path %s - the server derives it from the field it resolves, write that instead',
 };
 
 /** Logs a skipped path; `action` is how the route words it (`Stripping`, `Ignoring tombstone for`). */
@@ -673,12 +680,38 @@ function logSkippedField(action: string, fieldPath: string, reason: AdminConfigS
   );
 }
 
+/** A field the generic config API never stores a value at, and why. */
+interface HeldPath {
+  segments: readonly string[];
+  reason: YamlHeldPath['reason'] | 'derived_path';
+}
+
+/** Fields the server derives from another one (`rules.derivedPaths`), which the merge never applies. */
+const DERIVED_HELD_PATHS: readonly HeldPath[] = DERIVED_CONFIG_PATHS.map((path) => ({
+  segments: path.split('.'),
+  reason: 'derived_path',
+}));
+
+let writeHeldPaths: readonly HeldPath[] | undefined;
+
+/**
+ * Fields only librechat.yaml sets (`YAML_HELD_PATHS`) and derived fields: no write stores them.
+ * Built on first use rather than at import, as the other readers of `YAML_HELD_PATHS` do.
+ */
+function getWriteHeldPaths(): readonly HeldPath[] {
+  writeHeldPaths ??= [...YAML_HELD_PATHS, ...DERIVED_HELD_PATHS];
+  return writeHeldPaths;
+}
+
 /**
  * Why a write or tombstone at `segments` is skipped because the path is, or lies inside, a field
- * only librechat.yaml sets. Removing a stored value there is cleanup and is never skipped.
+ * only librechat.yaml sets or one the server derives. Removing a stored value there is cleanup
+ * and is never skipped.
  */
-function getHeldPathSkipReason(segments: readonly string[]): YamlHeldPath['reason'] | null {
-  return YAML_HELD_PATHS.find((held) => isSegmentPrefix(held.segments, segments))?.reason ?? null;
+function getHeldPathSkipReason(segments: readonly string[]): HeldPath['reason'] | null {
+  return (
+    getWriteHeldPaths().find((held) => isSegmentPrefix(held.segments, segments))?.reason ?? null
+  );
 }
 
 /** A part of a written value the API does not store, at its full location. */
@@ -688,9 +721,10 @@ interface SkippedPart {
 }
 
 /**
- * Removes the fields only librechat.yaml sets below `segments` from a value written there
- * (`endpoints.agents` carrying `pullRequests.provider` or `eventDriven`), with the objects that
- * leaves empty. Returns the value to store and the parts it removed.
+ * Removes the fields only librechat.yaml sets, and the derived ones, below `segments` from a value
+ * written there (`endpoints.agents` carrying `pullRequests.provider` or `eventDriven`,
+ * `endpoints.anthropic` carrying `vertexConfig`), with the objects that leaves empty. Returns the
+ * value to store and the parts it removed.
  */
 function stripHeldPaths(
   segments: readonly string[],
@@ -698,7 +732,7 @@ function stripHeldPaths(
 ): { value: unknown; stripped: SkippedPart[] } {
   let result = value;
   const stripped: SkippedPart[] = [];
-  for (const { segments: path, reason } of YAML_HELD_PATHS) {
+  for (const { segments: path, reason } of getWriteHeldPaths()) {
     if (path.length <= segments.length || !isSegmentPrefix(segments, path)) {
       continue;
     }
@@ -962,6 +996,22 @@ export interface AdminConfigDeps {
    * app config service is given, so a write is judged by the policy its values resolve under.
    */
   overrideEnvAllowlist?: string;
+  /**
+   * Whether the app config service derives Azure groups, Vertex AI and the Azure Assistants
+   * endpoint from overrides again (`CONFIG_REDERIVE_ENDPOINTS`): `GET /meta` reports it as
+   * `features.endpointRederive`, and write responses judge what a write drops by the same merge.
+   */
+  rederiveEndpoints?: boolean;
+}
+
+/**
+ * What writes over `yaml` (librechat.yaml) are checked against beyond the schema: the custom
+ * endpoint parameter definitions startup would expand (`invalid_param_definitions`), and whether
+ * librechat.yaml configures the Vertex AI a write may turn on, besides the derived checks the
+ * store always runs (Azure groups, Vertex AI, model spec endpoints).
+ */
+function getWriteDerivation(yaml: Partial<TCustomConfig> | null): ConfigDerivation {
+  return { expandCustomEndpoint, vertexConfigured: isVertexConfigured(yaml) };
 }
 
 // ── Validation helpers ───────────────────────────────────────────────
@@ -1782,7 +1832,10 @@ function getKeptKeyReentryIssues(
       stored,
       candidate,
       entered,
-      baseGroupMap: baseConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.groupMap,
+      base: {
+        groups: baseConfig?.config?.endpoints?.[EModelEndpoint.azureOpenAI]?.groups,
+        groupMap: baseConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.groupMap,
+      },
     }),
     ...getBoundKeyReentryIssues({ stored, candidate, entered, baseConfig }),
   ];
@@ -2210,7 +2263,7 @@ function prepareChange(raw: unknown, index: number): PreparedRead {
     if (removalError) {
       return changeFailure(index, removalError.error, removalError.code);
     }
-    /** Unsetting a stored field only librechat.yaml sets is cleanup: only a tombstone is skipped. */
+    /** Unsetting a stored held or derived field is cleanup: only a tombstone is skipped. */
     const skipReason =
       sectionSkip ?? (op === 'tombstone' ? getHeldPathSkipReason(target.segments) : null);
     const change: PreparedChange = {
@@ -2537,6 +2590,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     auditFailClosed,
     overrideCacheTtlMs = DEFAULT_OVERRIDE_CACHE_TTL,
     overrideEnvAllowlist,
+    rederiveEndpoints = false,
   } = deps;
 
   const envAllowlist = parseEnvAllowlist(overrideEnvAllowlist);
@@ -2819,6 +2873,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const ignored: AdminConfigIgnoredSecret[] = [];
       mergeOverrideLayers(baseConfig, floor ? [floor, written] : [written], {
         envPolicy,
+        rederiveEndpoints,
         onRebinding: (rebinding) => {
           if (
             rebinding.layer.principalType === written.principalType &&
@@ -2886,7 +2941,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     }
     try {
       const baseYaml: Partial<TCustomConfig> = baseConfig.config ?? {};
-      const overrides = getIgnoredConfigOverrides(baseYaml, stored, base ? [base] : [], baseConfig);
+      const overrides = getIgnoredConfigOverrides(
+        baseYaml,
+        stored,
+        base ? [base] : [],
+        baseConfig,
+        { expandCustomEndpoint, rederiveEndpoints },
+      );
       const secrets = await reportIgnored(stored, tenantId, {
         baseConfig,
         envPolicy: getEnvPolicy(baseYaml),
@@ -2910,7 +2971,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    * beside it. A profile can then enter its own key for an endpoint, server or service Base
    * defines without restating the destination, and the key is dropped again once Base, or any
    * layer below the profile, moves that destination. Base merges first, so nothing moves its
-   * keys from below.
+   * keys from below. Destinations are judged as with `CONFIG_REDERIVE_ENDPOINTS` on, whatever
+   * this deployment runs with, so a key entered for an Azure group while the groups are inert
+   * keeps its destination once they apply.
    */
   function bindPlannedSecrets(params: {
     principalType: PrincipalType;
@@ -2941,6 +3004,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     };
     mergeOverrideLayers(params.baseConfig ?? ({} as AppConfig), [base, layer], {
       envPolicy: params.envPolicy,
+      rederiveEndpoints: true,
       onRebinding: (rebinding) => {
         if (
           rebinding.binding != null &&
@@ -3058,7 +3122,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (yaml == null) {
         return {};
       }
-      return base ? resolveRawConfig(yaml, [base]) : yaml;
+      return base ? resolveRawConfig(yaml, [base], getWriteDerivation(yaml)) : yaml;
     };
     const outcome = await runConfigMutation<T>(
       {
@@ -3179,13 +3243,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const baseConfig = await getBaseAppConfig(user.tenantId);
-      const meta = buildAdminConfigMeta({
-        maxPatchEntries: MAX_PATCH_ENTRIES,
-        maxChangeOps: MAX_CONFIG_CHANGE_OPS,
-        maxEntryKeyLength: MAX_CONFIG_ENTRY_KEY_LENGTH,
-        overrideCacheTtlMs,
-        catalogModelsTtlMs: getCatalogModelsTtlMs(baseConfig),
-      });
+      const meta = buildAdminConfigMeta(
+        {
+          maxPatchEntries: MAX_PATCH_ENTRIES,
+          maxChangeOps: MAX_CONFIG_CHANGE_OPS,
+          maxEntryKeyLength: MAX_CONFIG_ENTRY_KEY_LENGTH,
+          overrideCacheTtlMs,
+          catalogModelsTtlMs: getCatalogModelsTtlMs(baseConfig),
+        },
+        { rederiveEndpoints },
+      );
       return res.status(200).json(meta);
     } catch (error) {
       logger.error('[adminConfig] getConfigMeta error:', getSafeErrorMetadata(error));
@@ -3509,6 +3576,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             const issues = getConfigOverrideIssues(
               preserved,
               applyConfigTombstones(floor, storedState.tombstones),
+              getWriteDerivation(yaml),
             );
             if (issues.length > 0) {
               return { draft: null, result: { status: 400, issues } };
@@ -3866,8 +3934,14 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             /** A renamed custom endpoint's keyed tombstones move to its new name. */
             const entryRenames = toEntryRenames(renames.renames);
             const fieldIssues = hasResets
-              ? getPatchStepIssues(steps, floor, stored, entryRenames)
-              : getConfigFieldIssues(writes, floor, stored, entryRenames);
+              ? getPatchStepIssues(steps, floor, stored, entryRenames, getWriteDerivation(baseYaml))
+              : getConfigFieldIssues(
+                  writes,
+                  floor,
+                  stored,
+                  entryRenames,
+                  getWriteDerivation(baseYaml),
+                );
             if (fieldIssues.length > 0) {
               return { draft: null, result: { status: 400, issues: fieldIssues } };
             }
@@ -4548,7 +4622,14 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
            * and which must not be blamed on the removal.
            */
           const attributable = written.filter((segments) => isAcceptedOverrideSection(segments[0]));
-          const issues = getConfigChangeIssues(state, floor, stored, attributable);
+          const issues = getConfigChangeIssues(
+            state,
+            floor,
+            stored,
+            attributable,
+            [],
+            getWriteDerivation(baseYaml),
+          );
           if (issues.length > 0) {
             return { draft: null, result: { stop: { kind: 'issues', issues } } };
           }

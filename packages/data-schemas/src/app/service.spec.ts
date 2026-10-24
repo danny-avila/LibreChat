@@ -432,3 +432,42 @@ describe('AppService memory capability', () => {
     );
   });
 });
+
+describe('AppService custom endpoint parameters', () => {
+  const gateway = {
+    name: 'Gateway',
+    apiKey: 'gateway-key',
+    baseURL: 'https://gateway.example.com/v1',
+    models: { default: ['m1'] },
+    customParams: {
+      defaultParamsEndpoint: 'anthropic',
+      paramDefinitions: [{ key: 'temperature' }],
+    },
+  };
+  const config = { endpoints: { custom: [gateway] } } as DeepPartial<TCustomConfig>;
+
+  it('serves the custom endpoints as librechat.yaml writes them without an expander', async () => {
+    const appConfig = await AppService({ config: structuredClone(config) });
+
+    expect(appConfig.endpoints?.custom).toEqual([gateway]);
+    expect(appConfig.config.endpoints?.custom).toEqual([gateway]);
+  });
+
+  it('serves expanded copies and keeps the config as librechat.yaml writes it', async () => {
+    const written = structuredClone(config);
+    const appConfig = await AppService({
+      config: written,
+      expandCustomEndpoint: (endpoint) => ({
+        ...endpoint,
+        customParams: { defaultParamsEndpoint: 'anthropic', paramDefinitions: [] },
+      }),
+    });
+
+    expect(appConfig.endpoints?.custom?.[0]?.customParams).toEqual({
+      defaultParamsEndpoint: 'anthropic',
+      paramDefinitions: [],
+    });
+    expect(appConfig.config.endpoints?.custom?.[0]).toEqual(gateway);
+    expect(written.endpoints?.custom?.[0]).toEqual(gateway);
+  });
+});

@@ -1,21 +1,22 @@
 import { createHash } from 'node:crypto';
 import {
-  logger,
-  getTenantId,
-  loadDefaultInterface,
-  tenantStorage,
-  BASE_CONFIG_PRINCIPAL_ID,
-  SYSTEM_TENANT_ID,
-} from '@librechat/data-schemas';
-import {
   PrincipalType,
   materializeModelSpecEndpoints,
-  getConfigDefaults,
   normalizeEndpointName,
   setMaxSubagents,
 } from 'librechat-data-provider';
+import {
+  logger,
+  getTenantId,
+  tenantStorage,
+  deriveSpecInterface,
+  SPEC_INTERFACE_FIELDS,
+  BASE_CONFIG_PRINCIPAL_ID,
+  SYSTEM_TENANT_ID,
+} from '@librechat/data-schemas';
 import type {
   AppConfig,
+  SpecInterfaceField,
   ConfigOverrideLayer,
   ConfigLayerResolution,
   AdminConfigLayerIgnored,
@@ -25,8 +26,8 @@ import type { Types } from 'mongoose';
 import type { CustomConfigLoadMode, ConfigLoadFailure, ConfigLoadResult } from './loader';
 import type { EnvReferencePolicy } from './allowlist';
 import type { SecretRebinding } from './rebinding';
+import { resolveOverrideLayers, mergeOverrideLayersWithSource } from './overrides';
 import { createEnvReferencePolicy, parseEnvAllowlist } from './allowlist';
-import { mergeOverrideLayers, resolveOverrideLayers } from './overrides';
 import { resolveRuntimeConfigSecrets } from '~/admin/secrets';
 import { normalizeEndpointReferences } from './references';
 import { getConfigLoadFailure } from './loader';
@@ -262,25 +263,61 @@ function scopeCustomEndpoints(
   };
 }
 
+/** What decides the spec-dependent interface controls: whether specs are served, and added endpoints. */
+function getSpecState(modelSpecs: AppConfig['modelSpecs']): string {
+  const hasSpecs = (modelSpecs?.list?.length ?? 0) > 0;
+  return `${hasSpecs}:${(modelSpecs?.addedEndpoints?.length ?? 0) > 0}`;
+}
+
+/**
+ * The spec-dependent interface controls a merge may have changed against `base`, whose own are
+ * already derived for the specs it serves: all of them when the specs served change, else those
+ * whose final librechat.yaml-shaped value (`explicit`) or served value differs from `base`'s. A
+ * control a layer sets and a higher layer tombstones is back to librechat.yaml's value in
+ * `explicit`, but the tombstone removed its served value, so it is derived again too.
+ */
+function getChangedSpecFields(
+  base: AppConfig,
+  merged: AppConfig,
+  explicit: TCustomConfig['interface'] | undefined,
+): SpecInterfaceField[] {
+  if (getSpecState(base.modelSpecs) !== getSpecState(merged.modelSpecs)) {
+    return [...SPEC_INTERFACE_FIELDS];
+  }
+  const written = base.config?.interface;
+  return SPEC_INTERFACE_FIELDS.filter(
+    (field) =>
+      explicit?.[field] !== written?.[field] ||
+      merged.interfaceConfig?.[field] !== base.interfaceConfig?.[field],
+  );
+}
+
+/**
+ * `config` with the interface controls model specs decide (`deriveSpecInterface`) derived for the
+ * specs it serves, where `explicit` (the librechat.yaml-shaped interface) leaves them unset: the
+ * `fields` given, all three by default.
+ */
+function withSpecInterface(
+  config: AppConfig,
+  explicit: TCustomConfig['interface'] | undefined,
+  fields: readonly SpecInterfaceField[] = SPEC_INTERFACE_FIELDS,
+): AppConfig {
+  if (fields.length === 0) {
+    return config;
+  }
+  const interfaceConfig = deriveSpecInterface(config.interfaceConfig, explicit, config.modelSpecs, {
+    fields,
+  });
+  return interfaceConfig === config.interfaceConfig ? config : { ...config, interfaceConfig };
+}
+
 /** Re-derive only spec-dependent controls before principal overrides are applied. */
-async function scopeBaseConfig(config: AppConfig, tenantId?: string): Promise<AppConfig> {
+function scopeBaseConfig(config: AppConfig, tenantId?: string): AppConfig {
   const scoped = scopeCustomEndpoints(config, tenantId);
-  if (scoped.modelSpecs === config.modelSpecs || !config.interfaceConfig) {
+  if (scoped.modelSpecs === config.modelSpecs) {
     return scoped;
   }
-  const defaults = await loadDefaultInterface({
-    config: { ...scoped.config, modelSpecs: scoped.modelSpecs },
-    configDefaults: getConfigDefaults(),
-  });
-  return {
-    ...scoped,
-    interfaceConfig: {
-      ...config.interfaceConfig,
-      modelSelect: defaults?.modelSelect,
-      parameters: defaults?.parameters,
-      presets: defaults?.presets,
-    },
-  };
+  return withSpecInterface(scoped, scoped.config?.interface);
 }
 
 export type AppConfigPrincipal = {
@@ -470,6 +507,12 @@ export interface AppConfigServiceDeps {
    * endpoint credentials.
    */
   overrideEnvAllowlist?: string;
+  /**
+   * Whether config overrides of Azure `groups`, Vertex AI (`endpoints.anthropic.vertex`) and the
+   * Azure Assistants switch derive the served endpoints again (`CONFIG_REDERIVE_ENDPOINTS=true`).
+   * Off, those overrides stay inert, as before.
+   */
+  rederiveEndpoints?: boolean;
 }
 
 export interface GetAppConfigOptions {
@@ -648,6 +691,8 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
   reloadBaseConfig: () => Promise<ConfigLoadResult>;
   /** The TTL in ms this service caches per-principal merged configs for. */
   overrideCacheTtl: number;
+  /** Whether this service derives Azure groups, Vertex AI and Azure Assistants again. */
+  rederiveEndpoints: boolean;
 } {
   const {
     loadBaseConfig,
@@ -659,6 +704,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     augmentConfig,
     overrideCacheTtl = DEFAULT_OVERRIDE_CACHE_TTL,
     overrideEnvAllowlist,
+    rederiveEndpoints = false,
   } = deps;
 
   const cache = getCache(cacheKeys.APP_CONFIG);
@@ -947,7 +993,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     const cacheTenantId = ambientTenantId ?? effectiveTenantId;
     const generation = getOverrideGeneration(cacheTenantId);
     const baseConfig = await ensureBaseConfig(refresh);
-    const scopedBaseConfig = await scopeBaseConfig(baseConfig, effectiveTenantId);
+    const scopedBaseConfig = scopeBaseConfig(baseConfig, effectiveTenantId);
     const hiddenEndpoints = hiddenCustomEndpoints(baseConfig, effectiveTenantId);
     if (baseOnly) {
       return scopedBaseConfig;
@@ -1027,11 +1073,16 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     try {
       const configs = await getApplicableConfigs(principals);
       if (configs.length > 0) {
-        const layered = mergeOverrideLayers(scopedBaseConfig, configs, {
-          envPolicy: getEnvPolicy(baseConfig, scopedBaseConfig, effectiveTenantId),
-          onRebinding: warnRebinding,
-        });
-        merged = scopeCustomEndpoints(
+        const { appConfig: layered, raw } = mergeOverrideLayersWithSource(
+          scopedBaseConfig,
+          configs,
+          {
+            envPolicy: getEnvPolicy(baseConfig, scopedBaseConfig, effectiveTenantId),
+            onRebinding: warnRebinding,
+            rederiveEndpoints,
+          },
+        );
+        const scopedMerge = scopeCustomEndpoints(
           checkOverrideTheme(
             scopedBaseConfig,
             scopeHiddenEndpointReferences(
@@ -1042,6 +1093,12 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
           ),
           effectiveTenantId,
           hiddenEndpoints,
+        );
+        /** Spec-dependent controls follow the specs served once tenant scoping has settled them. */
+        merged = withSpecInterface(
+          scopedMerge,
+          raw.interface,
+          getChangedSpecFields(scopedBaseConfig, scopedMerge, raw.interface),
         );
       }
     } catch (error) {
@@ -1093,6 +1150,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     const resolution = resolveOverrideLayers(scopedBaseConfig, configs, {
       envPolicy: getEnvPolicy(baseConfig, scopedBaseConfig, effectiveTenantId),
       onRebinding: warnRebinding,
+      rederiveEndpoints,
     });
     const completed = completeEffectiveConfig(resolution.merged);
     const unserved = getUnservedEndpointNames(scopedBaseConfig, configs, completed);
@@ -1114,9 +1172,15 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       effectiveTenantId,
       hiddenCustomEndpoints(checked, effectiveTenantId, hiddenEndpoints),
     );
+    const scopedMerge = scopeCustomEndpoints(checked, effectiveTenantId, hiddenEndpoints);
+    const explicit = resolution.raw.interface;
     return {
       yaml,
-      merged: scopeCustomEndpoints(checked, effectiveTenantId, hiddenEndpoints),
+      merged: withSpecInterface(
+        scopedMerge,
+        explicit,
+        getChangedSpecFields(scopedBaseConfig, scopedMerge, explicit),
+      ),
       resolved,
       layers: resolution.layers,
     };
@@ -1187,6 +1251,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     clearOverrideCache,
     reloadBaseConfig,
     overrideCacheTtl,
+    rederiveEndpoints,
   };
 }
 

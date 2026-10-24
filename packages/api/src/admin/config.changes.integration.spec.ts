@@ -1385,6 +1385,82 @@ describe('POST …/changes: entries librechat.yaml owns', () => {
     expect((await storedDocument(params.principalId))!.tombstones).toEqual(['endpoints.agents']);
   });
 
+  it('skips a set or tombstone of a derived field and strips one a set above it carries', async () => {
+    const params = nextParams();
+    const stale = { projectId: 'x', serviceKeyFile: 'http://169.254.169.254/latest' };
+    const skippedOnly = [
+      { op: 'set', fieldPath: 'endpoints.anthropic.vertexConfig', value: stale },
+      { op: 'tombstone', fieldPath: 'endpoints.anthropic.vertexConfig' },
+      { op: 'set', fieldPath: 'endpoints.anthropic.vertexConfig.projectId', value: 'y' },
+    ];
+    for (const op of skippedOnly) {
+      const { status, body } = await send({ ops: [op] }, params);
+      expect(status).toBe(200);
+      expect(body.skipped).toEqual([
+        {
+          opIndex: 0,
+          op: op.op,
+          segments: op.fieldPath.split('.'),
+          reason: 'derived_path',
+        },
+      ]);
+      expect(body.applied).toEqual([]);
+    }
+    expect(await storedDocument(params.principalId)).toBeNull();
+
+    const { status, body } = await send(
+      {
+        ops: [
+          {
+            op: 'set',
+            fieldPath: 'endpoints.anthropic',
+            value: { titleModel: 'claude-haiku-4-5', vertexConfig: stale },
+          },
+        ],
+      },
+      params,
+    );
+
+    expect(status).toBe(200);
+    expect(body.skipped).toEqual([
+      {
+        opIndex: 0,
+        op: 'set',
+        segments: ['endpoints', 'anthropic', 'vertexConfig'],
+        reason: 'derived_path',
+      },
+    ]);
+    expect(body.applied.map((ref) => ref.opIndex)).toEqual([0]);
+    const stored = await storedDocument(params.principalId);
+    expect(stored!.overrides).toEqual({
+      endpoints: { anthropic: { titleModel: 'claude-haiku-4-5' } },
+    });
+    expect(stored!.tombstones).toEqual([]);
+  });
+
+  it('lets an unset clear a derived field an older server stored', async () => {
+    const params = nextParams();
+    await seedDocument(
+      params.principalId,
+      {
+        endpoints: { anthropic: { titleModel: 'claude-haiku-4-5', vertexConfig: { region: 'x' } } },
+      },
+      [],
+    );
+
+    const { status, body } = await send(
+      { ops: [{ op: 'unset', fieldPath: 'endpoints.anthropic.vertexConfig' }] },
+      params,
+    );
+
+    expect(status).toBe(200);
+    expect(body.skipped).toEqual([]);
+    expect(body.applied.map(({ opIndex, op }) => [opIndex, op])).toEqual([[0, 'unset']]);
+    expect((await storedDocument(params.principalId))!.overrides).toEqual({
+      endpoints: { anthropic: { titleModel: 'claude-haiku-4-5' } },
+    });
+  });
+
   it('refuses a rename under a YAML stdio server, but not an unset there', async () => {
     const params = nextParams();
     await seedDocument(

@@ -19,6 +19,7 @@ import { parseFieldPath, isSegmentPrefix, parseConfigPath } from './paths';
  */
 export const ARRAY_MERGE_KEYS: Readonly<Record<string, string>> = {
   'endpoints.custom': 'name',
+  'endpoints.azureOpenAI.groups': 'group',
 };
 
 /**

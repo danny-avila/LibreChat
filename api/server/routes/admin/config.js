@@ -20,6 +20,7 @@ const {
   overrideCacheTtl,
   loadConfigModels,
   loadDefaultModels,
+  rederiveEndpoints,
   getEndpointsConfig,
   reloadConfigCaches,
   resolveConfigLayers,
@@ -53,6 +54,7 @@ const handlers = createAdminConfigHandlers({
   auditFailClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
   overrideCacheTtlMs: overrideCacheTtl,
   overrideEnvAllowlist: process.env.CONFIG_OVERRIDE_ENV_ALLOWLIST,
+  rederiveEndpoints,
 });
 
 const readHandlers = createAdminConfigReadHandlers({

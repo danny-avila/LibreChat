@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const { CacheKeys } = require('librechat-data-provider');
 const { AppService } = require('@librechat/data-schemas');
 const {
+  isEnabled,
+  expandCustomEndpoint,
   createAppConfigService,
   clearMcpConfigCache,
   createCodeEnvironmentRegistry,
@@ -45,7 +47,7 @@ const loadBaseConfig = async (mode) => {
     adminIncluded: config.includedTools,
     directory: paths.structuredTools,
   });
-  return AppService({ config, paths, systemTools });
+  return AppService({ config, paths, systemTools, expandCustomEndpoint });
 };
 
 const appConfigService = createAppConfigService({
@@ -56,6 +58,7 @@ const appConfigService = createAppConfigService({
   getApplicableConfigs: db.getApplicableConfigs,
   getUserPrincipals: db.getUserPrincipals,
   overrideEnvAllowlist: process.env.CONFIG_OVERRIDE_ENV_ALLOWLIST,
+  rederiveEndpoints: isEnabled(process.env.CONFIG_REDERIVE_ENDPOINTS),
   augmentConfig: ({ appConfig, baseConfig, principals, options }) => {
     if (!options.userId) return appConfig;
     return mergeAccessibleCodeEnvironments({
@@ -78,6 +81,7 @@ const {
   clearOverrideCache,
   reloadBaseConfig,
   overrideCacheTtl,
+  rederiveEndpoints,
 } = appConfigService;
 
 // Config owns the reader; models never import this module to obtain it.
@@ -127,6 +131,7 @@ module.exports = {
   getAppConfig,
   resolveConfigLayers,
   overrideCacheTtl,
+  rederiveEndpoints,
   invalidateConfigCaches,
   reloadConfigCaches,
   getCodeEnvironmentRegistry,

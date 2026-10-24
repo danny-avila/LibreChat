@@ -15,3 +15,4 @@ export * from './paths';
 export * from './mutations';
 export * from './store';
 export * from './changes';
+export * from './derive';
