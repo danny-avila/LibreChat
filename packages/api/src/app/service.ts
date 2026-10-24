@@ -16,16 +16,23 @@ import {
 } from 'librechat-data-provider';
 import type { AppConfig, ConfigOverrideLayer } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
+import type { CustomConfigLoadMode, ConfigLoadFailure, ConfigLoadResult } from './loader';
 import type { EnvReferencePolicy } from './allowlist';
-import type { CustomConfigLoadMode } from './loader';
 import type { SecretRebinding } from './rebinding';
 import { createEnvReferencePolicy, parseEnvAllowlist } from './allowlist';
 import { resolveRuntimeConfigSecrets } from '~/admin/secrets';
 import { normalizeEndpointReferences } from './references';
 import { mergeOverrideLayers } from './overrides';
+import { getConfigLoadFailure } from './loader';
 import { checkAppConfigTheme } from './theme';
 
 const BASE_CONFIG_KEY = '_BASE_';
+
+/** A base-config load: the config it serves, and why it failed when that is the last good one. */
+interface BaseConfigLoad {
+  config: AppConfig;
+  failure?: ConfigLoadFailure;
+}
 
 function hiddenCustomEndpoints(
   config: AppConfig,
@@ -407,6 +414,8 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
   clearAppConfigCache: () => Promise<void>;
   clearOverrideCache: (tenantId?: string) => Promise<void>;
+  /** Loads librechat.yaml again on this instance and resolves with the outcome; never rejects. */
+  reloadBaseConfig: () => Promise<ConfigLoadResult>;
   /** The TTL in ms this service caches per-principal merged configs for. */
   overrideCacheTtl: number;
 } {
@@ -469,7 +478,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     return policy;
   }
   let lastGoodBaseConfig: AppConfig | undefined;
-  let baseConfigFlight: { promise: Promise<AppConfig>; generation: number } | undefined;
+  let baseConfigFlight: { promise: Promise<BaseConfigLoad>; generation: number } | undefined;
 
   /**
    * Base-config generation: `clearAppConfigCache` bumps it before deleting `_BASE_`. A reload
@@ -564,56 +573,62 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    * An async store (Redis) can land the write after a clear's delete, so a write a clear
    * overtook in flight is removed again.
    */
-  async function loadAndCacheBaseConfig(
+  async function publishBaseConfig(
     mode: CustomConfigLoadMode,
     generation: number,
   ): Promise<AppConfig> {
-    try {
-      logger.info('[ensureBaseConfig] Loading base configuration...');
-      const loaded = await loadBaseConfig(mode);
-      if (!loaded) {
-        throw new Error('Failed to initialize app configuration through AppService.');
-      }
+    logger.info('[ensureBaseConfig] Loading base configuration...');
+    const loaded = await loadBaseConfig(mode);
+    if (!loaded) {
+      throw new Error('Failed to initialize app configuration through AppService.');
+    }
 
-      const baseConfig = completeEffectiveConfig(loaded);
-      if (generation !== baseGeneration) {
-        return baseConfig;
-      }
-      if (baseConfig.availableTools) {
-        await setCachedTools(baseConfig.availableTools);
-      }
-      if (generation !== baseGeneration) {
-        return baseConfig;
-      }
-      await cache.set(BASE_CONFIG_KEY, baseConfig);
-      if (generation !== baseGeneration) {
-        await cache.delete(BASE_CONFIG_KEY);
-        return baseConfig;
-      }
-      lastGoodBaseConfig = baseConfig;
+    const baseConfig = completeEffectiveConfig(loaded);
+    if (generation !== baseGeneration) {
       return baseConfig;
+    }
+    if (baseConfig.availableTools) {
+      await setCachedTools(baseConfig.availableTools);
+    }
+    if (generation !== baseGeneration) {
+      return baseConfig;
+    }
+    await cache.set(BASE_CONFIG_KEY, baseConfig);
+    if (generation !== baseGeneration) {
+      await cache.delete(BASE_CONFIG_KEY);
+      return baseConfig;
+    }
+    lastGoodBaseConfig = baseConfig;
+    return baseConfig;
+  }
+
+  /** `publishBaseConfig`, keeping the last good config, and saying why, when a reload fails. */
+  async function loadAndCacheBaseConfig(
+    mode: CustomConfigLoadMode,
+    generation: number,
+  ): Promise<BaseConfigLoad> {
+    try {
+      return { config: await publishBaseConfig(mode, generation) };
     } catch (error) {
       if (mode === 'startup') {
         throw error;
       }
-      return restoreLastGoodBaseConfig(error, generation);
+      const config = await restoreLastGoodBaseConfig(error, generation);
+      return { config, failure: getConfigLoadFailure(error) };
     }
   }
 
   /**
-   * Ensure the YAML-derived base config is loaded and cached.
-   * Returns the `_BASE_` config (YAML + AppService). No DB queries.
-   *
    * Reads join the load in flight for the current generation. A load for a newer generation
    * starts once the stale one settles, so the loader's process-wide side effects (such as the
    * subagent cap) end with the newest librechat.yaml rather than whichever read finished last.
    */
-  async function ensureBaseConfig(refresh?: boolean): Promise<AppConfig> {
+  async function loadBase(refresh?: boolean): Promise<BaseConfigLoad> {
     const cached = (await cache.get(BASE_CONFIG_KEY)) as AppConfig | undefined;
     if (cached) {
       lastGoodBaseConfig ??= cached;
       if (!refresh) {
-        return cached;
+        return { config: cached };
       }
     }
 
@@ -634,6 +649,30 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       if (baseConfigFlight === flight) {
         baseConfigFlight = undefined;
       }
+    }
+  }
+
+  /**
+   * Ensure the YAML-derived base config is loaded and cached.
+   * Returns the `_BASE_` config (YAML + AppService). No DB queries.
+   */
+  async function ensureBaseConfig(refresh?: boolean): Promise<AppConfig> {
+    return (await loadBase(refresh)).config;
+  }
+
+  /**
+   * Loads librechat.yaml again on this instance (or joins the load of it in flight), as the next
+   * read after `clearAppConfigCache` would, and resolves with the outcome instead of only logging
+   * a failure, so the admin reload route can answer for it. A failed load keeps the last good
+   * config, as every reload does. Never rejects.
+   */
+  async function reloadBaseConfig(): Promise<ConfigLoadResult> {
+    try {
+      const { failure } = await loadBase(true);
+      return failure ? { ok: false, error: failure } : { ok: true };
+    } catch (error) {
+      logger.error('[reloadBaseConfig] Failed to load the base configuration:', error);
+      return { ok: false, error: getConfigLoadFailure(error) };
     }
   }
 
@@ -845,6 +884,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     getAppConfig,
     clearAppConfigCache,
     clearOverrideCache,
+    reloadBaseConfig,
     overrideCacheTtl,
   };
 }

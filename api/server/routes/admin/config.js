@@ -11,6 +11,7 @@ const {
 const {
   getAppConfig,
   overrideCacheTtl,
+  reloadConfigCaches,
   invalidateConfigCaches,
 } = require('~/server/services/Config');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -35,6 +36,7 @@ const handlers = createAdminConfigHandlers({
   hasCapability,
   getAppConfig,
   invalidateConfigCaches,
+  reloadConfigCaches,
   recordAuditEntry: db.recordAuditEntry,
   auditFailClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
   overrideCacheTtlMs: overrideCacheTtl,
@@ -46,6 +48,7 @@ router.use(requireJwtAuth, requireAdminAccess, rejectUnsafeConfigKeys);
 router.get('/', handlers.listConfigs);
 router.get('/meta', handlers.getConfigMeta);
 router.get('/base', handlers.getBaseConfig);
+router.post('/reload', handlers.reloadConfig);
 router.get('/:principalType/:principalId', handlers.getConfig);
 router.put('/:principalType/:principalId', handlers.upsertConfigOverrides);
 router.patch('/:principalType/:principalId/fields', handlers.patchConfigField);

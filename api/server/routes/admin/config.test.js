@@ -41,6 +41,7 @@ jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(async () => ({ config: {} })),
   overrideCacheTtl: 15_000,
   invalidateConfigCaches: jest.fn(async () => undefined),
+  reloadConfigCaches: jest.fn(async () => ({ cleared: true, broadcast: 'sent' })),
 }));
 
 jest.mock('~/models', () => mockDb);
@@ -162,6 +163,46 @@ describe('admin config routes', () => {
       maxPatchEntries: 100,
       maxChangeOps: 1000,
       overrideCacheTtlMs: 15_000,
+    });
+  });
+
+  it('reloads the config behind the same auth, through the Config service reload', async () => {
+    const { reloadConfigCaches, invalidateConfigCaches } = require('~/server/services/Config');
+    await request(app).post('/api/admin/config/reload').expect(401);
+    hasAdminAccess = false;
+    await request(app)
+      .post('/api/admin/config/reload')
+      .set('authorization', 'Bearer admin')
+      .expect(403);
+    expect(reloadConfigCaches).not.toHaveBeenCalled();
+
+    hasAdminAccess = true;
+    const response = await request(app)
+      .post('/api/admin/config/reload')
+      .set('authorization', 'Bearer admin')
+      .expect(200);
+
+    expect(response.body).toEqual({ success: true, broadcast: true });
+    expect(reloadConfigCaches).toHaveBeenCalledTimes(1);
+    expect(invalidateConfigCaches).not.toHaveBeenCalled();
+    expect(mockDb.writeConfigDocument).not.toHaveBeenCalled();
+    expect(mockDb.recordAuditEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'config.reloaded' }),
+    );
+  });
+
+  it('answers 503 when the Config service could not tell the other instances', async () => {
+    const { reloadConfigCaches } = require('~/server/services/Config');
+    reloadConfigCaches.mockResolvedValueOnce({ cleared: true, broadcast: 'failed' });
+
+    const response = await request(app)
+      .post('/api/admin/config/reload')
+      .set('authorization', 'Bearer admin')
+      .expect(503);
+
+    expect(response.body).toEqual({
+      error: expect.any(String),
+      code: 'CONFIG_RELOAD_BROADCAST_FAILED',
     });
   });
 });
