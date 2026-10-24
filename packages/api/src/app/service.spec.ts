@@ -16,6 +16,7 @@ import {
 } from './service';
 import { loadCustomEndpointsConfig } from '~/endpoints/custom/config';
 import { getProviderConfig } from '~/endpoints/config/providers';
+import { ConfigReloadError } from './loader';
 
 /** Extends AppConfig with mock fields used by merge behavior tests. */
 /** `version` is a plain string section, so a test can mark which override layer it read. */
@@ -1780,6 +1781,105 @@ describe('createAppConfigService', () => {
       const next = (await getAppConfig({ role: 'USER', userId: 'uid1' })) as TestConfig;
 
       expect(next.version).toBe('after');
+    });
+  });
+
+  describe('reloadBaseConfig', () => {
+    const invalidFile = () =>
+      new ConfigReloadError('Invalid custom config file', undefined, [
+        { code: 'unrecognized_keys', keys: ['bogusTopLevelKey'], path: [], message: 'bogus' },
+        {
+          code: 'invalid_type',
+          expected: 'string',
+          received: 'number',
+          path: ['interface', 'customWelcome'],
+          message: 'Expected string, received number',
+        },
+      ]);
+
+    it('loads librechat.yaml again after a clear and reports it loaded', async () => {
+      const deps = createDeps();
+      const { getAppConfig, clearAppConfigCache, reloadBaseConfig } = createAppConfigService(deps);
+      const initial = await getAppConfig({ baseOnly: true });
+      const next = { ...initial, interfaceConfig: { modelSelect: false } };
+      deps.loadBaseConfig.mockResolvedValueOnce(next);
+
+      await clearAppConfigCache();
+      await expect(reloadBaseConfig()).resolves.toEqual({ ok: true });
+
+      expect(deps.loadBaseConfig).toHaveBeenLastCalledWith('reload');
+      expect(await getAppConfig({ baseOnly: true })).toEqual(next);
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports a refused file by location and zod code, keeping the last good config', async () => {
+      jest.spyOn(logger, 'error').mockReturnValue(logger);
+      const deps = createDeps();
+      const { getAppConfig, clearAppConfigCache, reloadBaseConfig } = createAppConfigService(deps);
+      const initial = await getAppConfig({ baseOnly: true });
+      deps.loadBaseConfig.mockRejectedValueOnce(invalidFile());
+
+      await clearAppConfigCache();
+      const result = await reloadBaseConfig();
+
+      expect(result).toEqual({
+        ok: false,
+        error: {
+          code: 'CONFIG_INVALID',
+          issues: [
+            { path: 'bogusTopLevelKey', segments: ['bogusTopLevelKey'], code: 'unrecognized_keys' },
+            {
+              path: 'interface.customWelcome',
+              segments: ['interface', 'customWelcome'],
+              code: 'invalid_type',
+            },
+          ],
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain('Expected string');
+      expect(deps._cache._store.get('app_config:_BASE_')).toBe(initial);
+      expect(await getAppConfig({ baseOnly: true })).toBe(initial);
+    });
+
+    it('loads again and reports the failure when a read already restored the last good config', async () => {
+      jest.spyOn(logger, 'error').mockReturnValue(logger);
+      const deps = createDeps();
+      const { getAppConfig, clearAppConfigCache, reloadBaseConfig } = createAppConfigService(deps);
+      const initial = await getAppConfig({ baseOnly: true });
+      deps.loadBaseConfig.mockRejectedValue(invalidFile());
+
+      await clearAppConfigCache();
+      expect(await getAppConfig({ baseOnly: true })).toBe(initial);
+      const result = await reloadBaseConfig();
+
+      expect(result).toMatchObject({ ok: false, error: { code: 'CONFIG_INVALID' } });
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(3);
+    });
+
+    it('reports a failure to build the config from a file that loaded as LOAD_FAILED', async () => {
+      jest.spyOn(logger, 'error').mockReturnValue(logger);
+      const deps = createDeps();
+      const { getAppConfig, clearAppConfigCache, reloadBaseConfig } = createAppConfigService(deps);
+      const initial = await getAppConfig({ baseOnly: true });
+      deps.loadBaseConfig.mockRejectedValueOnce(new Error('AppService failed: secret detail'));
+
+      await clearAppConfigCache();
+      const result = await reloadBaseConfig();
+
+      expect(result).toEqual({ ok: false, error: { code: 'LOAD_FAILED' } });
+      expect(await getAppConfig({ baseOnly: true })).toBe(initial);
+    });
+
+    it('resolves with the failure instead of rejecting when there is no last good config', async () => {
+      jest.spyOn(logger, 'error').mockReturnValue(logger);
+      const deps = createDeps();
+      deps.loadBaseConfig.mockRejectedValueOnce(invalidFile());
+      const { reloadBaseConfig } = createAppConfigService(deps);
+
+      await expect(reloadBaseConfig()).resolves.toMatchObject({
+        ok: false,
+        error: { code: 'CONFIG_INVALID' },
+      });
     });
   });
 

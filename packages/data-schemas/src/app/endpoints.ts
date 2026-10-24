@@ -21,6 +21,7 @@ export const loadEndpoints = (
   agentsDefaults?: Partial<TAgentsEndpoint>,
 ): {
   allowedAddresses?: string[];
+  catalogModelsTtlMs?: number;
   openAI?: Partial<import('librechat-data-provider').TEndpoint>;
   google?: Partial<import('librechat-data-provider').TEndpoint>;
   bedrock?: Partial<import('librechat-data-provider').TEndpoint>;
@@ -103,6 +104,10 @@ export const loadEndpoints = (
 
   if (endpoints?.allowedAddresses) {
     loadedEndpoints.allowedAddresses = endpoints.allowedAddresses;
+  }
+
+  if (endpoints?.catalogModelsTtlMs !== undefined) {
+    loadedEndpoints.catalogModelsTtlMs = endpoints.catalogModelsTtlMs;
   }
 
   return loadedEndpoints;

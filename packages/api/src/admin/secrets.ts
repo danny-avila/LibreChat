@@ -31,6 +31,11 @@ interface ConfigSecretFieldInput {
   opaque?: boolean;
 }
 
+/** The key of the masked-preview companion stored beside the secret at `secretKey`. */
+export function getSecretPreviewKey(secretKey: string): string {
+  return `${secretKey}Preview`;
+}
+
 interface ConfigSecretField extends ConfigSecretFieldInput {
   /** Non-secret masked-preview companion, always the sibling `<field>Preview`. Written on encrypt, preserved by redaction. */
   previewPath: string;
@@ -66,7 +71,7 @@ const CONFIG_SECRET_FIELDS: readonly ConfigSecretField[] = (
     { path: 'endpoints.assistants.apiKey', allowEnvPlaceholder: true },
     { path: 'endpoints.azureAssistants.apiKey', allowEnvPlaceholder: true },
   ] satisfies ConfigSecretFieldInput[]
-).map((field) => ({ ...field, previewPath: `${field.path}Preview` }));
+).map((field) => ({ ...field, previewPath: getSecretPreviewKey(field.path) }));
 
 /**
  * Preview companions written under earlier naming conventions. Stripped from
@@ -189,7 +194,7 @@ const RECORD_SECRET_FIELDS: readonly RecordSecretField[] = (
 ).map((field) => ({
   ...field,
   recordSegments: field.recordPath.split('.'),
-  previewKey: `${field.secretPath[field.secretPath.length - 1]}Preview`,
+  previewKey: getSecretPreviewKey(field.secretPath[field.secretPath.length - 1]),
 }));
 
 /** The record secret's location as a pattern, `*` standing for the entry name. */

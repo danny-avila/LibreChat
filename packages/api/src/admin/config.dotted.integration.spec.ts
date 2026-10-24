@@ -286,6 +286,7 @@ describe('admin config writes refuse keys that cannot be config', () => {
         path: `endpoints.bedrock.inferenceProfiles.${PROFILE}`,
         segments: ['endpoints', 'bedrock', 'inferenceProfiles', PROFILE],
         code: 'invalid_type',
+        params: { expected: 'string', received: 'number' },
       },
     ]);
     expect(await readRaw(role)).toBeNull();

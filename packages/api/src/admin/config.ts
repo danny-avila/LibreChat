@@ -1,7 +1,6 @@
 import {
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
-  BASE_ONLY_CONFIG_PATHS,
   configSchema,
   PrincipalType,
   PrincipalModel,
@@ -16,7 +15,9 @@ import {
 import {
   logger,
   getAtPath,
+  getTenantId,
   unsetAtPath,
+  tenantStorage,
   isPlainRecord,
   isDotFreePath,
   isSegmentPrefix,
@@ -38,6 +39,7 @@ import {
   getConfigChangeIssues,
   getConfigArrayMergeKey,
   getIndexedMergeKeyIssues,
+  getLiftedConfigTombstones,
   getConfigBatchWrittenPaths,
   isSameConfigValue,
   isConfigRevision,
@@ -55,11 +57,15 @@ import {
   replaceConfigOverrides,
   parseConfigPathSegments,
   getConfigOverrideIssues,
+  getIgnoredConfigOverrides,
+  YAML_HELD_PATHS,
   getExpectedRevision,
   MAX_CONFIG_PATH_DEPTH,
   getDefaultConfigPriority,
   BASE_CONFIG_PRINCIPAL_ID,
+  SYSTEM_TENANT_ID,
   isConfigRevisionConflict,
+  ConfigRevisionConflictError,
   isConfigOverrideStateEmpty,
   toConfigDraft,
   toConfigIdentityPath,
@@ -94,18 +100,27 @@ import type {
   AdminConfigSkipReason,
   AdminConfigIgnoreReason,
   AdminConfigIgnoredSecret,
+  AdminConfigLocation,
+  AdminConfigWriteReport,
+  AdminConfigErrorCode,
+  AdminConfigIgnoredOverride,
+  AdminConfigInvalidResponse,
   AdminConfigChangesResponse,
   AdminConfigChangeErrorResponse,
+  AdminConfigReloadResponse,
+  AdminConfigReloadErrorResponse,
   ConfigMutationOutcome,
   ConfigMutationPlan,
   ConfigIdentityStep,
   ConfigEntryStep,
   ConfigLocation,
   ConfigEntryRename,
+  YamlHeldPath,
 } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { CapabilityUser } from '~/middleware/capabilities';
+import type { ConfigReloadReport } from '~/app/invalidation';
 import type { EnvReferencePolicy } from '~/app/allowlist';
 import type { ConfigSecretRename } from './secrets';
 import type { SecretReentryIssue } from './binding';
@@ -158,14 +173,17 @@ import {
   isWebSearchBindingPath,
   getWebSearchReentryIssues,
 } from './binding';
+import { buildAdminConfigMeta, getCatalogModelsTtlMs } from './meta';
 import { createAdminAuditEmitter, configTarget } from './audit';
 import { DEFAULT_OVERRIDE_CACHE_TTL } from '~/app/service';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { mergeOverrideLayers } from '~/app/overrides';
-import { buildAdminConfigMeta } from './meta';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
+/** The audit target of a reload: the file every instance loads again. */
+const CONFIG_FILE_TARGET = 'librechat.yaml';
+const RELOAD_AUDIT_TARGET = { type: 'config', id: CONFIG_FILE_TARGET, name: CONFIG_FILE_TARGET };
 const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
 const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
 const PROCESS_MCP_CONFIG_ERROR =
@@ -333,7 +351,9 @@ function fieldTargetErrorResponse(
   failure: { error: string; reason?: ConfigPathErrorReason },
 ): Response {
   const { error, reason } = failure;
-  return res.status(400).json(reason ? { error, code: 'CONFIG_PATH_INVALID', reason } : { error });
+  return reason
+    ? errorResponse(res, 400, 'CONFIG_PATH_INVALID', error, { reason })
+    : errorResponse(res, 400, 'INVALID_FIELD_PATH', error);
 }
 
 /** How a target is named in audit metadata: its dotted path, or its segments when lossy. */
@@ -385,6 +405,89 @@ function toOrderedWrites(
     writes.push({ segments: parseFieldPath(fieldPath), value });
   }
   return writes;
+}
+
+/** One step of a field patch: a write, or the reset of a path (a secret with its preview). */
+type PatchStep = { write: ConfigFieldWrite } | { reset: string[][] };
+
+/**
+ * A field patch's steps in request order: each entry's writes as {@link toOrderedWrites} orders
+ * them, and in its place each entry whose whole value was cut out, as the reset of its path.
+ */
+function toOrderedSteps(
+  entries: ReadonlyArray<{ target: FieldTarget; value: unknown; reset: boolean }>,
+  fields: Record<string, unknown>,
+): PatchStep[] {
+  const steps: PatchStep[] = [];
+  let run: Array<{ target: FieldTarget; value: unknown }> = [];
+  const pending = { ...fields };
+  const flush = () => {
+    const runFields: Record<string, unknown> = {};
+    for (const { target } of run) {
+      for (const fieldPath of target.dotFree
+        ? getConfigSecretMutationPaths(target.fieldPath)
+        : []) {
+        if (Object.prototype.hasOwnProperty.call(pending, fieldPath)) {
+          runFields[fieldPath] = pending[fieldPath];
+          delete pending[fieldPath];
+        }
+      }
+    }
+    steps.push(...toOrderedWrites(run, runFields).map((write) => ({ write })));
+    run = [];
+  };
+  for (const entry of entries) {
+    if (!entry.reset) {
+      run.push(entry);
+      continue;
+    }
+    flush();
+    steps.push({ reset: getRemovalPaths(entry.target) });
+  }
+  flush();
+  steps.push(...toOrderedWrites([], pending).map((write) => ({ write })));
+  return steps;
+}
+
+function toStepWrites(steps: readonly PatchStep[]): ConfigFieldWrite[] {
+  return steps.flatMap((step) => ('write' in step ? [step.write] : []));
+}
+
+/**
+ * Validation of a patch with resets, as `getConfigFieldIssues` judges writes alone: the end
+ * state the steps leave, with the keyed tombstones of each renamed entry (`renames`) moved to
+ * its new key, and issues on every written or reset path, and those it introduced.
+ */
+function getPatchStepIssues(
+  steps: readonly PatchStep[],
+  floor: Partial<TCustomConfig>,
+  stored: ConfigRecord | null,
+  renames: readonly ConfigEntryRename[],
+): ConfigOverrideIssue[] {
+  const written = steps.flatMap((step) =>
+    'write' in step ? [[...step.write.segments]] : step.reset,
+  );
+  const indexed = getIndexedMergeKeyIssues(written);
+  if (indexed.length > 0) {
+    return indexed;
+  }
+  const lifted = getLiftedConfigTombstones(toStepWrites(steps).map(({ segments }) => segments));
+  const candidate = renameConfigEntriesTombstones(
+    applyPatchSteps(toConfigOverrideState(stored), steps),
+    renames,
+  );
+  return getConfigChangeIssues(candidate, floor, stored, written, lifted);
+}
+
+/** Applies a patch's steps in order to the stored document's state. */
+function applyPatchSteps(state: ConfigOverrideState, steps: readonly PatchStep[]) {
+  return steps.reduce(
+    (current, step) =>
+      'write' in step
+        ? setConfigFields(current, [step.write])
+        : unsetConfigPaths(current, step.reset),
+    state,
+  );
 }
 
 /**
@@ -556,8 +659,10 @@ function getFieldSkipReason(fieldPath: string): AdminConfigSkipReason | null {
 const SKIP_DESCRIPTIONS: Readonly<Record<AdminConfigSkipReason, string>> = {
   base_only_section: 'base-only config field %s - configure it in librechat.yaml instead',
   base_only_path: 'base-only config path %s - configure it in librechat.yaml instead',
+  deployment_only_path: 'deployment-only config path %s - configure it in librechat.yaml instead',
   dedicated_section: 'dedicated tenant-wide config field %s in the generic config API',
   interface_permission: 'interface permission field %s — use role permissions instead',
+  process_mcp_server: 'override of process-backed MCP server %s - configure it in librechat.yaml',
 };
 
 /** Logs a skipped path; `action` is how the route words it (`Stripping`, `Ignoring tombstone for`). */
@@ -567,28 +672,32 @@ function logSkippedField(action: string, fieldPath: string, reason: AdminConfigS
   );
 }
 
-/** Fields of overridable sections only librechat.yaml sets, as segments. */
-const BASE_ONLY_PATHS: ReadonlyArray<readonly string[]> = BASE_ONLY_CONFIG_PATHS.map((path) =>
-  path.split('.'),
-);
+/**
+ * Why a write or tombstone at `segments` is skipped because the path is, or lies inside, a field
+ * only librechat.yaml sets. Removing a stored value there is cleanup and is never skipped.
+ */
+function getHeldPathSkipReason(segments: readonly string[]): YamlHeldPath['reason'] | null {
+  return YAML_HELD_PATHS.find((held) => isSegmentPrefix(held.segments, segments))?.reason ?? null;
+}
 
-/** Whether `segments` is a base-only field or lies inside one. */
-function isBaseOnlyPath(segments: readonly string[]): boolean {
-  return BASE_ONLY_PATHS.some((path) => isSegmentPrefix(path, segments));
+/** A part of a written value the API does not store, at its full location. */
+interface SkippedPart {
+  segments: string[];
+  reason: AdminConfigSkipReason;
 }
 
 /**
- * Removes the base-only fields below `segments` from a value written there (`endpoints.agents`
- * carrying `pullRequests.provider`), with the objects that leaves empty. Returns the value to
- * store and the full paths it removed.
+ * Removes the fields only librechat.yaml sets below `segments` from a value written there
+ * (`endpoints.agents` carrying `pullRequests.provider` or `eventDriven`), with the objects that
+ * leaves empty. Returns the value to store and the parts it removed.
  */
-function stripBaseOnlyPaths(
+function stripHeldPaths(
   segments: readonly string[],
   value: unknown,
-): { value: unknown; stripped: string[][] } {
+): { value: unknown; stripped: SkippedPart[] } {
   let result = value;
-  const stripped: string[][] = [];
-  for (const path of BASE_ONLY_PATHS) {
+  const stripped: SkippedPart[] = [];
+  for (const { segments: path, reason } of YAML_HELD_PATHS) {
     if (path.length <= segments.length || !isSegmentPrefix(segments, path)) {
       continue;
     }
@@ -597,9 +706,115 @@ function stripBaseOnlyPaths(
       continue;
     }
     result = pruneEmptyAncestors(unsetAtPath(result, relative), relative);
-    stripped.push([...path]);
+    stripped.push({ segments: [...path], reason });
   }
   return { value: result, stripped };
+}
+
+const PROCESS_MCP_SERVER_OVERRIDE_ERROR =
+  'An MCP server librechat.yaml runs as a local process can only be configured in librechat.yaml';
+
+/** The MCP servers librechat.yaml (`base`) runs as local processes, by name. */
+function getProcessServerNames(base: Partial<TCustomConfig>): Set<string> {
+  const servers = (base as { mcpServers?: unknown }).mcpServers;
+  if (!isPlainRecord(servers)) {
+    return new Set();
+  }
+  return new Set(
+    Object.entries(servers)
+      .filter(([, serverConfig]) => isProcessMCPServerConfig(serverConfig))
+      .map(([name]) => name),
+  );
+}
+
+/**
+ * Whether `segments` names an MCP server librechat.yaml runs as a local process, or a path inside
+ * one. The merge never applies an override or tombstone there (the process is shared by every
+ * user), so a write or tombstone there is refused rather than stored with no effect.
+ */
+function isProcessServerPath(segments: readonly string[], processServers: ReadonlySet<string>) {
+  return segments.length >= 2 && segments[0] === 'mcpServers' && processServers.has(segments[1]);
+}
+
+/** What a written value stores once the parts the API does not store are cut out. */
+interface FilteredValue {
+  value: unknown;
+  skipped: SkippedPart[];
+  /** Something was cut out and nothing of the value is left: the write resets its path. */
+  emptied: boolean;
+}
+
+function isEmptied(value: unknown): boolean {
+  return value === undefined || (isPlainRecord(value) && Object.keys(value).length === 0);
+}
+
+/**
+ * Removes the servers librechat.yaml runs as local processes from a whole `mcpServers` value
+ * (any other value is returned as is), so a client that writes back the section it read, stored
+ * no-ops included, still succeeds. Applied once librechat.yaml is loaded, after
+ * {@link filterWrittenValue}.
+ */
+function stripProcessServers(
+  segments: readonly string[],
+  value: unknown,
+  processServers: ReadonlySet<string>,
+): FilteredValue {
+  const names =
+    segments.length === 1 && segments[0] === 'mcpServers' && isPlainRecord(value)
+      ? Object.keys(value).filter((name) => processServers.has(name))
+      : [];
+  if (names.length === 0) {
+    return { value, skipped: [], emptied: false };
+  }
+  const kept: Record<string, unknown> = {};
+  for (const [name, server] of Object.entries(value as Record<string, unknown>)) {
+    if (!processServers.has(name)) {
+      defineKey(kept, name, server);
+    }
+  }
+  return {
+    value: kept,
+    skipped: names.map((name) => ({
+      segments: ['mcpServers', name],
+      reason: 'process_mcp_server',
+    })),
+    emptied: isEmptied(kept),
+  };
+}
+
+/**
+ * Cuts out of a value written at `segments` what the generic config API never stores there,
+ * whatever librechat.yaml holds: role-permission fields of a whole `interface`, and fields only
+ * librechat.yaml sets. PUT, PATCH and change batches share it, so each reports the same parts as
+ * skipped.
+ */
+function filterWrittenValue(segments: readonly string[], value: unknown): FilteredValue {
+  const skipped: SkippedPart[] = [];
+  let next = value;
+  if (segments.length === 1 && segments[0] === 'interface' && isPlainRecord(next)) {
+    const filtered = filterInterfaceOverride(next);
+    for (const path of filtered.stripped) {
+      skipped.push({ segments: ['interface', ...path], reason: 'interface_permission' });
+    }
+    if (filtered.stripped.length > 0 && !filtered.value) {
+      return { value: undefined, skipped, emptied: true };
+    }
+    next = filtered.value ?? next;
+  }
+  const held = stripHeldPaths(segments, next);
+  skipped.push(...held.stripped);
+  return { value: held.value, skipped, emptied: skipped.length > 0 && isEmptied(held.value) };
+}
+
+/** A skipped part as the write report names it. */
+function toSkippedLocation(part: SkippedPart): AdminConfigLocation & {
+  reason: AdminConfigSkipReason;
+} {
+  return { path: part.segments.join('.'), segments: part.segments, reason: part.reason };
+}
+
+function toLocation(segments: readonly string[]): AdminConfigLocation {
+  return { path: segments.join('.'), segments: [...segments] };
 }
 
 /**
@@ -706,6 +921,12 @@ export interface AdminConfigDeps {
   }) => Promise<AppConfig>;
   /** Invalidate the config caches a mutation affects; awaited before the response is sent. */
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
+  /**
+   * The same clear for `POST /reload`, then librechat.yaml loaded again on this instance and,
+   * once it loaded, the broadcast, resolving with what each step reached instead of only logging
+   * a failure, so the route can answer for it.
+   */
+  reloadConfigCaches?: (tenantId?: string) => Promise<ConfigReloadReport>;
   /** Optional audit emission for override mutations; fail-open unless `auditFailClosed`. */
   recordAuditEntry?: RecordAuditEntry;
   /** When true, a failed audit write surfaces as a 5xx after the mutation has
@@ -732,7 +953,7 @@ const CONFIG_PRINCIPAL_TYPES = new Set([
   PrincipalType.ROLE,
 ]);
 
-function validatePrincipalType(value: string): value is PrincipalType {
+export function validatePrincipalType(value: string): value is PrincipalType {
   return CONFIG_PRINCIPAL_TYPES.has(value as PrincipalType);
 }
 
@@ -746,7 +967,7 @@ function invalidPriorityResponse(res: Response): Response {
   return res.status(400).json({ error: INVALID_PRIORITY_ERROR, code: 'INVALID_PRIORITY' });
 }
 
-function principalNotFoundResponse(res: Response): Response {
+export function principalNotFoundResponse(res: Response): Response {
   return res.status(404).json({ error: 'Principal not found', code: 'PRINCIPAL_NOT_FOUND' });
 }
 
@@ -768,7 +989,7 @@ function principalModel(type: PrincipalType): PrincipalModel {
   }
 }
 
-function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
+export function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
   if (!req.user) {
     return null;
   }
@@ -814,7 +1035,7 @@ const APP_CONFIG_FIELD_TO_SECTION: Readonly<Record<string, string>> = {
   mcpConfig: 'mcpServers',
 };
 
-type ReadableSections = { broad: boolean; sections: ReadonlySet<string> };
+export type ReadableSections = { broad: boolean; sections: ReadonlySet<string> };
 
 /** Every section `configSchema` defines: a write resolves read access to all of them before it commits. */
 const CONFIG_SCHEMA_SECTIONS = Object.keys(configSchema.shape) as ConfigSection[];
@@ -822,12 +1043,12 @@ const FULL_READ_ACCESS: ReadableSections = { broad: true, sections: new Set() };
 /** Shows no section: an assign-only write stores an empty document. */
 const NO_READ_ACCESS: ReadableSections = { broad: false, sections: new Set() };
 
-function canReadSection(readable: ReadableSections, section: string): boolean {
+export function canReadSection(readable: ReadableSections, section: string): boolean {
   return readable.broad || readable.sections.has(section);
 }
 
 /** Strips every top-level key not in `preserveKeys` that `canRead` rejects. */
-function filterSectionsByReadAccess<T extends Record<string, unknown>>(
+export function filterSectionsByReadAccess<T extends Record<string, unknown>>(
   obj: T,
   canRead: (section: string) => boolean,
   preserveKeys: Set<string> = new Set(),
@@ -841,7 +1062,7 @@ function filterSectionsByReadAccess<T extends Record<string, unknown>>(
   return result as T;
 }
 
-function filterConfigDocForReadAccess<T extends ConfigRecord>(
+export function filterConfigDocForReadAccess<T extends ConfigRecord>(
   config: T,
   readable: ReadableSections,
 ): T {
@@ -884,7 +1105,7 @@ function filterAppConfigForReadAccess(appConfig: AppConfig, readable: ReadableSe
 }
 
 /** All section names a config document's overrides/tombstones could reference. */
-function collectConfigSections(config: ConfigRecord): string[] {
+export function collectConfigSections(config: ConfigRecord): string[] {
   return [
     ...Object.keys(config.overrides ?? {}),
     ...(config.tombstones ?? []).map(getTopLevelSection),
@@ -903,7 +1124,7 @@ function collectAppConfigSections(appConfig: AppConfig): string[] {
 type ConfigResponse = ConfigRecord & { revision: ConfigRevision };
 
 /** The document as the admin API returns it: secrets redacted, with its revision. */
-function redactConfigForResponse(config: ConfigRecord): ConfigResponse {
+export function redactConfigForResponse(config: ConfigRecord): ConfigResponse {
   const safeConfig = JSON.parse(JSON.stringify(config)) as ConfigRecord;
   if (safeConfig.overrides) {
     safeConfig.overrides = withoutStoredSecretBindings(safeConfig.overrides);
@@ -958,19 +1179,91 @@ function toWrittenSectionsAccess(
   return hasBroadManage ? FULL_READ_ACCESS : { broad: false, sections: new Set(managedSections) };
 }
 
-/** A write's response: the written document as a read shows it, and what its layer drops. */
+/**
+ * A write's response: the written document as a read shows it, what the write applied and
+ * skipped (`report`, for the field writes), and what its layer drops.
+ */
 function sendWrittenConfig(
   res: Response,
   status: number,
   config: ConfigRecord,
   access: ReadableSections,
   ignoredSecrets: readonly AdminConfigIgnoredSecret[] = [],
+  report?: AdminConfigWriteReport,
 ): Response {
   const ignored = filterIgnoredForReadAccess(ignoredSecrets, access);
   return res.status(status).json({
     config: toWrittenConfig(config, access),
+    ...report,
     ...(ignored.length > 0 && { ignored }),
   });
+}
+
+/** The write report of a request: the locations it applied, and the parts it skipped. */
+function toWriteReport(
+  applied: ReadonlyArray<readonly string[]>,
+  skipped: readonly SkippedPart[],
+): AdminConfigWriteReport {
+  return { applied: applied.map(toLocation), skipped: skipped.map(toSkippedLocation) };
+}
+
+/** Logs each skipped part; `action` is how the route words it (`Stripping`, `Ignoring tombstone for`). */
+function logSkippedParts(action: string, skipped: readonly SkippedPart[]): void {
+  for (const { segments, reason } of skipped) {
+    logSkippedField(action, segments.join('.'), reason);
+  }
+}
+
+/** A 4xx of the admin config API: a message and a stable code, plus any route-specific fields. */
+function errorResponse(
+  res: Response,
+  status: number,
+  code: AdminConfigErrorCode,
+  error: string,
+  extra?: Record<string, unknown>,
+): Response {
+  return res.status(status).json({ error, code, ...extra });
+}
+
+export function authRequiredResponse(res: Response): Response {
+  return errorResponse(res, 401, 'AUTH_REQUIRED', 'Authentication required');
+}
+
+export function forbiddenResponse(res: Response): Response {
+  return errorResponse(res, 403, 'FORBIDDEN', 'Insufficient permissions');
+}
+
+function forbiddenSectionResponse(res: Response, section: string): Response {
+  return errorResponse(
+    res,
+    403,
+    'FORBIDDEN_SECTION',
+    `Insufficient permissions for config section: ${section}`,
+    { section },
+  );
+}
+
+function invalidPrincipalTypeResponse(res: Response, principalType: string): Response {
+  return errorResponse(
+    res,
+    400,
+    'INVALID_PRINCIPAL_TYPE',
+    `Invalid principalType: ${principalType}`,
+  );
+}
+
+function configNotFoundResponse(res: Response): Response {
+  return errorResponse(res, 404, 'CONFIG_NOT_FOUND', 'Config not found');
+}
+
+function processServerOverrideResponse(res: Response, extra?: Record<string, unknown>): Response {
+  return errorResponse(
+    res,
+    400,
+    'PROCESS_MCP_SERVER_OVERRIDE',
+    PROCESS_MCP_SERVER_OVERRIDE_ERROR,
+    extra,
+  );
 }
 
 /**
@@ -983,8 +1276,9 @@ function unknownSectionResponse(res: Response): Response {
 }
 
 /**
- * Reports only locations and stable codes: schema messages can echo the submitted values.
- * `segments` names the location key by key, since `path` is ambiguous once a record key
+ * Reports only locations, stable codes and the schema's own bounds and options (`params`, from
+ * an allowlist that never copies the submitted value): schema messages can echo the submitted
+ * values. `segments` names the location key by key, since `path` is ambiguous once a record key
  * itself holds a dot. `report` adds what a route reports alongside them (a batch's `skipped`).
  */
 function invalidOverrideResponse(
@@ -995,9 +1289,11 @@ function invalidOverrideResponse(
   return res.status(400).json({
     error: 'Invalid config override',
     code: 'CONFIG_OVERRIDE_INVALID',
-    issues: issues.map(({ path, segments, code }) => ({ path, segments, code })),
+    issues: issues.map(({ path, segments, code, params }) =>
+      params ? { path, segments, code, params } : { path, segments, code },
+    ),
     ...report,
-  });
+  } satisfies AdminConfigInvalidResponse);
 }
 
 /**
@@ -1012,6 +1308,43 @@ function unstorableKeyResponse(res: Response, operation: string): Response {
     error: 'The database cannot store a key name in this config',
     code: 'CONFIG_KEY_NOT_STORABLE',
   });
+}
+
+/**
+ * The answer to a reload that did not load librechat.yaml on this instance or did not reach
+ * every instance, or `null` when it did. A refused file is reported first, since retrying cannot
+ * fix it; its issues carry locations and zod codes only.
+ */
+function getReloadFailure(
+  report: ConfigReloadReport,
+): { status: number; body: AdminConfigReloadErrorResponse } | null {
+  const loadFailure = report.loaded?.ok === false ? report.loaded.error : undefined;
+  if (loadFailure?.code === 'CONFIG_INVALID') {
+    return {
+      status: 422,
+      body: {
+        error: 'librechat.yaml failed to load; the last good config is still served',
+        code: 'CONFIG_RELOAD_INVALID',
+        issues: loadFailure.issues.map(({ path, segments, code }) => ({ path, segments, code })),
+      },
+    };
+  }
+  if (!report.cleared || loadFailure) {
+    return {
+      status: 500,
+      body: { error: 'Failed to reload config', code: 'CONFIG_RELOAD_FAILED' },
+    };
+  }
+  if (report.broadcast !== 'failed') {
+    return null;
+  }
+  return {
+    status: 503,
+    body: {
+      error: 'Config reloaded on this instance only; the other instances could not be notified',
+      code: 'CONFIG_RELOAD_BROADCAST_FAILED',
+    },
+  };
 }
 
 /**
@@ -1039,6 +1372,33 @@ function secretReentryResponse(res: Response, issues: SecretReentryIssue[]): Res
 type FloorOutcome<T> = ConfigMutationOutcome<T> & { base?: ConfigRecord | null };
 
 /**
+ * The tenant partitions a write to one principal's document involves. `tenantId` is the one the
+ * document merges in (`undefined`: the deployment's own, tenantless), so the write is judged on
+ * librechat.yaml as that partition resolves it and on that partition's Base. `activeTenantId` is
+ * the request's own (the caller's), where the store addresses role documents and creates a
+ * document the write makes.
+ */
+interface WriteScope {
+  tenantId: string | undefined;
+  activeTenantId: string | undefined;
+}
+
+/** The tenant partition a stored document belongs to; `null` and `''` are tenantless. */
+function getConfigPartition(record: Pick<ConfigRecord, 'tenantId'>): string | undefined {
+  return record.tenantId || undefined;
+}
+
+/**
+ * The partition the config store reads and writes role documents in for this request
+ * (`tenantPartition`): the active tenant's, or the deployment's own outside a tenant and under
+ * the system context.
+ */
+function getActivePartition(): string | undefined {
+  const tenantId = getTenantId();
+  return tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
+}
+
+/**
  * Why a planned unset or tombstone wrote nothing: no document to unset, no principal to create
  * one for, or a stored credential it would send elsewhere without entering it again.
  */
@@ -1056,7 +1416,7 @@ function removalStopResponse(res: Response, stop: RemovalStop): Response {
   }
   return stop.missing === 'principal'
     ? principalNotFoundResponse(res)
-    : res.status(404).json({ error: 'Config not found' });
+    : configNotFoundResponse(res);
 }
 
 const INVALID_EXPECTED_REVISION_ERROR =
@@ -1429,8 +1789,11 @@ const INDEXED_PATH_OPS: ReadonlySet<ChangeOpKind> = new Set<ChangeOpKind>([
   'rename',
 ]);
 
-/** Changes that leave an override in place, which the runtime merge may then drop. */
-const IGNORABLE_OPS: ReadonlySet<ChangeOpKind> = new Set<ChangeOpKind>([
+/**
+ * Changes that leave an override or tombstone at their path, refused inside an MCP server
+ * librechat.yaml runs as a local process (an `unset` there is cleanup).
+ */
+const SERVER_WRITE_OPS: ReadonlySet<ChangeOpKind> = new Set<ChangeOpKind>([
   'set',
   'tombstone',
   'rename',
@@ -1613,30 +1976,19 @@ function prepareSet(
   if (skipReason) {
     return { ok: true, change: null, skipped: [{ ...ref, reason: skipReason }] };
   }
-  let value = normalizeInterfaceFieldPatch(target.fieldPath, raw.value);
-  const skipped: SkippedChange[] = [];
-  if (target.segments.length === 1 && target.segments[0] === 'interface' && isPlainRecord(value)) {
-    const filtered = filterInterfaceOverride(value);
-    for (const path of filtered.stripped) {
-      skipped.push({ ...ref, segments: ['interface', ...path], reason: 'interface_permission' });
-    }
-    if (filtered.stripped.length > 0 && !filtered.value) {
-      return { ok: true, change: { ...base, paths: getRemovalPaths(target) }, skipped };
-    }
-    value = filtered.value ?? value;
-  }
-  const stripped = stripBaseOnlyPaths(target.segments, value);
-  for (const segments of stripped.stripped) {
-    skipped.push({ ...ref, segments, reason: 'base_only_path' });
-  }
-  if (
-    stripped.stripped.length > 0 &&
-    isPlainRecord(stripped.value) &&
-    Object.keys(stripped.value).length === 0
-  ) {
+  const filtered = filterWrittenValue(
+    target.segments,
+    normalizeInterfaceFieldPatch(target.fieldPath, raw.value),
+  );
+  const skipped: SkippedChange[] = filtered.skipped.map(({ segments, reason }) => ({
+    ...ref,
+    segments,
+    reason,
+  }));
+  if (filtered.emptied) {
     return { ok: true, change: { ...base, paths: getRemovalPaths(target) }, skipped };
   }
-  value = stripped.value;
+  const { value } = filtered;
   const fields = target.dotFree
     ? encryptConfigSecretFields({ [target.fieldPath]: value })
     : undefined;
@@ -1810,11 +2162,7 @@ function prepareChange(raw: unknown, index: number): PreparedRead {
     | PreparedRead
     | { ok: true; change: PreparedChange | null; skipped: SkippedChange[] };
   if (op === 'set') {
-    prepared = prepareSet(
-      raw,
-      base,
-      sectionSkip ?? (isBaseOnlyPath(target.segments) ? 'base_only_path' : null),
-    );
+    prepared = prepareSet(raw, base, sectionSkip ?? getHeldPathSkipReason(target.segments));
   } else if (isEntryOp(op)) {
     prepared = prepareEntryChange(raw, base, sectionSkip);
   } else {
@@ -1843,10 +2191,9 @@ function prepareChange(raw: unknown, index: number): PreparedRead {
     if (removalError) {
       return changeFailure(index, removalError.error, removalError.code);
     }
-    /** Unsetting a stored base-only field is cleanup, so only a tombstone of one is skipped. */
+    /** Unsetting a stored field only librechat.yaml sets is cleanup: only a tombstone is skipped. */
     const skipReason =
-      sectionSkip ??
-      (op === 'tombstone' && isBaseOnlyPath(target.segments) ? 'base_only_path' : null);
+      sectionSkip ?? (op === 'tombstone' ? getHeldPathSkipReason(target.segments) : null);
     const change: PreparedChange = {
       ...base,
       key: target.entry?.key,
@@ -1924,62 +2271,50 @@ function isYamlEntry(base: unknown, change: PreparedChange, name: string): boole
 
 /**
  * What `librechat.yaml` keeps whatever an override does: the MCP servers it runs as local
- * processes, and the base-only fields it sets.
+ * processes, and the base-only and deployment-only fields that have a value the merge puts back:
+ * set in `base`, or in `resolved`, the AppConfig librechat.yaml resolves to (defaults included).
  */
 interface YamlHeld {
   processServers: ReadonlySet<string>;
-  baseOnlyPaths: ReadonlyArray<readonly string[]>;
+  heldPaths: readonly YamlHeldPath[];
 }
 
-function getYamlHeld(base: Partial<TCustomConfig>): YamlHeld {
-  const servers = (base as { mcpServers?: unknown }).mcpServers;
-  const processServers = isPlainRecord(servers)
-    ? Object.entries(servers)
-        .filter(([, serverConfig]) => isProcessMCPServerConfig(serverConfig))
-        .map(([name]) => name)
-    : [];
+function getYamlHeld(base: Partial<TCustomConfig>, resolved?: AppConfig): YamlHeld {
   return {
-    processServers: new Set(processServers),
-    baseOnlyPaths: BASE_ONLY_PATHS.filter((path) => getAtPath(base, path) !== undefined),
+    processServers: getProcessServerNames(base),
+    heldPaths: YAML_HELD_PATHS.filter(
+      ({ segments }) =>
+        getAtPath(base, segments) !== undefined || getAtPath(resolved, segments) !== undefined,
+    ),
   };
 }
 
 type IgnoredPart = { segments: string[]; reason: AdminConfigIgnoreReason };
 
 /**
- * The parts of an applied change under an MCP server librechat.yaml runs as a process, whose
- * overrides the merge never applies: a write, rename or tombstone there, and each such server a
- * tombstone of the whole section leaves in place. An `unset` there is not one: it asks for the
- * YAML value, which is what runs. A rename of a server itself never names a YAML one, which the
- * handler refuses.
+ * The MCP servers librechat.yaml runs as local processes that a tombstone of the whole
+ * `mcpServers` section leaves in place. A change inside one is refused before it applies, and a
+ * whole-section value leaves them out, so this is the only change that reaches one.
  */
 function getProcessServerParts(
   change: PreparedChange,
   processServers: ReadonlySet<string>,
 ): IgnoredPart[] {
-  const [section, name] = change.target.segments;
-  if (section !== 'mcpServers' || processServers.size === 0 || !IGNORABLE_OPS.has(change.op)) {
+  const { segments } = change.target;
+  if (change.op !== 'tombstone' || segments.length !== 1 || segments[0] !== 'mcpServers') {
     return [];
   }
-  const reason = 'process_mcp_server';
-  if (name !== undefined) {
-    return processServers.has(name) ? [{ segments: [...change.target.segments], reason }] : [];
-  }
-  if (change.op === 'tombstone') {
-    return [...processServers].map((server) => ({ segments: ['mcpServers', server], reason }));
-  }
-  if (!isPlainRecord(change.value)) {
-    return [];
-  }
-  return Object.keys(change.value)
-    .filter((server) => processServers.has(server))
-    .map((server) => ({ segments: ['mcpServers', server], reason }));
+  return [...processServers].map((server) => ({
+    segments: ['mcpServers', server],
+    reason: 'process_mcp_server',
+  }));
 }
 
 /**
- * The parts of an applied change the runtime merge drops: those under a YAML stdio MCP server,
- * and the base-only fields librechat.yaml sets below a tombstone (a tombstone of one itself is
- * skipped), which the merge puts back so the tombstone hides only the rest.
+ * The parts of an applied change the runtime merge drops: the YAML stdio MCP servers a tombstone
+ * of the whole section leaves in place, and the base-only and deployment-only fields
+ * librechat.yaml sets below a tombstone (a tombstone of one itself is skipped), which the merge
+ * puts back so the tombstone hides only the rest.
  */
 function getIgnoredParts(change: PreparedChange, held: YamlHeld): IgnoredPart[] {
   const parts = getProcessServerParts(change, held.processServers);
@@ -1987,10 +2322,46 @@ function getIgnoredParts(change: PreparedChange, held: YamlHeld): IgnoredPart[] 
     return parts;
   }
   const { segments } = change.target;
-  const baseOnly = held.baseOnlyPaths
-    .filter((path) => path.length > segments.length && isSegmentPrefix(segments, path))
-    .map((path): IgnoredPart => ({ segments: [...path], reason: 'base_only_path' }));
-  return [...parts, ...baseOnly];
+  const kept = held.heldPaths
+    .filter((path) => path.segments.length > segments.length)
+    .filter((path) => isSegmentPrefix(segments, path.segments))
+    .map((path): IgnoredPart => ({ segments: [...path.segments], reason: path.reason }));
+  return [...parts, ...kept];
+}
+
+/**
+ * A `set` of a whole `mcpServers` value without the servers librechat.yaml runs as local
+ * processes, re-encrypted, and the parts it left out; with nothing left, it resets the path. Any
+ * other change is returned as is.
+ */
+function withoutProcessServers(
+  change: PreparedChange,
+  processServers: ReadonlySet<string>,
+): { change: PreparedChange; skipped: SkippedChange[] } {
+  if (change.op !== 'set' || change.paths) {
+    return { change, skipped: [] };
+  }
+  const filtered = stripProcessServers(change.target.segments, change.value, processServers);
+  if (filtered.skipped.length === 0) {
+    return { change, skipped: [] };
+  }
+  const ref = toChangeRef(change);
+  const skipped = filtered.skipped.map(({ segments, reason }) => ({ ...ref, segments, reason }));
+  if (filtered.emptied) {
+    return {
+      change: {
+        ...change,
+        value: undefined,
+        fields: undefined,
+        paths: getRemovalPaths(change.target),
+      },
+      skipped,
+    };
+  }
+  const fields = change.target.dotFree
+    ? encryptConfigSecretFields({ [change.target.fieldPath]: filtered.value })
+    : undefined;
+  return { change: { ...change, value: filtered.value, fields }, skipped };
 }
 
 /** How an applied change is named in audit metadata: its path, plus the entry it addressed. */
@@ -2117,6 +2488,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   deleteConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
   toggleConfig: (req: ServerRequest, res: Response) => Promise<Response>;
   updateConfigPriority: (req: ServerRequest, res: Response) => Promise<Response>;
+  reloadConfig: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
   const {
     listAllConfigs,
@@ -2141,6 +2513,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     hasCapability = async () => false,
     getAppConfig,
     invalidateConfigCaches,
+    reloadConfigCaches,
     recordAuditEntry,
     auditFailClosed,
     overrideCacheTtlMs = DEFAULT_OVERRIDE_CACHE_TTL,
@@ -2155,18 +2528,58 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     logPrefix: '[adminConfig]',
   });
 
-  const meta = buildAdminConfigMeta({
-    maxPatchEntries: MAX_PATCH_ENTRIES,
-    maxChangeOps: MAX_CONFIG_CHANGE_OPS,
-    maxEntryKeyLength: MAX_CONFIG_ENTRY_KEY_LENGTH,
-    overrideCacheTtlMs,
-  });
-
   function readStoredConfig(
     principalType: PrincipalType,
     principalId: string,
   ): Promise<ConfigRecord | null> {
     return findConfigByPrincipal(principalType, principalId, { includeInactive: true });
+  }
+
+  /**
+   * The partitions a write to the principal's document involves (`WriteScope`). A caller inside
+   * a tenant reaches only that tenant's documents, and a role's document is always the one in
+   * the caller's partition. A caller without a tenant addresses group and user documents by id,
+   * whichever tenant holds them, so the stored document names the partition the write is
+   * judged in: a profile merges over the Base of its own partition, not the caller's.
+   */
+  async function resolveWriteScope(
+    principalType: PrincipalType,
+    principalId: string,
+  ): Promise<WriteScope> {
+    const activeTenantId = getActivePartition();
+    if (activeTenantId || principalType === PrincipalType.ROLE) {
+      return { tenantId: activeTenantId, activeTenantId };
+    }
+    const stored = await readStoredConfig(principalType, principalId);
+    return { tenantId: stored ? getConfigPartition(stored) : undefined, activeTenantId };
+  }
+
+  /** The write's scope and librechat.yaml as the partition it is judged in resolves it. */
+  async function loadWriteScope(
+    principalType: PrincipalType,
+    principalId: string,
+  ): Promise<{ scope: WriteScope; baseConfig: AppConfig | undefined }> {
+    const scope = await resolveWriteScope(principalType, principalId);
+    return { scope, baseConfig: await getBaseAppConfig(scope.tenantId) };
+  }
+
+  /**
+   * Reads the document a write plans from, in the partition the write is judged in: the stored
+   * document's own, or the caller's for a document the write would create. A document that no
+   * longer lands there (removed and created again in another partition since the scope was
+   * resolved) answers a revision conflict rather than being judged on another partition's Base.
+   */
+  async function readScopedConfig(
+    principalType: PrincipalType,
+    principalId: string,
+    scope: WriteScope,
+  ): Promise<ConfigRecord | null> {
+    const stored = await readStoredConfig(principalType, principalId);
+    const partition = stored ? getConfigPartition(stored) : scope.activeTenantId;
+    if (partition !== scope.tenantId) {
+      throw new ConfigRevisionConflictError(stored ? getConfigRevision(stored) : null);
+    }
+    return stored;
   }
 
   /**
@@ -2185,8 +2598,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   }
 
   /**
-   * 200 for a write with nothing to apply, reporting the stored revision. The precondition
-   * still holds: a document that is not at `expectedRevision` answers 409, as the write would.
+   * 200 for a write with nothing to apply, reporting the stored revision and, for a field write,
+   * the parts it skipped and the stored document as a read under `access` shows it (`null` when
+   * there is none). The precondition still holds: a document that is not at `expectedRevision`
+   * answers 409, as the write would.
    */
   async function noopResponse(
     res: Response,
@@ -2194,13 +2609,21 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     principalType: PrincipalType,
     principalId: string,
     expectedRevision: ConfigRevision | undefined,
+    report?: { skipped: readonly SkippedPart[]; access: ReadableSections },
   ): Promise<Response> {
     const stored = await readStoredConfig(principalType, principalId);
     const revision = stored ? getConfigRevision(stored) : null;
     if (expectedRevision && expectedRevision !== getExpectedRevision(stored)) {
       return conflictResponse(res, revision, principalType, principalId);
     }
-    return res.status(200).json({ message, revision });
+    return res.status(200).json({
+      message,
+      revision,
+      ...(report && {
+        config: stored ? toWrittenConfig(stored, report.access) : null,
+        ...toWriteReport([], report.skipped),
+      }),
+    });
   }
 
   async function conflictResponse(
@@ -2248,9 +2671,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    * (`canCreateFor`), and a removal that changes where a stored credential is sent needs it
    * entered again, as a write would: a web search URL beside a stored key, an Azure group's
    * destination beside its stored key, or a field of an MCP server that keeps a stored credential
-   * (judged over librechat.yaml, as on every write). A
+   * (judged over librechat.yaml as the document's partition resolves it, as on every write). A
    * write that lands in between is re-read and re-checked, or answers 409 under
-   * `expectedRevision`. An unset stops when there is no document.
+   * `expectedRevision`. An unset stops when there is no document. `loadedBase` is the base config
+   * the caller already read, if any.
    */
   async function removeConfigPath(
     principalType: PrincipalType,
@@ -2258,19 +2682,21 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     target: FieldTarget,
     removal: { tombstone: true; priority?: number } | { tombstone: false },
     expectedRevision: ConfigRevision | undefined,
-    tenantId: string | undefined,
+    scope: WriteScope,
+    loadedBase?: AppConfig,
   ): Promise<ConfigMutationOutcome<RemovalStop>> {
     const paths = getRemovalPaths(target);
-    const baseConfig =
+    const needsBase =
       MCP_SECTIONS.has(target.segments[0]) ||
       isAzureGroupPath(target.segments) ||
-      isBoundKeyPath(target.segments)
-        ? await getBaseAppConfig(tenantId)
-        : undefined;
+      isBoundKeyPath(target.segments);
+    const baseConfig = needsBase
+      ? (loadedBase ?? (await getBaseAppConfig(scope.tenantId)))
+      : undefined;
     const base: Partial<TCustomConfig> = baseConfig?.config ?? {};
     return runConfigMutation<RemovalStop>(
       {
-        read: () => readStoredConfig(principalType, principalId),
+        read: () => readScopedConfig(principalType, principalId, scope),
         write: (draft, revision) =>
           writeConfigDocument(principalType, principalId, draft, revision),
       },
@@ -2342,9 +2768,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    * always merges first), then this document. A user or group can have other profiles in
    * between, so this is what the document does over the floor. PUT, PATCH and change batches
    * report it (a dry run for the document it plans) on the Base their write was last judged on
-   * (`base`), and field removals and tombstones in a section with bound secrets read it; the
-   * base config is loaded only when the document overrides or tombstones such a section. A
-   * failure is logged and reports nothing: the write itself has committed.
+   * (`base`), and field removals and tombstones in a section with bound secrets read it, in the
+   * partition the document merges in (`tenantId`); the base config is loaded only when the
+   * document overrides or tombstones such a section. A failure is logged and reports nothing:
+   * the write itself has committed.
    */
   async function reportIgnored(
     written: ConfigOverrideLayer,
@@ -2368,7 +2795,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const isBase = isBaseConfigPrincipal(written);
       let floor: ConfigRecord | null = null;
       if (!isBase) {
-        floor = loaded?.base !== undefined ? loaded.base : await readActiveBase();
+        floor = loaded?.base !== undefined ? loaded.base : await readActiveBase(tenantId);
       }
       const ignored: AdminConfigIgnoredSecret[] = [];
       mergeOverrideLayers(baseConfig, floor ? [floor, written] : [written], {
@@ -2389,6 +2816,70 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         getSafeErrorMetadata(error),
       );
       return [];
+    }
+  }
+
+  /**
+   * librechat.yaml and, for any principal but Base, the active Base document of one partition,
+   * to judge a stored document on (`reportStoredIgnored`). A read that fails is logged and comes
+   * back `undefined`, so the document reads without the report rather than with a wrong one.
+   */
+  function loadJudgement(
+    tenantId: string | undefined,
+    isBase: boolean,
+  ): Promise<[AppConfig | undefined, ConfigRecord | null | undefined]> {
+    return Promise.all([
+      getBaseAppConfig(tenantId).catch((error: unknown) => {
+        logger.error(
+          '[adminConfig] getConfig could not load the base config to judge the document:',
+          getSafeErrorMetadata(error),
+        );
+        return undefined;
+      }),
+      isBase
+        ? null
+        : readActiveBase(tenantId).catch((error: unknown) => {
+            logger.error(
+              '[adminConfig] getConfig could not read the Base document to judge the document:',
+              getSafeErrorMetadata(error),
+            );
+            return undefined;
+          }),
+    ]);
+  }
+
+  /**
+   * What the merge leaves out of a stored document's layer (`getIgnoredConfigOverrides`): parts
+   * no merge applies, values set back to librechat.yaml's, values invalid where the merge applies
+   * them, and the credentials it drops (`reportIgnored`), judged over librechat.yaml and, for any
+   * principal but Base, the active Base document (`base`). `null` when there is no base config to
+   * judge on or the judgement fails, which a read reports by leaving `ignored` out rather than
+   * claiming nothing is ignored.
+   */
+  async function reportStoredIgnored(
+    stored: ConfigRecord,
+    tenantId: string | undefined,
+    baseConfig: AppConfig | undefined,
+    base: ConfigRecord | null,
+  ): Promise<Array<AdminConfigIgnoredOverride | AdminConfigIgnoredSecret> | null> {
+    if (!baseConfig) {
+      return null;
+    }
+    try {
+      const baseYaml: Partial<TCustomConfig> = baseConfig.config ?? {};
+      const overrides = getIgnoredConfigOverrides(baseYaml, stored, base ? [base] : [], baseConfig);
+      const secrets = await reportIgnored(stored, tenantId, {
+        baseConfig,
+        envPolicy: getEnvPolicy(baseYaml),
+        base,
+      });
+      return [...overrides, ...secrets];
+    } catch (error) {
+      logger.error(
+        '[adminConfig] Failed to judge what a stored config leaves out:',
+        getSafeErrorMetadata(error),
+      );
+      return null;
     }
   }
 
@@ -2448,11 +2939,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   }
 
   /**
-   * The active Base document, from the caller's tenant partition (platform-level without one),
-   * as the config store addresses every role document.
+   * The active Base document of one tenant partition (`undefined`: the deployment's own). The
+   * config store addresses every role document in the active partition, so another tenant's
+   * Base is read in that tenant's context; the partition rules themselves stay the store's.
    */
-  function readActiveBase(): Promise<ConfigRecord | null> {
-    return findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID);
+  function readActiveBase(tenantId: string | undefined): Promise<ConfigRecord | null> {
+    const read = () => findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID);
+    if (tenantId === getActivePartition()) {
+      return read();
+    }
+    return tenantStorage.run({ ...tenantStorage.getStore(), tenantId }, read);
   }
 
   /**
@@ -2481,11 +2977,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    * it, and is never turned into a failure.
    */
   async function judgeOnLandedBase<T>(
+    tenantId: string | undefined,
     read: ConfigRecord | null,
     judge: (landed: ConfigRecord | null) => Promise<ConfigMutationPlan<T>>,
   ): Promise<ConfigMutationPlan<T> | null> {
     try {
-      const landed = await readActiveBase();
+      const landed = await readActiveBase(tenantId);
       if ((landed && getConfigRevision(landed)) === (read && getConfigRevision(read))) {
         return null;
       }
@@ -2504,8 +3001,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
    * tombstones (the floor): `librechat.yaml` with the active Base document resolved over it,
    * exactly as the merge layers Base under every profile (Base always merges first), or
    * `librechat.yaml` alone for Base itself. The principal's other profiles vary per user and
-   * are left to the merge. Base is read from the caller's tenant partition, so a caller without
-   * a tenant validates on the platform-level Base and never on a tenant's. With `yaml` `null`
+   * are left to the merge. Base is read from the partition the document merges in
+   * (`scope.tenantId`): the caller's for a role, and for a group or user document a caller
+   * without a tenant addresses by id, the tenant that holds it, whose Base that profile merges
+   * over; each attempt reads the document in that partition only (`readScopedConfig`). `yaml` is
+   * librechat.yaml as that partition resolves it. With `yaml` `null`
    * the write does not validate on the floor, and `plan` gets an empty one. `plan` also gets the
    * Base document itself (`null` for Base, or when none is active), which binds the keys the
    * write enters to the destinations they are sent to over it (`bindPlannedSecrets`).
@@ -2524,7 +3024,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   async function runOnValidationFloor<T>(
     principalType: PrincipalType,
     principalId: string,
-    tenantId: string | undefined,
+    scope: WriteScope,
     yaml: Partial<TCustomConfig> | null,
     plan: (
       stored: ConfigRecord | null,
@@ -2545,8 +3045,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       {
         read: async () => {
           const [stored, base] = await Promise.all([
-            readStoredConfig(principalType, principalId),
-            readsBase ? readActiveBase() : null,
+            readScopedConfig(principalType, principalId, scope),
+            readsBase ? readActiveBase(scope.tenantId) : null,
           ]);
           attempt.base = base;
           return stored;
@@ -2563,7 +3063,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     if (!outcome.written) {
       return { ...outcome, base: attempt.base };
     }
-    const judged = await judgeOnLandedBase(attempt.base, (landed) => {
+    const judged = await judgeOnLandedBase(scope.tenantId, attempt.base, (landed) => {
       attempt.base = landed;
       return plan(outcome.previous, floorOver(landed), landed);
     });
@@ -2576,7 +3076,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       outcome.record,
       outcome.previous,
     );
-    await invalidateCaches(tenantId, 'withdrawn write');
+    await invalidateCaches(scope.activeTenantId, 'withdrawn write');
     return { written: false, current, result: judged.result, base: attempt.base };
   }
 
@@ -2623,11 +3123,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     try {
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
 
       if (!(await hasAnyConfigReadAccess(user))) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
 
       const configs = await listAllConfigs();
@@ -2652,13 +3152,21 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     try {
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
 
       if (!(await hasAnyConfigReadAccess(user))) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
 
+      const baseConfig = await getBaseAppConfig(user.tenantId);
+      const meta = buildAdminConfigMeta({
+        maxPatchEntries: MAX_PATCH_ENTRIES,
+        maxChangeOps: MAX_CONFIG_CHANGE_OPS,
+        maxEntryKeyLength: MAX_CONFIG_ENTRY_KEY_LENGTH,
+        overrideCacheTtlMs,
+        catalogModelsTtlMs: getCatalogModelsTtlMs(baseConfig),
+      });
       return res.status(200).json(meta);
     } catch (error) {
       logger.error('[adminConfig] getConfigMeta error:', getSafeErrorMetadata(error));
@@ -2674,7 +3182,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     try {
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
 
       if (!getAppConfig) {
@@ -2682,7 +3190,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       if (!(await hasAnyConfigReadAccess(user))) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
 
       const baseOnly = (req.query as Record<string, unknown>).baseOnly === 'true';
@@ -2714,30 +3222,49 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       };
 
       if (!validatePrincipalType(principalType)) {
-        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+        return invalidPrincipalTypeResponse(res, principalType);
       }
 
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
 
       if (!(await hasAnyConfigReadAccess(user))) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
 
-      const config = await findConfigByPrincipal(principalType, principalId, {
-        includeInactive: true,
-      });
+      const isBase = isBaseConfigPrincipal({ principalType, principalId });
+      /**
+       * The document is judged in the partition it merges in, as writes judge it: the caller's,
+       * read beside the document, or, for a group or user document a caller without a tenant
+       * reads from a tenant, that tenant's, read once the document names it.
+       */
+      const activePartition = getActivePartition();
+      const [config, judgedInActive] = await Promise.all([
+        findConfigByPrincipal(principalType, principalId, { includeInactive: true }),
+        loadJudgement(activePartition, isBase),
+      ]);
       if (!config) {
-        return res.status(404).json({ error: 'Config not found' });
+        return configNotFoundResponse(res);
       }
+      const partition = getConfigPartition(config);
+      const [baseConfig, base] =
+        partition === activePartition ? judgedInActive : await loadJudgement(partition, isBase);
 
       const sections = collectConfigSections(config) as ConfigSection[];
       const readable = await getReadableConfigSections(user, sections);
       const filteredConfig = filterConfigDocForReadAccess(config, readable);
+      const ignored =
+        base === undefined ? null : await reportStoredIgnored(config, partition, baseConfig, base);
 
-      return res.status(200).json({ config: redactConfigForResponse(filteredConfig) });
+      return res.status(200).json({
+        config: redactConfigForResponse(filteredConfig),
+        ...(ignored && {
+          ignored: ignored.filter(({ segments }) => canReadSection(readable, segments[0] ?? '')),
+          ignoredBasis: isBase ? 'yaml' : 'base',
+        }),
+      });
     } catch (error) {
       logger.error('[adminConfig] getConfig error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to get config' });
@@ -2755,7 +3282,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       };
 
       if (!validatePrincipalType(principalType)) {
-        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+        return invalidPrincipalTypeResponse(res, principalType);
       }
 
       const { overrides, priority } = req.body as {
@@ -2764,7 +3291,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       };
 
       if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) {
-        return res.status(400).json({ error: 'overrides must be a plain object' });
+        return errorResponse(res, 400, 'INVALID_OVERRIDES', 'overrides must be a plain object');
       }
 
       const expected = readExpectedRevision(
@@ -2781,11 +3308,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const rawOverrides = overrides as Record<string, unknown>;
       if (hasProcessMCPServerConfig(rawOverrides.mcpServers)) {
-        return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
+        return errorResponse(res, 400, 'PROCESS_MCP_CONFIG', PROCESS_MCP_CONFIG_ERROR);
       }
 
       if (hasLangfuseHeadersOverride(rawOverrides)) {
-        return res.status(400).json({ error: LANGFUSE_HEADERS_CONFIG_ERROR });
+        return errorResponse(res, 400, 'LANGFUSE_HEADERS_CONFIG', LANGFUSE_HEADERS_CONFIG_ERROR);
       }
 
       if (priority != null && !isValidPriority(priority)) {
@@ -2794,13 +3321,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 
       if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
 
       const hasAssignConfigs =
@@ -2808,7 +3335,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         (await hasCapability(user, `assign:configs:${principalType}` as SystemCapability));
 
       if (!hasAssignConfigs) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
 
       /**
@@ -2819,58 +3346,46 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (dottedSectionIssues.length > 0) {
         return hasBroadManage
           ? invalidOverrideResponse(res, dottedSectionIssues)
-          : res.status(403).json({ error: 'Insufficient permissions' });
+          : forbiddenResponse(res);
       }
 
-      const filteredOverrides = {
-        ...(overrides as Record<string, unknown>),
-      } as Partial<TCustomConfig>;
-      for (const section of BASE_ONLY_OVERRIDE_SECTIONS) {
-        if (section in filteredOverrides) {
-          delete (filteredOverrides as Record<string, unknown>)[section];
-          logger.warn(
-            `[adminConfig] Stripping base-only config section "${section}" - configure it in librechat.yaml instead`,
-          );
+      /** What the API never stores is cut out section by section, and reported as skipped. */
+      const skipped: SkippedPart[] = [];
+      const filteredOverrides: Record<string, unknown> = {};
+      for (const [section, value] of Object.entries(rawOverrides)) {
+        const skipReason = getFieldSkipReason(section) ?? getHeldPathSkipReason([section]);
+        if (skipReason) {
+          skipped.push({ segments: [section], reason: skipReason });
+          continue;
         }
-      }
-      for (const key of Object.keys(filteredOverrides)) {
-        const section = getTopLevelSection(key);
-        if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
-          delete (filteredOverrides as Record<string, unknown>)[key];
-          logger.warn(
-            `[adminConfig] Stripping dedicated tenant-wide config section "${key}" from the generic config API`,
-          );
-        }
-      }
-      const iface = (overrides as Record<string, unknown>).interface;
-      if (isPlainRecord(iface)) {
-        const { value, stripped } = filterInterfaceOverride(iface);
-        for (const path of stripped) {
-          logSkippedField('Stripping', ['interface', ...path].join('.'), 'interface_permission');
-        }
-        if (value) {
-          (filteredOverrides as Record<string, unknown>).interface = value;
-        } else {
-          delete (filteredOverrides as Record<string, unknown>).interface;
+        const filtered = filterWrittenValue([section], value);
+        skipped.push(...filtered.skipped);
+        if (!filtered.emptied) {
+          defineKey(filteredOverrides, section, filtered.value);
         }
       }
 
-      const overrideSections = Object.keys(filteredOverrides);
       /** A create-only request is a lifecycle write even when it carries nothing. */
       const createOnly = expected.value === ABSENT_CONFIG_REVISION;
+      const noopReport = {
+        skipped,
+        access: hasBroadManage ? FULL_READ_ACCESS : NO_READ_ACCESS,
+      };
 
-      if (overrideSections.length === 0 && priority == null && !createOnly) {
+      if (Object.keys(filteredOverrides).length === 0 && priority == null && !createOnly) {
+        logSkippedParts('Stripping', skipped);
         return noopResponse(
           res,
           'No actionable override sections provided',
           principalType,
           principalId,
           expected.value,
+          noopReport,
         );
       }
 
-      if (overrideSections.length > 0 && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+      if (Object.keys(filteredOverrides).length > 0 && !hasBroadManage) {
+        return forbiddenResponse(res);
       }
 
       if (priority != null && !hasBroadManage) {
@@ -2879,19 +3394,48 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         );
       }
 
-      for (const section of getConfigSecretSections()) {
-        const secretInputError = getConfigSecretInputError(
-          section,
-          (filteredOverrides as Record<string, unknown>)[section],
+      const scope = await resolveWriteScope(principalType, principalId);
+      const baseConfig =
+        Object.keys(filteredOverrides).length > 0
+          ? await getBaseAppConfig(scope.tenantId)
+          : undefined;
+      const baseYaml: Partial<TCustomConfig> = baseConfig?.config ?? {};
+
+      /** A stdio server librechat.yaml runs is left out, so a read written back still succeeds. */
+      const processes = stripProcessServers(
+        ['mcpServers'],
+        filteredOverrides.mcpServers,
+        getProcessServerNames(baseYaml),
+      );
+      if (processes.skipped.length > 0) {
+        skipped.push(...processes.skipped);
+        if (processes.emptied) {
+          delete filteredOverrides.mcpServers;
+        } else {
+          filteredOverrides.mcpServers = processes.value;
+        }
+      }
+      logSkippedParts('Stripping', skipped);
+
+      const overrideSections = Object.keys(filteredOverrides);
+      if (overrideSections.length === 0 && priority == null && !createOnly) {
+        return noopResponse(
+          res,
+          'No actionable override sections provided',
+          principalType,
+          principalId,
+          expected.value,
+          noopReport,
         );
+      }
+
+      for (const section of getConfigSecretSections()) {
+        const secretInputError = getConfigSecretInputError(section, filteredOverrides[section]);
         if (secretInputError) {
-          return res.status(400).json({ error: secretInputError });
+          return errorResponse(res, 400, 'SECRET_PATH', secretInputError);
         }
       }
 
-      const baseConfig =
-        overrideSections.length > 0 ? await getBaseAppConfig(user.tenantId) : undefined;
-      const baseYaml: Partial<TCustomConfig> = baseConfig?.config ?? {};
       const envPolicy = getEnvPolicy(baseYaml);
       const envIssues = getEnvReferenceIssues(filteredOverrides, envPolicy);
       if (envIssues.length > 0) {
@@ -2917,7 +3461,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         outcome = await runOnValidationFloor<PutStop>(
           principalType,
           principalId,
-          user.tenantId,
+          scope,
           yaml,
           async (stored, floor, base) => {
             if (!stored && !(await canCreateFor(principalType, principalId))) {
@@ -3005,7 +3549,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (!outcome.written) {
         const stop = outcome.result;
         if (stop.status === 403) {
-          return res.status(403).json({ error: 'Insufficient permissions' });
+          return forbiddenResponse(res);
         }
         if (stop.status === 404) {
           return principalNotFoundResponse(res);
@@ -3040,7 +3584,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         created ? 201 : 200,
         config,
         hasBroadManage ? FULL_READ_ACCESS : NO_READ_ACCESS,
-        await reportIgnored(config, user.tenantId, { baseConfig, envPolicy, base: outcome.base }),
+        await reportIgnored(config, scope.tenantId, { baseConfig, envPolicy, base: outcome.base }),
+        toWriteReport(
+          overrideSections.map((section) => [section]),
+          skipped,
+        ),
       );
     } catch (error) {
       if (isFieldNameRejection(error)) {
@@ -3066,7 +3614,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       };
 
       if (!validatePrincipalType(principalType)) {
-        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+        return invalidPrincipalTypeResponse(res, principalType);
       }
 
       const { entries, priority } = req.body as {
@@ -3091,16 +3639,30 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       if (!Array.isArray(entries) || entries.length === 0) {
-        return res.status(400).json({ error: 'entries array is required and must not be empty' });
+        return errorResponse(
+          res,
+          400,
+          'ENTRIES_REQUIRED',
+          'entries array is required and must not be empty',
+        );
       }
 
       if (entries.length > MAX_PATCH_ENTRIES) {
-        return res
-          .status(400)
-          .json({ error: `entries array exceeds maximum of ${MAX_PATCH_ENTRIES}` });
+        return errorResponse(
+          res,
+          400,
+          'PATCH_TOO_LARGE',
+          `entries array exceeds maximum of ${MAX_PATCH_ENTRIES}`,
+        );
       }
 
       const targets: Array<{ target: FieldTarget; value: unknown }> = [];
+      /**
+       * Every entry's section, a skipped entry's included: the caller must manage each section it
+       * names, as on `/changes` and the tombstone route, and a write there that the API skips
+       * answers 200 with the report.
+       */
+      const sections = new Set<string>();
       for (const entry of entries) {
         const read = readFieldTarget(entry?.fieldPath, entry?.segments);
         if (!read.ok) {
@@ -3109,86 +3671,91 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         if (read.target.entry) {
           return fieldTargetErrorResponse(res, { error: KEYED_WRITE_ERROR, reason: 'keyed_path' });
         }
-        if (!isAcceptedOverrideSection(getTopLevelSection(read.target.fieldPath))) {
+        const section = getTopLevelSection(read.target.fieldPath);
+        if (!isAcceptedOverrideSection(section)) {
           return unknownSectionResponse(res);
         }
         const value = entry?.value;
         const guardError = getFieldWriteError(read.target.fieldPath, value);
         if (guardError) {
-          return res.status(400).json({ error: guardError.error });
+          return errorResponse(res, 400, guardError.code, guardError.error);
         }
+        sections.add(section);
         targets.push({ target: read.target, value });
       }
 
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
 
-      const validEntries = targets
-        .map(({ target, value }) => ({
-          target,
-          value: normalizeInterfaceFieldPatch(target.fieldPath, value),
-        }))
-        .filter(({ target: { fieldPath } }) => {
-          const skipReason = getFieldSkipReason(fieldPath);
-          if (skipReason) {
-            logSkippedField('Stripping', fieldPath, skipReason);
-          }
-          return skipReason == null;
-        });
+      /**
+       * What the API never stores is cut out entry by entry and reported as skipped. An entry
+       * whose whole value is cut out resets its path (`reset`), as a whole value replaces what
+       * is stored there; every entry applies in request order.
+       */
+      const skipped: SkippedPart[] = [];
+      /** The entries that change the document, in request order. */
+      let ordered: Array<{ target: FieldTarget; value: unknown; reset: boolean }> = [];
+      for (const { target, value } of targets) {
+        const skipReason =
+          getFieldSkipReason(target.fieldPath) ?? getHeldPathSkipReason(target.segments);
+        if (skipReason) {
+          skipped.push({ segments: [...target.segments], reason: skipReason });
+          continue;
+        }
+        const filtered = filterWrittenValue(
+          target.segments,
+          normalizeInterfaceFieldPatch(target.fieldPath, value),
+        );
+        skipped.push(...filtered.skipped);
+        ordered.push({ target, value: filtered.value, reset: filtered.emptied });
+      }
+      const actionable = ordered.map(({ target }) => target);
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 
       if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
 
-      if (validEntries.length === 0) {
-        if (!hasBroadManage) {
-          return res.status(403).json({ error: 'Insufficient permissions' });
+      const managedSections = [...sections];
+      if (!hasBroadManage) {
+        const allowed = await Promise.all(
+          managedSections.map((s) => hasConfigCapability(user, s as ConfigSection, 'manage')),
+        );
+        const denied = managedSections.find((_, i) => !allowed[i]);
+        if (denied) {
+          return forbiddenSectionResponse(res, denied);
         }
+      }
+
+      if (ordered.length === 0) {
+        logSkippedParts('Stripping', skipped);
         return noopResponse(
           res,
           'No actionable field entries provided',
           principalType,
           principalId,
           expected.value,
+          { skipped, access: await resolveWriteReadAccess(user, hasBroadManage, managedSections) },
         );
       }
 
-      const writtenSections = [
-        ...new Set(validEntries.map(({ target }) => getTopLevelSection(target.fieldPath))),
-      ];
-      if (!hasBroadManage) {
-        const allowed = await Promise.all(
-          writtenSections.map((s) => hasConfigCapability(user, s as ConfigSection, 'manage')),
-        );
-        const denied = writtenSections.find((_, i) => !allowed[i]);
-        if (denied) {
-          return res.status(403).json({
-            error: `Insufficient permissions for config section: ${denied}`,
-          });
+      const seenTargets = new Set<string>();
+      for (const target of actionable) {
+        const key = target.dotFree ? target.fieldPath : JSON.stringify(target.segments);
+        if (seenTargets.has(key)) {
+          return errorResponse(
+            res,
+            400,
+            'DUPLICATE_FIELD_PATH',
+            target.dotFree
+              ? `Duplicate fieldPath: ${target.fieldPath}`
+              : 'Duplicate field path segments',
+          );
         }
-      }
-
-      const seenPaths = new Set<string>();
-      const seenSegments = new Set<string>();
-      const fields: Record<string, unknown> = {};
-      for (const { target, value } of validEntries) {
-        if (!target.dotFree) {
-          const key = JSON.stringify(target.segments);
-          if (seenSegments.has(key)) {
-            return res.status(400).json({ error: 'Duplicate field path segments' });
-          }
-          seenSegments.add(key);
-          continue;
-        }
-        if (seenPaths.has(target.fieldPath)) {
-          return res.status(400).json({ error: `Duplicate fieldPath: ${target.fieldPath}` });
-        }
-        seenPaths.add(target.fieldPath);
-        fields[target.fieldPath] = value;
+        seenTargets.add(key);
       }
 
       if (priority != null && !hasBroadManage) {
@@ -3198,11 +3765,39 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
 
-      const [baseConfig, access] = await Promise.all([
-        getBaseAppConfig(user.tenantId),
-        resolveWriteReadAccess(user, hasBroadManage, writtenSections),
+      const [{ scope, baseConfig }, access] = await Promise.all([
+        loadWriteScope(principalType, principalId),
+        resolveWriteReadAccess(user, hasBroadManage, managedSections),
       ]);
       const baseYaml: Partial<TCustomConfig> = baseConfig?.config ?? {};
+
+      /**
+       * librechat.yaml's stdio servers are shared processes no override changes: a write inside
+       * one is refused, and one in a whole `mcpServers` value is left out (and reported).
+       */
+      const processServers = getProcessServerNames(baseYaml);
+      if (actionable.some((target) => isProcessServerPath(target.segments, processServers))) {
+        return processServerOverrideResponse(res);
+      }
+      ordered = ordered.map((entry) => {
+        if (entry.reset) {
+          return entry;
+        }
+        const filtered = stripProcessServers(entry.target.segments, entry.value, processServers);
+        skipped.push(...filtered.skipped);
+        return { target: entry.target, value: filtered.value, reset: filtered.emptied };
+      });
+      logSkippedParts('Stripping', skipped);
+
+      const validEntries = ordered.filter(({ reset }) => !reset);
+      const hasResets = validEntries.length < ordered.length;
+      const fields: Record<string, unknown> = {};
+      for (const { target, value } of validEntries) {
+        if (target.dotFree) {
+          fields[target.fieldPath] = value;
+        }
+      }
+
       const envPolicy = getEnvPolicy(baseYaml);
       const envIssues = validEntries.flatMap(({ target, value }) =>
         getEnvReferenceIssues(value, envPolicy, target.segments),
@@ -3227,7 +3822,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         outcome = await runOnValidationFloor<PatchStop>(
           principalType,
           principalId,
-          user.tenantId,
+          scope,
           baseYaml,
           async (stored, floor, base) => {
             if (!stored && !(await canCreateFor(principalType, principalId))) {
@@ -3247,15 +3842,18 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
                 carryRenamedConfigSecrets(value, stored?.overrides, renames.renames, fieldPath);
               }
             }
-            const writes = toOrderedWrites(validEntries, preservedFields);
+            const steps = toOrderedSteps(ordered, preservedFields);
+            const writes = toStepWrites(steps);
             /** A renamed custom endpoint's keyed tombstones move to its new name. */
             const entryRenames = toEntryRenames(renames.renames);
-            const fieldIssues = getConfigFieldIssues(writes, floor, stored, entryRenames);
+            const fieldIssues = hasResets
+              ? getPatchStepIssues(steps, floor, stored, entryRenames)
+              : getConfigFieldIssues(writes, floor, stored, entryRenames);
             if (fieldIssues.length > 0) {
               return { draft: null, result: { status: 400, issues: fieldIssues } };
             }
             const state = renameConfigEntriesTombstones(
-              setConfigFields(toConfigOverrideState(stored), writes),
+              applyPatchSteps(toConfigOverrideState(stored), steps),
               entryRenames,
             );
             /** A changed URL beside a stored key that stays needs that key entered again. */
@@ -3325,7 +3923,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         target: configTarget(principalType, principalId),
         metadata: {
           operation: 'patch',
-          fieldPaths: validEntries.map(({ target }) => describeFieldTarget(target)).join(','),
+          fieldPaths: actionable.map(describeFieldTarget).join(','),
           ...(renames.renames.length > 0 && { renames: describeRenames(renames.renames) }),
         },
       });
@@ -3334,7 +3932,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         200,
         config,
         access,
-        await reportIgnored(config, user.tenantId, { baseConfig, envPolicy, base: outcome.base }),
+        await reportIgnored(config, scope.tenantId, { baseConfig, envPolicy, base: outcome.base }),
+        toWriteReport(
+          actionable.map((target) => target.segments),
+          skipped,
+        ),
       );
     } catch (error) {
       if (isFieldNameRejection(error)) {
@@ -3360,7 +3962,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       };
 
       if (!validatePrincipalType(principalType)) {
-        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+        return invalidPrincipalTypeResponse(res, principalType);
       }
 
       const {
@@ -3374,7 +3976,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       };
 
       if (segments === undefined && (!rawFieldPath || typeof rawFieldPath !== 'string')) {
-        return res.status(400).json({ error: 'fieldPath is required' });
+        return errorResponse(res, 400, 'INVALID_FIELD_PATH', 'fieldPath is required');
       }
 
       if (priority != null && !isValidPriority(priority)) {
@@ -3417,18 +4019,18 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const removalError = read.target.entry ? null : getFieldRemovalError(fieldPath);
       if (removalError) {
-        return res.status(400).json({ error: removalError.error });
+        return errorResponse(res, 400, removalError.code, removalError.error);
       }
 
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 
       if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
 
       const [canManageSection, access] = await Promise.all([
@@ -3436,12 +4038,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         resolveWriteReadAccess(user, hasBroadManage, [section]),
       ]);
       if (!canManageSection) {
-        return res.status(403).json({
-          error: `Insufficient permissions for config section: ${section}`,
-        });
+        return forbiddenSectionResponse(res, section);
       }
 
-      const skipReason = getFieldSkipReason(fieldPath);
+      const skipReason =
+        getFieldSkipReason(fieldPath) ?? getHeldPathSkipReason(read.target.segments);
       if (skipReason) {
         logSkippedField('Ignoring tombstone for', fieldPath, skipReason);
         return noopResponse(
@@ -3450,7 +4051,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           principalType,
           principalId,
           expected.value,
+          { skipped: [{ segments: [...read.target.segments], reason: skipReason }], access },
         );
+      }
+
+      /** A stdio server librechat.yaml runs cannot be hidden, nor can its fields be removed. */
+      const scope = await resolveWriteScope(principalType, principalId);
+      const mcpBase = MCP_SECTIONS.has(section)
+        ? await getBaseAppConfig(scope.tenantId)
+        : undefined;
+      if (isProcessServerPath(read.target.segments, getProcessServerNames(mcpBase?.config ?? {}))) {
+        return processServerOverrideResponse(res);
       }
 
       if (priority != null && !hasBroadManage) {
@@ -3468,7 +4079,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           read.target,
           { tombstone: true, priority: requestedPriority },
           expected.value,
-          user.tenantId,
+          scope,
+          mcpBase,
         );
       } catch (error) {
         return await writeFailureResponse(res, error, principalType, principalId);
@@ -3485,9 +4097,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         metadata: { operation: 'tombstone', fieldPath },
       });
       const ignored = isBoundSecretSection(parseFieldPath(fieldPath)[0])
-        ? await reportIgnored(config, user.tenantId)
+        ? await reportIgnored(config, getConfigPartition(config))
         : [];
-      return sendWrittenConfig(res, 200, config, access, ignored);
+      return sendWrittenConfig(
+        res,
+        200,
+        config,
+        access,
+        ignored,
+        toWriteReport([read.target.segments], []),
+      );
     } catch (error) {
       logger.error('[adminConfig] tombstoneConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to tombstone config field' });
@@ -3511,13 +4130,18 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         principalId: string;
       };
       if (!validatePrincipalType(principalType)) {
-        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+        return invalidPrincipalTypeResponse(res, principalType);
       }
 
       const { fieldPath: rawFieldPath, segments: rawSegments } = req.query;
 
       if (rawSegments === undefined && (!rawFieldPath || typeof rawFieldPath !== 'string')) {
-        return res.status(400).json({ error: 'fieldPath query parameter is required' });
+        return errorResponse(
+          res,
+          400,
+          'INVALID_FIELD_PATH',
+          'fieldPath query parameter is required',
+        );
       }
 
       const expected = readExpectedRevision(req.query.expectedRevision);
@@ -3540,12 +4164,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const removalError = target.entry ? null : getFieldRemovalError(fieldPath);
       if (removalError) {
-        return res.status(400).json({ error: removalError.error });
+        return errorResponse(res, 400, removalError.code, removalError.error);
       }
 
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
 
       const section = getTopLevelSection(fieldPath);
@@ -3553,7 +4177,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 
       if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
 
       const [canManageSection, access] = await Promise.all([
@@ -3561,9 +4185,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         resolveWriteReadAccess(user, hasBroadManage, [section]),
       ]);
       if (!canManageSection) {
-        return res.status(403).json({
-          error: `Insufficient permissions for config section: ${section}`,
-        });
+        return forbiddenSectionResponse(res, section);
       }
 
       const skipReason = getFieldSkipReason(fieldPath);
@@ -3575,6 +4197,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           principalType,
           principalId,
           expected.value,
+          { skipped: [{ segments: [...target.segments], reason: skipReason }], access },
         );
       }
 
@@ -3587,7 +4210,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             target,
             { tombstone: false },
             expected.value,
-            user.tenantId,
+            await resolveWriteScope(principalType, principalId),
           );
           if (!outcome.written) {
             return removalStopResponse(res, outcome.result);
@@ -3612,7 +4235,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return await writeFailureResponse(res, error, principalType, principalId);
       }
       if (!config) {
-        return res.status(404).json({ error: 'Config not found' });
+        return configNotFoundResponse(res);
       }
 
       await invalidateCaches(user.tenantId, 'field delete');
@@ -3622,9 +4245,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         metadata: { operation: 'unset', fieldPath: describeFieldTarget(target) },
       });
       const ignored = isBoundSecretSection(target.segments[0])
-        ? await reportIgnored(config, user.tenantId)
+        ? await reportIgnored(config, getConfigPartition(config))
         : [];
-      return sendWrittenConfig(res, 200, config, access, ignored);
+      return sendWrittenConfig(
+        res,
+        200,
+        config,
+        access,
+        ignored,
+        toWriteReport([target.segments], []),
+      );
     } catch (error) {
       logger.error('[adminConfig] deleteConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to delete config field' });
@@ -3715,13 +4345,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 
       if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+        return forbiddenResponse(res);
       }
 
       const managedSections = [...sections];
@@ -3733,11 +4363,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         );
         const denied = managedSections.find((_, i) => !allowed[i]);
         if (denied) {
-          return res.status(403).json({
-            error: `Insufficient permissions for config section: ${denied}`,
-            code: 'FORBIDDEN_SECTION',
-            section: denied,
-          });
+          return forbiddenSectionResponse(res, denied);
         }
       }
 
@@ -3749,8 +4375,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const requestedPriority = hasBroadManage ? (priority as number | undefined) : undefined;
 
       /** A dry run returns no document, so it resolves no read access: it shows only what it writes. */
-      const [baseConfig, access] = await Promise.all([
-        getBaseAppConfig(user.tenantId),
+      const [{ scope, baseConfig }, access] = await Promise.all([
+        loadWriteScope(principalType, principalId),
         dryRun
           ? toWrittenSectionsAccess(hasBroadManage, managedSections)
           : resolveWriteReadAccess(user, hasBroadManage, managedSections),
@@ -3772,7 +4398,24 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           });
         }
       }
-      const yamlHeld = getYamlHeld(baseYaml);
+      const yamlHeld = getYamlHeld(baseYaml, baseConfig);
+      /**
+       * librechat.yaml's stdio servers are shared processes no override changes: a change inside
+       * one is refused, and one in a whole `mcpServers` value is left out (and reported). An
+       * `unset` there is cleanup, as DELETE `/fields` is.
+       */
+      for (let index = 0; index < changes.length; index++) {
+        const change = changes[index];
+        if (
+          SERVER_WRITE_OPS.has(change.op) &&
+          isProcessServerPath(change.target.segments, yamlHeld.processServers)
+        ) {
+          return processServerOverrideResponse(res, { opIndex: change.index });
+        }
+        const stripped = withoutProcessServers(change, yamlHeld.processServers);
+        changes[index] = stripped.change;
+        skipped.push(...stripped.skipped);
+      }
 
       interface ChangesReport {
         applied: AdminConfigChangeRef[];
@@ -3893,7 +4536,14 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         }
         let planned = state;
         if (documentChanged) {
-          const issues = getConfigChangeIssues(state, floor, stored, written);
+          /**
+           * Only an unset reaches a section configSchema does not define (`prepareChange` refuses
+           * every other op there), and it only removes what an older server stored. What it leaves
+           * of the section is the document's own `unknown_section` issue, which the merge ignores
+           * and which must not be blamed on the removal.
+           */
+          const attributable = written.filter((segments) => isAcceptedOverrideSection(segments[0]));
+          const issues = getConfigChangeIssues(state, floor, stored, attributable);
           if (issues.length > 0) {
             return { draft: null, result: { stop: { kind: 'issues', issues } } };
           }
@@ -3947,7 +4597,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         outcome = await runOnValidationFloor<ChangesResult>(
           principalType,
           principalId,
-          user.tenantId,
+          scope,
           baseYaml,
           plan,
           expected.value,
@@ -3988,7 +4638,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             tombstones: report.planned.tombstones,
           };
       const ignoredSecrets = rebound
-        ? await reportIgnored(rebound, user.tenantId, {
+        ? await reportIgnored(rebound, scope.tenantId, {
             baseConfig,
             envPolicy,
             base: outcome.base,
@@ -4044,7 +4694,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       };
 
       if (!validatePrincipalType(principalType)) {
-        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+        return invalidPrincipalTypeResponse(res, principalType);
       }
 
       const expected = readExpectedRevision(req.query.expectedRevision);
@@ -4054,20 +4704,20 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 
       if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
 
       const allowed =
         hasBroadManage ||
         (await hasCapability(user, `assign:configs:${principalType}` as SystemCapability));
       if (!allowed) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
 
       let config: ConfigRecord | null;
@@ -4085,10 +4735,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             includeInactive: true,
           });
           if (exists) {
-            return res.status(403).json({ error: 'Insufficient permissions' });
+            return forbiddenResponse(res);
           }
         }
-        return res.status(404).json({ error: 'Config not found' });
+        return configNotFoundResponse(res);
       }
 
       await invalidateCaches(user.tenantId, 'config delete');
@@ -4141,11 +4791,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
+        return authRequiredResponse(res);
       }
 
       if (!(await hasConfigCapability(user, null, 'manage'))) {
-        return res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+        return forbiddenResponse(res);
       }
 
       if (!setConfigPriority) {
@@ -4161,7 +4811,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return await writeFailureResponse(res, error, principalType, principalId);
       }
       if (!updated) {
-        return res.status(404).json({ error: 'Config not found', code: 'CONFIG_NOT_FOUND' });
+        return configNotFoundResponse(res);
       }
 
       const { config, changed } = updated;
@@ -4181,6 +4831,73 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   }
 
   /**
+   * POST /reload — Reload librechat.yaml on every instance without a config write.
+   *
+   * Runs the clear every committed config write runs, for every tenant: this instance drops its
+   * cached librechat.yaml, its merged configs and its MCP config-source servers. It then loads
+   * the file again here before answering, so a file the loader refuses is reported (422, with
+   * the issues' locations) instead of only logged; that instance keeps its last good config, as
+   * any reload does, and the other instances are not told. Once the file loaded, the clear is
+   * published to every other instance with Redis, which load the file on their next read. A
+   * write only logs a failed clear or publish, having committed already; here the reload is the
+   * whole operation, so the response reports it. An instance that misses the publish keeps its
+   * cached librechat.yaml, which never expires, so a 503 tells the operator to retry rather than
+   * wait. Only an admin without a tenant with broad `manage:configs` may reload: the file, the
+   * MCP servers it defines and the caches dropped belong to every tenant, and a tenant admin
+   * cannot edit the file.
+   */
+  async function reloadConfig(req: ServerRequest, res: Response): Promise<Response> {
+    try {
+      const user = getCapabilityUser(req);
+      if (!user) {
+        return authRequiredResponse(res);
+      }
+
+      if (user.tenantId) {
+        return errorResponse(
+          res,
+          403,
+          'FORBIDDEN',
+          'Only an admin without a tenant can reload librechat.yaml',
+        );
+      }
+
+      if (!(await hasConfigCapability(user, null, 'manage'))) {
+        return forbiddenResponse(res);
+      }
+
+      if (!reloadConfigCaches) {
+        return res.status(501).json({ error: 'Config reload is not configured' });
+      }
+
+      const report = await reloadConfigCaches();
+      const failure = getReloadFailure(report);
+      if (failure) {
+        await emitAudit(req, {
+          action: 'config.reloaded',
+          outcome: 'failure',
+          target: RELOAD_AUDIT_TARGET,
+          metadata: { code: failure.body.code, broadcast: report.broadcast },
+        });
+        return res.status(failure.status).json(failure.body);
+      }
+      await emitAudit(req, {
+        action: 'config.reloaded',
+        target: RELOAD_AUDIT_TARGET,
+        metadata: { broadcast: report.broadcast },
+      });
+      const body: AdminConfigReloadResponse = {
+        success: true,
+        broadcast: report.broadcast === 'sent',
+      };
+      return res.status(200).json(body);
+    } catch (error) {
+      logger.error('[adminConfig] reloadConfig error:', getSafeErrorMetadata(error));
+      return res.status(500).json({ error: 'Failed to reload config' });
+    }
+  }
+
+  /**
    * PATCH /:principalType/:principalId/active — Toggle isActive.
    */
   async function toggleConfig(req: ServerRequest, res: Response): Promise<Response> {
@@ -4191,12 +4908,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       };
 
       if (!validatePrincipalType(principalType)) {
-        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+        return invalidPrincipalTypeResponse(res, principalType);
       }
 
       const { isActive } = req.body as { isActive?: boolean };
       if (typeof isActive !== 'boolean') {
-        return res.status(400).json({ error: 'isActive boolean is required' });
+        return errorResponse(res, 400, 'INVALID_IS_ACTIVE', 'isActive boolean is required');
       }
 
       const expected = readExpectedRevision(
@@ -4208,20 +4925,20 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const user = getCapabilityUser(req);
       if (!user) {
-        return res.status(401).json({ error: 'Authentication required' });
+        return authRequiredResponse(res);
       }
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 
       if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
 
       const allowed =
         hasBroadManage ||
         (await hasCapability(user, `assign:configs:${principalType}` as SystemCapability));
       if (!allowed) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
+        return forbiddenResponse(res);
       }
 
       let toggled: { config: ConfigRecord; changed: boolean } | null;
@@ -4239,10 +4956,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             includeInactive: true,
           });
           if (exists) {
-            return res.status(403).json({ error: 'Insufficient permissions' });
+            return forbiddenResponse(res);
           }
         }
-        return res.status(404).json({ error: 'Config not found' });
+        return configNotFoundResponse(res);
       }
 
       const { config, changed } = toggled;
@@ -4281,5 +4998,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     deleteConfigOverrides,
     toggleConfig,
     updateConfigPriority,
+    reloadConfig,
   };
 }

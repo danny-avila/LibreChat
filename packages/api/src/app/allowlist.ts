@@ -1,6 +1,6 @@
 import isPlainObject from 'lodash/isPlainObject';
 import { EModelEndpoint, isSensitiveEnvVar } from 'librechat-data-provider';
-import { loadOCRConfig, loadWebSearchConfig } from '@librechat/data-schemas';
+import { getAtPath, loadOCRConfig, loadWebSearchConfig } from '@librechat/data-schemas';
 import type { ConfigOverrideIssue } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import {
@@ -202,6 +202,22 @@ export function collectEnvReferenceNames(value: unknown): Set<string> {
   return names;
 }
 
+/**
+ * Every env name `value` references where a reader expands it (as {@link collectEnvReferenceNames}
+ * finds them), with the top-level sections it is referenced in.
+ */
+export function collectEnvReferenceSections(value: unknown): Map<string, Set<string>> {
+  const sections = new Map<string, Set<string>>();
+  visitExpandedStrings(value, (text, segments) => {
+    for (const name of referencedNames(text, segments)) {
+      const held = sections.get(name) ?? new Set<string>();
+      held.add(segments[0]);
+      sections.set(name, held);
+    }
+  });
+  return sections;
+}
+
 /** Joins segments so that a key containing a dot never spells another location. */
 function locationKey(segments: readonly string[]): string {
   return segments.join('\u0000');
@@ -244,6 +260,25 @@ function collectLoadedReferences(config: unknown): Map<string, Set<string>> {
     references.set(key, held);
   });
   return references;
+}
+
+/**
+ * The env names loading librechat.yaml references where the YAML leaves a value unset (OCR's key,
+ * the web search defaults such as `${SEARXNG_INSTANCE_URL}`), with their sections.
+ */
+export function collectDefaultEnvReferenceSections(config: unknown): Map<string, Set<string>> {
+  const sections = new Map<string, Set<string>>();
+  visitExpandedStrings(loadSectionsWithReferences(config), (text, segments) => {
+    if (getAtPath(config, segments) !== undefined) {
+      return;
+    }
+    for (const name of referencedNames(text, segments)) {
+      const held = sections.get(name) ?? new Set<string>();
+      held.add(segments[0]);
+      sections.set(name, held);
+    }
+  });
+  return sections;
 }
 
 /**

@@ -1,4 +1,5 @@
 import { isForcedTemporaryRetention } from 'librechat-data-provider';
+import type { TLangfuseUnavailableReason } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { isFalseEnv, isTrueEnv } from './utils';
 import { normalizeString } from '~/utils/text';
@@ -94,12 +95,36 @@ export function isLangfuseTraceSampled(traceId: string): boolean {
   return traceIdAccumulation(traceId) < Math.floor(sampleRate * MAX_TRACE_ID_ACCUMULATION);
 }
 
-export function isLangfuseConnectionAvailable(): boolean {
+/** Whether the deployment offers Langfuse connection settings, and if not, why. */
+export type LangfuseConnectionAvailability =
+  | { available: true }
+  | { available: false; reason: TLangfuseUnavailableReason };
+
+/**
+ * Whether admins can store a Langfuse connection: tracing is on, and either traces route per
+ * tenant through a fanout collector that exports to tenants' projects, or a single-tenant
+ * deployment has no Langfuse credentials in its environment (which would take the connection's
+ * place). Otherwise the reason names the setting that stops it.
+ */
+export function getLangfuseConnectionAvailability(): LangfuseConnectionAvailability {
   if (!isLangfuseTracingEnabled()) {
-    return false;
+    return { available: false, reason: 'tracing_disabled' };
   }
   if (usesLangfuseMultiTenantRouting()) {
-    return isLangfuseFanoutEnabled() && isLangfuseTenantExportEnabled();
+    if (!isLangfuseFanoutEnabled()) {
+      return { available: false, reason: 'fanout_disabled' };
+    }
+    if (!isLangfuseTenantExportEnabled()) {
+      return { available: false, reason: 'tenant_export_disabled' };
+    }
+    return { available: true };
   }
-  return !hasLangfuseEnvCredentials();
+  if (hasLangfuseEnvCredentials()) {
+    return { available: false, reason: 'env_credentials' };
+  }
+  return { available: true };
+}
+
+export function isLangfuseConnectionAvailable(): boolean {
+  return getLangfuseConnectionAvailability().available;
 }

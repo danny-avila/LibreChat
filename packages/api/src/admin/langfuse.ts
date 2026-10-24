@@ -12,6 +12,7 @@ import type {
   TLangfuseConnectionTestRequest,
   TLangfuseConnectionTestResponse,
   TLangfuseSessionLinkResponse,
+  TLangfuseUnavailableResponse,
 } from 'librechat-data-provider';
 import type { ConfigRecord, MessageMethods } from '@librechat/data-schemas';
 import type { Response } from 'express';
@@ -24,8 +25,8 @@ import {
 } from '~/langfuse/tenantDestinations';
 import { redirectPolicyFor, resolveLangfuseHeaders } from '~/langfuse/utils';
 import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
+import { getLangfuseConnectionAvailability } from '~/langfuse/policy';
 import { scopeHeadersToDestination } from '~/langfuse/destinations';
-import { isLangfuseConnectionAvailable } from '~/langfuse/policy';
 import { resolveLangfuseSession } from '~/langfuse/session';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { createAdminAuditEmitter } from './audit';
@@ -137,12 +138,22 @@ function getConnectionChanges(
   return change ? [change, ...additionalChanges] : ['updated'];
 }
 
+/**
+ * 404 on a deployment that offers no Langfuse connection, with the reason (`tracing_disabled`,
+ * `env_credentials`, `fanout_disabled`, `tenant_export_disabled`): every route here is behind the
+ * Langfuse capability, so only its holders learn why.
+ */
 function rejectWhenConnectionUnavailable(res: Response): Response | undefined {
-  if (isLangfuseConnectionAvailable()) {
+  const availability = getLangfuseConnectionAvailability();
+  if (availability.available) {
     return undefined;
   }
-
-  return res.status(404).json({ error: 'Langfuse connection settings are not available' });
+  const body: TLangfuseUnavailableResponse = {
+    error: 'Langfuse connection settings are not available',
+    code: 'LANGFUSE_UNAVAILABLE',
+    reason: availability.reason,
+  };
+  return res.status(404).json(body);
 }
 
 type LangfuseVerificationFailure = {
