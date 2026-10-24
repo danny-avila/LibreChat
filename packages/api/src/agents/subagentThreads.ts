@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { logger, tenantStorage } from '@librechat/data-schemas';
-import { createContentAggregator, GraphEvents, InMemorySubagentTaskStore } from '@librechat/agents';
 import {
   EModelEndpoint,
   Constants,
@@ -11,6 +10,12 @@ import {
   mapChatMessagesToStoredMessages,
   mapStoredMessagesToChatMessages,
 } from '@librechat/agents/langchain/messages';
+import {
+  createContentAggregator,
+  GraphEvents,
+  InMemorySubagentTaskStore,
+  SubagentResolutionError,
+} from '@librechat/agents';
 import type {
   InMemorySubagentTaskStoreOptions,
   SubagentTaskClaim,
@@ -61,6 +66,7 @@ import {
 } from './activity';
 import { boundSubagentActivityUpdate, SubagentActivityStream } from './subagentActivity';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
+import { describeErrorCauses, describeStackFrames } from './failures/subagent';
 import { ActivityRecorder, activityTreeFromProjection } from './digest';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
@@ -574,8 +580,9 @@ function childAgentId(request: SubagentTaskStartRequest): string | undefined {
   return request.subagentType === 'self' ? request.parentAgentId : request.subagentType;
 }
 
+/** A subagent that could not start says why in the SDK's fixed, model-facing wording. */
 function publicFailureDetail(error: unknown): string {
-  return error instanceof SubagentThreadPublicError
+  return error instanceof SubagentThreadPublicError || error instanceof SubagentResolutionError
     ? error.message.slice(0, 2_000)
     : 'The child run could not be completed.';
 }
@@ -1902,9 +1909,14 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 throw error;
               }
               logger.error('[subagentThreads] Child-thread execution failed', {
+                taskId: runtime.taskId,
                 detail: publicFailureDetail(error),
                 errorName: error instanceof Error ? error.name : typeof error,
-                ...(error instanceof Error && error.stack != null ? { stack: error.stack } : {}),
+                ...(error instanceof SubagentResolutionError
+                  ? { phase: error.phase, resolutionCause: error.resolutionCause }
+                  : {}),
+                causes: describeErrorCauses(error),
+                frames: describeStackFrames(error),
               });
               if (mayPersist) {
                 await this.persistFailure(

@@ -803,7 +803,7 @@ describe('config secret registry — real handlers against a real Config collect
       secretPath: 'webSearch.searxngApiKey',
     };
 
-    type Entry = { fieldPath: string; value: unknown };
+    type Entry = { value: unknown } & ({ fieldPath: string } | { segments: string[] });
 
     async function patch(principalId: string, entries: Entry[]): Promise<MockRes> {
       const res = mockRes();
@@ -868,6 +868,121 @@ describe('config secret registry — real handlers against a real Config collect
 
       expect(response(res)).toEqual(reentryRequired([SEARXNG_REENTRY]));
       expect(await readRawConfig(principalId)).toEqual(before);
+    });
+
+    describe.each([
+      { name: 'dotted paths', segmentedKey: false, segmentedSection: false },
+      { name: 'segment paths', segmentedKey: true, segmentedSection: true },
+      { name: 'segmented key and dotted section', segmentedKey: true, segmentedSection: false },
+      { name: 'dotted key and segmented section', segmentedKey: false, segmentedSection: true },
+    ])('overlapping writes with $name', ({ segmentedKey, segmentedSection }) => {
+      const REENTERED_KEY = 'sx-reentered-0002';
+      const keyTarget = segmentedKey
+        ? { segments: ['webSearch', 'searxngApiKey'] }
+        : { fieldPath: 'webSearch.searxngApiKey' };
+      const sectionTarget = segmentedSection
+        ? { segments: ['webSearch'] }
+        : { fieldPath: 'webSearch' };
+      const replacement = (url: string): Entry => ({
+        ...sectionTarget,
+        value: {
+          searxngInstanceUrl: url,
+          searchProvider: 'searxng',
+          scraperProvider: 'keenable',
+          rerankerType: 'none',
+        },
+      });
+      const key: Entry = { ...keyTarget, value: REENTERED_KEY };
+
+      it('rejects a key entry overwritten by a section that restores the stored key', async () => {
+        const principalId = nextPrincipalId();
+        const before = await storeSearxng(principalId);
+
+        const res = await patch(principalId, [key, replacement(NEW_URL)]);
+
+        expect(response(res)).toEqual(reentryRequired([SEARXNG_REENTRY]));
+        expect(await readRawConfig(principalId)).toEqual(before);
+      });
+
+      it('accepts a key entered after the section and stores only that key', async () => {
+        const principalId = nextPrincipalId();
+        const before = await storeSearxng(principalId);
+
+        const res = await patch(principalId, [replacement(NEW_URL), key]);
+
+        expect(res.statusCode).toBe(200);
+        const after = await readRawOverrides(principalId);
+        const ciphertext = getAtPath(after, 'webSearch.searxngApiKey');
+        expect(getAtPath(after, 'webSearch.searxngInstanceUrl')).toBe(NEW_URL);
+        expect(ciphertext).not.toBe(getAtPath(before.overrides, 'webSearch.searxngApiKey'));
+        expect(decryptV3(ciphertext as string)).toBe(REENTERED_KEY);
+        expect(getAtPath(after, 'webSearch.searxngApiKeyPreview')).toBe(
+          getSecretPreview(REENTERED_KEY),
+        );
+        expect(JSON.stringify(res.body)).not.toContain(REENTERED_KEY);
+      });
+
+      it('preserves the stored ciphertext and preview when the destination stays', async () => {
+        const principalId = nextPrincipalId();
+        const before = await storeSearxng(principalId);
+
+        const res = await patch(principalId, [key, replacement(STORED_URL)]);
+
+        expect(res.statusCode).toBe(200);
+        const after = await readRawOverrides(principalId);
+        for (const field of ['searxngInstanceUrl', 'searxngApiKey', 'searxngApiKeyPreview']) {
+          expect(getAtPath(after, `webSearch.${field}`)).toBe(
+            getAtPath(before.overrides, `webSearch.${field}`),
+          );
+        }
+      });
+
+      it('rechecks a restored key after a revision conflict', async () => {
+        const principalId = nextPrincipalId();
+        const before = await storeSearxng(principalId);
+        const concurrentFields = encryptConfigSecretFields({
+          'webSearch.searxngInstanceUrl': 'https://searx.example.com/concurrent',
+          'webSearch.searxngApiKey': 'sx-concurrent-0003',
+        });
+        const write = jest.fn<
+          ReturnType<ConfigMethods['writeConfigDocument']>,
+          Parameters<ConfigMethods['writeConfigDocument']>
+        >(async (...args) => {
+          await patchConfigFields(
+            PrincipalType.ROLE,
+            principalId,
+            PrincipalModel.ROLE,
+            concurrentFields,
+          );
+          return configMethods.writeConfigDocument(...args);
+        });
+        const racing = createRealHandlers({ writeConfigDocument: write });
+        const res = mockRes();
+
+        await racing.patchConfigField(
+          mockReq({
+            params: { principalType: 'role', principalId },
+            body: { entries: [key, replacement(STORED_URL)] },
+          }),
+          res,
+        );
+
+        expect(write).toHaveBeenCalledTimes(1);
+        expect(response(res)).toEqual(reentryRequired([SEARXNG_REENTRY]));
+        const after = await readRawOverrides(principalId);
+        expect(getAtPath(after, 'webSearch.searxngInstanceUrl')).toBe(
+          concurrentFields['webSearch.searxngInstanceUrl'],
+        );
+        expect(getAtPath(after, 'webSearch.searxngApiKey')).toBe(
+          concurrentFields['webSearch.searxngApiKey'],
+        );
+        expect(decryptV3(getAtPath(after, 'webSearch.searxngApiKey') as string)).toBe(
+          'sx-concurrent-0003',
+        );
+        expect(getAtPath(after, 'webSearch.searxngApiKey')).not.toBe(
+          getAtPath(before.overrides, 'webSearch.searxngApiKey'),
+        );
+      });
     });
 
     it('rejects a section patch that changes the URL and omits the key', async () => {
@@ -3727,6 +3842,7 @@ describe('write guards on every handler that changes a document', () => {
     toggleConfig: 'switches the document on or off; the merge judges the layers it brings in',
     updateConfigPriority:
       'sets only the priority, keeping overrides and tombstones; the merge judges the order it brings in',
+    reloadConfig: 'clears the config caches; no document is read or written',
   };
 
   it('lists every handler', () => {

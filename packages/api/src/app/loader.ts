@@ -13,6 +13,7 @@ import {
   validateSettingDefinitions,
 } from 'librechat-data-provider';
 import type { TCustomConfig, TEndpoint } from 'librechat-data-provider';
+import type { ConfigOverrideIssue } from '@librechat/data-schemas';
 import type { ZodIssue } from 'zod';
 import { isAgentInferenceExtension } from '../agents/inference';
 import { checkConfigPolicyLinks } from './interface';
@@ -44,6 +45,40 @@ export class ConfigReloadError extends Error {
     this.cause = cause;
     this.validationErrors = validationErrors;
   }
+}
+
+/**
+ * Why librechat.yaml did not load again: `CONFIG_INVALID` when the loader refused the file
+ * (missing, unreadable or not fetched, unparseable, or failing `configSchema`, whose issues it
+ * lists by location), `LOAD_FAILED` when anything else failed, such as building the config from
+ * a file that loaded. The instance keeps its last good config.
+ */
+export type ConfigLoadFailure =
+  | { code: 'CONFIG_INVALID'; issues: ConfigOverrideIssue[] }
+  | { code: 'LOAD_FAILED' };
+
+export type ConfigLoadResult = { ok: true } | { ok: false; error: ConfigLoadFailure };
+
+function toLoadIssue(segments: string[], code: string): ConfigOverrideIssue {
+  return { path: segments.join('.'), segments, code };
+}
+
+/**
+ * Locations and zod codes only, since schema messages can echo the file's values; an
+ * unrecognized key is reported at its own location.
+ */
+export function getConfigLoadFailure(error: unknown): ConfigLoadFailure {
+  if (!(error instanceof ConfigReloadError)) {
+    return { code: 'LOAD_FAILED' };
+  }
+  const issues = (error.validationErrors ?? []).flatMap((issue) => {
+    const segments = issue.path.map(String);
+    if (issue.code !== 'unrecognized_keys') {
+      return [toLoadIssue(segments, issue.code)];
+    }
+    return issue.keys.map((key) => toLoadIssue([...segments, key], issue.code));
+  });
+  return { code: 'CONFIG_INVALID', issues };
 }
 
 const OPENROUTER_PROMPT_CACHE_DEFAULT = {
