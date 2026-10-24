@@ -141,6 +141,7 @@ const {
   prependQuotes,
   applyAttachmentOnlyText,
   hydrateMissingIndexTokenCounts,
+  createHistoryContextUpdates,
   injectSkillPrimes,
   buildAgentEventActorSkillMessages,
   collectFreshSkillPrimeNames,
@@ -2654,6 +2655,12 @@ class AgentClient extends BaseClient {
     };
     /** Memory copies built for canonical recounts, reused by the memory payload pass. */
     const memoryFormattedMessages = [];
+    /** Date-change and send-time notes, prepended to the prompt copy only. */
+    const historyContext = createHistoryContextUpdates({
+      req: this.options.req,
+      messages: orderedMessages,
+      agents: allAgents.map(({ agent }) => agent),
+    });
 
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
@@ -2702,6 +2709,8 @@ class AgentClient extends BaseClient {
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(formattedMessage, turnFiles);
 
+      const contextUpdate = historyContext.apply(formattedMessage, i);
+
       /**
        * A summarize round that errored or was cut off never reaches the model:
        * the formatter would take its partial text as the history boundary and
@@ -2712,6 +2721,8 @@ class AgentClient extends BaseClient {
        * canonical recount reads an unstripped surface instead.
        */
       const droppedPromptSummary = dropUnusableSummaryParts(formattedMessage);
+      const promptDiffersFromStored =
+        Boolean(message.fileContext) || droppedPromptSummary || contextUpdate != null;
 
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
       const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
@@ -2731,20 +2742,19 @@ class AgentClient extends BaseClient {
       if (needsCanonicalTokenCount) {
         /** Without fileContext the memory copy is content-identical to the
          *  prompt copy, so the prompt copy is the counting surface; with it (or
-         *  with a dropped summary), the canonical count must be taken from the
-         *  message as stored. */
+         *  with a dropped summary or a context update), the canonical count must
+         *  be taken from the message as stored. */
         let countSurface = formattedMessage;
-        if (message.fileContext || droppedPromptSummary) {
+        if (promptDiffersFromStored) {
           memoryFormattedMessages[i] = buildMemoryFormattedMessage(message);
           countSurface = memoryFormattedMessages[i];
         }
         canonicalTokenCount = countFormattedMessageTokens(countSurface, encoding);
       }
 
-      const promptMessageTokenCount =
-        message.fileContext || droppedPromptSummary
-          ? countFormattedMessageTokens(formattedMessage, encoding)
-          : canonicalTokenCount;
+      const promptMessageTokenCount = promptDiffersFromStored
+        ? countFormattedMessageTokens(formattedMessage, encoding)
+        : canonicalTokenCount;
 
       /* If message has files, calculate image token cost */
       if (this.message_file_map && this.message_file_map[message.messageId]) {
@@ -2905,7 +2915,8 @@ class AgentClient extends BaseClient {
     }
     /** After the steer stamp, which adds replayed steers' documents of its own. */
     dedupeDocumentNames(payload);
-    if (hasFileContext) {
+    const hasPromptOnlyContext = hasFileContext || historyContext.hasUpdates;
+    if (hasPromptOnlyContext) {
       for (let i = 0; i < orderedMessages.length; i++) {
         memoryPayload.push(
           memoryFormattedMessages[i] ?? buildMemoryFormattedMessage(orderedMessages[i]),
@@ -2931,7 +2942,7 @@ class AgentClient extends BaseClient {
         });
       }
     }
-    this.memoryPayload = hasFileContext ? memoryPayload : null;
+    this.memoryPayload = hasPromptOnlyContext ? memoryPayload : null;
     messages = orderedMessages;
     promptTokens = promptTokenTotal;
 
@@ -2941,7 +2952,6 @@ class AgentClient extends BaseClient {
      * user message above; only side-channel context belongs here.
      * Memory context is handled separately and applied per-agent based on config.
      */
-    const sharedRunContextParts = [];
     const [augmentedPrompt, [memories, configServers], agentScopedContext] = await Promise.all([
       this.contextHandlers?.createContext(),
       earlySharedContextPromise,
@@ -2955,7 +2965,6 @@ class AgentClient extends BaseClient {
     this.augmentedPrompt = augmentedPrompt;
     if (this.augmentedPrompt) {
       modelBoundFileContexts.add(this.augmentedPrompt);
-      sharedRunContextParts.push(this.augmentedPrompt);
     }
 
     /** Memory context (user preferences/memories). Keyed context (with memory
@@ -3009,7 +3018,6 @@ class AgentClient extends BaseClient {
       return canonicalMemoryCache.get(cacheKey);
     };
 
-    const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 
     const configuredContextAttachments = this.options.agentContextAttachmentsByAgentId;
@@ -3083,7 +3091,7 @@ class AgentClient extends BaseClient {
       assertLateBoundContent = false,
     ) => {
       normalizeInstructions(agent);
-      const agentRunContextParts = [sharedRunContext];
+      const runContext = { rag: this.augmentedPrompt };
       const agentMemoryContexts = [];
       const agentHasMemory = agentHasInlineMemoryTools(agent);
       if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
@@ -3106,13 +3114,11 @@ class AgentClient extends BaseClient {
         const agentMemoryContext = formatMemoryContext(
           agentHasMemory ? partitionMemories?.withKeys : partitionMemories?.withoutKeys,
         );
-        if (agentMemoryContext) {
-          agentRunContextParts.push(agentMemoryContext);
-        }
+        runContext.memory = agentMemoryContext;
       }
       if (scopedContext) {
         modelBoundFileContexts.add(scopedContext);
-        agentRunContextParts.push(scopedContext);
+        runContext.agentFiles = scopedContext;
       }
 
       await applyContextToAgent({
@@ -3122,7 +3128,7 @@ class AgentClient extends BaseClient {
         mcpManager,
         configServers,
         user: this.options.req.user,
-        sharedRunContext: agentRunContextParts.filter(Boolean).join('\n\n'),
+        runContext,
         ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
       });
       if (assertLateBoundContent) {
@@ -5666,7 +5672,7 @@ class AgentClient extends BaseClient {
               mcpManager: resumeMcpManager,
               configServers: resumeConfigServers,
               user: this.options.req.user,
-              sharedRunContext: scopedContext ?? '',
+              runContext: { agentFiles: scopedContext },
               ephemeralAgent:
                 agent === this.options.agent ? this.options.req.body.ephemeralAgent : undefined,
             });
@@ -5769,7 +5775,7 @@ class AgentClient extends BaseClient {
                   mcpManager: resumeMcpManager,
                   configServers: resumeConfigServers,
                   user: this.options.req.user,
-                  sharedRunContext: scopedContext ?? '',
+                  runContext: { agentFiles: scopedContext },
                 });
                 assertModelBoundContent({
                   onTraversalFailure: reportLocatorTraversalFailure,
