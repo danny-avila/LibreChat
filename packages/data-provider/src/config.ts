@@ -4342,6 +4342,8 @@ export const toolCallPreviewsConfigSchema = z.object({
   /** Characters of serialized `args` kept per tool call. JSON arguments stay valid JSON with
    *  every field present; only the longest strings are shortened. */
   argsChars: z.number().int().min(256).max(1_000_000).default(512),
+  /** Transcript nodes and unique scope lookups per message; exhausted calls keep their transcript. */
+  attachmentWorkLimit: z.number().int().min(1).max(1_000_000).default(100_000),
 });
 
 export type TToolCallPreviewsConfig = z.infer<typeof toolCallPreviewsConfigSchema>;
