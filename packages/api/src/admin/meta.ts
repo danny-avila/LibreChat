@@ -51,6 +51,7 @@ export const ADMIN_CONFIG_FEATURES: Readonly<AdminConfigFeatures> = {
   resolvedApi: true,
   catalogApi: true,
   envStatus: true,
+  reloadRoute: true,
 };
 
 /**

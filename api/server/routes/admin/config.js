@@ -20,6 +20,7 @@ const {
   loadConfigModels,
   loadDefaultModels,
   getEndpointsConfig,
+  reloadConfigCaches,
   resolveConfigLayers,
   invalidateConfigCaches,
 } = require('~/server/services/Config');
@@ -46,6 +47,7 @@ const handlers = createAdminConfigHandlers({
   hasCapability,
   getAppConfig,
   invalidateConfigCaches,
+  reloadConfigCaches,
   recordAuditEntry: db.recordAuditEntry,
   auditFailClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
   overrideCacheTtlMs: overrideCacheTtl,
@@ -89,6 +91,7 @@ router.get('/catalog', catalogHandlers.getConfigCatalog);
 router.get('/env-status', catalogHandlers.getEnvStatus);
 router.get('/effective', readHandlers.getEffectiveConfig);
 router.get('/resolved/:principalType/:principalId', readHandlers.getResolvedConfig);
+router.post('/reload', handlers.reloadConfig);
 router.get('/:principalType/:principalId', handlers.getConfig);
 router.put('/:principalType/:principalId', handlers.upsertConfigOverrides);
 router.patch('/:principalType/:principalId/fields', handlers.patchConfigField);

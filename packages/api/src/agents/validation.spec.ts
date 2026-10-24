@@ -48,6 +48,31 @@ describe('agent Git identity validation', () => {
     expect(agentCreateSchema.safeParse({ ...base, git_identity }).success).toBe(false);
   });
 
+  it.each(['create', 'update'] as const)(
+    'rejects an oversized git email on %s without passing it to a regex',
+    (operation) => {
+      const schema = operation === 'create' ? agentCreateSchema : agentUpdateSchema;
+      const email = `1+${'a'.repeat(128_000)}!`;
+      const regexCheck = jest.spyOn(RegExp.prototype, 'test');
+
+      const result = schema.safeParse({ ...base, git_identity: { name: 'Lia', email } });
+      const regexCheckedEmail = regexCheck.mock.calls.some(([value]) => value === email);
+      regexCheck.mockRestore();
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'too_big',
+            maximum: 254,
+            path: ['git_identity', 'email'],
+          }),
+        );
+      }
+      expect(regexCheckedEmail).toBe(false);
+    },
+  );
+
   it('accepts null only when updating to clear a configured identity', () => {
     expect(agentCreateSchema.safeParse({ ...base, git_identity: null }).success).toBe(false);
     expect(agentUpdateSchema.parse({ git_identity: null })).toEqual({ git_identity: null });
