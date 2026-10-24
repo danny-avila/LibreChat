@@ -1,6 +1,9 @@
 import { inspect } from 'util';
 import {
+  ServerError,
+  InvalidGrantError,
   InvalidClientError,
+  InvalidRequestError,
   UnauthorizedClientError,
 } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { getSafeOAuthError } from './errors';
@@ -28,6 +31,11 @@ describe('getSafeOAuthError', () => {
     [new UnauthorizedClientError(secret), 'unauthorized_client'],
     [new Error(`client_id mismatch: ${secret}`), 'invalid_client'],
     [new Error(`invalid_grant: ${secret}`), 'invalid_grant'],
+    [new ServerError(`unknown client: ${secret}`), 'invalid_client'],
+    [new InvalidRequestError(`client_id mismatch: ${secret}`), 'invalid_client'],
+    [new InvalidGrantError(`client not found: ${secret}`), 'invalid_client'],
+    [new ServerError(`client not found: ${secret}`), 'invalid_client'],
+    [new ServerError(`client_id mismatch: ${secret}`), 'invalid_client'],
   ])('retains only allowlisted recovery codes', (error, code) => {
     const safe = getSafeOAuthError(error, 'OAuth token exchange failed');
     expect(safe.message).toBe(`OAuth token exchange failed (${code})`);

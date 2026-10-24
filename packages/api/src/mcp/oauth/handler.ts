@@ -270,7 +270,7 @@ export class MCPOAuthHandler {
       } catch (error) {
         logger.warn(
           `[MCPOAuth] Rejecting untrusted resource_metadata hint from ${sanitizeUrlForLogging(serverUrl)}; falling back to path-aware discovery`,
-          { error },
+          { error: getSafeErrorMetadata(error) },
         );
       }
     }
@@ -312,7 +312,7 @@ export class MCPOAuthHandler {
         );
         const authServerUrl = new URL(discoveredAuthServer);
         logger.debug(
-          `[MCPOAuth] Found authorization server from resource metadata: ${authServerUrl}`,
+          `[MCPOAuth] Found authorization server from resource metadata: ${sanitizeUrlForLogging(authServerUrl)}`,
         );
         return { resourceMetadata, authServerUrl };
       } else {
@@ -454,7 +454,7 @@ export class MCPOAuthHandler {
       const baseUrl = new URL(serverUrl.origin);
       logger.debug(
         `[MCPOAuth] Discovery threw for path URL, trying base URL: ${sanitizeUrlForLogging(baseUrl)}`,
-        { error: err },
+        { error: getSafeErrorMetadata(err) },
       );
       return discoverAuthorizationServerMetadata(baseUrl, { fetchFn });
     }
@@ -739,7 +739,7 @@ export class MCPOAuthHandler {
     if (supportedGrantTypes.includes('refresh_token')) {
       requestedGrantTypes.push('refresh_token');
       logger.debug(
-        `[MCPOAuth] Server ${serverUrl} supports \`refresh_token\` grant type, adding to request`,
+        `[MCPOAuth] Server ${sanitizeUrlForLogging(serverUrl)} supports \`refresh_token\` grant type, adding to request`,
       );
     } else {
       logger.debug(
@@ -951,7 +951,7 @@ export class MCPOAuthHandler {
             config.revocation_endpoint_auth_methods_supported ??
             discoveredMetadata?.revocation_endpoint_auth_methods_supported,
         };
-        logger.debug(`[MCPOAuth] metadata for "${serverName}": ${JSON.stringify(metadata)}`);
+        logger.debug(`[MCPOAuth] OAuth metadata resolved for "${serverName}"`);
         const redirectUri = this.getDefaultRedirectUri(serverName);
         const clientInfo: OAuthClientInformation = {
           client_id: config.client_id,
