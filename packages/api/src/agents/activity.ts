@@ -352,7 +352,7 @@ const readToolCalls = (data: Record<string, unknown>): unknown[] => {
 const normalizeToolCall = (
   value: unknown,
   index: number,
-): { rawId: string; item: MutableToolActivity } | undefined => {
+): { rawId: string; item: MutableToolActivity; inputIsObject: boolean } | undefined => {
   if (!isRecord(value)) return undefined;
   const fn = isRecord(value.function) ? value.function : undefined;
   const rawName = typeof value.name === 'string' ? value.name : fn?.name;
@@ -362,6 +362,7 @@ const normalizeToolCall = (
   const input = truncateUtf8(safeJson(rawInput), MAX_TOOL_INPUT_BYTES);
   return {
     rawId,
+    inputIsObject: typeof rawInput === 'object',
     item: {
       type: 'tool',
       toolCallId: truncateUtf8(rawId, MAX_TOOL_CALL_ID_BYTES).value,
@@ -569,6 +570,8 @@ type Observation = {
   stepId?: string;
   slot?: string;
   phase?: 'commentary' | 'final_answer';
+  inputIsObject?: boolean;
+  completed?: boolean;
 };
 
 /** Public observations only. Payloads and correlation state share the projection's bounds. */
@@ -712,6 +715,7 @@ export class SubagentPublicRecorder {
         const entry = this.append(key, item);
         this.tools.set(key, entry);
         entry.stepId = id;
+        entry.inputIsObject = normalized.inputIsObject;
         entry.slot = `${id}:${index}`;
         this.toolSlots.set(entry.slot, entry);
         if (input != null) this.field(entry, 'input', input, MAX_TOOL_INPUT_BYTES);
@@ -757,8 +761,17 @@ export class SubagentPublicRecorder {
           this.truncated = true;
           continue;
         }
-        if (typeof call.args === 'string')
-          this.field(entry, 'input', call.args, MAX_TOOL_INPUT_BYTES);
+        if (entry.completed) continue;
+        const args = call.args ?? '';
+        const inputIsObject = typeof args === 'object';
+        this.field(
+          entry,
+          'input',
+          safeJson(args),
+          MAX_TOOL_INPUT_BYTES,
+          entry.inputIsObject === true || inputIsObject,
+        );
+        entry.inputIsObject = inputIsObject;
       }
       return;
     }
@@ -791,6 +804,7 @@ export class SubagentPublicRecorder {
         this.tools.set(key, entry);
       }
       if (entry.item.type !== 'tool') return;
+      entry.completed = true;
       entry.item.status = toolResultStatus(call.runStepStatus ?? result?.status);
       if (call.args != null)
         this.field(entry, 'input', safeJson(call.args), MAX_TOOL_INPUT_BYTES, true);

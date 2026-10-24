@@ -572,6 +572,102 @@ describe('SubagentThreadTaskStore', () => {
     },
   );
 
+  it.each(['error', 'cancel'] as const)(
+    'persists streamed arguments without an object placeholder on %s',
+    async (outcome) => {
+      const userId = `streamed-args-${outcome}`;
+      const parentConversationId = randomUUID();
+      await saveParent(userId, parentConversationId);
+      const store = new SubagentThreadTaskStore(methods);
+      const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+      let runtime!: SubagentTaskRuntime;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const started = store.start(
+        taskRequest(config.scopeId, {
+          run: async (child) => {
+            runtime = child;
+            await gate;
+            if (outcome === 'error') throw new Error('Executor failed');
+            return { content: 'Interrupted' };
+          },
+        }),
+      );
+      const taskId = requireAccepted(started).task.taskId;
+      await waitUntil(() => runtime != null, 'streamed tool arguments');
+      const base = {
+        runId: 'parent',
+        subagentRunId: taskId,
+        subagentType: 'worker',
+        subagentAgentId: 'worker',
+        timestamp: '2026-10-24T00:00:00Z',
+      };
+      try {
+        runtime.reportProgress({
+          ...base,
+          phase: 'run_step',
+          data: {
+            id: 'tool',
+            index: 0,
+            stepDetails: {
+              type: 'tool_calls',
+              tool_calls: [{ id: 'call', name: 'lookup', args: {}, type: 'tool_call' }],
+            },
+          },
+        });
+        for (const args of ['{"query":', '"x"}'])
+          runtime.reportProgress({
+            ...base,
+            phase: 'run_step_delta',
+            data: {
+              id: 'tool',
+              delta: {
+                type: 'tool_calls',
+                tool_calls: [{ id: 'call', index: 0, name: 'lookup', args }],
+              },
+            },
+          });
+        if (outcome === 'cancel')
+          await store.controlTask(
+            config.scopeId,
+            taskId,
+            { action: 'cancel' },
+            'cancel-streamed-input',
+          );
+      } finally {
+        release();
+      }
+      await waitUntil(
+        async () =>
+          (await methods.getMessages({ user: userId, messageId: `${taskId}:assistant` })).length ===
+          1,
+        'terminal streamed-input projection',
+      );
+      await waitForSettled(store, config.scopeId, started);
+      const [saved] = await methods.getMessages(
+        { user: userId, messageId: `${taskId}:assistant` },
+        '+subagentActivityProjection',
+      );
+      expect(saved.subagentActivityProjection).toMatchObject({
+        taskId,
+        version: 2,
+        truncated: false,
+      });
+      expect(JSON.parse(saved.subagentActivityProjection!.activityJson)).toEqual([
+        {
+          type: 'tool',
+          toolCallId: 'call',
+          name: 'lookup',
+          input: '{"query":"x"}',
+          status: 'running',
+        },
+      ]);
+      store.destroyActivityStream();
+    },
+  );
+
   it('prefers bounded canonical history with a recent applied steer over a sparse observer', async () => {
     const userId = 'canonical-public';
     const parentConversationId = randomUUID();

@@ -1,3 +1,4 @@
+import { createContentAggregator, GraphEvents } from '@librechat/agents';
 import type { SubagentUpdateEvent } from '@librechat/agents';
 import {
   SubagentPublicRecorder,
@@ -513,6 +514,98 @@ describe('bounded public observations', () => {
       activity: [{ type: 'reasoning', text: 'Public reasoning.' }],
       truncated: false,
     });
+  });
+
+  it.each([
+    { label: 'empty object placeholder', args: {}, fragments: ['{"query":', '"x"}'] },
+    {
+      label: 'nonempty object announcement',
+      args: { initial: true },
+      fragments: ['{"query":', '"x"}'],
+    },
+    { label: 'empty initial string', args: '', fragments: ['{"query":', '"x"}'] },
+    { label: 'initial string prefix', args: '{"query":', fragments: ['"x"}'] },
+    { label: 'literal object-shaped string', args: '{}', fragments: ['{"query":"x"}'] },
+    { label: 'empty first fragment', args: {}, fragments: ['', '{"query":"x"}'] },
+    { label: 'object without fragments', args: { query: 'x' }, fragments: [] },
+    { label: 'object delta replacing text', args: '{"query":', fragments: [{ query: 'x' }] },
+    { label: 'name-only first delta', args: {}, fragments: [undefined, '{"query":"x"}'] },
+  ])('matches the locked SDK arguments through $label', ({ args, fragments }) => {
+    const recorder = new SubagentPublicRecorder();
+    const sdk = createContentAggregator();
+    const data = {
+      id: 'tool-step',
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call', name: 'lookup', args, type: 'tool_call' }],
+      },
+    };
+    recorder.record(progress('run_step', data));
+    sdk.aggregateContent({
+      event: GraphEvents.ON_RUN_STEP,
+      data: data as Parameters<typeof sdk.aggregateContent>[0]['data'],
+    });
+    const compare = () => {
+      const part = sdk.contentParts[0];
+      const expected = part != null && 'tool_call' in part ? part.tool_call?.args : undefined;
+      const input = typeof expected === 'string' ? expected : JSON.stringify(expected);
+      const snapshot = recorder.snapshot();
+      expect(snapshot).toMatchObject({
+        activity: [{ type: 'tool', ...(input ? { input } : {}) }],
+        truncated: false,
+      });
+      const tool = snapshot.activity[0];
+      expect(tool.type === 'tool' ? (tool.input ?? '') : undefined).toBe(input ?? '');
+      const stored = projectPersistedMessageActivity(snapshot.activity);
+      const restoredTool = stored.activity[0];
+      expect(restoredTool.type === 'tool' ? (restoredTool.input ?? '') : undefined).toBe(
+        input ?? '',
+      );
+      expect(stored.truncated).toBe(false);
+    };
+    compare();
+    for (const args of fragments) {
+      const data = {
+        id: 'tool-step',
+        delta: { type: 'tool_calls', tool_calls: [{ id: 'call', index: 0, name: 'lookup', args }] },
+      };
+      recorder.record(progress('run_step_delta', data));
+      sdk.aggregateContent({
+        event: GraphEvents.ON_RUN_STEP_DELTA,
+        data: data as Parameters<typeof sdk.aggregateContent>[0]['data'],
+      });
+      compare();
+    }
+    const dataCompleted = {
+      result: {
+        id: 'tool-step',
+        index: 0,
+        tool_call: { id: 'call', name: 'lookup', args: { query: 'final' }, output: 'Done' },
+      },
+    };
+    recorder.record(progress('run_step_completed', dataCompleted));
+    sdk.aggregateContent({
+      event: GraphEvents.ON_RUN_STEP_COMPLETED,
+      data: dataCompleted as Parameters<typeof sdk.aggregateContent>[0]['data'],
+    });
+    compare();
+    expect(recorder.snapshot().activity[0]).toMatchObject({
+      input: '{"query":"final"}',
+      output: 'Done',
+      status: 'completed',
+    });
+    const settled = recorder.snapshot();
+    recorder.record(
+      progress('run_step_delta', {
+        id: 'tool-step',
+        delta: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call', index: 0, name: 'lookup', args: 'late fragment' }],
+        },
+      }),
+    );
+    expect(recorder.snapshot()).toEqual(settled);
   });
 
   it('isolates repeated provider call IDs by step and ignores duplicate announcements', () => {
