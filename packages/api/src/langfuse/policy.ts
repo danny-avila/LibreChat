@@ -1,5 +1,5 @@
 import { isForcedTemporaryRetention } from 'librechat-data-provider';
-import type { TLangfuseUnavailableReason } from 'librechat-data-provider';
+import type { TStartupConfig, TLangfuseUnavailableReason } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { isFalseEnv, isTrueEnv } from './utils';
 import { normalizeString } from '~/utils/text';
@@ -95,6 +95,29 @@ export function isLangfuseTraceSampled(traceId: string): boolean {
   return traceIdAccumulation(traceId) < Math.floor(sampleRate * MAX_TRACE_ID_ACCUMULATION);
 }
 
+const DEFAULT_PROMPT_SYNC_TIMEOUT_MS = 10_000;
+const MIN_PROMPT_SYNC_TIMEOUT_MS = 1_000;
+const MAX_PROMPT_SYNC_TIMEOUT_MS = 60_000;
+
+export function isLangfusePromptSyncAvailable(): boolean {
+  return isTrueEnv(process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE);
+}
+
+export function getLangfusePromptSyncTimeoutMs(): number {
+  const value = normalizeString(process.env.LANGFUSE_PROMPT_SYNC_TIMEOUT_MS);
+  if (value == null) {
+    return DEFAULT_PROMPT_SYNC_TIMEOUT_MS;
+  }
+
+  const timeoutMs = Number(value);
+  if (!Number.isFinite(timeoutMs)) {
+    return DEFAULT_PROMPT_SYNC_TIMEOUT_MS;
+  }
+  return Math.round(
+    Math.min(MAX_PROMPT_SYNC_TIMEOUT_MS, Math.max(MIN_PROMPT_SYNC_TIMEOUT_MS, timeoutMs)),
+  );
+}
+
 /** Whether the deployment offers Langfuse connection settings, and if not, why. */
 export type LangfuseConnectionAvailability =
   | { available: true }
@@ -127,4 +150,19 @@ export function getLangfuseConnectionAvailability(): LangfuseConnectionAvailabil
 
 export function isLangfuseConnectionAvailable(): boolean {
   return getLangfuseConnectionAvailability().available;
+}
+
+/** Settings remain available for prompt reads when trace connection editing is disabled. */
+export function isLangfuseSettingsAvailable(): boolean {
+  return isLangfuseConnectionAvailable() || isLangfusePromptSyncAvailable();
+}
+
+/** One permission check supplies both settings gates. Trace links keep their connection gate. */
+export function getLangfuseSettingsAccess(
+  canManage: boolean,
+): Pick<TStartupConfig, 'langfuseConnectionAccess' | 'langfusePromptSyncAccess'> {
+  return {
+    langfuseConnectionAccess: canManage && isLangfuseConnectionAvailable(),
+    langfusePromptSyncAccess: canManage && isLangfusePromptSyncAvailable(),
+  };
 }

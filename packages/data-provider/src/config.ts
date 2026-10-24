@@ -3606,6 +3606,7 @@ export type TStartupConfig = {
   socialLogins?: string[];
   langfuseFanoutEnabled?: boolean;
   langfuseConnectionAccess?: boolean;
+  langfusePromptSyncAccess?: boolean;
   insightsEnabled?: boolean;
   /** Whether pull requests are active (on unless turned off, with a token and a repository scope);
    *  the header does not ask for a pull request without it. */
@@ -4259,6 +4260,13 @@ export const langfuseConfigSchema = z.object({
   headers: z.record(z.string()).optional(),
   /** Trace user identity and allowlisted user/request metadata. */
   trace: langfuseTraceConfigSchema.optional(),
+  /** Tenant admin switch for Langfuse prompt sync. Effective only when the
+   *  deployment sets LANGFUSE_PROMPT_SYNC_AVAILABLE. */
+  promptSync: z
+    .object({
+      enabled: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;

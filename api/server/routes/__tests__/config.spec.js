@@ -111,6 +111,7 @@ afterEach(() => {
   delete process.env.ANALYTICS_GTM_ID;
   delete process.env.CUSTOM_FOOTER;
   delete process.env.HELP_AND_FAQ_URL;
+  delete process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE;
   delete process.env.LANGFUSE_FANOUT_ENABLED;
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
   delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED;
@@ -926,6 +927,46 @@ describe('GET /api/config', () => {
 
       expect(response.body.langfuseConnectionAccess).toBe(false);
       expect(mockHasCapability).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['environment credentials', { LANGFUSE_PUBLIC_KEY: 'pk-env', LANGFUSE_SECRET_KEY: 'sk-env' }],
+      ['tracing disabled', { LANGFUSE_TRACING_ENABLED: 'false' }],
+      ['zero sampling', { LANGFUSE_SAMPLE_RATE: '0' }],
+      ['strict tenants without fanout', { TENANT_ISOLATION_STRICT: 'true' }],
+      [
+        'tenant export disabled',
+        {
+          LANGFUSE_FANOUT_ENABLED: 'true',
+          LANGFUSE_FANOUT_COLLECTOR_URL: 'http://collector:4318',
+          LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED: 'true',
+        },
+      ],
+    ])('advertises prompt access with %s without advertising trace access', async (_mode, env) => {
+      Object.assign(process.env, env, { LANGFUSE_PROMPT_SYNC_AVAILABLE: 'true' });
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      mockHasConfigCapability.mockResolvedValue(true);
+      const response = await request(createApp(mockUser)).get('/api/config');
+      expect(response.status).toBe(200);
+      expect(response.body.langfusePromptSyncAccess).toBe(true);
+      expect(response.body.langfuseConnectionAccess).toBe(false);
+      expect(mockHasCapability).toHaveBeenCalledTimes(1);
+      expect(mockHasConfigCapability).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      [false, true],
+      [true, false],
+    ])('requires admin=%s and Langfuse manage=%s for prompt access', async (admin, manage) => {
+      process.env.LANGFUSE_PROMPT_SYNC_AVAILABLE = 'true';
+      process.env.LANGFUSE_TRACING_ENABLED = 'false';
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(admin);
+      mockHasConfigCapability.mockResolvedValue(manage);
+      const response = await request(createApp(mockUser)).get('/api/config');
+      expect(response.body.langfusePromptSyncAccess).toBe(false);
+      expect(response.body.langfuseConnectionAccess).toBe(false);
     });
 
     it('should include post-login informational fields', async () => {
