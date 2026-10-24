@@ -33,10 +33,15 @@ interface AssistantAuthorDeps {
 }
 
 interface AssistantAvatarIdentityInput {
-  query: { user?: string };
+  query: { assistantId: string; user?: string };
   user: Pick<CapabilityUser, 'id' | 'tenantId'>;
   endpoint: string;
   author?: unknown;
+  privateAssistants?: boolean;
+  getAssistant: (
+    query: { assistantId: string },
+    projection: { user: 1 },
+  ) => Promise<{ user?: { toString(): string } | null } | null>;
   getUserById: (id: string, select: string) => Promise<{ tenantId?: string } | null>;
 }
 
@@ -46,22 +51,29 @@ export async function resolveAssistantAvatarIdentity({
   user,
   endpoint,
   author,
+  privateAssistants,
+  getAssistant,
   getUserById,
 }: AssistantAvatarIdentityInput): Promise<{ user: string; endpoint: string }> {
   const identity = { user: query.user ?? user.id, endpoint };
-  if (
-    query.user !== undefined ||
-    author === user.id ||
-    typeof author !== 'string' ||
-    !/^[a-f0-9]{24}$/i.test(author)
-  ) {
+  if (query.user !== undefined || author === user.id) {
     return identity;
   }
-  const providerAuthor = await getUserById(author, 'tenantId');
-  if (providerAuthor && providerAuthor.tenantId === user.tenantId) {
-    identity.user = author;
+  if (typeof author === 'string' && /^[a-f0-9]{24}$/i.test(author)) {
+    const providerAuthor = await getUserById(author, 'tenantId');
+    if (providerAuthor && providerAuthor.tenantId === user.tenantId) {
+      return { user: author, endpoint };
+    }
   }
-  return identity;
+  if (!privateAssistants) {
+    return identity;
+  }
+  const reference = await getAssistant({ assistantId: query.assistantId }, { user: 1 });
+  const owner = reference?.user?.toString();
+  if (!owner || !/^[a-f0-9]{24}$/i.test(owner)) {
+    throw new Error('Assistant owner could not be verified');
+  }
+  return { user: owner, endpoint };
 }
 
 export class AssistantIdValidationError extends Error {

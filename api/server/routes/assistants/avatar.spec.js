@@ -306,6 +306,83 @@ describe('assistant avatar multipart authorization', () => {
     },
   );
 
+  it.each([
+    [false, 'missing'],
+    [true, 'missing'],
+    [false, 'malformed'],
+    [true, 'malformed'],
+    [false, 'unavailable'],
+    [true, 'unavailable'],
+    [false, 'foreign'],
+    [true, 'foreign'],
+    [false, 'retrieve-failed'],
+    [true, 'retrieve-failed'],
+  ])(
+    'does not initialize a private managed reference without a verified author (existing=%p, %s)',
+    async (existingReference, scenario) => {
+      const id = 'asst-unverified-provider';
+      if (existingReference) {
+        await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          updateAssistantDoc({ assistantId: id }, { conversation_starters: ['Hello'] }),
+        );
+      }
+      const unknownAuthor = new mongoose.Types.ObjectId();
+      if (scenario === 'foreign') {
+        await User.collection.insertOne({ _id: unknownAuthor, tenantId: 'tenant-b' });
+      }
+      providers[id] = {
+        id,
+        metadata:
+          scenario === 'missing'
+            ? {}
+            : {
+                author: scenario === 'malformed' ? 'invalid-author' : unknownAuthor.toString(),
+              },
+      };
+      hasCapability.mockResolvedValue(true);
+      if (scenario === 'retrieve-failed') {
+        retrieve.mockRejectedValueOnce(new Error('provider unavailable'));
+      }
+      const response = await upload(id);
+      expect(response.status).toBe(500);
+      const reference = await Assistant.findOne({ assistant_id: id }).lean();
+      if (existingReference) {
+        expect(reference.user).toBeUndefined();
+        expect(reference.avatar).toBeUndefined();
+        expect(reference.conversation_starters).toEqual(['Hello']);
+      } else {
+        expect(reference).toBeNull();
+      }
+      expect(update).not.toHaveBeenCalled();
+      expect(uploadImageBuffer).not.toHaveBeenCalled();
+
+      providers[id].metadata = { author: victim.toString() };
+      const retried = await upload(id);
+      expect(retried.status).toBe(201);
+      const initialized = await Assistant.findOne({ assistant_id: id }).lean();
+      expect(initialized.user.toString()).toBe(victim.toString());
+      expect(await Assistant.countDocuments({ assistant_id: id })).toBe(1);
+    },
+  );
+
+  it('uses the existing private reference owner when provider author metadata is absent', async () => {
+    hasCapability.mockResolvedValue(true);
+    providers['asst-victim'].metadata = {};
+    const response = await upload('asst-victim');
+    expect(response.status).toBe(201);
+    const reference = await Assistant.findOne({ assistant_id: 'asst-victim' }).lean();
+    expect(reference.user.toString()).toBe(victim.toString());
+    expect(reference.avatar.filepath).toBe('/images/avatar.png');
+  });
+
+  it('does not mutate an existing reference or upload storage when provider retrieval fails', async () => {
+    hasCapability.mockResolvedValue(true);
+    retrieve.mockRejectedValueOnce(new Error('provider unavailable'));
+    const response = await upload('asst-victim');
+    expect(response.status).toBe(500);
+    await expectVictimUnchanged();
+  });
+
   it('keeps the owner of an existing shared assistant when another user changes its avatar', async () => {
     privateAssistants = false;
     const response = await upload('asst-victim');

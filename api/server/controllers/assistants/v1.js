@@ -17,6 +17,7 @@ const {
   updateAssistantDoc,
   updateAssistantAvatar,
   getAssistants,
+  getAssistant,
   getRoleByName,
   getUserById,
 } = require('~/models');
@@ -417,24 +418,25 @@ const uploadAssistantAvatar = async (req, res) => {
       overrideAssistantId: assistant_id,
     });
 
+    const assistant = await openai.beta.assistants.retrieve(assistant_id);
+    const _metadata = assistant.metadata ?? {};
+    const avatarIdentity = await resolveAssistantAvatarIdentity({
+      query: assistantQuery,
+      user: req.user,
+      endpoint: req.body?.endpoint ?? req.query?.endpoint,
+      author: _metadata.author,
+      privateAssistants:
+        req.config.endpoints?.[req.body?.endpoint ?? req.query?.endpoint]?.privateAssistants,
+      getAssistant,
+      getUserById,
+    });
+
     const buffer = await fs.readFile(req.file.path);
     const image = await uploadImageBuffer({
       req,
       context: FileContext.avatar,
       metadata: { buffer },
     });
-
-    let _metadata;
-
-    try {
-      const assistant = await openai.beta.assistants.retrieve(assistant_id);
-      if (assistant) {
-        _metadata = assistant.metadata;
-      }
-    } catch (error) {
-      logger.error('[/:assistant_id/avatar] Error fetching assistant', error);
-      _metadata = {};
-    }
 
     if (_metadata.avatar && _metadata.avatar_source) {
       const { deleteFile } = getStrategyFunctions(_metadata.avatar_source);
@@ -456,13 +458,6 @@ const uploadAssistantAvatar = async (req, res) => {
       avatar_source: appConfig.fileStrategy,
     };
 
-    const avatarIdentity = await resolveAssistantAvatarIdentity({
-      query: assistantQuery,
-      user: req.user,
-      endpoint: req.body?.endpoint ?? req.query?.endpoint,
-      author: _metadata.author,
-      getUserById,
-    });
     const promises = [];
     promises.push(
       updateAssistantAvatar(

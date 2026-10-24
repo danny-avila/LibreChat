@@ -167,45 +167,97 @@ describe('assistant avatar identity', () => {
   const author = '65cfb246f7ecadb8b1e8036c';
   const user = { id: '65cfb246f7ecadb8b1e8036b', tenantId: 'tenant-a' };
   const getUserById = jest.fn();
-  const resolveIdentity = (query: { user?: string }, providerAuthor: unknown = author) =>
+  const getAssistant = jest.fn();
+  const resolveIdentity = (
+    query: { user?: string },
+    providerAuthor: unknown = author,
+    privateAssistants = true,
+  ) =>
     resolveAssistantAvatarIdentity({
-      query,
+      query: { assistantId: 'asst-target', ...query },
       user,
       endpoint: 'assistants',
       author: providerAuthor,
+      privateAssistants,
+      getAssistant,
       getUserById,
     });
 
-  beforeEach(() => getUserById.mockReset().mockResolvedValue({ tenantId: 'tenant-a' }));
+  beforeEach(() => {
+    getUserById.mockReset().mockResolvedValue({ tenantId: 'tenant-a' });
+    getAssistant.mockReset().mockResolvedValue(null);
+  });
 
   it('initializes a managed reference with the same-tenant provider author', async () => {
     await expect(resolveIdentity({})).resolves.toEqual({ user: author, endpoint: 'assistants' });
     expect(getUserById).toHaveBeenCalledWith(author, 'tenantId');
+    expect(getAssistant).not.toHaveBeenCalled();
   });
 
   it.each([null, { tenantId: 'tenant-b' }, {}])(
-    'does not adopt an unavailable or foreign-tenant author: %p',
+    'rejects private initialization for an unavailable or foreign-tenant author: %p',
     async (account) => {
       getUserById.mockResolvedValue(account);
-      await expect(resolveIdentity({})).resolves.toEqual({ user: user.id, endpoint: 'assistants' });
+      await expect(resolveIdentity({})).rejects.toThrow('Assistant owner could not be verified');
+      expect(getAssistant).toHaveBeenCalledWith({ assistantId: 'asst-target' }, { user: 1 });
     },
   );
 
-  it('retains the authorized owner scope without a redundant user lookup', async () => {
+  it('retains the authorized owner scope without a redundant lookup', async () => {
     await expect(resolveIdentity({ user: user.id })).resolves.toEqual({
       user: user.id,
       endpoint: 'assistants',
     });
     expect(getUserById).not.toHaveBeenCalled();
+    expect(getAssistant).not.toHaveBeenCalled();
   });
 
-  it.each([null, '', 'external-author', ['65cfb246f7ecadb8b1e8036c'], { $ne: null }, user.id])(
-    'does not query invalid or already-known provider authors: %p',
+  it.each([null, '', 'external-author', ['65cfb246f7ecadb8b1e8036c'], { $ne: null }])(
+    'does not initialize a private reference from an invalid provider author: %p',
     async (providerAuthor) => {
-      await expect(resolveIdentity({}, providerAuthor)).resolves.toEqual({
+      await expect(resolveIdentity({}, providerAuthor)).rejects.toThrow(
+        'Assistant owner could not be verified',
+      );
+      expect(getUserById).not.toHaveBeenCalled();
+      expect(getAssistant).toHaveBeenCalledWith({ assistantId: 'asst-target' }, { user: 1 });
+    },
+  );
+
+  it('uses the authenticated provider author without another user read', async () => {
+    await expect(resolveIdentity({}, user.id)).resolves.toEqual({
+      user: user.id,
+      endpoint: 'assistants',
+    });
+    expect(getAssistant).not.toHaveBeenCalled();
+    expect(getUserById).not.toHaveBeenCalled();
+  });
+
+  it('preserves a known local owner when provider metadata is absent', async () => {
+    getAssistant.mockResolvedValue({ user: author });
+    await expect(resolveIdentity({}, null)).resolves.toEqual({
+      user: author,
+      endpoint: 'assistants',
+    });
+  });
+
+  it.each([{}, { user: null }, { user: '' }])(
+    'does not initialize an ownerless private reference: %p',
+    async (reference) => {
+      getAssistant.mockResolvedValue(reference);
+      await expect(resolveIdentity({}, null)).rejects.toThrow(
+        'Assistant owner could not be verified',
+      );
+    },
+  );
+
+  it.each([null, '', 'external-author', ['65cfb246f7ecadb8b1e8036c'], { $ne: null }])(
+    'preserves shared-assistant policy without adopting an invalid author: %p',
+    async (providerAuthor) => {
+      await expect(resolveIdentity({}, providerAuthor, false)).resolves.toEqual({
         user: user.id,
         endpoint: 'assistants',
       });
+      expect(getAssistant).not.toHaveBeenCalled();
       expect(getUserById).not.toHaveBeenCalled();
     },
   );
@@ -213,5 +265,10 @@ describe('assistant avatar identity', () => {
   it('propagates a user lookup failure instead of adopting an unverified author', async () => {
     getUserById.mockRejectedValue(new Error('user database unavailable'));
     await expect(resolveIdentity({})).rejects.toThrow('user database unavailable');
+  });
+
+  it('propagates a reference lookup failure instead of adopting the manager', async () => {
+    getAssistant.mockRejectedValue(new Error('assistant database unavailable'));
+    await expect(resolveIdentity({}, null)).rejects.toThrow('assistant database unavailable');
   });
 });
