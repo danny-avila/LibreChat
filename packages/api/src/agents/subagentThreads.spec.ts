@@ -49,6 +49,7 @@ import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createSubagentAttemptKey } from './subagentThreadIds';
 import { SubagentActivityStream } from './subagentActivity';
 import { runCheckBackgroundTask } from './background';
+import { SUBAGENT_ACTIVITY_LIMITS } from './activity';
 import { InMemoryEventTransport } from '~/stream';
 import { createSubagentUsageSink } from './usage';
 
@@ -297,6 +298,296 @@ beforeEach(async () => {
 });
 
 describe('SubagentThreadTaskStore', () => {
+  it.each(['success', 'error', 'cancel'] as const)(
+    'persists public injection order without private messages on %s',
+    async (outcome) => {
+      const userId = `public-${outcome}`;
+      const parentConversationId = randomUUID();
+      await saveParent(userId, parentConversationId);
+      const store = new SubagentThreadTaskStore(methods);
+      const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+      let runtime!: SubagentTaskRuntime;
+      let finish!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const started = store.start(
+        taskRequest(config.scopeId, {
+          run: async (childRuntime) => {
+            runtime = childRuntime;
+            await gate;
+            if (outcome === 'error') throw new Error('private upstream diagnostic');
+            return { content: 'After' };
+          },
+        }),
+      );
+      const taskId = requireAccepted(started).task.taskId;
+      const threadId = requireThreadId(started);
+      await waitUntil(() => runtime != null, 'the public runtime');
+      const write = (id: string, index: number, text: string) => {
+        const metadata = {
+          runId: 'root',
+          parentRunId: 'parent',
+          subagentRunId: taskId,
+          subagentType: 'worker',
+          subagentAgentId: 'agent',
+          timestamp: '2026-10-23T00:00:00.000Z',
+        };
+        runtime.reportProgress({
+          ...metadata,
+          phase: 'run_step',
+          data: {
+            id,
+            index,
+            stepDetails: { type: 'message_creation', message_creation: { message_id: id } },
+          },
+        });
+        runtime.reportProgress({
+          ...metadata,
+          phase: 'message_delta',
+          data: {
+            id,
+            delta: { content: [{ type: 'text', text }] },
+          },
+        });
+      };
+      write('before', 0, 'Before');
+      const accepted = await store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'steer', message: 'Guidance' },
+        'public-guidance',
+      );
+      const queued = await store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'queue', message: 'Withdrawn' },
+        'public-withdrawn',
+      );
+      if (queued.status !== 'accepted' || queued.controlId == null)
+        throw new Error('Expected queue');
+      await store.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'cancel_message', controlId: queued.controlId },
+        'public-withdraw',
+      );
+      expect(runtime.drain('tool').map(({ content }) => content)).toEqual(['Guidance']);
+      expect(runtime.drain('tool')).toEqual([]);
+      write('after', 1, 'After');
+      if (outcome === 'cancel') {
+        await store.controlTask(config.scopeId, taskId, { action: 'cancel' }, 'public-cancel');
+      }
+      finish();
+      await waitUntil(
+        async () =>
+          (
+            await methods.getMessages({
+              user: userId,
+              conversationId: threadId,
+              messageId: `${taskId}:assistant`,
+            })
+          ).length === 1,
+        'the terminal public write',
+      );
+      await waitForSettled(store, config.scopeId, started);
+      const [saved] = await methods.getMessages(
+        { user: userId, conversationId: threadId, messageId: `${taskId}:assistant` },
+        '+subagentActivityProjection +subagentTranscript',
+      );
+      expect(saved.subagentTranscript).toBeUndefined();
+      expect(saved.subagentContent).toBeUndefined();
+      expect(saved.subagentActivityProjection).toMatchObject({
+        taskId,
+        version: 2,
+        truncated: false,
+      });
+      const activity = JSON.parse(saved.subagentActivityProjection!.activityJson);
+      expect(activity).toEqual([
+        { type: 'writing', text: 'Before' },
+        {
+          type: 'steer',
+          steer: 'Guidance',
+          steerId: accepted.status === 'accepted' ? accepted.controlId : '',
+          clientSteerId: 'public-guidance',
+          createdAt: expect.any(Number),
+        },
+        { type: 'writing', text: 'After' },
+      ]);
+      if (outcome === 'error') expect(saved.text).not.toContain('private upstream');
+      const adjacent = store.start(
+        taskRequest(config.scopeId, { run: async () => ({ content: 'Adjacent' }) }),
+      );
+      await waitForSettled(store, config.scopeId, adjacent);
+      const [other] = await methods.getMessages(
+        {
+          user: userId,
+          conversationId: requireThreadId(adjacent),
+          messageId: `${requireAccepted(adjacent).task.taskId}:assistant`,
+        },
+        '+subagentActivityProjection',
+      );
+      expect(JSON.parse(other.subagentActivityProjection!.activityJson)).toEqual([]);
+      expect(other.subagentActivityProjection!.truncated).toBe(true);
+      store.destroyActivityStream();
+    },
+  );
+
+  it('prefers bounded canonical history with a recent applied steer over a sparse observer', async () => {
+    const userId = 'canonical-public';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let runtime!: SubagentTaskRuntime;
+    let finish!: (value: { content: string; messages: BaseMessage[] }) => void;
+    const result = new Promise<{ content: string; messages: BaseMessage[] }>((resolve) => {
+      finish = resolve;
+    });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async (child) => {
+          runtime = child;
+          return result;
+        },
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await waitUntil(() => runtime != null, 'the canonical runtime');
+    const control = await store.controlTask(
+      config.scopeId,
+      taskId,
+      { action: 'steer', message: 'Recent guidance' },
+      'canonical-steer',
+    );
+    runtime.drain('tool');
+    finish({
+      content: 'After',
+      messages: [
+        ...Array.from({ length: 120 }, (_, index) => new AIMessage(`Before-${index}`)),
+        new HumanMessage({
+          content: 'Recent guidance',
+          additional_kwargs: { injected: true, source: 'steer' },
+        }),
+        new AIMessage('After'),
+      ],
+    });
+    await waitForSettled(store, config.scopeId, started);
+    const [saved] = await methods.getMessages(
+      { user: userId, conversationId: requireThreadId(started), messageId: `${taskId}:assistant` },
+      '+subagentActivityProjection',
+    );
+    const projection = saved.subagentActivityProjection!;
+    const activity = JSON.parse(projection.activityJson);
+    expect(projection.truncated).toBe(true);
+    expect(activity).toHaveLength(SUBAGENT_ACTIVITY_LIMITS.items);
+    expect(activity.slice(-2)).toEqual([
+      {
+        type: 'steer',
+        steer: 'Recent guidance',
+        clientSteerId: 'canonical-steer',
+        steerId: control.status === 'accepted' ? control.controlId : '',
+        createdAt: expect.any(Number),
+      },
+      { type: 'writing', text: 'After' },
+    ]);
+    store.destroyActivityStream();
+  });
+
+  it('bounds retained public history and large tool payloads without a transcript', async () => {
+    const userId = 'bounded-public';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async (runtime) => {
+          const progress = (phase: SubagentUpdateEvent['phase'], data: unknown) =>
+            runtime.reportProgress({
+              runId: 'root',
+              parentRunId: 'parent',
+              subagentRunId: 'child',
+              subagentType: 'worker',
+              subagentAgentId: 'agent',
+              timestamp: '2026-10-23T00:00:00.000Z',
+              phase,
+              data,
+            });
+          for (let index = 0; index < SUBAGENT_ACTIVITY_LIMITS.items + 20; index++) {
+            progress('run_step', {
+              id: `step-${index}`,
+              index,
+              stepDetails: {
+                type: 'message_creation',
+                message_creation: { message_id: `message-${index}` },
+              },
+            });
+            progress('message_delta', {
+              id: `step-${index}`,
+              delta: { content: [{ type: 'text', text: `text-${index}` }] },
+            });
+          }
+          const args = { query: 'x'.repeat(100_000) };
+          progress('run_step', {
+            id: 'tool',
+            index: 120,
+            stepDetails: {
+              type: 'tool_calls',
+              tool_calls: [{ id: 'call', type: 'tool_call', name: 'lookup', args }],
+            },
+          });
+          progress('run_step_completed', {
+            result: {
+              id: 'tool',
+              type: 'tool_call',
+              tool_call: {
+                id: 'call',
+                name: 'lookup',
+                args,
+                output: '\u0000'.repeat(100_000),
+                progress: 1,
+              },
+            },
+          });
+          return { content: 'Done' };
+        },
+      }),
+    );
+    await waitForSettled(store, config.scopeId, started);
+    const [saved] = await methods.getMessages(
+      {
+        user: userId,
+        conversationId: requireThreadId(started),
+        messageId: `${requireAccepted(started).task.taskId}:assistant`,
+      },
+      '+subagentActivityProjection',
+    );
+    const projection = saved.subagentActivityProjection!;
+    const activity = JSON.parse(projection.activityJson);
+    expect(projection.truncated).toBe(true);
+    expect(activity.length).toBeLessThanOrEqual(SUBAGENT_ACTIVITY_LIMITS.items);
+    expect(Buffer.byteLength(projection.activityJson)).toBeLessThanOrEqual(
+      SUBAGENT_ACTIVITY_LIMITS.bytes,
+    );
+    expect(activity[0]).not.toMatchObject({ text: 'text-0' });
+    const tool = activity.at(-1);
+    expect(tool).toMatchObject({
+      type: 'tool',
+      toolCallId: 'call',
+      status: 'completed',
+      inputTruncated: true,
+      outputTruncated: true,
+    });
+    expect(Buffer.byteLength(tool.input)).toBeLessThanOrEqual(
+      SUBAGENT_ACTIVITY_LIMITS.toolInputBytes,
+    );
+    expect(Buffer.byteLength(tool.output)).toBeLessThanOrEqual(
+      SUBAGENT_ACTIVITY_LIMITS.toolOutputBytes,
+    );
+    store.destroyActivityStream();
+  });
+
   it.each([1, 2])(
     'publishes applied guidance at SDK drain boundaries once and shifts only new steps (width %s)',
     async (width) => {

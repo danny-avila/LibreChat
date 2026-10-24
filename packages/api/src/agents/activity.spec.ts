@@ -1,4 +1,6 @@
+import type { SubagentUpdateEvent } from '@librechat/agents';
 import {
+  SubagentPublicRecorder,
   projectPersistedMessageActivity,
   projectPersistedMessageActivityJson,
   projectSubagentActivity,
@@ -479,4 +481,102 @@ it('stamps trusted injected guidance only when authoritative apply order is comp
   expect(
     projectSubagentActivity(messages, 'append', undefined, controls.slice(1)).activity[1],
   ).toEqual({ type: 'steer', steer: 'Same text' });
+});
+
+describe('bounded public observations', () => {
+  const progress = (phase: SubagentUpdateEvent['phase'], data: unknown): SubagentUpdateEvent => ({
+    phase,
+    data,
+    runId: 'root',
+    parentRunId: 'parent',
+    subagentRunId: 'child',
+    subagentType: 'worker',
+    subagentAgentId: 'agent',
+    timestamp: '2026-10-23T00:00:00.000Z',
+  });
+
+  it('isolates repeated provider call IDs by step and ignores duplicate announcements', () => {
+    const recorder = new SubagentPublicRecorder();
+    const step = (id: string) =>
+      progress('run_step', {
+        id,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'same', name: 'lookup', args: '', type: 'tool_call' }],
+        },
+      });
+    recorder.record(step('first'));
+    recorder.record(step('second'));
+    recorder.record(step('first'));
+    recorder.record(
+      progress('run_step_delta', {
+        id: 'second',
+        delta: { tool_calls: [{ index: 0, args: 'second input' }] },
+      }),
+    );
+    recorder.record(
+      progress('run_step', {
+        id: 'text',
+        stepDetails: {
+          type: 'message_creation',
+          message_creation: { message_id: 'text', phase: 'commentary' },
+        },
+      }),
+    );
+    recorder.record(progress('run_step_closed', { id: 'text', status: 'completed' }));
+    expect(recorder.snapshot().truncated).toBe(false);
+    expect(recorder.snapshot().activity).toEqual([
+      { type: 'tool', toolCallId: 'same', name: 'lookup', status: 'running' },
+      {
+        type: 'tool',
+        toolCallId: 'same#2',
+        name: 'lookup',
+        input: 'second input',
+        status: 'running',
+      },
+    ]);
+    recorder.record(
+      progress('run_step_completed', {
+        result: { id: 'first', tool_call: { id: 'same', output: 'first output' } },
+      }),
+    );
+    recorder.record(progress('run_step_closed', { id: 'second', status: 'cancelled' }));
+    recorder.record(
+      progress('message_delta', {
+        id: 'text',
+        delta: { content: [{ type: 'text', text: 'Commentary' }] },
+      }),
+    );
+    const snapshot = recorder.snapshot();
+    expect(snapshot.truncated).toBe(false);
+    expect(snapshot.activity).toEqual([
+      {
+        type: 'tool',
+        toolCallId: 'same',
+        name: 'lookup',
+        output: 'first output',
+        status: 'completed',
+      },
+      {
+        type: 'tool',
+        toolCallId: 'same#2',
+        name: 'lookup',
+        input: 'second input',
+        status: 'cancelled',
+      },
+      { type: 'writing', text: 'Commentary', phase: 'commentary' },
+    ]);
+    expect(projectPersistedMessageActivity(snapshot.activity).activity).toEqual(snapshot.activity);
+  });
+
+  it('contains observation errors and marks the retained history incomplete', () => {
+    const recorder = new SubagentPublicRecorder();
+    const data = {
+      get id(): string {
+        throw new Error('observer failure');
+      },
+    };
+    expect(() => recorder.record(progress('run_step', data))).not.toThrow();
+    expect(recorder.snapshot()).toEqual({ activity: [], truncated: true });
+  });
 });

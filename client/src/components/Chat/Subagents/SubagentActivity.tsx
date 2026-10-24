@@ -153,33 +153,45 @@ function SubagentControlHistory({
     )
     .map(({ control }) => control);
   const legacyGuidance = new Map<string, number>();
+  const appliedIds = new Set<string>();
   for (const part of content) {
-    if (part?.type === ContentTypes.STEER && part.steerId == null) {
+    if (part?.type !== ContentTypes.STEER) continue;
+    if (part.steerId != null) appliedIds.add(part.steerId);
+    if (part.clientSteerId != null) appliedIds.add(part.clientSteerId);
+    if (part.steerId == null) {
       legacyGuidance.set(part.steer, (legacyGuidance.get(part.steer) ?? 0) + 1);
+    }
+  }
+  const representedControls = new Set<string>();
+  for (let index = chronologicalControls.length - 1; index >= 0; index--) {
+    const control = chronologicalControls[index];
+    if (control.action !== 'steer' && control.action !== 'queue' && control.action !== 'interrupt')
+      continue;
+    if (
+      appliedIds.has(control.invocationId) ||
+      (control.controlId != null && appliedIds.has(control.controlId))
+    ) {
+      representedControls.add(control.invocationId);
+      continue;
+    }
+    if (control.status !== 'applied' || control.message == null) continue;
+    const remaining = legacyGuidance.get(control.message) ?? 0;
+    if (remaining > 0) {
+      representedControls.add(control.invocationId);
+      legacyGuidance.set(control.message, remaining - 1);
     }
   }
   return (
     <section aria-label={localize('com_ui_subagent_control_history')} className="mb-3 space-y-2">
       {chronologicalControls.map((control) => {
+        const represented = representedControls.has(control.invocationId);
         if (
-          (control.action === 'steer' ||
-            control.action === 'queue' ||
-            control.action === 'interrupt') &&
-          content.some(
-            (part) =>
-              part?.type === ContentTypes.STEER &&
-              ((part.steerId != null &&
-                (part.steerId === control.controlId || part.steerId === control.invocationId)) ||
-                part.clientSteerId === control.invocationId),
-          )
-        ) {
+          represented &&
+          (appliedIds.has(control.invocationId) ||
+            (control.controlId != null && appliedIds.has(control.controlId)))
+        )
           return null;
-        }
-        const legacyMatches =
-          control.message == null ? 0 : (legacyGuidance.get(control.message) ?? 0);
-        const legacyInlineGuidance = control.status === 'applied' && legacyMatches > 0;
-        if (legacyInlineGuidance && control.message != null)
-          legacyGuidance.set(control.message, legacyMatches - 1);
+        const legacyInlineGuidance = represented;
         const pending = control.status === 'submitted' || control.status === 'accepted';
         let receiptState: SteerReceiptState | undefined;
         if (control.action !== 'cancel' && control.action !== 'cancel_message') {

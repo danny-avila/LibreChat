@@ -54,16 +54,17 @@ import type { HostSubagentTaskConfig } from './subagentDelivery';
 import type { ActivitySnapshot, ActivityTree } from './digest';
 import type { AppliedSubagentSteer } from './activity';
 import {
+  SubagentPublicRecorder,
+  SUBAGENT_ACTIVITY_LIMITS,
+  projectSubagentActivity,
+  projectPersistedMessageActivityJson,
+} from './activity';
+import {
   boundedClaim,
   boundedTaskList,
   controlFingerprint,
   SubagentTaskOwnerUnavailableError,
 } from './subagentTaskRouting';
-import {
-  SUBAGENT_ACTIVITY_LIMITS,
-  projectSubagentActivity,
-  projectPersistedMessageActivityJson,
-} from './activity';
 import { boundSubagentActivityUpdate, SubagentActivityStream } from './subagentActivity';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
 import { describeErrorCauses, describeStackFrames } from './failures/subagent';
@@ -481,6 +482,7 @@ function serializeTranscript(
   resultMessages: BaseMessage[] | undefined,
   appliedSteers?: readonly AppliedSubagentSteer[],
   expectedTaskInput?: string,
+  observation?: { steersMatched: boolean },
 ): IMessage['subagentTranscript'] {
   if (resultMessages == null) {
     return undefined;
@@ -524,6 +526,7 @@ function serializeTranscript(
         injectedIndices.push(index);
     }
     if (injectedIndices.length === appliedSteers.length) {
+      if (observation != null) observation.steersMatched = true;
       injectedIndices.forEach((messageIndex, controlIndex) => {
         const message = messages[messageIndex];
         messages[messageIndex] = {
@@ -1635,6 +1638,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             const detachedUsage: UsageMetadata[] = [];
             let prepared: PreparedThread | undefined;
             let appliedSteers: AppliedSubagentSteer[] | undefined = [];
+            const publicRecorder = new SubagentPublicRecorder();
             let activityTerminal: SubagentActivityTerminalStatus = 'failed';
             try {
               if (runtime.signal.aborted) {
@@ -1748,6 +1752,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                   activitySequence: sequence,
                 };
                 lease.content?.record(activityEvent, sequence);
+                if (activityEvent.phase === 'steer_applied') {
+                  publicRecorder.steer(activityEvent.data as TSteerAppliedEvent);
+                } else {
+                  publicRecorder.record(activityEvent as SubagentUpdateEvent);
+                }
                 this.publishActivity(
                   lease,
                   preparedThread.conversation.conversationId,
@@ -1876,6 +1885,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 detachedUsage,
                 lease.content?.throughSequence,
                 appliedSteers,
+                publicRecorder.snapshot(),
               );
               activityTerminal = 'completed';
               return result;
@@ -1899,6 +1909,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                     runtime.taskId,
                     detachedUsage,
                     lease.content?.throughSequence,
+                    publicRecorder.snapshot(),
                   ).catch((persistError) => {
                     logger.error(
                       '[subagentThreads] Failed to persist child-thread cancellation',
@@ -1927,6 +1938,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                   error,
                   detachedUsage,
                   lease.content?.throughSequence,
+                  publicRecorder.snapshot(),
                 ).catch((persistError) => {
                   logger.error(
                     '[subagentThreads] Failed to persist child-thread failure',
@@ -3640,19 +3652,22 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     detachedUsage: UsageMetadata[],
     contentThroughSequence?: number,
     appliedSteers?: readonly AppliedSubagentSteer[],
+    observedActivity?: ReturnType<SubagentPublicRecorder['snapshot']>,
   ): Promise<void> {
     if (prepared.userMessageId == null) {
       throw new Error('The child-thread input was not prepared.');
     }
     await this.flushControlReceiptsForSettlement(request.scopeId, taskId);
+    const transcriptObservation = { steersMatched: false };
     const subagentTranscript = serializeTranscript(
       taskId,
       prepared.initialStoredMessages,
       result.messages,
       appliedSteers,
       request.input,
+      transcriptObservation,
     );
-    const activityProjection =
+    const sourceProjection =
       subagentTranscript == null
         ? undefined
         : projectSubagentActivity(
@@ -3661,6 +3676,15 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             request.input,
             appliedSteers,
           );
+    // A complete transcript is richer than a bounded observation window. Missing
+    // applied controls make it incomplete even when its JSON is otherwise valid.
+    const sourceTrusted =
+      sourceProjection != null &&
+      transcriptObservation.steersMatched &&
+      (sourceProjection.activity.length > 0 || !sourceProjection.truncated);
+    const activityProjection = sourceTrusted
+      ? sourceProjection
+      : (observedActivity ?? sourceProjection);
     const subagentActivityProjection =
       activityProjection == null
         ? undefined
@@ -3668,7 +3692,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             taskId,
             version: 2 as const,
             activityJson: JSON.stringify(activityProjection.activity),
-            truncated: activityProjection.truncated,
+            truncated:
+              activityProjection.truncated ||
+              (!sourceTrusted && activityProjection.activity.length === 0),
           };
     const conversation = await this.requireCurrentConversation(
       scope,
@@ -3721,6 +3747,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     error: unknown,
     detachedUsage: UsageMetadata[],
     contentThroughSequence?: number,
+    observedActivity?: ReturnType<SubagentPublicRecorder['snapshot']>,
   ): Promise<void> {
     await this.flushControlReceiptsForSettlement(request.scopeId, taskId);
     const conversation = await this.currentConversation(scope, request, threadId);
@@ -3745,6 +3772,15 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               subagentContent: { version: 1 as const, throughSequence: contentThroughSequence },
             }),
         error: true,
+        subagentActivityProjection: {
+          taskId,
+          version: 2 as const,
+          activityJson: JSON.stringify(observedActivity?.activity ?? []),
+          truncated:
+            observedActivity == null ||
+            observedActivity.truncated ||
+            observedActivity.activity.length === 0,
+        },
         subagentTask: {
           attemptKey: createSubagentAttemptKey(request.scopeId, request.idempotencyKey),
           parentRunId: request.parentRunId,
@@ -3800,6 +3836,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     taskId: string,
     detachedUsage: UsageMetadata[],
     contentThroughSequence?: number,
+    observedActivity?: ReturnType<SubagentPublicRecorder['snapshot']>,
   ): Promise<void> {
     await this.flushControlReceiptsForSettlement(request.scopeId, taskId);
     const conversation = await this.currentConversation(scope, request, threadId);
@@ -3823,6 +3860,15 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           : {
               subagentContent: { version: 1 as const, throughSequence: contentThroughSequence },
             }),
+        subagentActivityProjection: {
+          taskId,
+          version: 2 as const,
+          activityJson: JSON.stringify(observedActivity?.activity ?? []),
+          truncated:
+            observedActivity == null ||
+            observedActivity.truncated ||
+            observedActivity.activity.length === 0,
+        },
         subagentTask: {
           attemptKey: createSubagentAttemptKey(request.scopeId, request.idempotencyKey),
           parentRunId: request.parentRunId,

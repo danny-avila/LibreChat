@@ -1,4 +1,5 @@
-import type { SubagentActivityItem } from 'librechat-data-provider';
+import type { SubagentActivityItem, TSteerAppliedEvent } from 'librechat-data-provider';
+import type { SubagentUpdateEvent } from '@librechat/agents';
 
 const MAX_ACTIVITY_ITEMS = 100;
 const MAX_ACTIVITY_BYTES = 64 * 1024;
@@ -207,6 +208,9 @@ export function projectPersistedMessageActivity(
         {
           type: 'writing',
           text: candidate.text,
+          ...(candidate.phase === 'commentary' || candidate.phase === 'final_answer'
+            ? { phase: candidate.phase }
+            : {}),
           ...(candidate.textTruncated === true ? { textTruncated: true } : {}),
         },
       ];
@@ -263,13 +267,14 @@ export function projectPersistedMessageActivity(
     const completed =
       finiteNumber(candidate.progress) != null && finiteNumber(candidate.progress)! >= 1;
     const output = typeof candidate.output === 'string' ? candidate.output : undefined;
-    const runStepStatus = visibleStatus(candidate.runStepStatus);
+    const storedStatus = candidate.runStepStatus ?? candidate.status;
+    const runStepStatus = visibleStatus(storedStatus);
     const toolPreparationStartedAt = nonNegativeTiming(candidate.toolPreparationStartedAt);
     const toolDispatchedAt = nonNegativeTiming(candidate.toolDispatchedAt);
     const toolPreparationDurationMs = nonNegativeTiming(candidate.toolPreparationDurationMs);
     const toolExecutionDurationMs = nonNegativeTiming(candidate.toolExecutionDurationMs);
     let status: MutableToolActivity['status'] = runStepStatus;
-    if (candidate.runStepStatus == null) {
+    if (storedStatus == null) {
       status = completed || output != null ? 'completed' : 'running';
     }
     return [
@@ -552,6 +557,266 @@ export function projectSubagentActivity(
   }
   const boundedActivity = activity.filter((entry) => entry.active).map((entry) => entry.item);
   return boundActivity(boundedActivity, truncated);
+}
+
+type ObservationField = { chunks: string[]; bytes: number; limit: number };
+type Observation = {
+  key: string;
+  item: SubagentActivityItem;
+  fields: Map<string, ObservationField>;
+  bytes: number;
+  stepId?: string;
+  slot?: string;
+  phase?: 'commentary' | 'final_answer';
+};
+
+/** Public observations only. Payloads and correlation state share the projection's bounds. */
+export class SubagentPublicRecorder {
+  private readonly entries: Observation[] = [];
+  private readonly tools = new Map<string, Observation>();
+  private readonly steps = new Map<string, 'commentary' | 'final_answer' | undefined>();
+  private readonly toolSlots = new Map<string, Observation>();
+  private readonly toolIds = new Set<string>();
+  private readonly nextToolOccurrence = { value: 2 };
+  private bytes = 0;
+  private truncated = false;
+
+  private append(key: string, item: SubagentActivityItem): Observation {
+    const entry = {
+      key,
+      item,
+      fields: new Map<string, ObservationField>(),
+      bytes: serializedBytes(item) + 128,
+    };
+    this.entries.push(entry);
+    this.bytes += entry.bytes;
+    this.bound();
+    return entry;
+  }
+
+  private bound(): void {
+    while (this.entries.length > MAX_ACTIVITY_ITEMS || this.bytes > MAX_ACTIVITY_BYTES) {
+      const removed = this.entries.shift();
+      if (removed == null) break;
+      this.bytes -= removed.bytes;
+      if (this.tools.get(removed.key) === removed) this.tools.delete(removed.key);
+      if (removed.item.type === 'tool') this.toolIds.delete(removed.item.toolCallId);
+      if (removed.slot != null && this.toolSlots.get(removed.slot) === removed)
+        this.toolSlots.delete(removed.slot);
+      this.truncated = true;
+    }
+  }
+
+  private field(
+    entry: Observation,
+    name: string,
+    value: string,
+    limit: number,
+    replace = false,
+  ): void {
+    let field = entry.fields.get(name);
+    if (field == null || replace) {
+      if (field != null) {
+        this.bytes -= field.bytes;
+        entry.bytes -= field.bytes;
+      }
+      field = { chunks: [], bytes: 0, limit };
+      entry.fields.set(name, field);
+    }
+    if (value === '') return;
+    const remaining = Math.max(0, field.limit - field.bytes);
+    const text = truncateUtf8(value, remaining);
+    // Count JSON escaping as well as UTF-8 so retained memory and stored payload stay bounded.
+    const bytes = serializedBytes(text.value) - 2;
+    if (text.truncated || bytes > remaining) {
+      this.truncated = true;
+      Object.assign(entry.item, {
+        [name === 'steer' || name === 'text' ? 'textTruncated' : `${name}Truncated`]: true,
+      });
+    }
+    const bounded =
+      bytes > remaining ? truncateUtf8(text.value, Math.floor(remaining / 6)).value : text.value;
+    if (bounded !== '') {
+      const added = serializedBytes(bounded) - 2;
+      field.chunks.push(bounded);
+      field.bytes += added;
+      entry.bytes += added;
+      this.bytes += added;
+    }
+    this.bound();
+  }
+
+  steer(data: TSteerAppliedEvent): void {
+    try {
+      this.recordSteer(data);
+    } catch {
+      this.truncated = true;
+    }
+  }
+
+  private recordSteer(data: TSteerAppliedEvent): void {
+    const item = projectPersistedMessageActivity([data.part]).activity[0];
+    if (item == null || item.type !== 'steer') {
+      this.truncated = true;
+      return;
+    }
+    if (item.textTruncated) this.truncated = true;
+    const entry = this.append('', { ...item, steer: '' });
+    this.field(entry, 'steer', item.steer, MAX_ACTIVITY_TEXT_BYTES);
+  }
+
+  record(event: SubagentUpdateEvent): void {
+    try {
+      this.recordEvent(event);
+    } catch {
+      this.truncated = true;
+    }
+  }
+
+  private recordEvent(event: SubagentUpdateEvent): void {
+    const data = isRecord(event.data) ? event.data : undefined;
+    if (data == null) return;
+    const id = typeof data.id === 'string' ? data.id : '';
+    if (id.length > MAX_TOOL_CALL_ID_BYTES) {
+      this.truncated = true;
+      return;
+    }
+    if (event.phase === 'run_step') {
+      const details = isRecord(data.stepDetails) ? data.stepDetails : undefined;
+      const creation = isRecord(details?.message_creation) ? details.message_creation : undefined;
+      const phase =
+        creation?.phase === 'commentary' || creation?.phase === 'final_answer'
+          ? creation.phase
+          : undefined;
+      this.steps.set(id, phase);
+      if (this.steps.size > MAX_ACTIVITY_ITEMS) {
+        this.steps.delete(this.steps.keys().next().value!);
+        this.truncated = true;
+      }
+      if (details?.type !== 'tool_calls' || !Array.isArray(details.tool_calls)) return;
+      for (const [index, call] of details.tool_calls.entries()) {
+        const normalized = normalizeToolCall(call, index);
+        if (normalized == null || normalized.rawId.length > MAX_TOOL_CALL_ID_BYTES) {
+          this.truncated = true;
+          continue;
+        }
+        const key = `${id.length}:${id}:${normalized.rawId}`;
+        if (this.tools.has(key)) continue;
+        const { input, ...item } = normalized.item;
+        item.toolCallId = uniqueToolActivityId(
+          item.toolCallId,
+          this.toolIds,
+          this.nextToolOccurrence,
+        );
+        const entry = this.append(key, item);
+        this.tools.set(key, entry);
+        entry.stepId = id;
+        entry.slot = `${id}:${index}`;
+        this.toolSlots.set(entry.slot, entry);
+        if (input != null) this.field(entry, 'input', input, MAX_TOOL_INPUT_BYTES);
+        if (normalized.item.inputTruncated) this.truncated = true;
+      }
+      return;
+    }
+    if (event.phase === 'message_delta' || event.phase === 'reasoning_delta') {
+      if (!this.steps.has(id)) this.truncated = true;
+      const delta = isRecord(data.delta) ? data.delta : undefined;
+      const content = delta?.content;
+      for (const block of Array.isArray(content) ? content : [content]) {
+        if (!isRecord(block)) continue;
+        const reasoning =
+          event.phase === 'reasoning_delta' ||
+          block.type === 'reasoning' ||
+          block.type === 'thinking';
+        if (!reasoning && block.type !== 'text' && block.type !== 'text-plain') continue;
+        const text = reasoning
+          ? reasoningBlockText(block)
+          : typeof block.text === 'string'
+            ? block.text
+            : '';
+        if (text === '') continue;
+        const type = reasoning ? 'reasoning' : 'writing';
+        const key = `${id}:${type}`;
+        const last = this.entries[this.entries.length - 1];
+        const entry = last?.key === key ? last : this.append(key, { type, text: '' });
+        if (type === 'writing') entry.phase = this.steps.get(id);
+        this.field(entry, 'text', text, MAX_ACTIVITY_TEXT_BYTES);
+      }
+      return;
+    }
+    if (event.phase === 'run_step_delta') {
+      const delta = isRecord(data.delta) ? data.delta : undefined;
+      if (!Array.isArray(delta?.tool_calls)) return;
+      for (const call of delta.tool_calls) {
+        if (!isRecord(call)) continue;
+        const entry =
+          (typeof call.id === 'string'
+            ? this.tools.get(`${id.length}:${id}:${call.id}`)
+            : undefined) ?? this.toolSlots.get(`${id}:${call.index}`);
+        if (entry == null) {
+          this.truncated = true;
+          continue;
+        }
+        if (typeof call.args === 'string')
+          this.field(entry, 'input', call.args, MAX_TOOL_INPUT_BYTES);
+      }
+      return;
+    }
+    if (event.phase === 'run_step_completed') {
+      const result = isRecord(data.result) ? data.result : undefined;
+      const call = isRecord(result?.tool_call) ? result.tool_call : undefined;
+      if (call == null) return;
+      const stepId = typeof result?.id === 'string' ? result.id : '';
+      let entry =
+        typeof call.id === 'string'
+          ? this.tools.get(`${stepId.length}:${stepId}:${call.id}`)
+          : undefined;
+      if (entry == null) {
+        this.truncated = true;
+        const normalized = normalizeToolCall(call, 0);
+        if (
+          normalized == null ||
+          normalized.rawId.length > MAX_TOOL_CALL_ID_BYTES ||
+          stepId.length > MAX_TOOL_CALL_ID_BYTES
+        )
+          return;
+        const key = `${stepId.length}:${stepId}:${normalized.rawId}`;
+        normalized.item.toolCallId = uniqueToolActivityId(
+          normalized.item.toolCallId,
+          this.toolIds,
+          this.nextToolOccurrence,
+        );
+        entry = this.append(key, { ...normalized.item, input: undefined });
+        entry.stepId = stepId;
+        this.tools.set(key, entry);
+      }
+      if (entry.item.type !== 'tool') return;
+      entry.item.status = toolResultStatus(call.runStepStatus ?? result?.status);
+      if (call.args != null)
+        this.field(entry, 'input', safeJson(call.args), MAX_TOOL_INPUT_BYTES, true);
+      if (call.output != null)
+        this.field(entry, 'output', safeJson(call.output), MAX_TOOL_OUTPUT_BYTES, true);
+      return;
+    }
+    if (event.phase === 'run_step_closed') {
+      for (const entry of this.entries) {
+        if (entry.item.type !== 'tool' || entry.stepId !== id) continue;
+        if (entry.item.status === 'running') entry.item.status = toolResultStatus(data.status);
+      }
+    }
+  }
+
+  snapshot(): Projection {
+    return boundActivity(
+      this.entries.map((entry) => {
+        const item = { ...entry.item, ...(entry.phase == null ? {} : { phase: entry.phase }) };
+        for (const [name, field] of entry.fields)
+          Object.assign(item, { [name]: field.chunks.join('') });
+        return item;
+      }),
+      this.truncated || this.steps.size === 0,
+    );
+  }
 }
 
 export const SUBAGENT_ACTIVITY_LIMITS = {

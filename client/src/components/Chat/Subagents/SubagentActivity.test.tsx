@@ -43,16 +43,18 @@ jest.mock('~/components/Chat/Messages/Content/Parts/SteerPart', () => ({
   __esModule: true,
   default: ({
     steer,
+    steerId,
     receiptState,
     hasMore,
     onExpand,
   }: {
     steer: string;
+    steerId?: string;
     receiptState?: string | null;
     hasMore?: boolean;
     onExpand?: () => void;
   }) => (
-    <div data-testid="shared-steer-part" data-receipt={receiptState}>
+    <div data-testid="shared-steer-part" data-receipt={receiptState} data-steer-id={steerId}>
       {steer}
       {hasMore && (
         <button type="button" onClick={onExpand}>
@@ -870,6 +872,7 @@ it('suppresses only the corresponding number of legacy guidance bodies and does 
   );
   expect(screen.getAllByTestId('shared-steer-part')).toHaveLength(1);
   expect(screen.getByTestId('shared-steer-part')).toHaveTextContent('Repeated guidance.');
+  expect(screen.getByTestId('shared-steer-part')).toHaveAttribute('data-steer-id', 'one');
   expect(mockContentParts.mock.calls.at(-1)?.[0].content).toEqual([
     { type: ContentTypes.STEER, steer: 'Repeated guidance.' },
   ]);
@@ -1044,3 +1047,32 @@ it.each(['submitted', 'failed'] as const)(
     ]);
   },
 );
+
+it('reserves identified inline controls before matching the newest legacy occurrences', () => {
+  const receipt = {
+    action: 'steer' as const,
+    status: 'applied' as const,
+    message: 'Same guidance.',
+    createdAt: '2026-10-23T00:00:00Z',
+    updatedAt: '2026-10-23T00:00:01Z',
+  };
+  render(
+    <SubagentActivity
+      activity={{
+        ...base,
+        activityTruncated: true,
+        content: [
+          { type: ContentTypes.STEER, steer: 'Same guidance.' },
+          { type: ContentTypes.STEER, steer: 'Same guidance.', steerId: 'identified' },
+        ],
+        controls: [
+          { ...receipt, invocationId: 'oldest', controlId: 'oldest' },
+          { ...receipt, invocationId: 'legacy', controlId: 'legacy' },
+          { ...receipt, invocationId: 'identified', controlId: 'identified' },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getAllByTestId('shared-steer-part')).toHaveLength(1);
+  expect(screen.getByTestId('shared-steer-part')).toHaveAttribute('data-steer-id', 'oldest');
+});
