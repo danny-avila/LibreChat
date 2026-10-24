@@ -100,6 +100,7 @@ import type {
   AdminConfigSkipReason,
   AdminConfigIgnoreReason,
   AdminConfigIgnoredSecret,
+  AdminConfigAppliedLocation,
   AdminConfigLocation,
   AdminConfigWriteReport,
   AdminConfigErrorCode,
@@ -408,7 +409,7 @@ function toOrderedWrites(
 }
 
 /** One step of a field patch: a write, or the reset of a path (a secret with its preview). */
-type PatchStep = { write: ConfigFieldWrite } | { reset: string[][] };
+type PatchStep = { write: ConfigFieldWrite } | { reset: ConfigLocation[] };
 
 /**
  * A field patch's steps in request order: each entry's writes as {@link toOrderedWrites} orders
@@ -465,7 +466,7 @@ function getPatchStepIssues(
   renames: readonly ConfigEntryRename[],
 ): ConfigOverrideIssue[] {
   const written = steps.flatMap((step) =>
-    'write' in step ? [[...step.write.segments]] : step.reset,
+    'write' in step ? [[...step.write.segments]] : step.reset.map(({ segments }) => [...segments]),
   );
   const indexed = getIndexedMergeKeyIssues(written);
   if (indexed.length > 0) {
@@ -815,6 +816,24 @@ function toSkippedLocation(part: SkippedPart): AdminConfigLocation & {
 
 function toLocation(segments: readonly string[]): AdminConfigLocation {
   return { path: segments.join('.'), segments: [...segments] };
+}
+
+/**
+ * The report of a write at one field target: a keyed target by its keyed path, its collection,
+ * the entry key and the path inside the entry, as a change ref names it.
+ */
+function toTargetReport(target: FieldTarget): AdminConfigWriteReport {
+  if (!target.entry) {
+    return { applied: [toLocation(target.segments)], skipped: [] };
+  }
+  const { key, rest } = target.entry;
+  const applied: AdminConfigAppliedLocation = {
+    path: target.fieldPath,
+    segments: [...target.segments],
+    key,
+    ...(rest.length > 0 && { entryPath: [...rest] }),
+  };
+  return { applied: [applied], skipped: [] };
 }
 
 /**
@@ -4099,14 +4118,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const ignored = isBoundSecretSection(parseFieldPath(fieldPath)[0])
         ? await reportIgnored(config, getConfigPartition(config))
         : [];
-      return sendWrittenConfig(
-        res,
-        200,
-        config,
-        access,
-        ignored,
-        toWriteReport([read.target.segments], []),
-      );
+      return sendWrittenConfig(res, 200, config, access, ignored, toTargetReport(read.target));
     } catch (error) {
       logger.error('[adminConfig] tombstoneConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to tombstone config field' });
@@ -4247,14 +4259,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const ignored = isBoundSecretSection(target.segments[0])
         ? await reportIgnored(config, getConfigPartition(config))
         : [];
-      return sendWrittenConfig(
-        res,
-        200,
-        config,
-        access,
-        ignored,
-        toWriteReport([target.segments], []),
-      );
+      return sendWrittenConfig(res, 200, config, access, ignored, toTargetReport(target));
     } catch (error) {
       logger.error('[adminConfig] deleteConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to delete config field' });

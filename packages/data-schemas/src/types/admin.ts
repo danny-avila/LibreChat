@@ -56,13 +56,23 @@ export type AdminConfigLocation = {
 };
 
 /**
+ * A location a write applied at. A keyed `fieldPath` (`keyedTombstones`) is named as sent in
+ * `path`, by its collection in `segments`, and by the entry `key` and, for a path inside the
+ * entry, `entryPath`, as a change ref names it.
+ */
+export type AdminConfigAppliedLocation = AdminConfigLocation & {
+  key?: string;
+  entryPath?: string[];
+};
+
+/**
  * What a write did with each location it addressed (`writeReport`): stored or removed
  * (`applied`), or left alone because the generic config API never stores it there (`skipped`,
  * with the reason). A skipped part of a written value is listed at its own location, and the
  * rest of the value is stored.
  */
 export type AdminConfigWriteReport = {
-  applied: AdminConfigLocation[];
+  applied: AdminConfigAppliedLocation[];
   skipped: Array<AdminConfigLocation & { reason: AdminConfigSkipReason }>;
 };
 
@@ -966,7 +976,9 @@ export type AdminConfigEnvStatusResponse = {
  *   secret, its preview and its destination fingerprint answer 400 `SECRET_PATH`. POST
  *   `/fields/tombstone` also refuses a path into an array by position (`endpoints.custom.0`,
  *   `inside_array`), which the merge never applied. A change ref names a keyed change by its
- *   collection (`segments`), `key` and, inside the entry, `entryPath`.
+ *   collection (`segments`), `key` and, inside the entry, `entryPath`, and the write report of
+ *   POST `/fields/tombstone` and DELETE `/fields` names a keyed location the same way, with the
+ *   keyed path in `path` (`AdminConfigAppliedLocation`).
  * - `renameHints`: the `renames` hint of PUT and PATCH also takes
  *   `{ path: 'endpoints.custom', previousName, name }` (`rules.renameHintPaths`): the written
  *   entry `name` that omits `apiKey` gets the key the principal stores on entry `previousName`

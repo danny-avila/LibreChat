@@ -154,24 +154,14 @@ function addUnservedEndpointNames(
 }
 
 /**
- * `merged` without the references to custom endpoints the merge removed: ones librechat.yaml or
- * any applied override layer (Base included) defines that the merged config no longer serves. A
- * profile that hides an endpoint (a keyed `endpoints.custom["Name"]` tombstone, or a tombstone of
- * all of them) also hides the model specs that select it and its name in
- * `modelSpecs.addedEndpoints` and `endpoints.agents.allowedProviders`, rather than offering its
- * principals an endpoint they are not served. Unrelated added endpoints stay when no spec is left,
- * and an allow-list naming only hidden endpoints stays as it is ({@link scopeAllowList}). Only the
- * references are scoped, never the endpoint list, so an endpoint a later layer adds back keeps them.
+ * The folded names of the custom endpoints the merge removed: ones librechat.yaml or any applied
+ * override layer (Base included) defines that the merged config no longer serves.
  */
-function scopeHiddenEndpointReferences(
+function getUnservedEndpointNames(
   base: AppConfig,
   layers: readonly ConfigOverrideLayer[],
   merged: AppConfig,
-): AppConfig {
-  const agents = merged.endpoints?.agents;
-  if (!merged.modelSpecs && !agents?.allowedProviders?.length) {
-    return merged;
-  }
+): Set<string> {
   const served = new Set(
     (merged.endpoints?.custom ?? []).map((endpoint) => normalizeEndpointName(endpoint.name ?? '')),
   );
@@ -180,19 +170,59 @@ function scopeHiddenEndpointReferences(
   for (const layer of layers) {
     addUnservedEndpointNames(layer.overrides?.endpoints?.custom, served, hidden);
   }
-  const modelSpecs = scopeModelSpecs(merged.modelSpecs, hidden, scopeAllowList);
+  return hidden;
+}
+
+/** The parts of a config that name endpoints, in the served config and its YAML-shaped resolution alike. */
+interface EndpointReferences {
+  modelSpecs?: AppConfig['modelSpecs'];
+  endpoints?: { agents?: { allowedProviders?: string[] } };
+}
+
+/**
+ * `config` without its references to the `hidden` endpoints: the model specs that select one,
+ * and its name in `modelSpecs.addedEndpoints` and `endpoints.agents.allowedProviders`. Unrelated
+ * added endpoints stay when no spec is left, and an allow-list naming only hidden endpoints stays
+ * as it is ({@link scopeAllowList}).
+ */
+function scopeEndpointReferences<T extends EndpointReferences>(
+  config: T,
+  hidden: ReadonlySet<string>,
+): T {
+  const agents = config.endpoints?.agents;
+  const modelSpecs = scopeModelSpecs(config.modelSpecs, hidden, scopeAllowList);
   const allowedProviders = scopeAllowList(agents?.allowedProviders, hidden);
   const agentsChanged = allowedProviders !== agents?.allowedProviders;
-  if (modelSpecs === merged.modelSpecs && !agentsChanged) {
-    return merged;
+  if (modelSpecs === config.modelSpecs && !agentsChanged) {
+    return config;
   }
   return {
-    ...merged,
-    ...(modelSpecs !== merged.modelSpecs && { modelSpecs }),
+    ...config,
+    ...(modelSpecs !== config.modelSpecs && { modelSpecs }),
     ...(agentsChanged && {
-      endpoints: { ...merged.endpoints, agents: { ...agents, allowedProviders } },
+      endpoints: { ...config.endpoints, agents: { ...agents, allowedProviders } },
     }),
   };
+}
+
+/**
+ * `merged` without the references to custom endpoints the merge removed
+ * ({@link getUnservedEndpointNames}). A profile that hides an endpoint (a keyed
+ * `endpoints.custom["Name"]` tombstone, or a tombstone of all of them) also hides the model specs
+ * that select it and its name in `modelSpecs.addedEndpoints` and
+ * `endpoints.agents.allowedProviders`, rather than offering its principals an endpoint they are
+ * not served. Only the references are scoped, never the endpoint list, so an endpoint a later
+ * layer adds back keeps them.
+ */
+function scopeHiddenEndpointReferences(
+  base: AppConfig,
+  layers: readonly ConfigOverrideLayer[],
+  merged: AppConfig,
+): AppConfig {
+  if (!merged.modelSpecs && !merged.endpoints?.agents?.allowedProviders?.length) {
+    return merged;
+  }
+  return scopeEndpointReferences(merged, getUnservedEndpointNames(base, layers, merged));
 }
 
 /** Keep tenant-scoped YAML endpoints out of every other tenant's effective config. */
@@ -1065,7 +1095,11 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       onRebinding: warnRebinding,
     });
     const completed = completeEffectiveConfig(resolution.merged);
-    const checked = checkOverrideTheme(scopedBaseConfig, completed);
+    const unserved = getUnservedEndpointNames(scopedBaseConfig, configs, completed);
+    const checked = checkOverrideTheme(
+      scopedBaseConfig,
+      scopeEndpointReferences(completed, unserved),
+    );
     const baseTheme = scopedBaseConfig.interfaceConfig?.theme;
     let resolved = resolution.resolved;
     if (
@@ -1075,7 +1109,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       resolved = replayThemeFallback(resolved, resolution.layers, yaml);
     }
     resolved = scopeResolvedEndpoints(
-      resolved,
+      scopeEndpointReferences(resolved, unserved),
       resolution.layers,
       effectiveTenantId,
       hiddenCustomEndpoints(checked, effectiveTenantId, hiddenEndpoints),

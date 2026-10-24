@@ -359,6 +359,36 @@ describe('createAppConfigService().resolveConfigLayers', () => {
     ]);
   });
 
+  it('leaves out what selects an endpoint a profile hides by key, as getAppConfig does', async () => {
+    const configs: ConfigOverrideLayer[] = [
+      {
+        ...role({
+          modelSpecs: {
+            list: [
+              { name: 'hidden', label: 'Hidden', preset: { endpoint: 'Gateway', model: 'gpt-4o' } },
+              { name: 'kept', label: 'Kept', preset: { endpoint: 'openAI', model: 'gpt-4o' } },
+            ],
+          },
+          endpoints: { agents: { allowedProviders: ['Gateway', 'openAI'] } },
+        }),
+        tombstones: ['endpoints.custom["Gateway"]'],
+      },
+    ];
+    const service = createService(configs);
+    const served = await service.getAppConfig({
+      role: 'editors',
+      bypassOverrideCache: true,
+      skipRuntimeAugmentation: true,
+    });
+    const resolution = await service.resolveConfigLayers({ configs });
+    expect(resolution.merged).toEqual(served);
+    expect(served.modelSpecs?.list?.map((spec) => spec.name)).toEqual(['kept']);
+    expect(served.endpoints?.agents?.allowedProviders).toEqual(['openAI']);
+    expect(resolution.resolved.endpoints?.custom ?? []).toEqual([]);
+    expect(resolution.resolved.modelSpecs?.list?.map((spec) => spec.name)).toEqual(['kept']);
+    expect(resolution.resolved.endpoints?.agents?.allowedProviders).toEqual(['openAI']);
+  });
+
   it('shows the librechat.yaml theme where a profile theme fails the client rules', async () => {
     const configs = [role({ interface: { customWelcome: 'Role', theme: INVALID_THEME } })];
     const resolution = await createService(configs).resolveConfigLayers({ configs });

@@ -382,6 +382,13 @@ describe('hiding librechat.yaml custom endpoints by key', () => {
     const res = await remove(role, 'endpoints.custom["My Endpoint"]');
 
     expect(res.statusCode).toBe(200);
+    expect(res.body?.applied).toEqual([
+      {
+        path: 'endpoints.custom["My Endpoint"]',
+        segments: ['endpoints', 'custom'],
+        key: 'My Endpoint',
+      },
+    ]);
     expect((await storedDocument(role))?.tombstones).toEqual([]);
     expect(servedNames(await servedConfig(role))).toEqual(['My Endpoint', 'Literal', 'Own Keys']);
   });
@@ -433,6 +440,15 @@ describe('removing an inherited key of a custom endpoint record', () => {
     const role = nextRole();
     const hidden = await tombstone(role, 'endpoints.custom["My Endpoint"].headers.X-Team');
     expect(hidden.statusCode).toBe(200);
+    expect(hidden.body?.applied).toEqual([
+      {
+        path: 'endpoints.custom["My Endpoint"].headers.X-Team',
+        segments: ['endpoints', 'custom'],
+        key: 'My Endpoint',
+        entryPath: ['headers', 'X-Team'],
+      },
+    ]);
+    expect(hidden.body?.skipped).toEqual([]);
     expect(await headersOf(role)).toEqual({ 'X-Trace': 'on' });
 
     const edited = await changes(role, {
@@ -817,6 +833,32 @@ describe('stored keys of entries a profile hides or renames', () => {
       expect(served && resolveCustomEndpointSecrets(served).apiKey).toBe(
         'sk-profile-own-key-0123456789',
       );
+    });
+
+    it('on a PATCH that also resets a path, does the same', async () => {
+      const role = nextRole();
+      const draft = await seedDraft(role);
+
+      const res = await patch(role, {
+        entries: [
+          { fieldPath: 'interface', value: { prompts: false } },
+          { fieldPath: 'endpoints.custom', value: [renamed(draft)] },
+        ],
+        renames: hint,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body?.skipped).toEqual([
+        {
+          path: 'interface.prompts',
+          segments: ['interface', 'prompts'],
+          reason: 'interface_permission',
+        },
+      ]);
+      expect((await storedEndpoint(role, 'final'))?.apiKey).toBe(draft.apiKey);
+      expect((await storedDocument(role))?.tombstones).toEqual([
+        'endpoints.custom["final"].headers.X-Legacy',
+      ]);
     });
 
     it('on PUT does the same for a whole replace', async () => {
