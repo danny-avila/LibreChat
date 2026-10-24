@@ -401,6 +401,45 @@ describe('useFoldPath', () => {
     expect(seen.some(({ tip, branch }) => !branch && tip > 44 && tip < 76)).toBe(true);
   });
 
+  it('keeps traveling, without a jump, when the row it is heading for moves mid-trip', async () => {
+    const { root, b, rows } = foldFixture();
+    const path = traced(b.rail, [20, 52, 84]);
+    renderHook(() => useFoldPath({ current: root }, true));
+    const tipOf = () => Number(/V ([\d.]+)/.exec(path.getAttribute('d') ?? '')?.[1]);
+    const frameAt = (now: number) => {
+      const pending = frames;
+      frames = [];
+      pending.forEach((callback) => callback(now));
+    };
+
+    pointer('pointermove', rows.b1, 120, 'mouse', false);
+    frameAt(0);
+    frameAt(0);
+    frameAt(1000);
+    expect(tipOf()).toBe(12);
+
+    pointer('pointermove', rows.b3, 180, 'mouse', false);
+    frameAt(2000);
+    const tips = [tipOf()];
+    for (let now = 2000; now <= 2040; now += 5) {
+      frameAt(now);
+      tips.push(tipOf());
+    }
+    /** A fold above the third row opens: the row is 16px further down now. */
+    hit.mockReturnValue(rows.b3);
+    b.rail.dataset.centers = '20,52,100';
+    await Promise.resolve();
+    for (let now = 2045; frames.length > 0; now += 5) {
+      frameAt(now);
+      tips.push(tipOf());
+    }
+    expect(path).toHaveAttribute('d', 'M 11.5 2 V 92 A 8 8 0 0 0 19.5 100 H 22');
+    for (let i = 1; i < tips.length; i++) {
+      expect(tips[i]).toBeGreaterThanOrEqual(tips[i - 1]);
+      expect(tips[i] - tips[i - 1]).toBeLessThan(10);
+    }
+  });
+
   it('follows no touch, and clears on a touch press', () => {
     const { root, a, rows } = foldFixture();
     renderHook(() => useFoldPath({ current: root }, true));

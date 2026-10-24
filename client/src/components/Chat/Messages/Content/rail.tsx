@@ -454,8 +454,9 @@ function traceTo(rail: HTMLElement, to: { branch: number; center: number } | nul
     drawTrace(trace);
     return;
   }
-  if (trace.move != null && trace.move.branch === to.branch) {
-    trace.move.center = to.center;
+  /** A row that moved mid-trip gets a fresh trip from where the path is now, so the
+   *  remaining distance is measured to where the row actually is. */
+  if (trace.move != null && trace.move.branch === to.branch && trace.move.center === to.center) {
     return;
   }
 
