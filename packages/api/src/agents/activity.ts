@@ -729,11 +729,9 @@ export class SubagentPublicRecorder {
           block.type === 'reasoning' ||
           block.type === 'thinking';
         if (!reasoning && block.type !== 'text' && block.type !== 'text-plain') continue;
-        const text = reasoning
-          ? reasoningBlockText(block)
-          : typeof block.text === 'string'
-            ? block.text
-            : '';
+        let text = '';
+        if (reasoning) text = reasoningBlockText(block);
+        else if (typeof block.text === 'string') text = block.text;
         if (text === '') continue;
         const type = reasoning ? 'reasoning' : 'writing';
         const key = `${id}:${type}`;
