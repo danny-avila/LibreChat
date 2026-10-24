@@ -3486,6 +3486,8 @@ class AgentClient extends BaseClient {
       res: this.options.res,
       user: createSafeUser(this.options.req.user),
       tenantId: resolveRequestTenantId(this.options.req),
+      appConfig: this.options.req.config,
+      isTemporary: isTemporaryTurn(this.options.req),
     });
 
     this.processMemory = processMemory;
