@@ -464,7 +464,11 @@ function canonicalDecimal(token: string): string {
   if (significant === '') {
     return '0';
   }
-  const trimmed = significant.replace(/0+$/, '');
+  let end = significant.length;
+  while (significant.charCodeAt(end - 1) === 48) {
+    end--;
+  }
+  const trimmed = significant.slice(0, end);
   const exponent =
     (exponentAt === -1 ? 0 : Number(unsigned.slice(exponentAt + 1))) -
     fraction.length +

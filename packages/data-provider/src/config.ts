@@ -124,13 +124,19 @@ export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
  * or tenant config document can neither change nor remove them. The pull request provider and
  * host decide where the deployment's token is sent, the OAuth app which credentials users grant
  * and which environment secret is sent with them, and the shared cache's slot count where every
- * replica looks for a shared answer. */
+ * replica looks for a shared answer. The admin catalog's model-list lifetime is one value for the
+ * whole deployment, which `GET /api/admin/config/meta` reports. */
 export const BASE_ONLY_CONFIG_PATHS = [
   'endpoints.agents.pullRequests.provider',
   'endpoints.agents.pullRequests.host',
   'endpoints.agents.pullRequests.oauth',
   'endpoints.agents.pullRequests.sharedCacheSlots',
+  'endpoints.catalogModelsTtlMs',
 ] as const;
+
+/** How long the admin config catalog reuses a scope's model lists unless
+ * `endpoints.catalogModelsTtlMs` sets it: the two minutes a provider's model list is cached for. */
+export const DEFAULT_CATALOG_MODELS_TTL_MS = 120_000;
 
 export const defaultRetrievalModels = [
   'gpt-4o',
@@ -4478,6 +4484,13 @@ export const configSchema = z.object({
   endpoints: z
     .object({
       allowedAddresses: allowedAddressesSchema,
+      /**
+       * Milliseconds the admin config catalog (`GET /api/admin/config/catalog`) reuses a scope's
+       * model lists while its endpoint config is unchanged, up to one hour; `0` resolves them on
+       * every read, where a fetched list may still come from the two-minute model-list cache.
+       * Only librechat.yaml sets it. Omission keeps `DEFAULT_CATALOG_MODELS_TTL_MS` (two minutes).
+       */
+      catalogModelsTtlMs: z.number().int().min(0).max(3_600_000).optional(),
       /**
        * Defaults applied to every endpoint. Omit-based, so options added to
        * `baseEndpointSchema` are inherited here automatically — no list to
